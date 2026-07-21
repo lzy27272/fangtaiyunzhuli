@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "TECH-V0.2",
+  "evidenceType": "FIELD_PHOTO_AND_TARGET_ATTACHMENT_ACCEPTANCE",
+  "acceptanceId": "",
+  "status": "PENDING",
+  "environmentType": "TARGET_UAT",
+  "photo": {
+    "sourceType": "ON_SITE_ORIGINAL",
+    "synthetic": false,
+    "originalFilePath": "",
+    "originalFileName": "",
+    "sizeBytes": 0,
+    "sha256": "",
+    "hotelCode": "",
+    "maskedRoom": "",
+    "capturedAt": "",
+    "capturedBy": "",
+    "issueDescription": "",
+    "privacyReviewPassed": false
+  },
+  "targetAttachmentChain": {
+    "storageType": "OBJECT_STORAGE",
+    "objectStoragePersisted": false,
+    "objectKey": "",
+    "malwareScanStatus": "PENDING",
+    "authorizationPassed": false,
+    "unauthorizedAccessDenied": false,
+    "encryptionAtRestPassed": false,
+    "lifecyclePolicyPassed": false,
+    "backupRestorePassed": false,
+    "uploadSha256": "",
+    "downloadSha256": "",
+    "restoreSha256": ""
+  },
+  "workflow": {
+    "standardEvaluationPassed": false,
+    "remediationTaskCompleted": false,
+    "managerAcceptancePassed": false
+  },
+  "approvals": [
+    { "roleCode": "HOUSEKEEPING_SUPERVISOR", "status": "PENDING", "signerName": "", "signedAt": "", "signedByHuman": false, "delegated": false, "evidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "GENERAL_MANAGER", "status": "PENDING", "signerName": "", "signedAt": "", "signedByHuman": false, "delegated": false, "evidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "QA_OWNER", "status": "PENDING", "signerName": "", "signedAt": "", "signedByHuman": false, "delegated": false, "evidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "SECURITY_OPERATIONS_OWNER", "status": "PENDING", "signerName": "", "signedAt": "", "signedByHuman": false, "delegated": false, "evidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } }
+  ],
+  "evidenceFiles": []
+}

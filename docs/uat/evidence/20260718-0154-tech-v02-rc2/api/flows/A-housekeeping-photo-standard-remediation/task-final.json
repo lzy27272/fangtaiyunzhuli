@@ -1,0 +1,98 @@
+{
+    "id":  "487c7d1d-0fbb-499e-962e-6fe91e926f6b",
+    "task_no":  "T-20260717-487C7D1D",
+    "source_event_id":  "03af4d5a-d71a-44ee-8279-2616eebef711",
+    "source_action_id":  "b9bd010e-9b25-4545-9440-406c9283fbda",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+    "work_record_id":  "2e000000-0000-0000-0000-000000000001",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "org_unit_name":  "客房部",
+    "title":  "客房卫生图片整改（UAT）",
+    "description":  "根据失败的卫生标准评价完成整改并由店总验收。",
+    "lifecycle_status":  "COMPLETED",
+    "sla_status":  "ON_TIME",
+    "priority":  "HIGH",
+    "due_at":  "2026-07-17T19:49:04.151+00:00",
+    "completed_at":  "2026-07-17T17:49:04.351+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"score\": 70, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"subjectId\": \"2e000000-0000-0000-0000-000000000001\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"eb4f3c22-183c-45f0-8092-839cd845310d\", \"workRecordId\": \"2e000000-0000-0000-0000-000000000001\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000003\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000001\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"summary\": \"Hygiene remediation and evidence retake completed\", \"issueClosed\": true, \"roomsChecked\": 32, \"photoAttached\": true}",
+                            "null":  false
+                        },
+    "row_version":  5,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T17:49:04.148+00:00",
+    "updated_at":  "2026-07-17T17:49:04.351+00:00",
+    "participants":  [
+                         {
+                             "id":  "fd0c8a43-8e90-4907-b782-08a8e79b4b4d",
+                             "participant_type":  "ASSIGNEE",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000003\", \"name\": \"周敏\", \"employeeNo\": \"E-HK-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000002\", \"code\": \"HOUSEKEEPING_SUPERVISOR\", \"name\": \"客房主管\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000006\", \"code\": \"HZ-HOUSEKEEPING\", \"name\": \"客房部\", \"unitType\": \"DEPARTMENT\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T17:49:04.148+00:00"
+                         },
+                         {
+                             "id":  "615bcca9-9503-4bed-8c23-a6effcd245a1",
+                             "participant_type":  "REVIEWER",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000001",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000001\", \"name\": \"赵晨\", \"employeeNo\": \"E-GM-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000004\", \"code\": \"GENERAL_MANAGER\", \"name\": \"店总\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000003\", \"code\": \"HZ-CENTER\", \"name\": \"杭州中心店\", \"unitType\": \"HOTEL\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T17:49:04.148+00:00"
+                         }
+                     ],
+    "evidence":  [
+                     {
+                         "id":  "8b247294-95ce-4455-abd8-5aaec646f6d3",
+                         "submitted_by_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                         "evidence_type":  "IMAGE",
+                         "object_key":  "10000000-0000-0000-0000-000000000001/work-records/2e000000-0000-0000-0000-000000000001/00b84449-a039-40d3-b34f-0ff9fe2bad1b-uat-room-inspection.png",
+                         "original_name":  "uat-room-inspection.png",
+                         "media_type":  "image/png",
+                         "size_bytes":  68,
+                         "sha256":  "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+                         "structured_result":  {
+                                                   "type":  "jsonb",
+                                                   "value":  "{\"scenario\": \"A\", \"sourceType\": \"TECHNICAL_FIXTURE\", \"issueClosed\": true}",
+                                                   "null":  false
+                                               },
+                         "created_at":  "2026-07-17T17:49:04.274+00:00"
+                     }
+                 ]
+}

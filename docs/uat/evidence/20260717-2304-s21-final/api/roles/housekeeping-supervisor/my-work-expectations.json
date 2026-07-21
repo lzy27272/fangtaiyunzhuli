@@ -1,0 +1,62 @@
+{
+    "status":  200,
+    "correlationId":  "96ffc422-4034-4074-82d9-231a18a666dd",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2a500000-0000-0000-0000-000000000005",
+                                   "business_date":  "2026-07-16",
+                                   "period_key":  "UAT-HK-MISSED-2026-07-16",
+                                   "available_at":  "2026-07-16T15:04:47.315+00:00",
+                                   "due_at":  "2026-07-17T14:59:47.315+00:00",
+                                   "status":  "AVAILABLE",
+                                   "row_version":  0,
+                                   "waiver_allowed":  false,
+                                   "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "employee_id":  "19100000-0000-0000-0000-000000000003",
+                                   "employee_name":  "周敏",
+                                   "position_name":  "客房主管",
+                                   "target_org_unit_id":  "12000000-0000-0000-0000-000000000006",
+                                   "target_org_unit_name":  "客房部",
+                                   "work_package_item_id":  "2a200000-0000-0000-0000-000000000003",
+                                   "item_code":  "HK_ROOM_CHECK",
+                                   "item_name":  "客房巡检与图片证据",
+                                   "item_type":  "INSPECTION",
+                                   "form_version_id":  "29700000-0000-0000-0000-000000000003",
+                                   "work_package_id":  "2a000000-0000-0000-0000-000000000003",
+                                   "work_package_code":  "WP-UAT-HK-ROOM-CHECK",
+                                   "work_package_name":  "客房巡检与图片证据工作包（UAT）",
+                                   "work_package_version_id":  "2a100000-0000-0000-0000-000000000003",
+                                   "version_no":  1
+                               },
+                               {
+                                   "id":  "2a500000-0000-0000-0000-000000000004",
+                                   "business_date":  "2026-07-17",
+                                   "period_key":  "UAT-HK-CURRENT-2026-07-17",
+                                   "available_at":  "2026-07-17T14:04:47.315+00:00",
+                                   "due_at":  "2026-07-17T23:04:47.315+00:00",
+                                   "status":  "SUBMITTED",
+                                   "row_version":  1,
+                                   "waiver_allowed":  false,
+                                   "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "employee_id":  "19100000-0000-0000-0000-000000000003",
+                                   "employee_name":  "周敏",
+                                   "position_name":  "客房主管",
+                                   "target_org_unit_id":  "12000000-0000-0000-0000-000000000006",
+                                   "target_org_unit_name":  "客房部",
+                                   "work_package_item_id":  "2a200000-0000-0000-0000-000000000003",
+                                   "item_code":  "HK_ROOM_CHECK",
+                                   "item_name":  "客房巡检与图片证据",
+                                   "item_type":  "INSPECTION",
+                                   "form_version_id":  "29700000-0000-0000-0000-000000000003",
+                                   "work_package_id":  "2a000000-0000-0000-0000-000000000003",
+                                   "work_package_code":  "WP-UAT-HK-ROOM-CHECK",
+                                   "work_package_name":  "客房巡检与图片证据工作包（UAT）",
+                                   "work_package_version_id":  "2a100000-0000-0000-0000-000000000003",
+                                   "version_no":  1,
+                                   "latest_attempt_no":  1
+                               }
+                           ],
+                 "Count":  2
+             }
+}

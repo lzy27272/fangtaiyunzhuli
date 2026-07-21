@@ -1,0 +1,56 @@
+[ {
+  "notification_id" : "21cf6298-5881-440b-af10-04bf34fe7842",
+  "recipient_account_id" : "19000000-0000-0000-0000-000000000004",
+  "recipient_assignment_id" : "19200000-0000-0000-0000-000000000003",
+  "notification_type" : "MISSED_WORK_REMINDER",
+  "title" : "岗位工作已漏交",
+  "content" : "请立即补交并完成整改。",
+  "source_type" : "MANAGEMENT_EVENT",
+  "source_id" : "779e562c-809b-4ddb-8c94-bbd5d800e739",
+  "delivered_at" : "2026-07-17 23:05:08.780924+08",
+  "read_at" : null
+}, {
+  "notification_id" : "c3195384-6127-4b3a-8327-9c9933bd3141",
+  "recipient_account_id" : "19000000-0000-0000-0000-000000000002",
+  "recipient_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "notification_type" : "TASK_OVERDUE",
+  "title" : "任务已逾期",
+  "content" : "区域多门店OTA评分风险整改（UAT）",
+  "source_type" : "TASK",
+  "source_id" : "c0a80b78-4cc4-4e5e-b8d3-e325f38a67b1",
+  "delivered_at" : "2026-07-17 23:05:08.881922+08",
+  "read_at" : null
+}, {
+  "notification_id" : "d386ff9e-471a-4223-96a4-78d31d6d0201",
+  "recipient_account_id" : "19000000-0000-0000-0000-000000000002",
+  "recipient_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "notification_type" : "TASK_ESCALATED",
+  "title" : "任务逾期升级",
+  "content" : "区域多门店OTA评分风险整改（UAT）",
+  "source_type" : "TASK",
+  "source_id" : "c0a80b78-4cc4-4e5e-b8d3-e325f38a67b1",
+  "delivered_at" : "2026-07-17 23:05:08.881922+08",
+  "read_at" : null
+}, {
+  "notification_id" : "572caa94-5dbb-45ce-8471-c6c5e4292ea4",
+  "recipient_account_id" : "19000000-0000-0000-0000-000000000008",
+  "recipient_assignment_id" : "19200000-0000-0000-0000-000000000008",
+  "notification_type" : "TASK_OVERDUE",
+  "title" : "任务已逾期",
+  "content" : "岗位漏交整改（UAT）",
+  "source_type" : "TASK",
+  "source_id" : "56f74b72-9385-4a8f-97a6-01cacb7174ce",
+  "delivered_at" : "2026-07-17 23:05:08.881922+08",
+  "read_at" : null
+}, {
+  "notification_id" : "9e187887-5c07-444a-8ef4-d4cafa9989e1",
+  "recipient_account_id" : "19000000-0000-0000-0000-000000000008",
+  "recipient_assignment_id" : "19200000-0000-0000-0000-000000000008",
+  "notification_type" : "TASK_ESCALATED",
+  "title" : "任务逾期升级",
+  "content" : "岗位漏交整改（UAT）",
+  "source_type" : "TASK",
+  "source_id" : "56f74b72-9385-4a8f-97a6-01cacb7174ce",
+  "delivered_at" : "2026-07-17 23:05:08.881922+08",
+  "read_at" : null
+} ]

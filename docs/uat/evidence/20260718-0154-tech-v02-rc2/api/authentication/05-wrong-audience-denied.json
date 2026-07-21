@@ -1,0 +1,13 @@
+{
+    "case":  "wrong-audience",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "8b27172f-8250-4616-b79d-db24e6ee579c",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "需要有效的Bearer JWT"
+                 }
+}

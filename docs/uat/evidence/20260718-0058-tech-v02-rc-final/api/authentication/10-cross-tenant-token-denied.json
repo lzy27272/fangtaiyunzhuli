@@ -1,0 +1,13 @@
+{
+    "case":  "cross-tenant-token",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "2f9a5d76-661b-460b-9757-bf880751b4f5",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "账号不存在、已停用或不属于当前租户"
+                 }
+}

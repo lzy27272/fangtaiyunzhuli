@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "TECH-V0.2",
+  "evidenceType": "TARGET_SSO_ACCEPTANCE",
+  "acceptanceId": "",
+  "status": "PENDING",
+  "environmentType": "TARGET_UAT",
+  "providerType": "ENTERPRISE_SSO",
+  "issuer": "",
+  "claimsMappingApproved": false,
+  "sixRoleLoginPassed": false,
+  "accountLifecyclePassed": false,
+  "logoutInvalidationPassed": false,
+  "keyRotationPassed": false,
+  "negativeSecurityTestsPassed": false,
+  "tenantIsolationPassed": false,
+  "auditPassed": false,
+  "roleResults": [
+    { "roleCode": "FRONT_DESK", "status": "PENDING", "evidencePath": "" },
+    { "roleCode": "FRONT_OFFICE_SUPERVISOR", "status": "PENDING", "evidencePath": "" },
+    { "roleCode": "HOUSEKEEPING_SUPERVISOR", "status": "PENDING", "evidencePath": "" },
+    { "roleCode": "ASSISTANT_GENERAL_MANAGER", "status": "PENDING", "evidencePath": "" },
+    { "roleCode": "GENERAL_MANAGER", "status": "PENDING", "evidencePath": "" },
+    { "roleCode": "REGIONAL_OPERATIONS", "status": "PENDING", "evidencePath": "" }
+  ],
+  "approvals": [
+    { "roleCode": "FRONT_DESK_REPRESENTATIVE", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "FRONT_OFFICE_SUPERVISOR_REPRESENTATIVE", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "HOUSEKEEPING_SUPERVISOR_REPRESENTATIVE", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "ASSISTANT_GENERAL_MANAGER_REPRESENTATIVE", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "GENERAL_MANAGER_REPRESENTATIVE", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "REGIONAL_OPERATIONS_REPRESENTATIVE", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "IDENTITY_OWNER", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "SECURITY_OWNER", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "QA_OWNER", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } },
+    { "roleCode": "CTO", "signatureId": "", "signerId": "", "signerName": "", "signerTitle": "", "status": "PENDING", "decision": "PENDING", "signedAt": "", "signedByHuman": false, "delegated": false, "openReservations": 0, "supportingEvidencePath": "", "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" } }
+  ],
+  "evidenceFiles": []
+}

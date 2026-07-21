@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-07-19T05:21:22.606Z",
+  "version": "TECH-V0.2-PILOT.3",
+  "target": "https://www.sfgzt.cn",
+  "browserAutomation": "Playwright fallback (Browser plugin unavailable)",
+  "browserExecutable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "credentialsPersistedInEvidence": false,
+  "outerHttpCredentialsPersistedInEvidence": false,
+  "passed": 2,
+  "failed": 0,
+  "cases": [
+    {
+      "name": "ceo-configuration",
+      "loginName": "ceo.demo",
+      "passed": true,
+      "error": null,
+      "evidence": [
+        "pilot3-ceo-organization.png",
+        "pilot3-ceo-employees-assignments.png",
+        "pilot3-ceo-work-package-create.png"
+      ],
+      "detail": {
+        "visibleOrgCount": 36,
+        "organizationScope": "TENANT"
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": []
+    },
+    {
+      "name": "front-desk-isolation",
+      "loginName": "front.demo",
+      "passed": true,
+      "error": null,
+      "evidence": [
+        "pilot3-front-desk-my-work.png",
+        "pilot3-front-desk-permission-isolation.png"
+      ],
+      "detail": {
+        "visibleOrgCount": 1,
+        "organizationScope": "前厅部",
+        "mutationControlsVisible": false
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": []
+    }
+  ]
+}

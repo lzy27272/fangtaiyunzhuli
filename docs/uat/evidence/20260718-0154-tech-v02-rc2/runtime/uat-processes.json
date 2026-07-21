@@ -1,0 +1,19 @@
+﻿{
+    "createdAt":  "2026-07-18T01:48:39.4067223+08:00",
+    "runId":  "20260718-0154-tech-v02-rc2",
+    "environmentType":  "embedded-postgresql",
+    "authenticationMode":  "bearer-jwt",
+    "devHeaderAuthEnabled":  false,
+    "scheduledAutomationWorkerEnabled":  true,
+    "jwtIssuer":  "http://127.0.0.1:18081",
+    "jwtAudience":  "hotel-ai-os-api",
+    "tokenRuntimeFile":  ".uat-runtime/identity/tokens.json",
+    "oidcPid":  30020,
+    "apiPid":  30640,
+    "webPid":  null,
+    "apiUrl":  "http://127.0.0.1:59949",
+    "webUrl":  null,
+    "database":  "embedded PostgreSQL (real non-superuser runtime role)",
+    "attachmentScanner":  "ClamAV 1.5.3 with signed CVD database (fail closed)",
+    "fixture":  "database/uat/001_sprint2_1_uat_fixture.sql"
+}

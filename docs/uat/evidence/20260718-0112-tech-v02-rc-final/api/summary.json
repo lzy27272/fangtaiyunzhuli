@@ -1,0 +1,62 @@
+{
+    "runId":  "20260718-0112-tech-v02-rc-final",
+    "executedAt":  "2026-07-18T01:12:38.6556409+08:00",
+    "apiOrigin":  "http://127.0.0.1:62509",
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "authentication":  {
+                           "mode":  "bearer-jwt",
+                           "algorithm":  "RS256",
+                           "issuer":  "http://127.0.0.1:18081",
+                           "audience":  "hotel-ai-os-api",
+                           "formalRoleCount":  6,
+                           "negativeProbeCount":  10,
+                           "secretsPersistedInEvidence":  false
+                       },
+    "automation":  {
+                       "mode":  "scheduled-worker",
+                       "manualSlaProcessRequestCount":  0,
+                       "manualOutboxRecoveryRequestCount":  0
+                   },
+    "roleProbeCount":  34,
+    "supervisorManualTask":  {
+                                 "taskId":  "cb453bbb-ed48-4717-8a16-15ab4fdef108",
+                                 "finalStatus":  "CANCELLED"
+                             },
+    "permissionDenialProbeCount":  6,
+    "housekeepingSupervisorEvaluation":  {
+                                             "evaluationId":  "0739a135-50e6-4a9f-8463-f945eb1e2aeb",
+                                             "actorAccountId":  "19000000-0000-0000-0000-000000000004",
+                                             "outcome":  "FAIL"
+                                         },
+    "scenarioCount":  3,
+    "scenarios":  [
+                      {
+                          "id":  "A",
+                          "name":  "housekeeping-photo-standard-remediation-execution-gm-acceptance",
+                          "workRecordId":  "2e000000-0000-0000-0000-000000000001",
+                          "taskId":  "1800825b-3559-4152-9f1d-98b29c9c6ae1",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "B",
+                          "name":  "front-complaint-standard-rule-task-closure",
+                          "workRecordId":  "f1f23faa-a82f-4850-aa16-7b98e0ecd65e",
+                          "taskId":  "f247bbc7-8570-4f55-b8ed-447f57ec1b3b",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "C",
+                          "name":  "missing-submission-missed-reminder-task-overdue-escalation",
+                          "expectationId":  "2a500000-0000-0000-0000-000000000005",
+                          "taskId":  "724fe36b-1fcd-42b2-add2-17ca4f0be463",
+                          "finalStatus":  "PENDING_ACK",
+                          "slaStatus":  "OVERDUE"
+                      }
+                  ],
+    "requestCount":  89,
+    "failedRequestCount":  0,
+    "expectedDeniedRequestCount":  16,
+    "expectedBusinessDeniedRequestCount":  6,
+    "expectedAuthenticationDeniedRequestCount":  10,
+    "evidenceRoot":  "C:\\Users\\MSN\\AppData\\Local\\Temp\\hotel-ai-os-ascii-20260718\\docs\\uat\\evidence\\20260718-0112-tech-v02-rc-final\\api"
+}

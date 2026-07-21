@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260718-1306-tech-v02-shutdown-order-fixed",
+  "scope": "live-uat-shutdown-order-verification",
+  "status": "PASS",
+  "observations": {
+    "hikariShutdownCompletedAt": "2026-07-18T13:11:27.817+08:00",
+    "postgresStoppedAt": "2026-07-18T13:11:27.968+08:00",
+    "hikariShutdownBeforePostgres": true,
+    "shutdownOrderGapMilliseconds": 151,
+    "workerDatabaseErrorsAfterDatabaseStop": 0,
+    "springTestAfterClassErrors": 0,
+    "mavenBuildSuccess": true,
+    "managedProcessesStillRunning": 0,
+    "ephemeralTokenStillPresent": false,
+    "runtimeMarkersStillPresent": 0
+  },
+  "testResult": {
+    "testClass": "cn.sifangguan.hotelaios.Sprint21LiveUatServerTest",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "evidence": {
+    "runtimeFiles": 5,
+    "surefireFiles": 2,
+    "databaseFiles": 12
+  },
+  "releaseBoundary": {
+    "rc2BusinessEvidenceReplaced": false,
+    "externalReleaseGatesChanged": false,
+    "acceptedAsLocalTechnicalClosureEvidence": true
+  }
+}

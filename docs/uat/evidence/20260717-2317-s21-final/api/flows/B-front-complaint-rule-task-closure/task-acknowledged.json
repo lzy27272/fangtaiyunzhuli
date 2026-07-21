@@ -1,0 +1,35 @@
+{
+    "id":  "1e22ca80-eb92-4d76-92d7-c3d8bfaf17ad",
+    "task_no":  "T-20260717-1E22CA80",
+    "source_event_id":  "8e2d9556-a4c0-4ed2-aee4-0ad622dc7bc9",
+    "source_action_id":  "75a334fc-10f5-4bdf-8da0-2cc775d5aca2",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000002",
+    "work_record_id":  "d4a221ad-dbff-4dbb-a271-a312cfd3bc2d",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000005",
+    "org_unit_name":  "前厅部",
+    "title":  "前台客诉跟进整改（UAT）",
+    "description":  "完成客人回访、处理说明和闭环证据。",
+    "lifecycle_status":  "IN_PROGRESS",
+    "sla_status":  "ON_TIME",
+    "priority":  "HIGH",
+    "due_at":  "2026-07-17T17:17:44.369+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"score\": 60, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000005\", \"subjectId\": \"d4a221ad-dbff-4dbb-a271-a312cfd3bc2d\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"be6946aa-25d0-43fe-b8e9-3235ffa9e7ab\", \"workRecordId\": \"d4a221ad-dbff-4dbb-a271-a312cfd3bc2d\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000002\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000002\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000002\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000004\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{}",
+                            "null":  false
+                        },
+    "row_version":  2,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T15:17:44.367+00:00",
+    "updated_at":  "2026-07-17T15:17:44.480+00:00"
+}

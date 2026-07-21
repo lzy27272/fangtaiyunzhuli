@@ -1,0 +1,58 @@
+﻿{
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "account":  {
+                    "id":  "19000000-0000-0000-0000-000000000004",
+                    "loginName":  "hk.supervisor",
+                    "displayName":  "å®¢æ¿ä¸»ç®¡å¨æ",
+                    "status":  "ACTIVE"
+                },
+    "employee":  {
+                     "id":  "19100000-0000-0000-0000-000000000003",
+                     "employeeNo":  "E-HK-001",
+                     "name":  "å¨æ",
+                     "employmentStatus":  "ACTIVE"
+                 },
+    "primaryRole":  "HOUSEKEEPING_SUPERVISOR",
+    "roles":  [
+                  "HOUSEKEEPING_SUPERVISOR"
+              ],
+    "permissions":  [
+                        "task.dispatch",
+                        "dashboard.hotel",
+                        "work-record.read",
+                        "evaluation.manual-review",
+                        "work.submit",
+                        "task.act",
+                        "notification.read",
+                        "task.create",
+                        "standard.read",
+                        "work-record.review",
+                        "task.cancel",
+                        "work-package.read",
+                        "rule.read",
+                        "work-package.allocate",
+                        "evaluation.read",
+                        "task.read",
+                        "org.read",
+                        "task.review",
+                        "work-record.submit"
+                    ],
+    "tenantScope":  false,
+    "organizationScopes":  [
+                               "12000000-0000-0000-0000-000000000006"
+                           ],
+    "positionAssignments":  [
+                                {
+                                    "id":  "19200000-0000-0000-0000-000000000003",
+                                    "organizationId":  "12000000-0000-0000-0000-000000000006",
+                                    "organizationCode":  "HZ-HOUSEKEEPING",
+                                    "organizationName":  "å®¢æ¿é¨",
+                                    "positionId":  "14000000-0000-0000-0000-000000000002",
+                                    "positionCode":  "HOUSEKEEPING_SUPERVISOR",
+                                    "positionName":  "å®¢æ¿ä¸»ç®¡",
+                                    "primary":  true,
+                                    "assignmentType":  "PERMANENT",
+                                    "validFrom":  "2023-06-18"
+                                }
+                            ]
+}

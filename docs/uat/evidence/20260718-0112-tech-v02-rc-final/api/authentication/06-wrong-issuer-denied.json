@@ -1,0 +1,13 @@
+{
+    "case":  "wrong-issuer",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "0c6d010f-2c2a-4eca-8e25-9abef82340b9",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "需要有效的Bearer JWT"
+                 }
+}

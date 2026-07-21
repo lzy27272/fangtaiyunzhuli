@@ -1,0 +1,37 @@
+[ {
+  "account_id" : "19000000-0000-0000-0000-000000000008",
+  "login_name" : "assistant.gm",
+  "display_name" : "杭州中心店店助沈乔",
+  "status" : "ACTIVE",
+  "roles" : "ASSISTANT_GENERAL_MANAGER"
+}, {
+  "account_id" : "19000000-0000-0000-0000-000000000005",
+  "login_name" : "fo.supervisor",
+  "display_name" : "前厅主管陈航",
+  "status" : "ACTIVE",
+  "roles" : "FRONT_OFFICE_SUPERVISOR"
+}, {
+  "account_id" : "19000000-0000-0000-0000-000000000003",
+  "login_name" : "front.demo",
+  "display_name" : "前台员工林悦",
+  "status" : "ACTIVE",
+  "roles" : "FRONT_DESK"
+}, {
+  "account_id" : "19000000-0000-0000-0000-000000000002",
+  "login_name" : "gm.hz",
+  "display_name" : "杭州中心店店总",
+  "status" : "ACTIVE",
+  "roles" : "GENERAL_MANAGER"
+}, {
+  "account_id" : "19000000-0000-0000-0000-000000000004",
+  "login_name" : "hk.supervisor",
+  "display_name" : "客房主管周敏",
+  "status" : "ACTIVE",
+  "roles" : "HOUSEKEEPING_SUPERVISOR"
+}, {
+  "account_id" : "19000000-0000-0000-0000-000000000007",
+  "login_name" : "ota.manager",
+  "display_name" : "OTA运营经理许晨",
+  "status" : "ACTIVE",
+  "roles" : "OTA_OPERATION_MANAGER"
+} ]

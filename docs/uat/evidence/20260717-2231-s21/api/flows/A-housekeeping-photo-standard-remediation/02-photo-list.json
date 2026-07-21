@@ -1,0 +1,35 @@
+﻿[
+    {
+        "id":  "ed6a3025-6e61-4aa2-9573-1364c6a81b04",
+        "work_record_id":  "2e000000-0000-0000-0000-000000000001",
+        "object_key":  "10000000-0000-0000-0000-000000000001/work-records/2e000000-0000-0000-0000-000000000001/ed6a3025-6e61-4aa2-9573-1364c6a81b04-uat-room-inspection.png",
+        "original_name":  "uat-room-inspection.png",
+        "media_type":  "image/png",
+        "size_bytes":  68,
+        "sha256":  "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+        "scan_status":  "CLEAN",
+        "created_at":  "2026-07-17T14:29:50.565+00:00"
+    },
+    {
+        "id":  "68d968e9-1874-40ac-83f2-4d1d356ee4ca",
+        "work_record_id":  "2e000000-0000-0000-0000-000000000001",
+        "object_key":  "10000000-0000-0000-0000-000000000001/work-records/2e000000-0000-0000-0000-000000000001/68d968e9-1874-40ac-83f2-4d1d356ee4ca-uat-room-inspection.png",
+        "original_name":  "uat-room-inspection.png",
+        "media_type":  "image/png",
+        "size_bytes":  68,
+        "sha256":  "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+        "scan_status":  "CLEAN",
+        "created_at":  "2026-07-17T14:31:53.108+00:00"
+    },
+    {
+        "id":  "bc606488-c308-421b-bca8-c3136747ba20",
+        "work_record_id":  "2e000000-0000-0000-0000-000000000001",
+        "object_key":  "10000000-0000-0000-0000-000000000001/work-records/2e000000-0000-0000-0000-000000000001/bc606488-c308-421b-bca8-c3136747ba20-uat-room-inspection.png",
+        "original_name":  "uat-room-inspection.png",
+        "media_type":  "image/png",
+        "size_bytes":  68,
+        "sha256":  "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+        "scan_status":  "CLEAN",
+        "created_at":  "2026-07-17T14:32:54.456+00:00"
+    }
+]

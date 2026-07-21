@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260718-0218-tech-v02-shutdown-order",
+  "scope": "live-uat-shutdown-order-verification",
+  "status": "FAIL",
+  "observations": {
+    "hikariShutdownBeforePostgres": true,
+    "workerDatabaseErrorsAfterDatabaseStop": 0,
+    "springTestAfterClassErrors": 1,
+    "mavenBuildSuccess": false
+  },
+  "failure": {
+    "type": "java.lang.IllegalStateException",
+    "cause": "application-context-closed-programmatically-before-spring-test-after-class-listeners",
+    "tests": 2,
+    "failures": 0,
+    "errors": 1,
+    "skipped": 0
+  },
+  "releaseBoundary": {
+    "rc2EvidenceReplaced": false,
+    "releaseGateStatusChanged": false,
+    "acceptedAsClosureEvidence": false
+  }
+}

@@ -1,0 +1,73 @@
+{
+    "status":  200,
+    "correlationId":  "c642de85-efed-4f92-b516-86425f71101b",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2b000000-0000-0000-0000-000000000001",
+                                   "code":  "RULE-UAT-OTA-RISK",
+                                   "name":  "OTA评分风险整改规则（UAT）",
+                                   "event_type":  "OTA_SCORE_RISK",
+                                   "owner_org_unit_id":  "12000000-0000-0000-0000-000000000002",
+                                   "description":  "评分低于4.9时创建整改任务。",
+                                   "status":  "ACTIVE",
+                                   "latest_version_id":  "2b100000-0000-0000-0000-000000000001",
+                                   "version_no":  1,
+                                   "lifecycle_status":  "PUBLISHED",
+                                   "priority":  10,
+                                   "cooldown_minutes":  0,
+                                   "effective_from":  "2026-07-16T17:48:38.774+00:00",
+                                   "row_version":  1
+                               },
+                               {
+                                   "id":  "2b000000-0000-0000-0000-000000000005",
+                                   "code":  "RULE-UAT-HK-HYGIENE-FAIL",
+                                   "name":  "客房卫生评价失败整改规则（UAT）",
+                                   "event_type":  "STANDARDEVALUATIONCOMPLETED",
+                                   "owner_org_unit_id":  "12000000-0000-0000-0000-000000000003",
+                                   "description":  "客房卫生标准评价为FAIL后创建由客房主管整改、店总验收的任务。",
+                                   "status":  "ACTIVE",
+                                   "latest_version_id":  "2b100000-0000-0000-0000-000000000005",
+                                   "version_no":  1,
+                                   "lifecycle_status":  "PUBLISHED",
+                                   "priority":  2,
+                                   "cooldown_minutes":  0,
+                                   "effective_from":  "2026-07-16T17:48:38.774+00:00",
+                                   "row_version":  1
+                               },
+                               {
+                                   "id":  "2b000000-0000-0000-0000-000000000003",
+                                   "code":  "RULE-UAT-FRONT-COMPLAINT",
+                                   "name":  "前台客诉整改规则（UAT）",
+                                   "event_type":  "STANDARDEVALUATIONCOMPLETED",
+                                   "owner_org_unit_id":  "12000000-0000-0000-0000-000000000003",
+                                   "description":  "前台客诉标准评价为FAIL后创建整改任务。",
+                                   "status":  "ACTIVE",
+                                   "latest_version_id":  "2b100000-0000-0000-0000-000000000003",
+                                   "version_no":  1,
+                                   "lifecycle_status":  "PUBLISHED",
+                                   "priority":  5,
+                                   "cooldown_minutes":  0,
+                                   "effective_from":  "2026-07-16T17:48:38.774+00:00",
+                                   "row_version":  1
+                               },
+                               {
+                                   "id":  "2b000000-0000-0000-0000-000000000004",
+                                   "code":  "RULE-UAT-MISSED-WORK",
+                                   "name":  "岗位漏交提醒与整改规则（UAT）",
+                                   "event_type":  "WORKEXPECTATIONMISSED",
+                                   "owner_org_unit_id":  "12000000-0000-0000-0000-000000000003",
+                                   "description":  "工作期望漏交后提醒责任人并创建立即到期的整改任务。",
+                                   "status":  "ACTIVE",
+                                   "latest_version_id":  "2b100000-0000-0000-0000-000000000004",
+                                   "version_no":  1,
+                                   "lifecycle_status":  "PUBLISHED",
+                                   "priority":  1,
+                                   "cooldown_minutes":  0,
+                                   "effective_from":  "2026-07-16T17:48:38.774+00:00",
+                                   "row_version":  1
+                               }
+                           ],
+                 "Count":  4
+             }
+}

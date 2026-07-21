@@ -1,0 +1,13 @@
+{
+    "case":  "unknown-account",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "63029d7e-065c-4073-8c97-1f89a43e5a8f",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "账号不存在、已停用或不属于当前租户"
+                 }
+}

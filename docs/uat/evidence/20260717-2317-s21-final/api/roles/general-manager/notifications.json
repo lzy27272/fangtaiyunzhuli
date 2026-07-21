@@ -1,0 +1,19 @@
+{
+    "status":  200,
+    "correlationId":  "dd783214-9a8a-4bcf-8dbc-e38996a356a8",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000006",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "店总UAT待办",
+                                   "content":  "请完成最终验收检查。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000001",
+                                   "delivered_at":  "2026-07-17T15:17:20.345+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  1
+             }
+}

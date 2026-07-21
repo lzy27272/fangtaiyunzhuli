@@ -1,0 +1,11 @@
+{
+    "status":  403,
+    "correlationId":  "d4bfaf87-2642-40f7-9732-a6c66f4634b6",
+    "body":  {
+                 "type":  "about:blank",
+                 "title":  "访问被拒绝",
+                 "status":  403,
+                 "detail":  "缺少权限：work-record.review",
+                 "instance":  "/api/v1/team/work-expectations"
+             }
+}

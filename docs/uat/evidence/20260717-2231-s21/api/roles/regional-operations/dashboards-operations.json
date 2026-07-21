@@ -1,0 +1,28 @@
+﻿{
+    "hotelCount":  2,
+    "riskCount":  1,
+    "hotels":  [
+                   {
+                       "id":  "12000000-0000-0000-0000-000000000003",
+                       "name":  "æ­å·ä¸­å¿åº",
+                       "city":  "æ­å·",
+                       "room_count":  128,
+                       "open_task_count":  2,
+                       "overdue_task_count":  0,
+                       "failed_evaluation_count":  1,
+                       "missed_work_count":  0,
+                       "today_submission_count":  4
+                   },
+                   {
+                       "id":  "12000000-0000-0000-0000-000000000004",
+                       "name":  "ä¸æµ·æ»¨æ±åº",
+                       "city":  "ä¸æµ·",
+                       "room_count":  156,
+                       "open_task_count":  0,
+                       "overdue_task_count":  0,
+                       "failed_evaluation_count":  0,
+                       "missed_work_count":  0,
+                       "today_submission_count":  0
+                   }
+               ]
+}

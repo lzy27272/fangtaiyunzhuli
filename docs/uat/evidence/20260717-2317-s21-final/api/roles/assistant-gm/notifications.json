@@ -1,0 +1,19 @@
+{
+    "status":  200,
+    "correlationId":  "deee69cd-5bd4-4d06-b27d-5e32346d6b14",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000005",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "店助UAT待办",
+                                   "content":  "请检查本店跨部门任务。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                                   "delivered_at":  "2026-07-17T15:17:20.345+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  1
+             }
+}

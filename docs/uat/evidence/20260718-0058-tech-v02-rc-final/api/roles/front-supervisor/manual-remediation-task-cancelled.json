@@ -1,0 +1,32 @@
+{
+    "id":  "7beec915-8349-4c3f-98d5-3769861517ea",
+    "task_no":  "T-20260717-7BEEC915",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000002",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000005",
+    "org_unit_name":  "前厅部",
+    "title":  "前厅主管手工发起整改任务（UAT）",
+    "description":  "验证前厅主管可在授权部门内发起整改任务。",
+    "lifecycle_status":  "CANCELLED",
+    "sla_status":  "ON_TIME",
+    "priority":  "NORMAL",
+    "due_at":  "2026-07-17T20:57:51.143+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"scenario\": \"SUPERVISOR_MANUAL_CREATE\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000002\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000004\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{}",
+                            "null":  false
+                        },
+    "row_version":  1,
+    "created_by":  "19000000-0000-0000-0000-000000000005",
+    "created_at":  "2026-07-17T16:57:51.224+00:00",
+    "updated_at":  "2026-07-17T16:57:51.267+00:00"
+}

@@ -1,0 +1,14 @@
+[ {
+  "task_id" : "dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+  "title" : "客房卫生图片整改（UAT）",
+  "evidence_id" : "68beede0-f430-4848-8846-0de6ca51a158",
+  "submitted_by_assignment_id" : "19200000-0000-0000-0000-000000000003",
+  "evidence_type" : "IMAGE",
+  "object_key" : "10000000-0000-0000-0000-000000000001/work-records/2e000000-0000-0000-0000-000000000001/bc606488-c308-421b-bca8-c3136747ba20-uat-room-inspection.png",
+  "original_name" : "uat-room-inspection.png",
+  "media_type" : "image/png",
+  "size_bytes" : 68,
+  "sha256" : "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+  "structured_result" : "{\"scenario\": \"A\", \"issueClosed\": true}",
+  "created_at" : "2026-07-17 22:32:54.769259+08"
+} ]

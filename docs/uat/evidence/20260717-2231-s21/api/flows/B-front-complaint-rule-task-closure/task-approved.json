@@ -1,0 +1,36 @@
+﻿{
+    "id":  "ffb84da7-68fc-426a-ab5a-21dcafee72b4",
+    "task_no":  "T-20260717-FFB84DA7",
+    "source_event_id":  "1e52998b-a407-470c-a015-90fe59696939",
+    "source_action_id":  "5bda5a7a-de7f-42d0-bc4a-80ababac340d",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000002",
+    "work_record_id":  "021692f0-9405-444a-ada2-167269e7303f",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000005",
+    "org_unit_name":  "åå\u0085é¨",
+    "title":  "åå°å®¢è¯è·è¿æ´æ¹ï¼UATï¼",
+    "description":  "å®æå®¢äººåè®¿ãå¤çè¯´æåé­ç¯è¯æ®ã",
+    "lifecycle_status":  "COMPLETED",
+    "sla_status":  "ON_TIME",
+    "priority":  "HIGH",
+    "due_at":  "2026-07-17T16:32:55.030+00:00",
+    "completed_at":  "2026-07-17T14:32:55.306+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"score\": 60, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000005\", \"subjectId\": \"021692f0-9405-444a-ada2-167269e7303f\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"db725a02-e666-40d0-8c89-7a76b1cd0c59\", \"workRecordId\": \"021692f0-9405-444a-ada2-167269e7303f\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000002\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000002\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000002\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000004\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"guestContacted\": true, \"complaintRecorded\": true, \"resolutionSummary\": \"Guest callback and complaint closure completed\"}",
+                            "null":  false
+                        },
+    "row_version":  5,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T14:32:55.027+00:00",
+    "updated_at":  "2026-07-17T14:32:55.306+00:00"
+}

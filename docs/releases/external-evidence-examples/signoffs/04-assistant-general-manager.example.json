@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "TECH-V0.2",
+  "evidenceType": "RELEASE_SIGNOFF",
+  "roleCode": "ASSISTANT_GENERAL_MANAGER_REPRESENTATIVE",
+  "signatureId": "",
+  "signerId": "",
+  "signerName": "",
+  "signerTitle": "",
+  "status": "PENDING",
+  "decision": "PENDING",
+  "signedAt": "",
+  "signedByHuman": false,
+  "delegated": false,
+  "openReservations": 0,
+  "supportingEvidencePath": "",
+  "signatureAssurance": { "method": "PENDING", "provider": "", "verificationId": "", "verificationStatus": "PENDING", "verifiedAt": "", "certificateSha256": "", "verificationEvidencePath": "" }
+}

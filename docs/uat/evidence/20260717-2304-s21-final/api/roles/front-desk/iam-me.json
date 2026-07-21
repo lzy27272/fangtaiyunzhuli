@@ -1,0 +1,53 @@
+{
+    "status":  200,
+    "correlationId":  "8e527efb-bf7e-4696-a546-62b8f693da98",
+    "body":  {
+                 "tenantId":  "10000000-0000-0000-0000-000000000001",
+                 "account":  {
+                                 "id":  "19000000-0000-0000-0000-000000000003",
+                                 "loginName":  "front.demo",
+                                 "displayName":  "前台员工林悦",
+                                 "status":  "ACTIVE"
+                             },
+                 "employee":  {
+                                  "id":  "19100000-0000-0000-0000-000000000002",
+                                  "employeeNo":  "E-FD-001",
+                                  "name":  "林悦",
+                                  "employmentStatus":  "ACTIVE"
+                              },
+                 "primaryRole":  "FRONT_DESK",
+                 "roles":  [
+                               "FRONT_DESK"
+                           ],
+                 "permissions":  [
+                                     "standard.read",
+                                     "work-package.read",
+                                     "task.act",
+                                     "evaluation.read",
+                                     "task.read",
+                                     "notification.read",
+                                     "work-record.submit",
+                                     "work.submit",
+                                     "org.read",
+                                     "work-record.read"
+                                 ],
+                 "tenantScope":  false,
+                 "organizationScopes":  [
+                                            "12000000-0000-0000-0000-000000000005"
+                                        ],
+                 "positionAssignments":  [
+                                             {
+                                                 "id":  "19200000-0000-0000-0000-000000000002",
+                                                 "organizationId":  "12000000-0000-0000-0000-000000000005",
+                                                 "organizationCode":  "HZ-FRONT",
+                                                 "organizationName":  "前厅部",
+                                                 "positionId":  "14000000-0000-0000-0000-000000000001",
+                                                 "positionCode":  "FRONT_DESK",
+                                                 "positionName":  "前台员工",
+                                                 "primary":  true,
+                                                 "assignmentType":  "PERMANENT",
+                                                 "validFrom":  "2025-04-12"
+                                             }
+                                         ]
+             }
+}

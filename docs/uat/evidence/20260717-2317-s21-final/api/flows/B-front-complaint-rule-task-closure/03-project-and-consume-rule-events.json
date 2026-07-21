@@ -1,0 +1,12 @@
+[
+    {
+        "outboxEventId":  "d33b1acd-aaea-4351-9dba-76d6cf6dcf59",
+        "managementEventId":  "5a153559-04a8-4d90-8792-d16dd1673539",
+        "status":  "PUBLISHED"
+    },
+    {
+        "outboxEventId":  "ed831c82-fd1f-42ed-8cb5-a241fc57f095",
+        "managementEventId":  "6e002bb2-2f04-404f-b352-f582de02e041",
+        "status":  "PUBLISHED"
+    }
+]

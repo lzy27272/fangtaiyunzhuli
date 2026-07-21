@@ -1,0 +1,23 @@
+[ {
+  "task_id" : "449ebeb7-fa3a-45aa-a6ff-aada0d7424a9",
+  "title" : "岗位漏交整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "82a70e1a-3bf9-4d89-80c2-2d2c76ae0707",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 13:11:11.775905+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000008",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-18 13:11:11.93532+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "cd2896b9-e169-486b-8b33-cd27e330a5ad",
+  "title" : "区域多门店OTA评分风险整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "a93dcac9-5d1f-4309-ac2d-f704971fddad",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 13:11:11.887978+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-18 13:11:11.93532+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+} ]

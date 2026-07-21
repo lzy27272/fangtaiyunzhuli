@@ -1,0 +1,7 @@
+{
+    "status":  "UP",
+    "groups":  [
+                   "liveness",
+                   "readiness"
+               ]
+}

@@ -1,0 +1,15 @@
+{
+    "value":  [
+                  {
+                      "id":  "2d000000-0000-0000-0000-000000000001",
+                      "notification_type":  "UAT_READY",
+                      "title":  "区域运营UAT待办",
+                      "content":  "请完成杭州和上海两店巡检。",
+                      "source_type":  "UAT",
+                      "recipient_assignment_id":  "19200000-0000-0000-0000-000000000007",
+                      "delivered_at":  "2026-07-17T15:00:20.273+00:00",
+                      "row_version":  0
+                  }
+              ],
+    "Count":  1
+}

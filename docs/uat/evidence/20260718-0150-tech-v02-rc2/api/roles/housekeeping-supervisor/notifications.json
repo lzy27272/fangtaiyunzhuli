@@ -1,0 +1,41 @@
+{
+    "status":  200,
+    "correlationId":  "67512638-416f-49ed-a863-30fdc3291c92",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "7da2e029-ddc6-4648-b26f-34150a38f299",
+                                   "notification_type":  "MISSED_WORK_REMINDER",
+                                   "title":  "岗位工作已漏交",
+                                   "content":  "请立即补交并完成整改。",
+                                   "source_type":  "MANAGEMENT_EVENT",
+                                   "source_id":  "d91ecc99-7f28-4c50-a2f4-60abc42bf143",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "delivered_at":  "2026-07-17T17:46:51.345+00:00",
+                                   "row_version":  0
+                               },
+                               {
+                                   "id":  "fa64e3f8-827c-4605-b716-6cb03b7be109",
+                                   "notification_type":  "TASK_ASSIGNED",
+                                   "title":  "收到新任务",
+                                   "content":  "岗位漏交整改（UAT）",
+                                   "source_type":  "TASK",
+                                   "source_id":  "5c4d6659-5ded-4608-8a36-c32e21f52ded",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "delivered_at":  "2026-07-17T17:46:51.345+00:00",
+                                   "row_version":  0
+                               },
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000002",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "客房主管UAT待办",
+                                   "content":  "请完成客房巡检并上传现场图片。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "delivered_at":  "2026-07-17T17:46:51.013+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  3
+             }
+}

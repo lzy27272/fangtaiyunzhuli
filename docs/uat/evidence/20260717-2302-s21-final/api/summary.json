@@ -1,0 +1,41 @@
+{
+    "runId":  "20260717-2302-s21-final",
+    "executedAt":  "2026-07-17T23:02:06.2713040+08:00",
+    "apiOrigin":  "http://127.0.0.1:63297",
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "roleProbeCount":  34,
+    "supervisorManualTask":  {
+                                 "taskId":  "8062d1fc-a2f3-4368-95ce-598edc6307d4",
+                                 "finalStatus":  "CANCELLED"
+                             },
+    "permissionDenialProbeCount":  6,
+    "scenarioCount":  3,
+    "scenarios":  [
+                      {
+                          "id":  "A",
+                          "name":  "housekeeping-photo-standard-remediation-execution-gm-acceptance",
+                          "workRecordId":  "2e000000-0000-0000-0000-000000000001",
+                          "taskId":  "beac5374-7b55-46d3-8e84-9fd35048cf5f",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "B",
+                          "name":  "front-complaint-standard-rule-task-closure",
+                          "workRecordId":  "22e6d6db-9ecd-4e9a-a928-5fad1da60686",
+                          "taskId":  "8b1ba900-cad7-48a4-8a75-c16a63831864",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "C",
+                          "name":  "missing-submission-missed-reminder-task-overdue-escalation",
+                          "expectationId":  "2a500000-0000-0000-0000-000000000005",
+                          "taskId":  "b77e3c9d-359b-41f6-9427-1838264551b3",
+                          "finalStatus":  "PENDING_ACK",
+                          "slaStatus":  "OVERDUE"
+                      }
+                  ],
+    "requestCount":  83,
+    "failedRequestCount":  2,
+    "expectedDeniedRequestCount":  6,
+    "evidenceRoot":  "C:\\Users\\MSN\\Documents\\四方馆AI中台项目\\docs\\uat\\evidence\\20260717-2302-s21-final\\api"
+}

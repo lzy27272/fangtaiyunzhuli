@@ -1,0 +1,108 @@
+﻿{
+    "schemaVersion":  1,
+    "releaseVersion":  "TECH-V0.2-rc.3-local",
+    "createdAt":  "2026-07-18T05:32:59.8873023Z",
+    "reproducibleBuild":  {
+                              "buildTimestamp":  "2026-07-18T05:00:00.0000000+00:00",
+                              "sourceDateEpoch":  "1784350800",
+                              "payloadFingerprintSha256":  "546fc5175d97af2e0bbe3736468b1366d8890e89a6c6a6d761db4d40eba089ee"
+                          },
+    "source":  {
+                   "commit":  null,
+                   "dirty":  null
+               },
+    "versions":  {
+                     "database":  "DB-V13",
+                     "apiBase":  "/api/v1",
+                     "openApi":  "0.2.1-sprint2.1",
+                     "backend":  "0.1.0-SNAPSHOT",
+                     "frontend":  "0.2.0"
+                 },
+    "tools":  {
+                  "java":  "openjdk version \"21.0.11\" 2026-04-21 LTS",
+                  "maven":  "Apache Maven 3.9.9 (8e8579a9e76f7d015ee5ec7bfcdc97d260186937)",
+                  "node":  "v24.14.0",
+                  "pnpm":  "11.9.0"
+              },
+    "migrations":  [
+                       {
+                           "file":  "V1__sprint1_foundation.sql",
+                           "sha256":  "f884e45979f620cd08980fbc086b030c83dfcf20c301c632c4f8d83f22430e58"
+                       },
+                       {
+                           "file":  "V2__tenant_row_level_security.sql",
+                           "sha256":  "137d7f22af96f2c977d4fa58e00e90dce7ee060ffb437909a80210ea3fe2d0fc"
+                       },
+                       {
+                           "file":  "V3__sprint1_demo_seed.sql",
+                           "sha256":  "1b531f7126d3201a9fadae7fabdc90817f7a7849224cc97f506d9015b00b3bab"
+                       },
+                       {
+                           "file":  "V4__grant_runtime_privileges.sql",
+                           "sha256":  "5e90b4f245486dc366c0f3a373d678e49dfe4aa2e1d7007224340e01c01a8cfd"
+                       },
+                       {
+                           "file":  "V5__sprint2_work_packages_and_records.sql",
+                           "sha256":  "f3bd81d355c04cec09db2b43f65c9dca12ef1885d762f5f22c358f793f4e7f9e"
+                       },
+                       {
+                           "file":  "V6__sprint2_reliable_events.sql",
+                           "sha256":  "3c60c68af1cdc3c5e452f41b07e3c6235f4c546b9015ddc6f8e40e257bd7dba1"
+                       },
+                       {
+                           "file":  "V7__enterprise_rule_center.sql",
+                           "sha256":  "b42eef542d989e120fe93223802530789acf9b0b8ca1ae17bd55bd8c5ea165a3"
+                       },
+                       {
+                           "file":  "V8__management_task_center.sql",
+                           "sha256":  "0b5e9dbfafa2618f1fe143f07b05181e40ad3e90dbb3330a700131d2bd18f796"
+                       },
+                       {
+                           "file":  "V9__standard_evaluation_and_notification.sql",
+                           "sha256":  "ebcc6f46beb212d107c5f6058996e14edf4e1822ece2122848ab02717fbdefe3"
+                       },
+                       {
+                           "file":  "V10__sprint2_permissions_and_six_role_seed.sql",
+                           "sha256":  "c8b16ff32085a6c45eba2d92971583be92f35b7b2f3a3ecbf75b86220b4f0fba"
+                       },
+                       {
+                           "file":  "V11__published_standard_and_form_immutability.sql",
+                           "sha256":  "a42aaa3e7d6f2f7d8a05c293fa63ece214e0a63d47664d9204f8ada77a0d5e9c"
+                       },
+                       {
+                           "file":  "V12__rule_event_reliability_and_immutability.sql",
+                           "sha256":  "6fdd900ca74b212640fe5c31aa836ed72e9fa7fe658d54a9e0cf84dcf84aa6e0"
+                       },
+                       {
+                           "file":  "V13__sprint2_1_regional_dashboard_permission.sql",
+                           "sha256":  "06eaa6329292e9ff6be20361f72982bd52be03e29f433ee8f8203dd1447063e5"
+                       }
+                   ],
+    "artifacts":  [
+                      {
+                          "file":  "hotel-ai-os-api-TECH-V0.2-rc.3-local.md",
+                          "sizeBytes":  6004,
+                          "sha256":  "0196e2c8b9731effd6fb34f0efe3686d0bc0d4eabdcc0103d4486d383c160a4e"
+                      },
+                      {
+                          "file":  "hotel-ai-os-core-api-TECH-V0.2-rc.3-local.jar",
+                          "sizeBytes":  33584540,
+                          "sha256":  "7cc2d6ecf194c1b78f258c0e84d58eb5661801e10645f75e2635539740df4fec"
+                      },
+                      {
+                          "file":  "hotel-ai-os-db-v13-TECH-V0.2-rc.3-local.zip",
+                          "sizeBytes":  24397,
+                          "sha256":  "d300af375a37d9c68bb60b1f4ea6cbae4a3eec58d64ca8d56a6e64c35f39b9de"
+                      },
+                      {
+                          "file":  "hotel-ai-os-openapi-TECH-V0.2-rc.3-local.yaml",
+                          "sizeBytes":  70263,
+                          "sha256":  "cdfb24bcdd9ad498f7e2938d108bbc70d1f34a921270df9f6cb54ebc7c4791e6"
+                      },
+                      {
+                          "file":  "hotel-ai-os-web-TECH-V0.2-rc.3-local.zip",
+                          "sizeBytes":  89160,
+                          "sha256":  "934a6e8b0da47363b8429b5a6f6f48c9dd0684de7fcea979edb6253a3228fc18"
+                      }
+                  ]
+}

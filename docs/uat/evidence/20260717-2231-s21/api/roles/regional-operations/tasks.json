@@ -1,0 +1,50 @@
+﻿[
+    {
+        "id":  "dabb2129-c9b0-4169-9c2c-f4c9053b325c",
+        "task_no":  "T-20260717-DABB2129",
+        "title":  "åºåå¤é¨åºOTAè¯åé£é©æ´æ¹ï¼UATï¼",
+        "description":  "è¯·å®æé¡µé¢ãç¹è¯åè¯åæ´æ¹ï¼å¹¶æäº¤è¯æ®ã",
+        "lifecycle_status":  "PENDING_ACK",
+        "sla_status":  "ON_TIME",
+        "priority":  "HIGH",
+        "org_unit_id":  "12000000-0000-0000-0000-000000000003",
+        "org_unit_name":  "æ­å·ä¸­å¿åº",
+        "standard_version_id":  "27000000-0000-0000-0000-000000000001",
+        "result_snapshot":  {
+                                "type":  "jsonb",
+                                "value":  "{}",
+                                "null":  false
+                            },
+        "due_at":  "2026-07-17T14:29:50.956+00:00",
+        "row_version":  1,
+        "created_at":  "2026-07-17T14:29:50.951+00:00",
+        "assignee_assignment_id":  "19200000-0000-0000-0000-000000000007",
+        "assignee_name":  "è®¸æ¨",
+        "reviewer_assignment_id":  "19200000-0000-0000-0000-000000000001",
+        "reviewer_name":  "èµµæ¨"
+    },
+    {
+        "id":  "dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+        "task_no":  "T-20260717-DD51551F",
+        "title":  "å®¢æ¿å«çå¾çæ´æ¹ï¼UATï¼",
+        "description":  "æ ¹æ®å¤±è´¥çå«çæ åè¯ä»·å®ææ´æ¹å¹¶ç±åºæ»éªæ¶ã",
+        "lifecycle_status":  "PENDING_ACK",
+        "sla_status":  "ON_TIME",
+        "priority":  "HIGH",
+        "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+        "org_unit_name":  "å®¢æ¿é¨",
+        "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+        "result_snapshot":  {
+                                "type":  "jsonb",
+                                "value":  "{}",
+                                "null":  false
+                            },
+        "due_at":  "2026-07-17T16:29:50.883+00:00",
+        "row_version":  1,
+        "created_at":  "2026-07-17T14:29:50.869+00:00",
+        "assignee_assignment_id":  "19200000-0000-0000-0000-000000000003",
+        "assignee_name":  "å¨æ",
+        "reviewer_assignment_id":  "19200000-0000-0000-0000-000000000001",
+        "reviewer_name":  "èµµæ¨"
+    }
+]

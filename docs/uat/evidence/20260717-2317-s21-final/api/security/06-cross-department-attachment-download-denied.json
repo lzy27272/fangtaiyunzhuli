@@ -1,0 +1,11 @@
+{
+    "status":  403,
+    "correlationId":  "f4cf29a8-56c7-4c9b-8f7a-0d88ddf671ff",
+    "body":  {
+                 "type":  "about:blank",
+                 "title":  "访问被拒绝",
+                 "status":  403,
+                 "detail":  "目标组织不在当前账号的有效数据范围内",
+                 "instance":  "/api/v1/work-data/attachments/c430a0bd-5144-4cea-be63-897aecf8395d/content"
+             }
+}

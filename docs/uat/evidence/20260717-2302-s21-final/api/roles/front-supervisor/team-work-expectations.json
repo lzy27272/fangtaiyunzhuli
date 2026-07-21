@@ -1,0 +1,35 @@
+{
+    "status":  200,
+    "correlationId":  "0b454930-bbc4-4e29-937a-daee9dc01326",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2a500000-0000-0000-0000-000000000001",
+                                   "business_date":  "2026-07-17",
+                                   "period_key":  "UAT-FRONT-2026-07-17",
+                                   "available_at":  "2026-07-17T14:01:56.796+00:00",
+                                   "due_at":  "2026-07-17T23:01:56.796+00:00",
+                                   "status":  "AVAILABLE",
+                                   "row_version":  0,
+                                   "waiver_allowed":  false,
+                                   "position_assignment_id":  "19200000-0000-0000-0000-000000000002",
+                                   "employee_id":  "19100000-0000-0000-0000-000000000002",
+                                   "employee_name":  "林悦",
+                                   "position_name":  "前台员工",
+                                   "target_org_unit_id":  "12000000-0000-0000-0000-000000000005",
+                                   "target_org_unit_name":  "前厅部",
+                                   "work_package_item_id":  "2a200000-0000-0000-0000-000000000001",
+                                   "item_code":  "FRONT_COMPLAINT",
+                                   "item_name":  "班次客诉记录",
+                                   "item_type":  "SCHEDULED_RECORD",
+                                   "form_version_id":  "29700000-0000-0000-0000-000000000002",
+                                   "work_package_id":  "2a000000-0000-0000-0000-000000000001",
+                                   "work_package_code":  "WP-UAT-FRONT-SHIFT",
+                                   "work_package_name":  "前台班次客诉工作包（UAT）",
+                                   "work_package_version_id":  "2a100000-0000-0000-0000-000000000001",
+                                   "version_no":  1
+                               }
+                           ],
+                 "Count":  1
+             }
+}

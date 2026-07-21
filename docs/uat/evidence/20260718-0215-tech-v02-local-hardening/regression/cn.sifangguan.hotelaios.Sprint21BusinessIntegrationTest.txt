@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: cn.sifangguan.hotelaios.Sprint21BusinessIntegrationTest
+-------------------------------------------------------------------------------
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.764 s -- in cn.sifangguan.hotelaios.Sprint21BusinessIntegrationTest

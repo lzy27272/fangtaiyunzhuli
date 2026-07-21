@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "TECH-V0.2",
+  "localWorkerEvidence": {
+    "summaryPath": "docs/uat/evidence/20260718-0154-tech-v02-rc2/api/summary.json",
+    "runtimeStatePath": "docs/uat/evidence/20260718-0154-tech-v02-rc2/runtime/uat-processes.json",
+    "workerRegressionXmlPath": "docs/uat/evidence/20260718-0154-tech-v02-rc2/regression/TEST-cn.sifangguan.hotelaios.shared.events.ManagementAutomationWorkerIntegrationTest.xml"
+  },
+  "targetSsoAcceptancePath": "docs/releases/external-evidence-examples/TECH-V0.2-TARGET-SSO.example.json",
+  "releaseSignoffStatus": "PENDING",
+  "releaseSignoffPaths": [
+    "docs/releases/external-evidence-examples/signoffs/01-front-desk.example.json",
+    "docs/releases/external-evidence-examples/signoffs/02-front-office-supervisor.example.json",
+    "docs/releases/external-evidence-examples/signoffs/03-housekeeping-supervisor.example.json",
+    "docs/releases/external-evidence-examples/signoffs/04-assistant-general-manager.example.json",
+    "docs/releases/external-evidence-examples/signoffs/05-general-manager.example.json",
+    "docs/releases/external-evidence-examples/signoffs/06-regional-operations.example.json",
+    "docs/releases/external-evidence-examples/signoffs/07-product-owner.example.json",
+    "docs/releases/external-evidence-examples/signoffs/08-qa-owner.example.json",
+    "docs/releases/external-evidence-examples/signoffs/09-cto.example.json",
+    "docs/releases/external-evidence-examples/signoffs/10-release-owner.example.json"
+  ],
+  "fieldPhotoAndTargetAttachmentAcceptancePath": "docs/releases/external-evidence-examples/TECH-V0.2-FIELD-PHOTO-AND-TARGET-ATTACHMENT.example.json",
+  "targetOperationsAcceptancePath": "docs/releases/external-evidence-examples/TECH-V0.2-TARGET-OPERATIONS.example.json",
+  "sourceTraceability": {
+    "rcTag": "TECH-V0.2-rc.3",
+    "remoteName": "",
+    "remoteUrl": "",
+    "remoteBranch": "",
+    "commitAuthorName": "",
+    "commitAuthorEmail": "",
+    "commitCommitterName": "",
+    "commitCommitterEmail": "",
+    "repositoryApproval": {
+      "roleCode": "REPOSITORY_OWNER",
+      "signatureId": "",
+      "signerId": "",
+      "signerName": "",
+      "signerTitle": "",
+      "status": "PENDING",
+      "decision": "PENDING",
+      "signedAt": "",
+      "signedByHuman": false,
+      "delegated": false,
+      "openReservations": 0,
+      "approvedRemoteUrl": "",
+      "approvedRemoteBranch": "",
+      "approvedHeadCommit": "",
+      "approvedRcTag": "",
+      "approvedArtifactManifestSha256": "",
+      "remotePublishedAt": "",
+      "supportingEvidencePath": "",
+      "signatureAssurance": {
+        "method": "PENDING",
+        "provider": "",
+        "verificationId": "",
+        "verificationStatus": "PENDING",
+        "verifiedAt": "",
+        "certificateSha256": "",
+        "verificationEvidencePath": ""
+      }
+    },
+    "artifactManifestPath": ".uat-runtime/release-artifacts/reproducibility-rc3-formal/build-1/manifest.json",
+    "sha256SumsPath": ".uat-runtime/release-artifacts/reproducibility-rc3-formal/build-1/SHA256SUMS.txt"
+  }
+}

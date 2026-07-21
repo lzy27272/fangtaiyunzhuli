@@ -1,0 +1,41 @@
+{
+    "status":  200,
+    "correlationId":  "3fa3faf1-61cd-4b4b-afff-64fabef6451c",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "c7db0d32-b1ca-442d-bebe-65cb3d3f95f6",
+                                   "notification_type":  "TASK_OVERDUE",
+                                   "title":  "任务已逾期",
+                                   "content":  "区域多门店OTA评分风险整改（UAT）",
+                                   "source_type":  "TASK",
+                                   "source_id":  "773546ac-f81f-46a3-af48-7d9f2f113eaa",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000001",
+                                   "delivered_at":  "2026-07-17T17:48:39.220+00:00",
+                                   "row_version":  0
+                               },
+                               {
+                                   "id":  "263469bc-8961-4d39-a5d4-85bf3e04254d",
+                                   "notification_type":  "TASK_ESCALATED",
+                                   "title":  "任务逾期升级",
+                                   "content":  "区域多门店OTA评分风险整改（UAT）",
+                                   "source_type":  "TASK",
+                                   "source_id":  "773546ac-f81f-46a3-af48-7d9f2f113eaa",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000001",
+                                   "delivered_at":  "2026-07-17T17:48:39.220+00:00",
+                                   "row_version":  0
+                               },
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000006",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "店总UAT待办",
+                                   "content":  "请完成最终验收检查。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000001",
+                                   "delivered_at":  "2026-07-17T17:48:38.774+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  3
+             }
+}

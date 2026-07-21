@@ -1,0 +1,83 @@
+{
+    "id":  "8b1ba900-cad7-48a4-8a75-c16a63831864",
+    "task_no":  "T-20260717-8B1BA900",
+    "source_event_id":  "edbe1a35-ab83-4051-9917-7c7a096ee85d",
+    "source_action_id":  "ea55f2ad-b4db-43f8-aa4c-da631207de5c",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000002",
+    "work_record_id":  "22e6d6db-9ecd-4e9a-a928-5fad1da60686",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000005",
+    "org_unit_name":  "前厅部",
+    "title":  "前台客诉跟进整改（UAT）",
+    "description":  "完成客人回访、处理说明和闭环证据。",
+    "lifecycle_status":  "COMPLETED",
+    "sla_status":  "ON_TIME",
+    "priority":  "HIGH",
+    "due_at":  "2026-07-17T17:02:05.923+00:00",
+    "completed_at":  "2026-07-17T15:02:06.099+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"score\": 60, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000005\", \"subjectId\": \"22e6d6db-9ecd-4e9a-a928-5fad1da60686\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"35717e3c-ba27-42ab-baaf-ee1d8d650041\", \"workRecordId\": \"22e6d6db-9ecd-4e9a-a928-5fad1da60686\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000002\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000002\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000002\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000004\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"guestContacted\": true, \"complaintRecorded\": true, \"resolutionSummary\": \"Guest callback and complaint closure completed\"}",
+                            "null":  false
+                        },
+    "row_version":  5,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T15:02:05.920+00:00",
+    "updated_at":  "2026-07-17T15:02:06.099+00:00",
+    "participants":  [
+                         {
+                             "id":  "f0e2c901-b0fd-461b-a565-8615e9dd4890",
+                             "participant_type":  "ASSIGNEE",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000002",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000002\", \"name\": \"林悦\", \"employeeNo\": \"E-FD-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000001\", \"code\": \"FRONT_DESK\", \"name\": \"前台员工\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000005\", \"code\": \"HZ-FRONT\", \"name\": \"前厅部\", \"unitType\": \"DEPARTMENT\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T15:02:05.920+00:00"
+                         },
+                         {
+                             "id":  "c0679d86-db9f-4e67-8db3-b83bde742242",
+                             "participant_type":  "REVIEWER",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000004",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000004\", \"name\": \"陈航\", \"employeeNo\": \"E-FO-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000003\", \"code\": \"FRONT_OFFICE_SUPERVISOR\", \"name\": \"前厅主管\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000005\", \"code\": \"HZ-FRONT\", \"name\": \"前厅部\", \"unitType\": \"DEPARTMENT\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T15:02:05.920+00:00"
+                         }
+                     ],
+    "evidence":  [
+
+                 ]
+}

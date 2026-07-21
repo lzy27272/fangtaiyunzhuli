@@ -1,0 +1,32 @@
+{
+    "status":  200,
+    "correlationId":  "b5d6aed2-8b11-4c9f-b855-173528c2974c",
+    "body":  {
+                 "hotels":  [
+                                {
+                                    "id":  "12000000-0000-0000-0000-000000000003",
+                                    "name":  "杭州中心店",
+                                    "city":  "杭州",
+                                    "room_count":  128,
+                                    "open_task_count":  0,
+                                    "overdue_task_count":  0,
+                                    "failed_evaluation_count":  0,
+                                    "missed_work_count":  0,
+                                    "today_submission_count":  4
+                                },
+                                {
+                                    "id":  "12000000-0000-0000-0000-000000000004",
+                                    "name":  "上海滨江店",
+                                    "city":  "上海",
+                                    "room_count":  156,
+                                    "open_task_count":  0,
+                                    "overdue_task_count":  0,
+                                    "failed_evaluation_count":  0,
+                                    "missed_work_count":  0,
+                                    "today_submission_count":  0
+                                }
+                            ],
+                 "riskCount":  0,
+                 "hotelCount":  2
+             }
+}

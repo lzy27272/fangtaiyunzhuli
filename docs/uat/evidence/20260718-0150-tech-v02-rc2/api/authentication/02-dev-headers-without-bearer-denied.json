@@ -1,0 +1,13 @@
+{
+    "case":  "dev-headers-disabled",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "1aa6087c-40fc-4a45-8779-e7c6725fcc32",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "需要有效的Bearer JWT"
+                 }
+}

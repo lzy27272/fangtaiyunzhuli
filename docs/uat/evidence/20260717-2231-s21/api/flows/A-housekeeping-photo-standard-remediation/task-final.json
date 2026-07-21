@@ -1,0 +1,98 @@
+﻿{
+    "id":  "dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+    "task_no":  "T-20260717-DD51551F",
+    "source_event_id":  "af5bbd31-fcd9-4e18-9f1d-fbd473383dfd",
+    "source_action_id":  "2d1e8c09-bb65-4042-8b3d-22fdbcafccf1",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+    "work_record_id":  "2e000000-0000-0000-0000-000000000001",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "org_unit_name":  "å®¢æ¿é¨",
+    "title":  "å®¢æ¿å«çå¾çæ´æ¹ï¼UATï¼",
+    "description":  "æ ¹æ®å¤±è´¥çå«çæ åè¯ä»·å®ææ´æ¹å¹¶ç±åºæ»éªæ¶ã",
+    "lifecycle_status":  "COMPLETED",
+    "sla_status":  "ON_TIME",
+    "priority":  "HIGH",
+    "due_at":  "2026-07-17T16:29:50.883+00:00",
+    "completed_at":  "2026-07-17T14:32:54.882+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"score\": 70, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"subjectId\": \"2e000000-0000-0000-0000-000000000001\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"e303dbfd-ca83-47c2-8d21-aaf7f5a04171\", \"workRecordId\": \"2e000000-0000-0000-0000-000000000001\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000003\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000001\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"summary\": \"Hygiene remediation and evidence retake completed\", \"issueClosed\": true, \"roomsChecked\": 32, \"photoAttached\": true}",
+                            "null":  false
+                        },
+    "row_version":  5,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T14:29:50.869+00:00",
+    "updated_at":  "2026-07-17T14:32:54.882+00:00",
+    "participants":  [
+                         {
+                             "id":  "0a8ddf91-9944-4373-9365-eec4dfd58388",
+                             "participant_type":  "ASSIGNEE",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000003\", \"name\": \"å¨æ\", \"employeeNo\": \"E-HK-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000002\", \"code\": \"HOUSEKEEPING_SUPERVISOR\", \"name\": \"å®¢æ¿ä¸»ç®¡\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000006\", \"code\": \"HZ-HOUSEKEEPING\", \"name\": \"å®¢æ¿é¨\", \"unitType\": \"DEPARTMENT\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T14:29:50.869+00:00"
+                         },
+                         {
+                             "id":  "a3326ef2-a7b9-4513-9a5d-6e9b9995b73e",
+                             "participant_type":  "REVIEWER",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000001",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000001\", \"name\": \"èµµæ¨\", \"employeeNo\": \"E-GM-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000004\", \"code\": \"GENERAL_MANAGER\", \"name\": \"åºæ»\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000003\", \"code\": \"HZ-CENTER\", \"name\": \"æ­å·ä¸­å¿åº\", \"unitType\": \"HOTEL\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T14:29:50.869+00:00"
+                         }
+                     ],
+    "evidence":  [
+                     {
+                         "id":  "68beede0-f430-4848-8846-0de6ca51a158",
+                         "submitted_by_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                         "evidence_type":  "IMAGE",
+                         "object_key":  "10000000-0000-0000-0000-000000000001/work-records/2e000000-0000-0000-0000-000000000001/bc606488-c308-421b-bca8-c3136747ba20-uat-room-inspection.png",
+                         "original_name":  "uat-room-inspection.png",
+                         "media_type":  "image/png",
+                         "size_bytes":  68,
+                         "sha256":  "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+                         "structured_result":  {
+                                                   "type":  "jsonb",
+                                                   "value":  "{\"scenario\": \"A\", \"issueClosed\": true}",
+                                                   "null":  false
+                                               },
+                         "created_at":  "2026-07-17T14:32:54.769+00:00"
+                     }
+                 ]
+}

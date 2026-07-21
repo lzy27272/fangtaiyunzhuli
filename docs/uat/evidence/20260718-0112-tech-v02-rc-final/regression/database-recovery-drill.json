@@ -1,0 +1,29 @@
+{
+  "schemaVersion" : 1,
+  "status" : "PASS",
+  "runId" : "tech-v0.2-rc-final-20260718",
+  "startedAt" : "2026-07-17T16:53:14.184143400Z",
+  "completedAt" : "2026-07-17T16:53:25.060379300Z",
+  "drillType" : "cold-physical-backup-restore-point-in-time-rollback",
+  "scope" : "local-embedded-postgresql-release-rehearsal",
+  "migrationsExecutedOnFreshCluster" : 13,
+  "backup" : {
+    "contentManifestSha256" : "3899505ebcc5b8573b31d3c3ce9903a87575e99d9a938126d6d86079c5362755",
+    "totalBytes" : 47904787,
+    "fileCount" : 1253
+  },
+  "restoreCopyMatchedBackupBeforeStartup" : true,
+  "verification" : {
+    "postgresVersion" : "PostgreSQL 14.22, compiled by Visual C++ build 1944, 64-bit",
+    "dataChecksums" : "off",
+    "flywayVersion" : "13",
+    "successfulMigrations" : 13,
+    "forcedRlsTables" : 49,
+    "runtimeRoleSuperuser" : false,
+    "runtimeRoleBypassRls" : false,
+    "restoredPayload" : "TECH-V0.2-before-backup",
+    "postBackupRows" : 0,
+    "seedTenantRows" : 1
+  },
+  "limitations" : [ "This is a local embedded PostgreSQL physical cold-backup rehearsal, not a signed target-environment operation.", "Production/UAT persistent target infrastructure must separately prove scheduled backup, retention, encryption, monitoring and operator-approved rollback." ]
+}

@@ -1,0 +1,22 @@
+name: sifangguan-pilot
+
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/pilot/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - pilot-caddy-data:/data
+      - pilot-caddy-config:/config
+
+volumes:
+  pilot-caddy-data:
+  pilot-caddy-config:

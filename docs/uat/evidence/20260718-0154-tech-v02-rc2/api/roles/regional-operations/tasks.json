@@ -1,0 +1,57 @@
+{
+    "status":  200,
+    "correlationId":  "6e849d9b-4d49-43f6-a40b-abf9f5011bfc",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "773546ac-f81f-46a3-af48-7d9f2f113eaa",
+                                   "task_no":  "T-20260717-773546AC",
+                                   "title":  "区域多门店OTA评分风险整改（UAT）",
+                                   "description":  "请完成页面、点评和评分整改，并提交证据。",
+                                   "lifecycle_status":  "PENDING_ACK",
+                                   "sla_status":  "OVERDUE",
+                                   "priority":  "HIGH",
+                                   "org_unit_id":  "12000000-0000-0000-0000-000000000003",
+                                   "org_unit_name":  "杭州中心店",
+                                   "standard_version_id":  "27000000-0000-0000-0000-000000000001",
+                                   "result_snapshot":  {
+                                                           "type":  "jsonb",
+                                                           "value":  "{}",
+                                                           "null":  false
+                                                       },
+                                   "due_at":  "2026-07-17T17:48:39.176+00:00",
+                                   "row_version":  2,
+                                   "created_at":  "2026-07-17T17:48:39.167+00:00",
+                                   "assignee_assignment_id":  "19200000-0000-0000-0000-000000000007",
+                                   "assignee_name":  "许晨",
+                                   "reviewer_assignment_id":  "19200000-0000-0000-0000-000000000001",
+                                   "reviewer_name":  "赵晨"
+                               },
+                               {
+                                   "id":  "ae93939f-2be8-421d-b372-ef7c5c1ed37e",
+                                   "task_no":  "T-20260717-AE93939F",
+                                   "title":  "岗位漏交整改（UAT）",
+                                   "description":  "补齐漏交记录并提交整改证据。",
+                                   "lifecycle_status":  "PENDING_ACK",
+                                   "sla_status":  "OVERDUE",
+                                   "priority":  "URGENT",
+                                   "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+                                   "org_unit_name":  "客房部",
+                                   "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+                                   "result_snapshot":  {
+                                                           "type":  "jsonb",
+                                                           "value":  "{}",
+                                                           "null":  false
+                                                       },
+                                   "due_at":  "2026-07-17T17:48:39.089+00:00",
+                                   "row_version":  2,
+                                   "created_at":  "2026-07-17T17:48:39.066+00:00",
+                                   "assignee_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "assignee_name":  "周敏",
+                                   "reviewer_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                                   "reviewer_name":  "沈乔"
+                               }
+                           ],
+                 "Count":  2
+             }
+}

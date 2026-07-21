@@ -1,0 +1,33 @@
+{
+    "status":  200,
+    "correlationId":  "adc8bf12-4e3e-457d-89f2-78e7429ffcd7",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "cdb3cca9-c502-4f95-94cd-4af56b25c04f",
+                                   "task_no":  "T-20260717-CDB3CCA9",
+                                   "title":  "岗位漏交整改（UAT）",
+                                   "description":  "补齐漏交记录并提交整改证据。",
+                                   "lifecycle_status":  "PENDING_ACK",
+                                   "sla_status":  "OVERDUE",
+                                   "priority":  "URGENT",
+                                   "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+                                   "org_unit_name":  "客房部",
+                                   "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+                                   "result_snapshot":  {
+                                                           "type":  "jsonb",
+                                                           "value":  "{}",
+                                                           "null":  false
+                                                       },
+                                   "due_at":  "2026-07-17T16:57:13.361+00:00",
+                                   "row_version":  2,
+                                   "created_at":  "2026-07-17T16:57:13.336+00:00",
+                                   "assignee_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "assignee_name":  "周敏",
+                                   "reviewer_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                                   "reviewer_name":  "沈乔"
+                               }
+                           ],
+                 "Count":  1
+             }
+}

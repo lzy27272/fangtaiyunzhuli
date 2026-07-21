@@ -1,0 +1,92 @@
+﻿{
+    "id":  "a733e195-db1f-43e1-9f43-97ffcac477d1",
+    "idempotency_key":  "flows\\B-front-complaint-rule-task-closure-task-evaluation",
+    "subject_type":  "TASK",
+    "subject_id":  "17135a49-927e-405b-97b1-a6c24a88841b",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000005",
+    "position_assignment_id":  "19200000-0000-0000-0000-000000000002",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000002",
+    "standard_content_hash":  "c1e1f4e39a4e7288c3f501e62bf115ec8c9d32d81e1672002eaf0ffbbf02c62f",
+    "input_hash":  "d99f612334fa44678c64438683566201f8dfa737f91441aabc5d197173030eb3",
+    "input_snapshot":  {
+                           "type":  "jsonb",
+                           "value":  "{\"guestContacted\": true, \"complaintRecorded\": true, \"resolutionSummary\": \"Guest callback and complaint closure completed\"}",
+                           "null":  false
+                       },
+    "execution_status":  "COMPLETED",
+    "outcome":  "PASS",
+    "score":  100.00,
+    "full_score":  100.00,
+    "severity":  "NONE",
+    "evaluator_version":  "deterministic-v1",
+    "row_version":  0,
+    "completed_at":  "2026-07-17T14:37:53.496+00:00",
+    "created_by":  "19000000-0000-0000-0000-000000000005",
+    "created_at":  "2026-07-17T14:37:53.496+00:00",
+    "updated_at":  "2026-07-17T14:37:53.496+00:00",
+    "items":  [
+                  {
+                      "id":  "8e96f141-b0e6-47ab-b424-a234f7c9d978",
+                      "item_code":  "complaintRecorded",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "EQ",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "true",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  30.00,
+                      "full_score":  30.00,
+                      "reason":  "ç¬¦åæ å",
+                      "row_version":  0
+                  },
+                  {
+                      "id":  "86ffa2e5-05ad-4392-b2ff-cbd7f188834f",
+                      "item_code":  "guestContacted",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "EQ",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "true",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  40.00,
+                      "full_score":  40.00,
+                      "reason":  "ç¬¦åæ å",
+                      "row_version":  0
+                  },
+                  {
+                      "id":  "e8583d3b-4784-48b7-a8f3-77b7092dd02a",
+                      "item_code":  "resolutionSummary",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "PRESENT",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "\"Guest callback and complaint closure completed\"",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  30.00,
+                      "full_score":  30.00,
+                      "reason":  "ç¬¦åæ å",
+                      "row_version":  0
+                  }
+              ]
+}

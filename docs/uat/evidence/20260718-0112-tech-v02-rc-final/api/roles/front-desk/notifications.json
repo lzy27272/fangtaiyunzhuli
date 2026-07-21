@@ -1,0 +1,19 @@
+{
+    "status":  200,
+    "correlationId":  "ab33c893-6619-45d0-8969-38284fa1356e",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000003",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "前台UAT待办",
+                                   "content":  "请提交本班次客诉记录。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000002",
+                                   "delivered_at":  "2026-07-17T17:12:11.561+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  1
+             }
+}

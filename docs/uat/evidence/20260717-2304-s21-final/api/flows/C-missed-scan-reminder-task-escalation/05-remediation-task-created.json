@@ -1,0 +1,81 @@
+{
+    "id":  "56f74b72-9385-4a8f-97a6-01cacb7174ce",
+    "task_no":  "T-20260717-56F74B72",
+    "source_event_id":  "779e562c-809b-4ddb-8c94-bbd5d800e739",
+    "source_action_id":  "35708d06-cb79-4c57-88c2-e75bae30d632",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "org_unit_name":  "客房部",
+    "title":  "岗位漏交整改（UAT）",
+    "description":  "补齐漏交记录并提交整改证据。",
+    "lifecycle_status":  "PENDING_ACK",
+    "sla_status":  "ON_TIME",
+    "priority":  "URGENT",
+    "due_at":  "2026-07-17T15:05:08.784+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"dueAt\": \"2026-07-17T14:59:47.315450Z\", \"status\": \"MISSED\", \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"businessDate\": \"2026-07-16\", \"workExpectationId\": \"2a500000-0000-0000-0000-000000000005\", \"workPackageItemId\": \"2a200000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000003\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000008\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{}",
+                            "null":  false
+                        },
+    "row_version":  1,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T15:05:08.780+00:00",
+    "updated_at":  "2026-07-17T15:05:08.780+00:00",
+    "participants":  [
+                         {
+                             "id":  "74aae6b6-718a-4aec-9f8b-8154ea2b59c2",
+                             "participant_type":  "ASSIGNEE",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000003\", \"name\": \"周敏\", \"employeeNo\": \"E-HK-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000002\", \"code\": \"HOUSEKEEPING_SUPERVISOR\", \"name\": \"客房主管\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000006\", \"code\": \"HZ-HOUSEKEEPING\", \"name\": \"客房部\", \"unitType\": \"DEPARTMENT\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T15:05:08.780+00:00"
+                         },
+                         {
+                             "id":  "bb8cd4e2-5bf5-46a4-b04a-d53892cf886c",
+                             "participant_type":  "REVIEWER",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000007\", \"name\": \"沈乔\", \"employeeNo\": \"E-AGM-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000007\", \"code\": \"ASSISTANT_GENERAL_MANAGER\", \"name\": \"店助\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000003\", \"code\": \"HZ-CENTER\", \"name\": \"杭州中心店\", \"unitType\": \"HOTEL\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T15:05:08.780+00:00"
+                         }
+                     ],
+    "evidence":  [
+
+                 ]
+}

@@ -1,0 +1,41 @@
+{
+    "status":  200,
+    "correlationId":  "03f376b6-f912-4f22-a7bd-f8c1260a7dfa",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "3cba533c-292e-456f-b07b-f6cfa88229f8",
+                                   "notification_type":  "TASK_OVERDUE",
+                                   "title":  "任务已逾期",
+                                   "content":  "岗位漏交整改（UAT）",
+                                   "source_type":  "TASK",
+                                   "source_id":  "cdb3cca9-c502-4f95-94cd-4af56b25c04f",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                                   "delivered_at":  "2026-07-17T16:57:13.536+00:00",
+                                   "row_version":  0
+                               },
+                               {
+                                   "id":  "785b6282-3352-4f9c-b94d-c77f0f3e356e",
+                                   "notification_type":  "TASK_ESCALATED",
+                                   "title":  "任务逾期升级",
+                                   "content":  "岗位漏交整改（UAT）",
+                                   "source_type":  "TASK",
+                                   "source_id":  "cdb3cca9-c502-4f95-94cd-4af56b25c04f",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                                   "delivered_at":  "2026-07-17T16:57:13.536+00:00",
+                                   "row_version":  0
+                               },
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000005",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "店助UAT待办",
+                                   "content":  "请检查本店跨部门任务。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                                   "delivered_at":  "2026-07-17T16:57:13.049+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  3
+             }
+}

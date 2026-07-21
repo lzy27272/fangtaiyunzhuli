@@ -1,0 +1,57 @@
+[
+    {
+        "id":  "16311a23-5843-446d-9572-39e0d427aa87",
+        "to_status":  "PROPOSED",
+        "command":  "CREATE",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000009",
+        "task_version":  0,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"source\": \"RULE_ENGINE\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T15:05:08.780+00:00"
+    },
+    {
+        "id":  "e3ecb37b-89bf-451e-a3f7-c8a13d420167",
+        "from_status":  "PROPOSED",
+        "to_status":  "PENDING_ACK",
+        "command":  "DISPATCH",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000009",
+        "task_version":  1,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"source\": \"RULE_ENGINE\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T15:05:08.780+00:00"
+    },
+    {
+        "id":  "44fbd676-c7ae-44de-8060-576fad97f2e4",
+        "from_status":  "PENDING_ACK",
+        "to_status":  "PENDING_ACK",
+        "command":  "ESCALATE",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000001",
+        "task_version":  2,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"escalationId\": \"b24fa942-e92c-450e-8b2a-c87a83dcd101\", \"escalationLevel\": 1}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T15:05:08.881+00:00"
+    },
+    {
+        "id":  "f515069c-3b7f-4049-b876-7311fdf9b922",
+        "from_status":  "PENDING_ACK",
+        "to_status":  "PENDING_ACK",
+        "command":  "MARK_OVERDUE",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000001",
+        "task_version":  2,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"slaStatus\": \"OVERDUE\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T15:05:08.881+00:00"
+    }
+]

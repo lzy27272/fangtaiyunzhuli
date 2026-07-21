@@ -1,0 +1,17 @@
+[
+    {
+        "outboxEventId":  "2c000000-0000-0000-0000-000000000001",
+        "managementEventId":  "2c100000-0000-0000-0000-000000000001",
+        "status":  "PUBLISHED"
+    },
+    {
+        "outboxEventId":  "cd1ef77e-8c1d-48e1-a499-371a8fcfae1a",
+        "managementEventId":  "a2e59f56-4b88-496c-be07-80d1e450ebd1",
+        "status":  "PUBLISHED"
+    },
+    {
+        "outboxEventId":  "eb61682f-f587-4669-990b-a8ac6a15304e",
+        "managementEventId":  "fb91418c-29c2-4a63-89a1-13c848425c31",
+        "status":  "PUBLISHED"
+    }
+]

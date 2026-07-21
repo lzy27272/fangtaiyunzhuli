@@ -1,0 +1,56 @@
+[ {
+  "task_id" : "193b09c0-fe64-4cb1-9064-8d6b3e9f010c",
+  "title" : "前厅主管手工发起整改任务（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "8146e9f0-865c-46f1-a584-1c9a0b794f0d",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 03:05:07.743615+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000004",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-17 23:05:08.881922+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a",
+  "title" : "客房卫生图片整改（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "d0c22d8a-6421-4e59-a3e6-75a4eb50dfad",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 01:05:08.18998+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-17 23:05:08.881922+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "c0a80b78-4cc4-4e5e-b8d3-e325f38a67b1",
+  "title" : "区域多门店OTA评分风险整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "18253cf5-7ecc-470f-919b-e11074cd5b7b",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-17 23:05:08.239975+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-17 23:05:08.881922+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "2fafd428-c93a-4434-aaf5-2471f0848cab",
+  "title" : "前台客诉跟进整改（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "e4ab686e-37c1-4137-82ef-9a4f643119be",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 01:05:08.566255+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000004",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-17 23:05:08.881922+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "56f74b72-9385-4a8f-97a6-01cacb7174ce",
+  "title" : "岗位漏交整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "b24fa942-e92c-450e-8b2a-c87a83dcd101",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-17 23:05:08.784279+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000008",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-17 23:05:08.881922+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+} ]

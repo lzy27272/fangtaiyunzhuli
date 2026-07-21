@@ -1,0 +1,19 @@
+[ {
+  "work_record_id" : "2e000000-0000-0000-0000-000000000001",
+  "record_kind" : "INSPECTION",
+  "status" : "SUBMITTED",
+  "org_unit_id" : "12000000-0000-0000-0000-000000000006",
+  "position_assignment_id" : "19200000-0000-0000-0000-000000000003",
+  "work_expectation_id" : "2a500000-0000-0000-0000-000000000004",
+  "work_package_item_id" : "2a200000-0000-0000-0000-000000000003",
+  "business_date" : "2026-07-18",
+  "payload" : "{\"summary\": \"卫生问题待整改\", \"issueClosed\": false, \"roomsChecked\": 32, \"photoAttached\": true}",
+  "submitted_at" : "2026-07-18 00:57:13.049139+08",
+  "attachment_id" : null,
+  "original_name" : null,
+  "media_type" : null,
+  "size_bytes" : null,
+  "sha256" : null,
+  "scan_status" : null,
+  "object_key" : null
+} ]

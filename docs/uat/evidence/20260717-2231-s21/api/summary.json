@@ -1,0 +1,35 @@
+﻿{
+    "runId":  "20260717-2231-s21",
+    "executedAt":  "2026-07-17T22:32:55.5723369+08:00",
+    "apiOrigin":  "http://127.0.0.1:51324",
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "roleProbeCount":  34,
+    "scenarioCount":  3,
+    "scenarios":  [
+                      {
+                          "id":  "A",
+                          "name":  "housekeeping-photo-standard-remediation-execution-gm-acceptance",
+                          "workRecordId":  "2e000000-0000-0000-0000-000000000001",
+                          "taskId":  "dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "B",
+                          "name":  "front-complaint-standard-rule-task-closure",
+                          "workRecordId":  "021692f0-9405-444a-ada2-167269e7303f",
+                          "taskId":  "ffb84da7-68fc-426a-ab5a-21dcafee72b4",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "C",
+                          "name":  "missing-submission-missed-reminder-task-overdue-escalation",
+                          "expectationId":  "2a500000-0000-0000-0000-000000000005",
+                          "taskId":  "85adf162-1b0b-41a1-8045-8e4f5b2624b5",
+                          "finalStatus":  "PENDING_ACK",
+                          "slaStatus":  "OVERDUE"
+                      }
+                  ],
+    "requestCount":  75,
+    "failedRequestCount":  0,
+    "evidenceRoot":  "C:\\Users\\MSN\\Documents\\四方馆AI中台项目\\docs\\uat\\evidence\\20260717-2231-s21\\api"
+}

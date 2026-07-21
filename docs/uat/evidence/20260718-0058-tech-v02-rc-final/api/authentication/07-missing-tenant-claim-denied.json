@@ -1,0 +1,13 @@
+{
+    "case":  "missing-tenant-claim",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "c926eb87-8fe0-45af-ab5c-2d20ce2ce88c",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "JWT缺少租户或账号标识"
+                 }
+}

@@ -1,0 +1,11 @@
+{
+    "id":  "56a714bd-6149-48b6-bb77-ee3f3ae730bf",
+    "notification_type":  "MISSED_WORK_REMINDER",
+    "title":  "岗位工作已漏交",
+    "content":  "请立即补交并完成整改。",
+    "source_type":  "MANAGEMENT_EVENT",
+    "source_id":  "20af1a8b-0cfd-4b03-8fd3-8d50ad62ac5f",
+    "recipient_assignment_id":  "19200000-0000-0000-0000-000000000003",
+    "delivered_at":  "2026-07-17T17:12:11.804+00:00",
+    "row_version":  0
+}

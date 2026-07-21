@@ -1,0 +1,92 @@
+﻿{
+    "id":  "6857d042-1561-4c28-bf41-286540eb72be",
+    "idempotency_key":  "flows\\A-housekeeping-photo-standard-remediation-task-evaluation",
+    "subject_type":  "TASK",
+    "subject_id":  "f23440c0-cc86-4539-bebf-d5605657cd1a",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+    "standard_content_hash":  "d146d471dcb18ac477592604c19223e6bee8ae83576e9f314dd400f23b228bba",
+    "input_hash":  "6b0f3debac2280850b3244c9d9d094d5a7046d3b8a0ea6276c66db7ae6fe50e6",
+    "input_snapshot":  {
+                           "type":  "jsonb",
+                           "value":  "{\"issueClosed\": true, \"roomsChecked\": 32, \"photoAttached\": true}",
+                           "null":  false
+                       },
+    "execution_status":  "COMPLETED",
+    "outcome":  "PASS",
+    "score":  100.00,
+    "full_score":  100.00,
+    "severity":  "NONE",
+    "evaluator_version":  "deterministic-v1",
+    "row_version":  0,
+    "completed_at":  "2026-07-17T14:37:53.063+00:00",
+    "created_by":  "19000000-0000-0000-0000-000000000002",
+    "created_at":  "2026-07-17T14:37:53.063+00:00",
+    "updated_at":  "2026-07-17T14:37:53.063+00:00",
+    "items":  [
+                  {
+                      "id":  "aa41a034-2620-4b38-9f37-b5dfa3661958",
+                      "item_code":  "issueClosed",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "EQ",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "true",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  30.00,
+                      "full_score":  30.00,
+                      "reason":  "ç¬¦åæ å",
+                      "row_version":  0
+                  },
+                  {
+                      "id":  "72c51c2c-5399-4361-b4f3-f0b7f872a029",
+                      "item_code":  "photoAttached",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "EQ",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "true",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  40.00,
+                      "full_score":  40.00,
+                      "reason":  "ç¬¦åæ å",
+                      "row_version":  0
+                  },
+                  {
+                      "id":  "fa9818c3-3fd1-4e77-a7cf-ef2e4ad8e7f6",
+                      "item_code":  "roomsChecked",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "GTE",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "1",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "32",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  30.00,
+                      "full_score":  30.00,
+                      "reason":  "ç¬¦åæ å",
+                      "row_version":  0
+                  }
+              ]
+}

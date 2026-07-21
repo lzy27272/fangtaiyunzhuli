@@ -1,0 +1,19 @@
+{
+    "status":  200,
+    "correlationId":  "154a7779-3ea9-4c63-b07a-c1343d3b6edb",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000002",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "客房主管UAT待办",
+                                   "content":  "请完成客房巡检并上传现场图片。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                                   "delivered_at":  "2026-07-17T15:01:56.796+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  1
+             }
+}

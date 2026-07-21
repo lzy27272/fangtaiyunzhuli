@@ -1,0 +1,64 @@
+{
+    "status":  200,
+    "correlationId":  "31147b51-4f3d-4f9a-8be2-bcf0f1111e40",
+    "body":  {
+                 "tenantId":  "10000000-0000-0000-0000-000000000001",
+                 "account":  {
+                                 "id":  "19000000-0000-0000-0000-000000000002",
+                                 "loginName":  "gm.hz",
+                                 "displayName":  "杭州中心店店总",
+                                 "status":  "ACTIVE"
+                             },
+                 "employee":  {
+                                  "id":  "19100000-0000-0000-0000-000000000001",
+                                  "employeeNo":  "E-GM-001",
+                                  "name":  "赵晨",
+                                  "employmentStatus":  "ACTIVE"
+                              },
+                 "primaryRole":  "GENERAL_MANAGER",
+                 "roles":  [
+                               "GENERAL_MANAGER"
+                           ],
+                 "permissions":  [
+                                     "evaluation.manual-review",
+                                     "work-record.read",
+                                     "dashboard.hotel",
+                                     "task.dispatch",
+                                     "work-record.submit",
+                                     "metric.record",
+                                     "task.review",
+                                     "org.read",
+                                     "task.read",
+                                     "evaluation.read",
+                                     "work-package.allocate",
+                                     "rule.read",
+                                     "work-package.read",
+                                     "task.cancel",
+                                     "work-record.review",
+                                     "standard.read",
+                                     "task.create",
+                                     "notification.read",
+                                     "task.act"
+                                 ],
+                 "tenantScope":  false,
+                 "organizationScopes":  [
+                                            "12000000-0000-0000-0000-000000000006",
+                                            "12000000-0000-0000-0000-000000000005",
+                                            "12000000-0000-0000-0000-000000000003"
+                                        ],
+                 "positionAssignments":  [
+                                             {
+                                                 "id":  "19200000-0000-0000-0000-000000000001",
+                                                 "organizationId":  "12000000-0000-0000-0000-000000000003",
+                                                 "organizationCode":  "HZ-CENTER",
+                                                 "organizationName":  "杭州中心店",
+                                                 "positionId":  "14000000-0000-0000-0000-000000000004",
+                                                 "positionCode":  "GENERAL_MANAGER",
+                                                 "positionName":  "店总",
+                                                 "primary":  true,
+                                                 "assignmentType":  "PERMANENT",
+                                                 "validFrom":  "2022-03-01"
+                                             }
+                                         ]
+             }
+}

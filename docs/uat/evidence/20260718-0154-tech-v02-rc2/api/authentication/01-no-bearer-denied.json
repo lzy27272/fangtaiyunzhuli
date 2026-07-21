@@ -1,0 +1,13 @@
+{
+    "case":  "no-bearer",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "256524d3-f388-4037-8edb-d71c1d00f52d",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "需要有效的Bearer JWT"
+                 }
+}

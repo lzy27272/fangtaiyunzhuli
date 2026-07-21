@@ -1,0 +1,199 @@
+﻿{
+    "generatedAt":  "2026-07-19T15:48:34.9127634Z",
+    "version":  "TECH-V0.2-PILOT.5",
+    "databaseVersion":  15,
+    "exerciseWrites":  true,
+    "writeBusinessDate":  "2026-07-20",
+    "passed":  true,
+    "roleResults":  [
+                        {
+                            "login":  "front.demo",
+                            "expectedRole":  "FRONT_DESK",
+                            "actualRole":  "FRONT_DESK",
+                            "assignmentCount":  1,
+                            "permissionCount":  10,
+                            "visiblePackageCount":  3,
+                            "pilotWorkCount":  2,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  403,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200
+                                                 },
+                            "writeExercise":  "ALREADY_SUBMITTED",
+                            "attachmentExercise":  "NOT_APPLICABLE",
+                            "result":  "PASS"
+                        },
+                        {
+                            "login":  "fo.supervisor",
+                            "expectedRole":  "FRONT_OFFICE_SUPERVISOR",
+                            "actualRole":  "FRONT_OFFICE_SUPERVISOR",
+                            "assignmentCount":  2,
+                            "permissionCount":  19,
+                            "visiblePackageCount":  3,
+                            "pilotWorkCount":  2,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  200,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200
+                                                 },
+                            "writeExercise":  "ALREADY_SUBMITTED",
+                            "attachmentExercise":  "NOT_APPLICABLE",
+                            "result":  "PASS"
+                        },
+                        {
+                            "login":  "hk.supervisor",
+                            "expectedRole":  "HOUSEKEEPING_SUPERVISOR",
+                            "actualRole":  "HOUSEKEEPING_SUPERVISOR",
+                            "assignmentCount":  1,
+                            "permissionCount":  19,
+                            "visiblePackageCount":  2,
+                            "pilotWorkCount":  2,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  200,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200
+                                                 },
+                            "writeExercise":  "ALREADY_SUBMITTED",
+                            "attachmentExercise":  "PASS",
+                            "result":  "PASS"
+                        },
+                        {
+                            "login":  "assistant.gm",
+                            "expectedRole":  "ASSISTANT_GENERAL_MANAGER",
+                            "actualRole":  "ASSISTANT_GENERAL_MANAGER",
+                            "assignmentCount":  1,
+                            "permissionCount":  17,
+                            "visiblePackageCount":  8,
+                            "pilotWorkCount":  2,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  200,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200,
+                                                     "dashboard":  200
+                                                 },
+                            "writeExercise":  "ALREADY_SUBMITTED",
+                            "attachmentExercise":  "NOT_APPLICABLE",
+                            "result":  "PASS"
+                        },
+                        {
+                            "login":  "gm.hz",
+                            "expectedRole":  "GENERAL_MANAGER",
+                            "actualRole":  "GENERAL_MANAGER",
+                            "assignmentCount":  1,
+                            "permissionCount":  19,
+                            "visiblePackageCount":  8,
+                            "pilotWorkCount":  2,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  200,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200,
+                                                     "dashboard":  200
+                                                 },
+                            "writeExercise":  "ALREADY_SUBMITTED",
+                            "attachmentExercise":  "NOT_APPLICABLE",
+                            "result":  "PASS"
+                        },
+                        {
+                            "login":  "ota.assistant",
+                            "expectedRole":  "OTA_OPERATION_ASSISTANT",
+                            "actualRole":  "OTA_OPERATION_ASSISTANT",
+                            "assignmentCount":  1,
+                            "permissionCount":  10,
+                            "visiblePackageCount":  12,
+                            "pilotWorkCount":  2,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  403,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200
+                                                 },
+                            "writeExercise":  "ALREADY_SUBMITTED",
+                            "attachmentExercise":  "NOT_APPLICABLE",
+                            "result":  "PASS"
+                        },
+                        {
+                            "login":  "ota.manager",
+                            "expectedRole":  "OTA_OPERATION_MANAGER",
+                            "actualRole":  "OTA_OPERATION_MANAGER",
+                            "assignmentCount":  1,
+                            "permissionCount":  19,
+                            "visiblePackageCount":  12,
+                            "pilotWorkCount":  2,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  200,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200,
+                                                     "dashboard":  200
+                                                 },
+                            "writeExercise":  "ALREADY_SUBMITTED",
+                            "attachmentExercise":  "NOT_APPLICABLE",
+                            "result":  "PASS"
+                        },
+                        {
+                            "login":  "ceo.demo",
+                            "expectedRole":  "CEO",
+                            "actualRole":  "CEO",
+                            "assignmentCount":  0,
+                            "permissionCount":  30,
+                            "visiblePackageCount":  20,
+                            "pilotWorkCount":  0,
+                            "endpointStatuses":  {
+                                                     "organization":  200,
+                                                     "standards":  200,
+                                                     "workPackages":  200,
+                                                     "myWork":  200,
+                                                     "teamWork":  200,
+                                                     "tasks":  200,
+                                                     "evaluations":  200,
+                                                     "notifications":  200,
+                                                     "dashboard":  200
+                                                 },
+                            "writeExercise":  "NOT_REQUESTED",
+                            "attachmentExercise":  "NOT_APPLICABLE",
+                            "result":  "PASS"
+                        }
+                    ],
+    "userCreatedGeneralManager":  {
+                                      "assignmentId":  "d2203c5b-ba7f-4177-9628-ebb2546ff596",
+                                      "pilotWorkCount":  1,
+                                      "status":  [
+                                                     "AVAILABLE"
+                                                 ],
+                                      "result":  "PASS"
+                                  },
+    "credentialsPersistedInEvidence":  false
+}

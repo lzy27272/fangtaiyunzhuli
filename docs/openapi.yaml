@@ -1,0 +1,2095 @@
+openapi: 3.1.0
+info:
+  title: Hotel AI OS Core API
+  version: 0.2.3-pilot.6
+  description: >-
+    PRODUCT-V1.2 / TECH-V0.2 Sprint 2.1 UAT-candidate contract. Production requests use a
+    trusted JWT/SSO bearer token; roles, permissions, organization scope and
+    active position assignments are resolved by the server. X-Tenant-Id and
+    X-Actor-Id are accepted only when DEV_HEADER_AUTH_ENABLED=true for local
+    integration. Client-supplied role or organization-scope headers are never
+    trusted.
+servers:
+  - url: http://localhost:8080
+security:
+  - BearerAuth: []
+  - TenantHeader: []
+    ActorHeader: []
+tags:
+  - name: Organization
+  - name: IAM
+  - name: Standard Center
+  - name: Work Package
+  - name: Work Data
+  - name: Rule Engine
+  - name: Task Center
+  - name: Evaluation
+  - name: Notification
+  - name: Metrics
+  - name: Dashboard
+  - name: Enterprise Template
+paths:
+  /api/v1/org/units:
+    get:
+      tags: [Organization]
+      operationId: listOrganizationUnits
+      summary: List visible organization units
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [GROUP, REGION, HOTEL, DEPARTMENT] }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Organization]
+      operationId: createOrganizationUnit
+      summary: Create an organization unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrgUnit' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/org/positions:
+    get:
+      tags: [Organization]
+      operationId: listPositions
+      summary: List position definitions
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Organization]
+      operationId: createPosition
+      summary: Create a position definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePosition' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/org/units/{orgUnitId}:
+    put:
+      tags: [Organization]
+      operationId: updateOrganizationUnit
+      summary: Edit or activate/deactivate an organization unit without moving its hierarchy
+      parameters:
+        - { name: orgUnitId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOrgUnit' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Organization]
+      operationId: deleteUnusedOrganizationUnit
+      summary: Delete an inactive, childless and unreferenced organization unit
+      parameters:
+        - { name: orgUnitId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/org/positions/{positionId}:
+    put:
+      tags: [Organization]
+      operationId: updatePosition
+      summary: Edit or activate/deactivate a position definition
+      parameters:
+        - { name: positionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdatePosition' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Organization]
+      operationId: deleteUnusedPosition
+      summary: Delete an inactive and unreferenced position definition
+      parameters:
+        - { name: positionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/org/employees:
+    get:
+      tags: [Organization]
+      operationId: listEmployees
+      summary: List visible employees and active assignments
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Organization]
+      operationId: createEmployee
+      summary: Create an employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEmployee' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/org/employees/{employeeId}:
+    put:
+      tags: [Organization]
+      operationId: updateEmployee
+      summary: Edit employee/account details or activate/deactivate the employee
+      parameters:
+        - $ref: '#/components/parameters/EmployeeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateEmployee' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Organization]
+      operationId: deleteUnusedEmployee
+      summary: Delete an inactive employee without assignments, work or audit history
+      parameters:
+        - $ref: '#/components/parameters/EmployeeId'
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/org/employees/{employeeId}/assignments:
+    post:
+      tags: [Organization]
+      operationId: createPositionAssignment
+      summary: Assign a position to an employee; supports multiple positions
+      parameters:
+        - $ref: '#/components/parameters/EmployeeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePositionAssignment' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/iam/me:
+    get:
+      tags: [IAM]
+      operationId: getCurrentIdentity
+      summary: Resolve the current account, roles, permissions, scopes and assignments
+      responses:
+        '200':
+          description: Effective server-side identity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EffectiveIdentity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/iam/permissions:
+    get:
+      tags: [IAM]
+      operationId: listPermissions
+      summary: List permission definitions
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/iam/roles:
+    get:
+      tags: [IAM]
+      operationId: listRoles
+      summary: List tenant roles
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [IAM]
+      operationId: createRole
+      summary: Create a tenant role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRole' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/iam/roles/{roleId}/permissions:
+    put:
+      tags: [IAM]
+      operationId: replaceRolePermissions
+      summary: Replace a role permission set
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetRolePermissions' }
+      responses:
+        '204': { description: Permissions replaced }
+  /api/v1/iam/role-assignments:
+    post:
+      tags: [IAM]
+      operationId: grantRole
+      summary: Grant a time-bounded role within an organization scope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantRole' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/standards/categories:
+    get:
+      tags: [Standard Center]
+      operationId: listStandardCategories
+      summary: List standard categories
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/standards:
+    get:
+      tags: [Standard Center]
+      operationId: listStandards
+      summary: List standards and latest visible versions
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Standard Center]
+      operationId: createStandard
+      summary: Create a standard definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStandard' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/standards/{standardId}/versions:
+    post:
+      tags: [Standard Center]
+      operationId: createStandardVersion
+      summary: Create a draft standard version and applicability scopes
+      parameters:
+        - $ref: '#/components/parameters/StandardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStandardVersion' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/standards/{standardId}/versions/{versionId}/publish:
+    post:
+      tags: [Standard Center]
+      operationId: publishStandardVersion
+      summary: Publish an immutable standard version
+      parameters:
+        - $ref: '#/components/parameters/StandardId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishEffectiveWindow' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/work-packages:
+    get:
+      tags: [Work Package]
+      operationId: listWorkPackages
+      summary: List visible work package definitions
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Work Package]
+      operationId: createWorkPackage
+      summary: Create a work package definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkPackage' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-packages/{workPackageId}:
+    get:
+      tags: [Work Package]
+      operationId: getWorkPackage
+      summary: Get a work package with versions
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-packages/{workPackageId}/versions:
+    post:
+      tags: [Work Package]
+      operationId: createWorkPackageVersion
+      summary: Create a draft work package version
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkPackageVersion' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-packages/{workPackageId}/versions/{versionId}:
+    put:
+      tags: [Work Package]
+      operationId: updateWorkPackageVersion
+      summary: Replace draft version scopes and items
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateWorkPackageVersion' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-packages/{workPackageId}/versions/{versionId}/validate:
+    post:
+      tags: [Work Package]
+      operationId: validateWorkPackageVersion
+      summary: Validate a draft before publication
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-packages/{workPackageId}/versions/{versionId}/publish:
+    post:
+      tags: [Work Package]
+      operationId: publishWorkPackageVersion
+      summary: Publish a validated work package version
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishEffectiveWindow' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-packages/{workPackageId}/versions/{versionId}/retire:
+    post:
+      tags: [Work Package]
+      operationId: retireWorkPackageVersion
+      summary: Retire a published work package version
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetireWorkPackageVersion' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-packages/{workPackageId}/allocations:
+    get:
+      tags: [Work Package]
+      operationId: listWorkPackageAllocations
+      summary: List work package allocations
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Work Package]
+      operationId: createWorkPackageAllocation
+      summary: Allocate a published work package version to an assignment and target organization
+      parameters:
+        - $ref: '#/components/parameters/WorkPackageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkPackageAllocation' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-duty-periods:
+    get:
+      tags: [Work Package]
+      operationId: listWorkDutyPeriods
+      summary: List duty periods
+      parameters:
+        - { name: positionAssignmentId, in: query, schema: { type: string, format: uuid } }
+        - { name: targetOrgUnitId, in: query, schema: { type: string, format: uuid } }
+        - { name: businessDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Work Package]
+      operationId: createWorkDutyPeriod
+      summary: Create an assignment duty period
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkDutyPeriod' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-expectations:
+    get:
+      tags: [Work Package]
+      operationId: listWorkExpectations
+      summary: List visible generated work expectations
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: positionAssignmentId, in: query, schema: { type: string, format: uuid } }
+        - { name: targetOrgUnitId, in: query, schema: { type: string, format: uuid } }
+        - { name: businessDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/my/work-expectations:
+    get:
+      tags: [Work Package]
+      operationId: listMyWorkExpectations
+      summary: List expectations assigned to the current actor's active position assignments
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: businessDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/team/work-expectations:
+    get:
+      tags: [Work Package]
+      operationId: listTeamWorkExpectations
+      summary: List expectations for the current manager's team
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: businessDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/work-expectations/{expectationId}:
+    get:
+      tags: [Work Package]
+      operationId: getWorkExpectation
+      summary: Get an expectation and its immutable source snapshot
+      parameters:
+        - $ref: '#/components/parameters/ExpectationId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-expectations/actions/generate:
+    post:
+      tags: [Work Package]
+      operationId: generateWorkExpectations
+      summary: Generate idempotent expectations for an assignment, organization and business date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateWorkExpectations' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-expectations/sla/process:
+    post:
+      tags: [Work Package]
+      operationId: processWorkExpectationSla
+      summary: Mark overdue work expectations MISSED and emit WorkExpectationMissed events
+      description: >-
+        Requires work-package.manage. Candidates in PLANNED, AVAILABLE or IN_PROGRESS
+        whose dueAt is before the processing time are changed to MISSED. Each changed
+        expectation produces an audit record and transactional outbox event. Processing
+        is tenant-isolated, batched, ordered and safe under concurrent calls.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: SLA processing result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkExpectationSlaProcessResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/work-expectations/{expectationId}/waive:
+    post:
+      tags: [Work Package]
+      operationId: waiveWorkExpectation
+      summary: Waive an expectation using optimistic concurrency
+      parameters:
+        - $ref: '#/components/parameters/ExpectationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectationAction' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/work-expectations/{expectationId}/cancel:
+    post:
+      tags: [Work Package]
+      operationId: cancelWorkExpectation
+      summary: Cancel an expectation using optimistic concurrency
+      parameters:
+        - $ref: '#/components/parameters/ExpectationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectationAction' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/work-data/forms:
+    get:
+      tags: [Work Data]
+      operationId: listWorkForms
+      summary: List position forms and latest versions
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Work Data]
+      operationId: createWorkForm
+      summary: Create a position form definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateForm' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-data/forms/{formId}/versions:
+    post:
+      tags: [Work Data]
+      operationId: createWorkFormVersion
+      summary: Create a JSON Schema form version
+      parameters:
+        - $ref: '#/components/parameters/FormId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFormVersion' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-data/forms/{formId}/versions/{versionId}/publish:
+    post:
+      tags: [Work Data]
+      operationId: publishWorkFormVersion
+      summary: Publish an immutable form version
+      parameters:
+        - $ref: '#/components/parameters/FormId'
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-data/records:
+    get:
+      tags: [Work Data]
+      operationId: listWorkRecords
+      summary: List work records in effective data scope
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Work Data]
+      operationId: createWorkRecord
+      summary: Create a draft or submitted work record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitWorkRecord' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/work-data/records/{recordId}:
+    get:
+      tags: [Work Data]
+      operationId: getWorkRecord
+      summary: Get one work record with review and work-package linkage
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+    put:
+      tags: [Work Data]
+      operationId: updateWorkRecordDraft
+      summary: Update a draft using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateWorkRecordDraft' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/work-data/records/{recordId}/actions/submit:
+    post:
+      tags: [Work Data]
+      operationId: submitWorkRecordDraft
+      summary: Submit a draft using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitWorkRecordDraft' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/work-data/records/{recordId}/actions/review:
+    post:
+      tags: [Work Data]
+      operationId: reviewWorkRecord
+      summary: Approve or reject a submitted work record
+      description: >-
+        Requires work-record.review and organization scope. The submitting account cannot
+        review its own record. reason is mandatory when outcome is REJECTED.
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewWorkRecord' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/work-data/records/{recordId}/supplements:
+    post:
+      tags: [Work Data]
+      operationId: addWorkRecordSupplement
+      summary: Append an immutable statement to a submitted work record
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddWorkRecordSupplement' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/work-data/records/{recordId}/attachments:
+    get:
+      tags: [Work Data]
+      operationId: listWorkRecordAttachments
+      summary: List stored image attachments for a visible work record
+      description: Requires work-record.read and organization-scope access to the work record.
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      responses:
+        '200':
+          description: Attachment metadata in creation order
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StoredAttachment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Work Data]
+      operationId: addWorkRecordAttachment
+      summary: Register attachment metadata without uploading binary content
+      description: Legacy metadata-only endpoint. Use the multipart upload endpoint for UAT image evidence.
+      deprecated: true
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddAttachment' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/work-data/records/{recordId}/attachments/upload:
+    post:
+      tags: [Work Data]
+      operationId: uploadWorkRecordImage
+      summary: Upload and persist a JPEG or PNG work-record attachment
+      description: >-
+        Requires work-record.submit and access to the exact submitting assignment (or
+        work-record.submit-for-other). The service validates actual image content,
+        accepts image/jpeg and image/png, enforces the configured size limit (10 MiB by
+        default), stores the binary and computes SHA-256. In formal mode malware scanning
+        is fail-closed: a missing or unavailable scanner, timeout, non-zero exit, or rejected
+        file fails the upload without creating attachment metadata. CLEAN means the configured
+        scanner actually returned success. BYPASSED_DEV may only be produced and downloaded
+        when development-header authentication is explicitly enabled. TECH-V0.2 RC exercised
+        this contract with ClamAV 1.5.3 and a signed CVD database. Approved or rejected records
+        are immutable.
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+            encoding:
+              file:
+                contentType: image/jpeg, image/png
+      responses:
+        '201':
+          description: Stored attachment metadata and content URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadedAttachment' }
+        '400':
+          description: Invalid image or malware scanner unavailable, timed out, failed, or rejected the file
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/work-data/attachments/{attachmentId}/content:
+    get:
+      tags: [Work Data]
+      operationId: downloadWorkRecordAttachment
+      summary: Read stored work-record image content inline
+      description: Requires work-record.read and organization-scope access to the owning work record.
+      parameters:
+        - $ref: '#/components/parameters/AttachmentId'
+      responses:
+        '200':
+          description: Original JPEG or PNG content with an inline Content-Disposition filename
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/work-data/records/{recordId}/attachments/{attachmentId}:
+    delete:
+      tags: [Work Data]
+      operationId: deleteWorkRecordAttachment
+      summary: Delete a stored image attachment from a mutable work record
+      description: >-
+        Requires work-record.submit and access to the submitting assignment (or
+        work-record.submit-for-other). Approved or rejected records are immutable.
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/AttachmentId'
+      responses:
+        '204':
+          description: Attachment metadata and binary content deleted
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/rules:
+    get:
+      tags: [Rule Engine]
+      operationId: listRules
+      summary: List enterprise rule definitions
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Rule Engine]
+      operationId: createRule
+      summary: Create an event-driven rule definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRule' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/rules/{ruleId}:
+    get:
+      tags: [Rule Engine]
+      operationId: getRule
+      summary: Get a rule and versions
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/rules/{ruleId}/versions:
+    post:
+      tags: [Rule Engine]
+      operationId: createRuleVersion
+      summary: Create a draft rule version
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRuleVersion' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/rules/{ruleId}/versions/{versionId}:
+    put:
+      tags: [Rule Engine]
+      operationId: updateRuleVersion
+      summary: Update a draft rule version using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateRuleVersion' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/rules/{ruleId}/versions/{versionId}/validate:
+    post:
+      tags: [Rule Engine]
+      operationId: validateRuleVersion
+      summary: Validate deterministic condition and action configuration
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/rules/{ruleId}/versions/{versionId}/simulate:
+    post:
+      tags: [Rule Engine]
+      operationId: simulateRuleVersion
+      summary: Simulate a draft or published rule against supplied facts
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuleSimulation' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/rules/{ruleId}/versions/{versionId}/publish:
+    post:
+      tags: [Rule Engine]
+      operationId: publishRuleVersion
+      summary: Publish a validated rule version using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishRuleVersion' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/rules/{ruleId}/versions/{versionId}/disable:
+    post:
+      tags: [Rule Engine]
+      operationId: disableRuleVersion
+      summary: Disable a rule version using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisableRuleVersion' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/management-events:
+    get:
+      tags: [Rule Engine]
+      operationId: listManagementEvents
+      summary: List projected management events
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/management-events/{eventId}/consume:
+    post:
+      tags: [Rule Engine]
+      operationId: consumeManagementEvent
+      summary: Evaluate all applicable published rules for one management event
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/management-events/actions/project-outbox:
+    post:
+      tags: [Rule Engine]
+      operationId: recoverManagementEventOutbox
+      summary: Recover a bounded batch of unprojected outbox events
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/tasks:
+    get:
+      tags: [Task Center]
+      operationId: listTasks
+      summary: List tasks in effective data scope
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: orgUnitId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Task Center]
+      operationId: createTask
+      summary: Create a task idempotently
+      description: Assignee and reviewer must resolve to different active position assignments in scope.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTask' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+  /api/v1/tasks/{taskId}:
+    get:
+      tags: [Task Center]
+      operationId: getTask
+      summary: Get task details and exact assignment participants
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/tasks/{taskId}/timeline:
+    get:
+      tags: [Task Center]
+      operationId: getTaskTimeline
+      summary: Get an append-only task transition timeline
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/tasks/{taskId}/evidence:
+    post:
+      tags: [Task Center]
+      operationId: addTaskEvidence
+      summary: Add task execution evidence metadata
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddTaskEvidence' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/tasks/{taskId}/evidence/upload:
+    post:
+      tags: [Task Center]
+      operationId: uploadTaskEvidence
+      summary: Upload execution evidence for the exact assignee assignment
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: submittedByAssignmentId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/tasks/{taskId}/evidence/{evidenceId}/content:
+    get:
+      tags: [Task Center]
+      operationId: downloadTaskEvidence
+      summary: Download visible task evidence
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/EvidenceId'
+      responses:
+        '200':
+          description: Evidence content
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/tasks/{taskId}/evidence/{evidenceId}:
+    delete:
+      tags: [Task Center]
+      operationId: deleteTaskEvidence
+      summary: Delete pre-submission evidence owned by the exact assignee assignment
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/EvidenceId'
+        - name: actorAssignmentId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/tasks/{taskId}/actions/{command}:
+    post:
+      tags: [Task Center]
+      operationId: transitionTask
+      summary: Apply an idempotent task state command using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: command
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [dispatch, acknowledge, start, submit-result, approve, rework, cancel]
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskCommand' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+  /api/v1/tasks/sla/process:
+    post:
+      tags: [Task Center]
+      operationId: processTaskSla
+      summary: Mark overdue tasks and execute due escalation actions
+      description: >-
+        Requires task.dispatch. Marks active due tasks OVERDUE, records timeline entries,
+        notifies reviewers, cancels scheduled escalations for terminal tasks, and executes
+        due escalation rows with assignment-level notifications. Repeated processing does
+        not repeat already executed or cancelled escalation rows.
+      responses:
+        '200':
+          description: Counts produced by this processing pass
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskSlaProcessResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/standard-evaluations:
+    get:
+      tags: [Evaluation]
+      operationId: listStandardEvaluations
+      summary: List standard evaluations
+      parameters:
+        - { name: outcome, in: query, schema: { type: string } }
+        - { name: orgUnitId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Evaluation]
+      operationId: createStandardEvaluation
+      summary: Create a deterministic standard evaluation idempotently
+      description: >-
+        Evaluates a submitted work record or a RESULT_SUBMITTED task against its bound,
+        published standard version. Manual standard items leave the evaluation in
+        PENDING_MANUAL for the manual-review endpoint.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStandardEvaluation' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+  /api/v1/standard-evaluations/{evaluationId}:
+    get:
+      tags: [Evaluation]
+      operationId: getStandardEvaluation
+      summary: Get evaluation summary and item results
+      parameters:
+        - $ref: '#/components/parameters/EvaluationId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/standard-evaluations/{evaluationId}/manual-review:
+    post:
+      tags: [Evaluation]
+      operationId: reviewStandardEvaluation
+      summary: Complete manual evaluation items idempotently using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/EvaluationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualEvaluationReview' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+  /api/v1/notifications:
+    get:
+      tags: [Notification]
+      operationId: listNotifications
+      summary: List notifications for the current account
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+  /api/v1/notifications/{notificationId}/read:
+    post:
+      tags: [Notification]
+      operationId: markNotificationRead
+      summary: Mark a notification as read using expectedVersion
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarkNotificationRead' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/metrics/definitions:
+    get:
+      tags: [Metrics]
+      operationId: listMetricDefinitions
+      summary: List operating metric definitions
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Metrics]
+      operationId: createMetricDefinition
+      summary: Create an operating metric definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMetric' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/metrics/observations:
+    get:
+      tags: [Metrics]
+      operationId: listMetricObservations
+      summary: List hotel metric observations
+      parameters:
+        - { name: hotelId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Metrics]
+      operationId: createMetricObservation
+      summary: Record a hotel metric observation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordObservation' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/dashboards/ceo:
+    get:
+      tags: [Dashboard]
+      operationId: getCeoDashboard
+      summary: Get the CEO group dashboard summary
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/dashboards/hotels/{hotelId}:
+    get:
+      tags: [Dashboard]
+      operationId: getHotelDashboard
+      summary: Get the general-manager dashboard for one visible hotel
+      description: >-
+        Returns operating totals plus risk items and all incomplete tasks under the hotel
+        organization tree. Risks currently aggregate failed standard evaluations, overdue
+        tasks and MISSED work expectations. Requires dashboard.hotel and hotel scope.
+      parameters:
+        - $ref: '#/components/parameters/HotelId'
+      responses:
+        '200':
+          description: Hotel dashboard with risks and incomplete-task summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HotelDashboard' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/dashboards/operations:
+    get:
+      tags: [Dashboard]
+      operationId: getOperationsDashboard
+      summary: Get the regional or operations multi-hotel dashboard
+      description: >-
+        Returns only hotels visible through the caller's tenant or organization-tree
+        scopes. Per-hotel counts cover open tasks, overdue tasks, failed evaluations,
+        MISSED work expectations and today's work submissions. Requires dashboard.hotel.
+      responses:
+        '200':
+          description: Scope-filtered multi-hotel operating and risk summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperationsDashboard' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/templates:
+    get:
+      tags: [Enterprise Template]
+      operationId: listEnterpriseTemplates
+      summary: List task and hotel-dashboard templates visible to the caller
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [TASK, HOTEL_DASHBOARD] }
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+    post:
+      tags: [Enterprise Template]
+      operationId: createEnterpriseTemplate
+      summary: Create a CEO-managed template and its first draft version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEnterpriseTemplate' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/templates/{templateId}:
+    get:
+      tags: [Enterprise Template]
+      operationId: getEnterpriseTemplate
+      summary: Get template metadata and all immutable versions
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/templates/{templateId}/versions:
+    post:
+      tags: [Enterprise Template]
+      operationId: createEnterpriseTemplateVersion
+      summary: Create a new editable draft from a published template
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEnterpriseTemplateVersion' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectResponse' }
+  /api/v1/templates/{templateId}/versions/{versionId}:
+    put:
+      tags: [Enterprise Template]
+      operationId: updateEnterpriseTemplateVersion
+      summary: Update an editable template draft using optimistic locking
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateEnterpriseTemplateVersion' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/templates/{templateId}/versions/{versionId}/publish:
+    post:
+      tags: [Enterprise Template]
+      operationId: publishEnterpriseTemplateVersion
+      summary: Publish a template version and retire the preceding published version
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishEnterpriseTemplateVersion' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Trusted production JWT or SSO access token.
+    TenantHeader:
+      type: apiKey
+      in: header
+      name: X-Tenant-Id
+      description: Local integration only; requires DEV_HEADER_AUTH_ENABLED=true.
+    ActorHeader:
+      type: apiKey
+      in: header
+      name: X-Actor-Id
+      description: Local integration only; requires DEV_HEADER_AUTH_ENABLED=true.
+  parameters:
+    EmployeeId: { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+    RoleId: { name: roleId, in: path, required: true, schema: { type: string, format: uuid } }
+    StandardId: { name: standardId, in: path, required: true, schema: { type: string, format: uuid } }
+    TemplateId: { name: templateId, in: path, required: true, schema: { type: string, format: uuid } }
+    EvidenceId: { name: evidenceId, in: path, required: true, schema: { type: string, format: uuid } }
+    VersionId: { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+    FormId: { name: formId, in: path, required: true, schema: { type: string, format: uuid } }
+    RecordId: { name: recordId, in: path, required: true, schema: { type: string, format: uuid } }
+    AttachmentId: { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    WorkPackageId: { name: workPackageId, in: path, required: true, schema: { type: string, format: uuid } }
+    ExpectationId: { name: expectationId, in: path, required: true, schema: { type: string, format: uuid } }
+    RuleId: { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+    EventId: { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+    TaskId: { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    EvaluationId: { name: evaluationId, in: path, required: true, schema: { type: string, format: uuid } }
+    NotificationId: { name: notificationId, in: path, required: true, schema: { type: string, format: uuid } }
+    HotelId: { name: hotelId, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated key; reuse returns the original semantic result.
+      schema: { type: string, minLength: 1, maxLength: 255 }
+  responses:
+    ListResponse:
+      description: List response
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { type: object, additionalProperties: true }
+    ObjectResponse:
+      description: Object response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
+    Problem:
+      description: RFC 9457 problem detail
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing, invalid or inactive identity
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Permission denied or organization scope violation
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Optimistic version or idempotency conflict
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+    EffectiveIdentity:
+      type: object
+      required: [tenantId, account, roles, permissions, tenantScope, organizationScopes, positionAssignments]
+      properties:
+        tenantId: { type: string, format: uuid }
+        account: { type: object, additionalProperties: true }
+        employee: { type: [object, 'null'], additionalProperties: true }
+        primaryRole: { type: [string, 'null'] }
+        roles: { type: array, uniqueItems: true, items: { type: string } }
+        permissions: { type: array, uniqueItems: true, items: { type: string } }
+        tenantScope: { type: boolean }
+        organizationScopes: { type: array, uniqueItems: true, items: { type: string, format: uuid } }
+        positionAssignments: { type: array, items: { type: object, additionalProperties: true } }
+    CreateOrgUnit:
+      type: object
+      required: [code, name, unitType]
+      properties:
+        parentId: { type: [string, 'null'], format: uuid }
+        code: { type: string }
+        name: { type: string }
+        unitType: { type: string, enum: [GROUP, REGION, HOTEL, DEPARTMENT] }
+        sortOrder: { type: integer, default: 0 }
+        propertyCode: { type: [string, 'null'] }
+        city: { type: [string, 'null'] }
+        roomCount: { type: [integer, 'null'], minimum: 0 }
+        openingDate: { type: [string, 'null'], format: date }
+    UpdateOrgUnit:
+      type: object
+      required: [code, name, status]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        sortOrder: { type: integer, default: 0 }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        propertyCode: { type: [string, 'null'] }
+        city: { type: [string, 'null'] }
+        roomCount: { type: [integer, 'null'], minimum: 0 }
+        openingDate: { type: [string, 'null'], format: date }
+    CreatePosition:
+      type: object
+      required: [code, name, jobFamily]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        jobFamily: { type: string }
+        levelCode: { type: [string, 'null'] }
+    UpdatePosition:
+      type: object
+      required: [code, name, jobFamily, status]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        jobFamily: { type: string }
+        levelCode: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+    CreateEmployee:
+      type: object
+      required: [employeeNo, name]
+      properties:
+        employeeNo: { type: string }
+        name: { type: string }
+        mobile: { type: [string, 'null'] }
+        hiredOn: { type: [string, 'null'], format: date }
+        loginName: { type: [string, 'null'] }
+        temporaryPassword: { type: [string, 'null'], format: password, minLength: 10 }
+    UpdateEmployee:
+      type: object
+      required: [employeeNo, name, employmentStatus]
+      properties:
+        employeeNo: { type: string }
+        name: { type: string }
+        mobile: { type: [string, 'null'] }
+        hiredOn: { type: [string, 'null'], format: date }
+        employmentStatus: { type: string, enum: [ACTIVE, INACTIVE] }
+        loginName: { type: [string, 'null'] }
+        temporaryPassword: { type: [string, 'null'], format: password, minLength: 10 }
+    CreatePositionAssignment:
+      type: object
+      required: [orgUnitId, positionId, validFrom]
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        positionId: { type: string, format: uuid }
+        managerAssignmentId: { type: [string, 'null'], format: uuid }
+        primary: { type: boolean, default: false }
+        assignmentType: { type: string, enum: [PERMANENT, TEMPORARY, ACTING] }
+        validFrom: { type: string, format: date }
+        validTo: { type: [string, 'null'], format: date }
+    CreateRole:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        roleType: { type: [string, 'null'] }
+    SetRolePermissions:
+      type: object
+      required: [permissionIds]
+      properties:
+        permissionIds:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+    GrantRole:
+      type: object
+      required: [accountId, roleId, scopeType]
+      properties:
+        accountId: { type: string, format: uuid }
+        roleId: { type: string, format: uuid }
+        scopeOrgUnitId: { type: [string, 'null'], format: uuid }
+        scopeType: { type: string, enum: [SELF, ORG_UNIT, ORG_TREE, TENANT] }
+        validFrom: { type: [string, 'null'], format: date-time }
+        validTo: { type: [string, 'null'], format: date-time }
+    CreateStandard:
+      type: object
+      required: [categoryId, code, name]
+      properties:
+        categoryId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        ownerOrgUnitId: { type: [string, 'null'], format: uuid }
+        description: { type: [string, 'null'] }
+    ApplicabilityScope:
+      type: object
+      required: [scopeType]
+      properties:
+        scopeType: { type: string, enum: [TENANT, BRAND, ORG_UNIT, ORG_TREE, POSITION] }
+        brandId: { type: [string, 'null'], format: uuid }
+        orgUnitId: { type: [string, 'null'], format: uuid }
+        positionId: { type: [string, 'null'], format: uuid }
+    CreateStandardVersion:
+      type: object
+      required: [title, items, scopes]
+      properties:
+        title: { type: string }
+        items: { type: array, items: { type: object, additionalProperties: true } }
+        evidenceRequirements: { type: array, items: { type: object, additionalProperties: true } }
+        scoringRules: { type: object, additionalProperties: true }
+        scopes: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ApplicabilityScope' } }
+    PublishEffectiveWindow:
+      type: object
+      required: [effectiveFrom]
+      properties:
+        effectiveFrom: { type: string, format: date-time }
+        effectiveTo: { type: [string, 'null'], format: date-time }
+    CreateWorkPackage:
+      type: object
+      required: [code, name, positionId]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        positionId: { type: string, format: uuid }
+        ownerOrgUnitId: { type: [string, 'null'], format: uuid }
+    CreateWorkPackageVersion:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        description: { type: [string, 'null'] }
+    WorkPackageStandardLink:
+      type: object
+      required: [standardVersionId, usageType]
+      properties:
+        standardVersionId: { type: string, format: uuid }
+        usageType: { type: string }
+        weight: { type: [number, 'null'] }
+    WorkPackageResponsibility:
+      type: object
+      required: [participantType, resolverType]
+      properties:
+        participantType: { type: string }
+        resolverType: { type: string }
+        positionId: { type: [string, 'null'], format: uuid }
+        scopeStrategy: { type: [string, 'null'] }
+        escalationLevel: { type: [integer, 'null'], minimum: 0 }
+    WorkPackageItem:
+      type: object
+      required: [itemCode, name, itemType, formVersionId, periodType, responsibilities]
+      properties:
+        itemCode: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        itemType: { type: string }
+        formVersionId: { type: string, format: uuid }
+        sortOrder: { type: [integer, 'null'] }
+        required: { type: [boolean, 'null'] }
+        periodType: { type: string }
+        timezoneMode: { type: [string, 'null'] }
+        fixedTimezone: { type: [string, 'null'] }
+        workWindowStart: { type: [string, 'null'], format: time }
+        workWindowEnd: { type: [string, 'null'], format: time }
+        dueLocalTime: { type: [string, 'null'], format: time }
+        graceMinutes: { type: [integer, 'null'], minimum: 0 }
+        weekdays: { type: [array, 'null'], items: { type: integer, minimum: 1, maximum: 7 } }
+        dayOfMonth: { type: [integer, 'null'], minimum: 1, maximum: 31 }
+        holidayPolicy: { type: [string, 'null'] }
+        waiverAllowed: { type: [boolean, 'null'] }
+        targetGranularity: { type: [string, 'null'] }
+        reviewMode: { type: [string, 'null'] }
+        standards: { type: [array, 'null'], items: { $ref: '#/components/schemas/WorkPackageStandardLink' } }
+        responsibilities:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/WorkPackageResponsibility' }
+        submissionPolicy: { $ref: '#/components/schemas/WorkSubmissionPolicy' }
+    WorkSubmissionPolicy:
+      type: object
+      properties:
+        completionStatementRequired: { type: boolean, default: true }
+        exceptionStatementRequired: { type: boolean, default: false }
+        nextActionRequired: { type: boolean, default: false }
+        attachmentRequired: { type: boolean, default: false }
+        maxAttachments: { type: integer, minimum: 0, maximum: 10, default: 10 }
+        maxFileSizeBytes: { type: integer, minimum: 1, maximum: 20971520, default: 20971520 }
+        allowedExtensions:
+          type: array
+          items: { type: string, enum: [jpg, jpeg, png, pdf, docx, xlsx] }
+    UpdateWorkPackageVersion:
+      type: object
+      required: [title, scopes, items]
+      properties:
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        scopes: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ApplicabilityScope' } }
+        items: { type: array, minItems: 1, items: { $ref: '#/components/schemas/WorkPackageItem' } }
+    RetireWorkPackageVersion:
+      type: object
+      properties:
+        effectiveTo: { type: [string, 'null'], format: date-time }
+    CreateWorkPackageAllocation:
+      type: object
+      required: [workPackageVersionId, positionAssignmentId, targetOrgUnitId, validFrom]
+      properties:
+        workPackageVersionId: { type: string, format: uuid }
+        positionAssignmentId: { type: string, format: uuid }
+        targetOrgUnitId: { type: string, format: uuid }
+        validFrom: { type: string, format: date }
+        validTo: { type: [string, 'null'], format: date }
+        allocationSource: { type: [string, 'null'] }
+    CreateWorkDutyPeriod:
+      type: object
+      required: [positionAssignmentId, targetOrgUnitId, businessDate, periodType, plannedStartAt, plannedEndAt]
+      properties:
+        positionAssignmentId: { type: string, format: uuid }
+        targetOrgUnitId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        periodType: { type: string }
+        shiftCode: { type: [string, 'null'] }
+        plannedStartAt: { type: string, format: date-time }
+        plannedEndAt: { type: string, format: date-time }
+        sourceRecordId: { type: [string, 'null'] }
+    GenerateWorkExpectations:
+      type: object
+      required: [positionAssignmentId, targetOrgUnitId, businessDate, periodType]
+      properties:
+        positionAssignmentId: { type: string, format: uuid }
+        targetOrgUnitId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        periodType: { type: string }
+        dutyPeriodId: { type: [string, 'null'], format: uuid }
+    WorkExpectationSlaProcessResult:
+      type: object
+      required: [processedCount, batchLimit, expectationIds, processedAt]
+      properties:
+        processedCount:
+          type: integer
+          minimum: 0
+          description: Expectations changed to MISSED in this pass.
+        batchLimit:
+          type: integer
+          minimum: 1
+          maximum: 500
+          description: Validated maximum candidate count for this pass.
+        expectationIds:
+          type: array
+          description: Ordered IDs changed to MISSED and emitted to the outbox.
+          items: { type: string, format: uuid }
+        processedAt:
+          type: string
+          format: date-time
+          description: UTC completion timestamp for this pass.
+    ExpectationAction:
+      type: object
+      required: [reason, expectedVersion]
+      properties:
+        reason: { type: string }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    CreateForm:
+      type: object
+      required: [code, name, formType]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        formType: { type: string, enum: [DAILY_WORK, INSPECTION, COMPLAINT, EXCEPTION, FEEDBACK] }
+        positionId: { type: [string, 'null'], format: uuid }
+    CreateFormVersion:
+      type: object
+      required: [jsonSchema]
+      properties:
+        jsonSchema: { type: object, additionalProperties: true }
+        uiSchema: { type: [object, 'null'], additionalProperties: true }
+    SubmitWorkRecord:
+      type: object
+      required: [orgUnitId, employeeId, positionAssignmentId, formVersionId, businessDate, payload]
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        employeeId: { type: string, format: uuid }
+        positionAssignmentId: { type: string, format: uuid }
+        formVersionId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        payload: { type: object, additionalProperties: true }
+        workPackageVersionId: { type: [string, 'null'], format: uuid }
+        workPackageItemId: { type: [string, 'null'], format: uuid }
+        workExpectationId: { type: [string, 'null'], format: uuid }
+        recordKind: { type: [string, 'null'] }
+        targetOrgUnitId: { type: [string, 'null'], format: uuid }
+        occurredAt: { type: [string, 'null'], format: date-time }
+        supersedesWorkRecordId: { type: [string, 'null'], format: uuid }
+        saveAsDraft: { type: [boolean, 'null'] }
+        completionStatement: { type: [string, 'null'] }
+        exceptionStatement: { type: [string, 'null'] }
+        nextAction: { type: [string, 'null'] }
+    UpdateWorkRecordDraft:
+      type: object
+      required: [payload, expectedVersion]
+      properties:
+        payload: { type: object, additionalProperties: true }
+        occurredAt: { type: [string, 'null'], format: date-time }
+        completionStatement: { type: [string, 'null'] }
+        exceptionStatement: { type: [string, 'null'] }
+        nextAction: { type: [string, 'null'] }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    AddWorkRecordSupplement:
+      type: object
+      required: [submittedByAssignmentId, content]
+      properties:
+        submittedByAssignmentId: { type: string, format: uuid }
+        content: { type: string, minLength: 1 }
+    SubmitWorkRecordDraft:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    ReviewWorkRecord:
+      type: object
+      required: [outcome, expectedVersion]
+      properties:
+        outcome: { type: string, enum: [APPROVED, REJECTED] }
+        reason: { type: [string, 'null'] }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+      allOf:
+        - if:
+            properties:
+              outcome: { const: REJECTED }
+          then:
+            required: [reason]
+            properties:
+              reason: { type: string, minLength: 1 }
+    AddAttachment:
+      type: object
+      required: [originalName, mediaType, sizeBytes]
+      properties:
+        originalName: { type: string }
+        mediaType: { type: string }
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: [string, 'null'], pattern: '^[a-fA-F0-9]{64}$' }
+    UploadedAttachment:
+      type: object
+      required: [id, workRecordId, objectKey, originalName, mediaType, sizeBytes, sha256, scanStatus, contentUrl]
+      properties:
+        id: { type: string, format: uuid }
+        workRecordId: { type: string, format: uuid }
+        objectKey: { type: string }
+        originalName: { type: string }
+        mediaType: { type: string, enum: [image/jpeg, image/png] }
+        sizeBytes: { type: integer, format: int64, minimum: 1 }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        scanStatus:
+          type: string
+          enum: [CLEAN, BYPASSED_DEV]
+          description: >-
+            CLEAN is returned only after a configured scanner succeeds. BYPASSED_DEV is
+            restricted to explicitly enabled development-header mode and is never accepted
+            for download in formal mode.
+        contentUrl: { type: string, pattern: '^/api/v1/work-data/attachments/.+/content$' }
+    StoredAttachment:
+      type: object
+      required: [id, work_record_id, object_key, original_name, media_type, size_bytes, scan_status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        work_record_id: { type: string, format: uuid }
+        object_key: { type: string }
+        original_name: { type: string }
+        media_type: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: [string, 'null'], pattern: '^[a-fA-F0-9]{64}$' }
+        scan_status:
+          type: string
+          enum: [PENDING, CLEAN, BYPASSED_DEV]
+          description: >-
+            PENDING is retained for the deprecated metadata-only endpoint. Binary uploads
+            are CLEAN only after a real scanner succeeds, or BYPASSED_DEV only in explicitly
+            enabled development-header mode. Formal-mode downloads allow CLEAN only.
+        created_at: { type: string, format: date-time }
+    CreateRule:
+      type: object
+      required: [code, name, eventType]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        eventType: { type: string }
+        ownerOrgUnitId: { type: [string, 'null'], format: uuid }
+        description: { type: [string, 'null'] }
+    RuleScope:
+      type: object
+      required: [scopeType]
+      properties:
+        scopeType: { type: string }
+        brandId: { type: [string, 'null'], format: uuid }
+        orgUnitId: { type: [string, 'null'], format: uuid }
+        positionId: { type: [string, 'null'], format: uuid }
+    CreateRuleVersion:
+      type: object
+      required: [conditionAst, actions, scopes]
+      properties:
+        conditionAst: { type: object, additionalProperties: true }
+        actions: {}
+        priority: { type: [integer, 'null'] }
+        cooldownMinutes: { type: [integer, 'null'] }
+        scopes: { type: array, minItems: 1, items: { $ref: '#/components/schemas/RuleScope' } }
+    UpdateRuleVersion:
+      allOf:
+        - $ref: '#/components/schemas/CreateRuleVersion'
+        - type: object
+          required: [expectedVersion]
+          properties:
+            expectedVersion: { type: integer, format: int64, minimum: 0 }
+    PublishRuleVersion:
+      type: object
+      required: [expectedVersion, effectiveFrom]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        effectiveFrom: { type: string, format: date-time }
+        effectiveTo: { type: [string, 'null'], format: date-time }
+    DisableRuleVersion:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    RuleSimulation:
+      type: object
+      required: [facts]
+      properties:
+        facts: { type: object, additionalProperties: true }
+    CreateTask:
+      type: object
+      required: [orgUnitId, assigneeAssignmentId, reviewerAssignmentId, title]
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        assigneeAssignmentId: { type: string, format: uuid }
+        reviewerAssignmentId: { type: string, format: uuid }
+        standardVersionId: { type: [string, 'null'], format: uuid }
+        workRecordId: { type: [string, 'null'], format: uuid }
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        priority: { type: [string, 'null'], enum: [LOW, NORMAL, HIGH, URGENT, null] }
+        dueAt: { type: [string, 'null'], format: date-time }
+        sourceSnapshot: { type: [object, 'null'], additionalProperties: true }
+    TaskCommand:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        actorAssignmentId: { type: [string, 'null'], format: uuid }
+        payload: { type: [object, 'null'], additionalProperties: true }
+    AddTaskEvidence:
+      type: object
+      required: [submittedByAssignmentId, evidenceType]
+      properties:
+        submittedByAssignmentId: { type: string, format: uuid }
+        evidenceType: { type: string }
+        objectKey: { type: [string, 'null'] }
+        originalName: { type: [string, 'null'] }
+        mediaType: { type: [string, 'null'] }
+        sizeBytes: { type: [integer, 'null'], format: int64 }
+        sha256: { type: [string, 'null'], pattern: '^[a-fA-F0-9]{64}$' }
+        structuredResult: { type: [object, 'null'], additionalProperties: true }
+    CreateEnterpriseTemplate:
+      type: object
+      required: [templateType, code, name, configuration]
+      properties:
+        templateType: { type: string, enum: [TASK, HOTEL_DASHBOARD] }
+        code: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        targetPositionId: { type: [string, 'null'], format: uuid }
+        ownerOrgUnitId: { type: [string, 'null'], format: uuid }
+        configuration: { type: object, additionalProperties: true }
+    CreateEnterpriseTemplateVersion:
+      type: object
+      required: [configuration]
+      properties:
+        configuration: { type: object, additionalProperties: true }
+    UpdateEnterpriseTemplateVersion:
+      type: object
+      required: [configuration, expectedVersion]
+      properties:
+        configuration: { type: object, additionalProperties: true }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    PublishEnterpriseTemplateVersion:
+      type: object
+      properties:
+        effectiveFrom: { type: [string, 'null'], format: date-time }
+    TaskSlaProcessResult:
+      type: object
+      required: [overdueTasks, escalations, cancelledEscalations, notifications]
+      properties:
+        overdueTasks:
+          type: integer
+          minimum: 0
+          description: Tasks newly marked OVERDUE in this pass.
+        escalations:
+          type: integer
+          minimum: 0
+          description: Due escalation rows successfully changed from SCHEDULED to EXECUTED.
+        cancelledEscalations:
+          type: integer
+          minimum: 0
+          description: Scheduled escalation rows cancelled because their tasks were terminal.
+        notifications:
+          type: integer
+          minimum: 0
+          description: Reviewer overdue and resolved-assignment escalation notifications created.
+    CreateStandardEvaluation:
+      type: object
+      required: [subjectType, subjectId, orgUnitId, standardVersionId, inputSnapshot]
+      properties:
+        subjectType: { type: string, enum: [WORK_RECORD, TASK] }
+        subjectId: { type: string, format: uuid }
+        orgUnitId: { type: string, format: uuid }
+        positionAssignmentId: { type: [string, 'null'], format: uuid }
+        standardVersionId: { type: string, format: uuid }
+        inputSnapshot: { type: object, additionalProperties: true }
+    ManualEvaluationItem:
+      type: object
+      required: [itemCode, outcome]
+      properties:
+        itemCode: { type: string }
+        outcome: { type: string, enum: [PASS, WARNING, FAIL] }
+        score: { type: [number, 'null'] }
+        reason: { type: [string, 'null'] }
+        actualValue: {}
+    ManualEvaluationReview:
+      type: object
+      required: [expectedVersion, reviewerAssignmentId, items]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reviewerAssignmentId: { type: string, format: uuid }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ManualEvaluationItem' }
+    MarkNotificationRead:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    CreateMetric:
+      type: object
+      required: [code, name, unit]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        unit: { type: string }
+        valueType: { type: string, default: DECIMAL }
+        aggregation: { type: string, enum: [SUM, AVG, LAST, MIN, MAX] }
+        description: { type: [string, 'null'] }
+    RecordObservation:
+      type: object
+      required: [hotelOrgUnitId, metricId, businessDate, value, sourceType]
+      properties:
+        hotelOrgUnitId: { type: string, format: uuid }
+        metricId: { type: string, format: uuid }
+        businessDate: { type: string, format: date }
+        value: { type: number }
+        sourceType: { type: string, enum: [MANUAL, EXCEL, PMS, OTA, FINANCE, AI_DERIVED] }
+        sourceRecordId: { type: [string, 'null'] }
+    HotelIdentity:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        city: { type: [string, 'null'] }
+        room_count: { type: [integer, 'null'], minimum: 0 }
+    DashboardMetric:
+      type: object
+      required: [code, name, unit, business_date, value]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        unit: { type: string }
+        business_date: { type: string, format: date }
+        value: { type: number }
+    HotelRisk:
+      type: object
+      required: [risk_type, source_id, title, severity, status, occurred_at, org_unit_id]
+      properties:
+        risk_type:
+          type: string
+          enum: [STANDARD_EVALUATION, OVERDUE_TASK, MISSED_WORK]
+        source_id: { type: string, format: uuid }
+        title: { type: string }
+        severity: { type: string }
+        status: { type: string }
+        occurred_at: { type: string, format: date-time }
+        org_unit_id: { type: string, format: uuid }
+    HotelIncompleteTask:
+      type: object
+      required: [id, task_no, title, lifecycle_status, sla_status, priority, org_unit_id, org_unit_name]
+      properties:
+        id: { type: string, format: uuid }
+        task_no: { type: string }
+        title: { type: string }
+        lifecycle_status: { type: string }
+        sla_status: { type: string }
+        priority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+        due_at: { type: [string, 'null'], format: date-time }
+        org_unit_id: { type: string, format: uuid }
+        org_unit_name: { type: string }
+        assignee_name: { type: [string, 'null'] }
+        reviewer_name: { type: [string, 'null'] }
+    HotelDashboard:
+      type: object
+      required:
+        - hotel
+        - activeEmployeeCount
+        - todayWorkSubmissionCount
+        - latestMetrics
+        - risks
+        - incompleteTasks
+        - openTaskCount
+        - overdueTaskCount
+        - missedWorkCount
+      properties:
+        hotel: { $ref: '#/components/schemas/HotelIdentity' }
+        activeEmployeeCount: { type: integer, format: int64, minimum: 0 }
+        todayWorkSubmissionCount: { type: integer, format: int64, minimum: 0 }
+        latestMetrics:
+          type: array
+          items: { $ref: '#/components/schemas/DashboardMetric' }
+        risks:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/HotelRisk' }
+        incompleteTasks:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/HotelIncompleteTask' }
+        openTaskCount: { type: integer, format: int64, minimum: 0 }
+        overdueTaskCount: { type: integer, format: int64, minimum: 0 }
+        missedWorkCount: { type: integer, format: int64, minimum: 0 }
+    OperationsHotel:
+      type: object
+      required:
+        - id
+        - name
+        - open_task_count
+        - overdue_task_count
+        - failed_evaluation_count
+        - missed_work_count
+        - today_submission_count
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        city: { type: [string, 'null'] }
+        room_count: { type: [integer, 'null'], minimum: 0 }
+        open_task_count: { type: integer, format: int64, minimum: 0 }
+        overdue_task_count: { type: integer, format: int64, minimum: 0 }
+        failed_evaluation_count: { type: integer, format: int64, minimum: 0 }
+        missed_work_count: { type: integer, format: int64, minimum: 0 }
+        today_submission_count: { type: integer, format: int64, minimum: 0 }
+    OperationsDashboard:
+      type: object
+      required: [hotels]
+      properties:
+        hotelCount:
+          type: integer
+          minimum: 0
+          description: Present when the caller has tenant or organization scope.
+        riskCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of overdue tasks, failed evaluations and MISSED work across visible hotels.
+        hotels:
+          type: array
+          items: { $ref: '#/components/schemas/OperationsHotel' }

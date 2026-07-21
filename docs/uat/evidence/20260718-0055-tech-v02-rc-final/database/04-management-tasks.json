@@ -1,0 +1,31 @@
+[ {
+  "task_id" : "a0d7e97a-d4ae-4dd1-8b93-3e200d60986b",
+  "task_no" : "T-20260717-A0D7E97A",
+  "title" : "岗位漏交整改（UAT）",
+  "lifecycle_status" : "PENDING_ACK",
+  "sla_status" : "OVERDUE",
+  "priority" : "URGENT",
+  "work_record_id" : null,
+  "standard_version_id" : "27000000-0000-0000-0000-000000000003",
+  "org_unit_id" : "12000000-0000-0000-0000-000000000006",
+  "due_at" : "2026-07-18 00:54:17.724247+08",
+  "completed_at" : null,
+  "source_snapshot" : "{\"dueAt\": \"2026-07-17T16:49:17.408211Z\", \"status\": \"MISSED\", \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"businessDate\": \"2026-07-17\", \"workExpectationId\": \"2a500000-0000-0000-0000-000000000005\", \"workPackageItemId\": \"2a200000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+  "result_snapshot" : "{}",
+  "participants" : "[{\"type\": \"ASSIGNEE\", \"employee\": {\"id\": \"19100000-0000-0000-0000-000000000003\", \"name\": \"周敏\", \"employeeNo\": \"E-HK-001\"}, \"position\": {\"id\": \"14000000-0000-0000-0000-000000000002\", \"code\": \"HOUSEKEEPING_SUPERVISOR\", \"name\": \"客房主管\"}, \"assignmentId\": \"19200000-0000-0000-0000-000000000003\"}, {\"type\": \"REVIEWER\", \"employee\": {\"id\": \"19100000-0000-0000-0000-000000000007\", \"name\": \"沈乔\", \"employeeNo\": \"E-AGM-001\"}, \"position\": {\"id\": \"14000000-0000-0000-0000-000000000007\", \"code\": \"ASSISTANT_GENERAL_MANAGER\", \"name\": \"店助\"}, \"assignmentId\": \"19200000-0000-0000-0000-000000000008\"}]"
+}, {
+  "task_id" : "acb6474f-65ce-4f3f-be4b-70086097f011",
+  "task_no" : "T-20260717-ACB6474F",
+  "title" : "区域多门店OTA评分风险整改（UAT）",
+  "lifecycle_status" : "PENDING_ACK",
+  "sla_status" : "OVERDUE",
+  "priority" : "HIGH",
+  "work_record_id" : null,
+  "standard_version_id" : "27000000-0000-0000-0000-000000000001",
+  "org_unit_id" : "12000000-0000-0000-0000-000000000003",
+  "due_at" : "2026-07-18 00:54:17.85292+08",
+  "completed_at" : null,
+  "source_snapshot" : "{\"score\": 4.8, \"source\": \"UAT_FIXTURE\", \"hotelOrgUnitId\": \"12000000-0000-0000-0000-000000000003\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000001\"}",
+  "result_snapshot" : "{}",
+  "participants" : "[{\"type\": \"ASSIGNEE\", \"employee\": {\"id\": \"19100000-0000-0000-0000-000000000006\", \"name\": \"许晨\", \"employeeNo\": \"E-OTA-M-001\"}, \"position\": {\"id\": \"14000000-0000-0000-0000-000000000006\", \"code\": \"OTA_OPERATION_MANAGER\", \"name\": \"OTA运营经理\"}, \"assignmentId\": \"19200000-0000-0000-0000-000000000007\"}, {\"type\": \"REVIEWER\", \"employee\": {\"id\": \"19100000-0000-0000-0000-000000000001\", \"name\": \"赵晨\", \"employeeNo\": \"E-GM-001\"}, \"position\": {\"id\": \"14000000-0000-0000-0000-000000000004\", \"code\": \"GENERAL_MANAGER\", \"name\": \"店总\"}, \"assignmentId\": \"19200000-0000-0000-0000-000000000001\"}]"
+} ]

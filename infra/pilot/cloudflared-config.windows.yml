@@ -1,0 +1,15 @@
+tunnel: 0833b694-c0b2-43d5-b7ac-d9fa83403074
+credentials-file: C:/Users/MSN/Documents/四方馆AI中台项目/.uat-runtime/pilot/cloudflared/0833b694-c0b2-43d5-b7ac-d9fa83403074.json
+no-autoupdate: true
+metrics: 127.0.0.1:20242
+
+ingress:
+  - hostname: www.sfgzt.cn
+    service: http://127.0.0.1:4180
+    originRequest:
+      httpHostHeader: 127.0.0.1:4180
+  - hostname: sfgzt.cn
+    service: http://127.0.0.1:4181
+    originRequest:
+      httpHostHeader: 127.0.0.1:4181
+  - service: http_status:404

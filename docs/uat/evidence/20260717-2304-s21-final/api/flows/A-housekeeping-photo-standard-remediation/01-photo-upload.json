@@ -1,0 +1,11 @@
+{
+    "mediaType":  "image/png",
+    "sizeBytes":  68,
+    "id":  "ce845914-55b5-49b9-a275-5f16d35d1cbd",
+    "originalName":  "uat-room-inspection.png",
+    "objectKey":  "10000000-0000-0000-0000-000000000001/work-records/2e000000-0000-0000-0000-000000000001/ce845914-55b5-49b9-a275-5f16d35d1cbd-uat-room-inspection.png",
+    "workRecordId":  "2e000000-0000-0000-0000-000000000001",
+    "contentUrl":  "/api/v1/work-data/attachments/ce845914-55b5-49b9-a275-5f16d35d1cbd/content",
+    "sha256":  "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+    "scanStatus":  "CLEAN"
+}

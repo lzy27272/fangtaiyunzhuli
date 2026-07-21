@@ -1,0 +1,13 @@
+{
+    "case":  "missing-account-identity",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "d708da87-9d83-4243-8888-cc54259031d7",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "JWT缺少租户或账号标识"
+                 }
+}

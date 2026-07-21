@@ -1,0 +1,13 @@
+{
+    "case":  "expired-token",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "c135d59a-b1b0-4299-b21d-d39769dce537",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "需要有效的Bearer JWT"
+                 }
+}

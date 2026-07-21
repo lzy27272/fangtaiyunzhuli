@@ -1,0 +1,89 @@
+﻿[
+    {
+        "id":  "4adc5721-b7c1-4cc4-ad56-c1a8670a77b6",
+        "to_status":  "PROPOSED",
+        "command":  "CREATE",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000009",
+        "task_version":  0,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"source\": \"RULE_ENGINE\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T14:32:55.027+00:00"
+    },
+    {
+        "id":  "7f2afc05-4164-4860-bfbd-ac101ce3e7cf",
+        "from_status":  "PROPOSED",
+        "to_status":  "PENDING_ACK",
+        "command":  "DISPATCH",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000009",
+        "task_version":  1,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"source\": \"RULE_ENGINE\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T14:32:55.027+00:00"
+    },
+    {
+        "id":  "50b0f6bd-42d4-4fe1-8d8e-7f241ff89dfb",
+        "from_status":  "PENDING_ACK",
+        "to_status":  "IN_PROGRESS",
+        "command":  "ACKNOWLEDGE",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000003",
+        "actor_assignment_id":  "19200000-0000-0000-0000-000000000002",
+        "task_version":  2,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T14:32:55.193+00:00"
+    },
+    {
+        "id":  "f072be11-78b9-4925-ae5f-a5e891c66af5",
+        "from_status":  "IN_PROGRESS",
+        "to_status":  "RESULT_SUBMITTED",
+        "command":  "SUBMIT_RESULT",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000003",
+        "actor_assignment_id":  "19200000-0000-0000-0000-000000000002",
+        "task_version":  3,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"guestContacted\": true, \"complaintRecorded\": true, \"resolutionSummary\": \"Guest callback and complaint closure completed\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T14:32:55.221+00:00"
+    },
+    {
+        "id":  "3b557b49-58f5-42a0-ad72-76f741f50c3a",
+        "from_status":  "RESULT_SUBMITTED",
+        "to_status":  "AWAITING_REVIEW",
+        "command":  "EVALUATION_COMPLETED",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000005",
+        "standard_evaluation_id":  "c8713dee-1ac4-4a7c-8b3b-da04159c90bc",
+        "task_version":  4,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"evaluationId\": \"c8713dee-1ac4-4a7c-8b3b-da04159c90bc\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T14:32:55.250+00:00"
+    },
+    {
+        "id":  "5f446aac-1207-412a-8107-28676f3d7aa4",
+        "from_status":  "AWAITING_REVIEW",
+        "to_status":  "COMPLETED",
+        "command":  "APPROVE",
+        "actor_account_id":  "19000000-0000-0000-0000-000000000005",
+        "actor_assignment_id":  "19200000-0000-0000-0000-000000000004",
+        "task_version":  5,
+        "payload":  {
+                        "type":  "jsonb",
+                        "value":  "{\"comment\": \"Sprint 2.1 UAT accepted\"}",
+                        "null":  false
+                    },
+        "occurred_at":  "2026-07-17T14:32:55.306+00:00"
+    }
+]

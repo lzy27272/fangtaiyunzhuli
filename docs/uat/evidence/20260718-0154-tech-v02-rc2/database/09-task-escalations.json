@@ -1,0 +1,56 @@
+[ {
+  "task_id" : "ae93939f-2be8-421d-b372-ef7c5c1ed37e",
+  "title" : "岗位漏交整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "3e952942-eec1-4d3e-b846-e292855b6a2b",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 01:48:39.089728+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000008",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-18 01:48:39.220801+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "773546ac-f81f-46a3-af48-7d9f2f113eaa",
+  "title" : "区域多门店OTA评分风险整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "4362ce52-3a6f-4ef9-9c03-326a5e183afc",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 01:48:39.17625+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-18 01:48:39.220801+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "566cb15c-23f7-453d-b20b-02687bcb3e5b",
+  "title" : "前厅主管手工发起整改任务（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "910b50de-8c73-4017-8c1c-726e5c14194e",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 05:48:54.567428+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000004",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-18 01:48:54.814214+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "487c7d1d-0fbb-499e-962e-6fe91e926f6b",
+  "title" : "客房卫生图片整改（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "d4ac9b39-4b4b-40f8-9e5a-dcb20d3c054e",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 03:49:04.151743+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-18 01:49:04.598501+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "f3e14bc5-7d17-4386-a436-f0f5067c6468",
+  "title" : "前台客诉跟进整改（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "638db943-1438-42cc-8058-de242deb704c",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 03:49:04.454117+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000004",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-18 01:49:04.863331+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+} ]

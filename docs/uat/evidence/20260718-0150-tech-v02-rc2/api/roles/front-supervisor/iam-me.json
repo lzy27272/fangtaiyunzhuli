@@ -1,0 +1,74 @@
+{
+    "status":  200,
+    "correlationId":  "d89ff983-444d-4f34-aa3f-c569a62144fe",
+    "body":  {
+                 "tenantId":  "10000000-0000-0000-0000-000000000001",
+                 "account":  {
+                                 "id":  "19000000-0000-0000-0000-000000000005",
+                                 "loginName":  "fo.supervisor",
+                                 "displayName":  "前厅主管陈航",
+                                 "status":  "ACTIVE"
+                             },
+                 "employee":  {
+                                  "id":  "19100000-0000-0000-0000-000000000004",
+                                  "employeeNo":  "E-FO-001",
+                                  "name":  "陈航",
+                                  "employmentStatus":  "ACTIVE"
+                              },
+                 "primaryRole":  "FRONT_OFFICE_SUPERVISOR",
+                 "roles":  [
+                               "FRONT_OFFICE_SUPERVISOR"
+                           ],
+                 "permissions":  [
+                                     "standard.read",
+                                     "work-record.review",
+                                     "task.cancel",
+                                     "work-package.read",
+                                     "rule.read",
+                                     "work-package.allocate",
+                                     "evaluation.read",
+                                     "task.read",
+                                     "org.read",
+                                     "task.review",
+                                     "work-record.submit",
+                                     "task.dispatch",
+                                     "dashboard.hotel",
+                                     "work-record.read",
+                                     "evaluation.manual-review",
+                                     "work.submit",
+                                     "task.act",
+                                     "notification.read",
+                                     "task.create"
+                                 ],
+                 "tenantScope":  false,
+                 "organizationScopes":  [
+                                            "12000000-0000-0000-0000-000000000005"
+                                        ],
+                 "positionAssignments":  [
+                                             {
+                                                 "id":  "19200000-0000-0000-0000-000000000004",
+                                                 "organizationId":  "12000000-0000-0000-0000-000000000005",
+                                                 "organizationCode":  "HZ-FRONT",
+                                                 "organizationName":  "前厅部",
+                                                 "positionId":  "14000000-0000-0000-0000-000000000003",
+                                                 "positionCode":  "FRONT_OFFICE_SUPERVISOR",
+                                                 "positionName":  "前厅主管",
+                                                 "primary":  true,
+                                                 "assignmentType":  "PERMANENT",
+                                                 "validFrom":  "2023-02-08"
+                                             },
+                                             {
+                                                 "id":  "19200000-0000-0000-0000-000000000005",
+                                                 "organizationId":  "12000000-0000-0000-0000-000000000003",
+                                                 "organizationCode":  "HZ-CENTER",
+                                                 "organizationName":  "杭州中心店",
+                                                 "positionId":  "14000000-0000-0000-0000-000000000001",
+                                                 "positionCode":  "FRONT_DESK",
+                                                 "positionName":  "前台员工",
+                                                 "primary":  false,
+                                                 "assignmentType":  "PERMANENT",
+                                                 "validFrom":  "2026-07-01"
+                                             }
+                                         ]
+             }
+}

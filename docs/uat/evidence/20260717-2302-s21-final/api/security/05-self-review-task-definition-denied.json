@@ -1,0 +1,11 @@
+{
+    "status":  400,
+    "correlationId":  "41f8d9fe-ba91-484e-8bf3-c9731be5b2f7",
+    "body":  {
+                 "type":  "about:blank",
+                 "title":  "请求校验失败",
+                 "status":  400,
+                 "detail":  "任务责任人与验收人不得为同一任职",
+                 "instance":  "/api/v1/tasks"
+             }
+}

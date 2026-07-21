@@ -1,0 +1,17 @@
+{
+    "id":  "20af1a8b-0cfd-4b03-8fd3-8d50ad62ac5f",
+    "source_event_id":  "42416528-480c-4151-a916-efbc09ce4728",
+    "event_type":  "WORKEXPECTATIONMISSED",
+    "schema_version":  1,
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+    "occurred_at":  "2026-07-17T17:12:11.769+00:00",
+    "payload_snapshot":  {
+                             "type":  "jsonb",
+                             "value":  "{\"dueAt\": \"2026-07-17T17:07:11.561005Z\", \"status\": \"MISSED\", \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"businessDate\": \"2026-07-17\", \"workExpectationId\": \"2a500000-0000-0000-0000-000000000005\", \"workPackageItemId\": \"2a200000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+                             "null":  false
+                         },
+    "processing_status":  "PROCESSED",
+    "attempt_count":  1,
+    "row_version":  2
+}

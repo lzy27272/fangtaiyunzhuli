@@ -1,0 +1,13 @@
+{
+    "case":  "malformed-token",
+    "status":  401,
+    "expectedStatuses":  [
+                             401
+                         ],
+    "passed":  true,
+    "correlationId":  "b2a1985b-a615-4731-bbc7-812841338965",
+    "response":  {
+                     "title":  "身份认证失败",
+                     "detail":  "需要有效的Bearer JWT"
+                 }
+}

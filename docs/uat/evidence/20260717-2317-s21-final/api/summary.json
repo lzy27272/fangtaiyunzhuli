@@ -1,0 +1,46 @@
+{
+    "runId":  "20260717-2317-s21-final",
+    "executedAt":  "2026-07-17T23:17:44.7831539+08:00",
+    "apiOrigin":  "http://127.0.0.1:61562",
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "roleProbeCount":  34,
+    "supervisorManualTask":  {
+                                 "taskId":  "d428a216-2cc8-460a-acc9-fe536c35e0cd",
+                                 "finalStatus":  "CANCELLED"
+                             },
+    "permissionDenialProbeCount":  6,
+    "housekeepingSupervisorEvaluation":  {
+                                             "evaluationId":  "0866f439-44ce-4626-9022-0b9ac32d26df",
+                                             "actorAccountId":  "19000000-0000-0000-0000-000000000004",
+                                             "outcome":  "FAIL"
+                                         },
+    "scenarioCount":  3,
+    "scenarios":  [
+                      {
+                          "id":  "A",
+                          "name":  "housekeeping-photo-standard-remediation-execution-gm-acceptance",
+                          "workRecordId":  "2e000000-0000-0000-0000-000000000001",
+                          "taskId":  "5dbdc8ff-55f3-46b4-9251-0305fe17904f",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "B",
+                          "name":  "front-complaint-standard-rule-task-closure",
+                          "workRecordId":  "d4a221ad-dbff-4dbb-a271-a312cfd3bc2d",
+                          "taskId":  "1e22ca80-eb92-4d76-92d7-c3d8bfaf17ad",
+                          "finalStatus":  "COMPLETED"
+                      },
+                      {
+                          "id":  "C",
+                          "name":  "missing-submission-missed-reminder-task-overdue-escalation",
+                          "expectationId":  "2a500000-0000-0000-0000-000000000005",
+                          "taskId":  "77e453dd-8ef5-4aaf-94a2-16406c68e012",
+                          "finalStatus":  "PENDING_ACK",
+                          "slaStatus":  "OVERDUE"
+                      }
+                  ],
+    "requestCount":  83,
+    "failedRequestCount":  0,
+    "expectedDeniedRequestCount":  6,
+    "evidenceRoot":  "C:\\Users\\MSN\\Documents\\四方馆AI中台项目\\docs\\uat\\evidence\\20260717-2317-s21-final\\api"
+}

@@ -1,0 +1,36 @@
+﻿{
+    "id":  "f23440c0-cc86-4539-bebf-d5605657cd1a",
+    "task_no":  "T-20260717-F23440C0",
+    "source_event_id":  "9729f536-2429-45e9-bc48-f32568bfb279",
+    "source_action_id":  "9f02da9c-61e2-42f2-a29a-a38dc0e04da7",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+    "work_record_id":  "2e000000-0000-0000-0000-000000000001",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "org_unit_name":  "å®¢æ¿é¨",
+    "title":  "å®¢æ¿å«çå¾çæ´æ¹ï¼UATï¼",
+    "description":  "æ ¹æ®å¤±è´¥çå«çæ åè¯ä»·å®ææ´æ¹å¹¶ç±åºæ»éªæ¶ã",
+    "lifecycle_status":  "COMPLETED",
+    "sla_status":  "ON_TIME",
+    "priority":  "HIGH",
+    "due_at":  "2026-07-17T16:37:52.710+00:00",
+    "completed_at":  "2026-07-17T14:37:53.143+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"score\": 70, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"subjectId\": \"2e000000-0000-0000-0000-000000000001\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"07df73e4-b0a4-4bc6-a030-0f348d7feca4\", \"workRecordId\": \"2e000000-0000-0000-0000-000000000001\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000003\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000001\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"summary\": \"Hygiene remediation and evidence retake completed\", \"issueClosed\": true, \"roomsChecked\": 32, \"photoAttached\": true}",
+                            "null":  false
+                        },
+    "row_version":  5,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T14:37:52.697+00:00",
+    "updated_at":  "2026-07-17T14:37:53.143+00:00"
+}

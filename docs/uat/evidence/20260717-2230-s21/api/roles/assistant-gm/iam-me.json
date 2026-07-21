@@ -1,0 +1,58 @@
+﻿{
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "account":  {
+                    "id":  "19000000-0000-0000-0000-000000000008",
+                    "loginName":  "assistant.gm",
+                    "displayName":  "æ­å·ä¸­å¿åºåºå©æ²ä¹",
+                    "status":  "ACTIVE"
+                },
+    "employee":  {
+                     "id":  "19100000-0000-0000-0000-000000000007",
+                     "employeeNo":  "E-AGM-001",
+                     "name":  "æ²ä¹",
+                     "employmentStatus":  "ACTIVE"
+                 },
+    "primaryRole":  "ASSISTANT_GENERAL_MANAGER",
+    "roles":  [
+                  "ASSISTANT_GENERAL_MANAGER"
+              ],
+    "permissions":  [
+                        "work-record.read",
+                        "task.create",
+                        "work-record.review",
+                        "task.act",
+                        "evaluation.manual-review",
+                        "dashboard.hotel",
+                        "task.review",
+                        "task.cancel",
+                        "work-package.allocate",
+                        "standard.read",
+                        "work-record.submit",
+                        "evaluation.read",
+                        "task.dispatch",
+                        "org.read",
+                        "notification.read",
+                        "work-package.read",
+                        "task.read"
+                    ],
+    "tenantScope":  false,
+    "organizationScopes":  [
+                               "12000000-0000-0000-0000-000000000003",
+                               "12000000-0000-0000-0000-000000000005",
+                               "12000000-0000-0000-0000-000000000006"
+                           ],
+    "positionAssignments":  [
+                                {
+                                    "id":  "19200000-0000-0000-0000-000000000008",
+                                    "organizationId":  "12000000-0000-0000-0000-000000000003",
+                                    "organizationCode":  "HZ-CENTER",
+                                    "organizationName":  "æ­å·ä¸­å¿åº",
+                                    "positionId":  "14000000-0000-0000-0000-000000000007",
+                                    "positionCode":  "ASSISTANT_GENERAL_MANAGER",
+                                    "positionName":  "åºå©",
+                                    "primary":  true,
+                                    "assignmentType":  "PERMANENT",
+                                    "validFrom":  "2023-11-20"
+                                }
+                            ]
+}

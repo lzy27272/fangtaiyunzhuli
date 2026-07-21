@@ -1,0 +1,35 @@
+﻿{
+    "id":  "dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+    "task_no":  "T-20260717-DD51551F",
+    "source_event_id":  "af5bbd31-fcd9-4e18-9f1d-fbd473383dfd",
+    "source_action_id":  "2d1e8c09-bb65-4042-8b3d-22fdbcafccf1",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+    "work_record_id":  "2e000000-0000-0000-0000-000000000001",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "org_unit_name":  "å®¢æ¿é¨",
+    "title":  "å®¢æ¿å«çå¾çæ´æ¹ï¼UATï¼",
+    "description":  "æ ¹æ®å¤±è´¥çå«çæ åè¯ä»·å®ææ´æ¹å¹¶ç±åºæ»éªæ¶ã",
+    "lifecycle_status":  "RESULT_SUBMITTED",
+    "sla_status":  "ON_TIME",
+    "priority":  "HIGH",
+    "due_at":  "2026-07-17T16:29:50.883+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"score\": 70, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"subjectId\": \"2e000000-0000-0000-0000-000000000001\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"e303dbfd-ca83-47c2-8d21-aaf7f5a04171\", \"workRecordId\": \"2e000000-0000-0000-0000-000000000001\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000003\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000001\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"summary\": \"Hygiene remediation and evidence retake completed\", \"issueClosed\": true, \"roomsChecked\": 32, \"photoAttached\": true}",
+                            "null":  false
+                        },
+    "row_version":  3,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T14:29:50.869+00:00",
+    "updated_at":  "2026-07-17T14:32:54.791+00:00"
+}

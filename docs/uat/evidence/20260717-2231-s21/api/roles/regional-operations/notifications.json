@@ -1,0 +1,23 @@
+﻿[
+    {
+        "id":  "939edac5-99f5-4584-a870-202cc7989910",
+        "notification_type":  "TASK_ASSIGNED",
+        "title":  "æ¶å°æ°ä»»å¡",
+        "content":  "åºåå¤é¨åºOTAè¯åé£é©æ´æ¹ï¼UATï¼",
+        "source_type":  "TASK",
+        "source_id":  "dabb2129-c9b0-4169-9c2c-f4c9053b325c",
+        "recipient_assignment_id":  "19200000-0000-0000-0000-000000000007",
+        "delivered_at":  "2026-07-17T14:29:50.951+00:00",
+        "row_version":  0
+    },
+    {
+        "id":  "2d000000-0000-0000-0000-000000000001",
+        "notification_type":  "UAT_READY",
+        "title":  "åºåè¿è¥UATå¾\u0085å",
+        "content":  "è¯·å®ææ­å·åä¸æµ·ä¸¤åºå·¡æ£ã",
+        "source_type":  "UAT",
+        "recipient_assignment_id":  "19200000-0000-0000-0000-000000000007",
+        "delivered_at":  "2026-07-17T14:29:36.182+00:00",
+        "row_version":  0
+    }
+]

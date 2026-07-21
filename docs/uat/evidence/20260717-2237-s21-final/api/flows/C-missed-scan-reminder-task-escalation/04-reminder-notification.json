@@ -1,0 +1,11 @@
+﻿{
+    "id":  "ede636bb-8078-43d2-bbe3-26889af045d7",
+    "notification_type":  "MISSED_WORK_REMINDER",
+    "title":  "å²ä½å·¥ä½å·²æ¼äº¤",
+    "content":  "è¯·ç«å³è¡¥äº¤å¹¶å®ææ´æ¹ã",
+    "source_type":  "MANAGEMENT_EVENT",
+    "source_id":  "1934ff82-39e0-4024-b1ed-321e006f76d2",
+    "recipient_assignment_id":  "19200000-0000-0000-0000-000000000003",
+    "delivered_at":  "2026-07-17T14:37:53.641+00:00",
+    "row_version":  0
+}

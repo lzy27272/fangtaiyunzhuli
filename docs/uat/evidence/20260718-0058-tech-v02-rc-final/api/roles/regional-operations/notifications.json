@@ -1,0 +1,30 @@
+{
+    "status":  200,
+    "correlationId":  "c0a3102d-c1a0-422f-a69c-b0297263a7ef",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "5cd5fd39-9a73-4c8f-94f5-f30286a31759",
+                                   "notification_type":  "TASK_ASSIGNED",
+                                   "title":  "收到新任务",
+                                   "content":  "区域多门店OTA评分风险整改（UAT）",
+                                   "source_type":  "TASK",
+                                   "source_id":  "abbf5db0-1107-4bed-b0cf-420003fd3518",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000007",
+                                   "delivered_at":  "2026-07-17T16:57:13.463+00:00",
+                                   "row_version":  0
+                               },
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000001",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "区域运营UAT待办",
+                                   "content":  "请完成杭州和上海两店巡检。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000007",
+                                   "delivered_at":  "2026-07-17T16:57:13.049+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  2
+             }
+}

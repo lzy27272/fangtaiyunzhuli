@@ -1,0 +1,111 @@
+{
+    "status":  200,
+    "correlationId":  "ac8238d2-9401-4912-a8c5-e5f32e617ac7",
+    "body":  {
+                 "hotel":  {
+                               "id":  "12000000-0000-0000-0000-000000000003",
+                               "name":  "杭州中心店",
+                               "city":  "杭州",
+                               "room_count":  128
+                           },
+                 "activeEmployeeCount":  5,
+                 "todayWorkSubmissionCount":  4,
+                 "latestMetrics":  [
+                                       {
+                                           "code":  "ADR",
+                                           "name":  "平均房价",
+                                           "unit":  "CNY",
+                                           "business_date":  "2026-07-18",
+                                           "value":  628.0000
+                                       },
+                                       {
+                                           "code":  "OCCUPANCY",
+                                           "name":  "入住率",
+                                           "unit":  "PERCENT",
+                                           "business_date":  "2026-07-18",
+                                           "value":  87.6000
+                                       },
+                                       {
+                                           "code":  "OTA_SCORE",
+                                           "name":  "OTA评分",
+                                           "unit":  "SCORE",
+                                           "business_date":  "2026-07-18",
+                                           "value":  4.9100
+                                       },
+                                       {
+                                           "code":  "REVENUE",
+                                           "name":  "营业收入",
+                                           "unit":  "CNY",
+                                           "business_date":  "2026-07-18",
+                                           "value":  86240.0000
+                                       },
+                                       {
+                                           "code":  "REVPAR",
+                                           "name":  "每间可售房收入",
+                                           "unit":  "CNY",
+                                           "business_date":  "2026-07-18",
+                                           "value":  550.1000
+                                       }
+                                   ],
+                 "risks":  [
+                               {
+                                   "risk_type":  "OVERDUE_TASK",
+                                   "source_id":  "a6aeab94-1a57-46e4-80e0-5d52da25a61a",
+                                   "title":  "任务逾期：区域多门店OTA评分风险整改（UAT）",
+                                   "severity":  "HIGH",
+                                   "status":  "PENDING_ACK",
+                                   "occurred_at":  "2026-07-17T17:12:11.917+00:00",
+                                   "org_unit_id":  "12000000-0000-0000-0000-000000000003"
+                               },
+                               {
+                                   "risk_type":  "OVERDUE_TASK",
+                                   "source_id":  "724fe36b-1fcd-42b2-add2-17ca4f0be463",
+                                   "title":  "任务逾期：岗位漏交整改（UAT）",
+                                   "severity":  "CRITICAL",
+                                   "status":  "PENDING_ACK",
+                                   "occurred_at":  "2026-07-17T17:12:11.828+00:00",
+                                   "org_unit_id":  "12000000-0000-0000-0000-000000000006"
+                               },
+                               {
+                                   "risk_type":  "MISSED_WORK",
+                                   "source_id":  "2a500000-0000-0000-0000-000000000005",
+                                   "title":  "岗位工作漏交：客房巡检与图片证据",
+                                   "severity":  "HIGH",
+                                   "status":  "MISSED",
+                                   "occurred_at":  "2026-07-17T17:07:11.561+00:00",
+                                   "org_unit_id":  "12000000-0000-0000-0000-000000000006"
+                               }
+                           ],
+                 "incompleteTasks":  [
+                                         {
+                                             "id":  "724fe36b-1fcd-42b2-add2-17ca4f0be463",
+                                             "task_no":  "T-20260717-724FE36B",
+                                             "title":  "岗位漏交整改（UAT）",
+                                             "lifecycle_status":  "PENDING_ACK",
+                                             "sla_status":  "OVERDUE",
+                                             "priority":  "URGENT",
+                                             "due_at":  "2026-07-17T17:12:11.828+00:00",
+                                             "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+                                             "org_unit_name":  "客房部",
+                                             "assignee_name":  "周敏",
+                                             "reviewer_name":  "沈乔"
+                                         },
+                                         {
+                                             "id":  "a6aeab94-1a57-46e4-80e0-5d52da25a61a",
+                                             "task_no":  "T-20260717-A6AEAB94",
+                                             "title":  "区域多门店OTA评分风险整改（UAT）",
+                                             "lifecycle_status":  "PENDING_ACK",
+                                             "sla_status":  "OVERDUE",
+                                             "priority":  "HIGH",
+                                             "due_at":  "2026-07-17T17:12:11.917+00:00",
+                                             "org_unit_id":  "12000000-0000-0000-0000-000000000003",
+                                             "org_unit_name":  "杭州中心店",
+                                             "assignee_name":  "许晨",
+                                             "reviewer_name":  "赵晨"
+                                         }
+                                     ],
+                 "openTaskCount":  2,
+                 "overdueTaskCount":  2,
+                 "missedWorkCount":  1
+             }
+}

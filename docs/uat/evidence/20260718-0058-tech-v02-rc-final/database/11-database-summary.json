@@ -1,0 +1,11 @@
+[ {
+  "six_role_accounts" : 6,
+  "hygiene_attachments" : 0,
+  "completed_evaluations" : 0,
+  "uat_tasks" : 3,
+  "completed_uat_tasks" : 0,
+  "cancelled_uat_tasks" : 1,
+  "supervisor_manual_tasks" : 1,
+  "escalation_transitions" : 2,
+  "missed_work_reminders" : 1
+} ]

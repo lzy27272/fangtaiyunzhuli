@@ -1,0 +1,17 @@
+{
+    "id":  "169c9077-6b6e-4726-8a69-0327b321f41d",
+    "source_event_id":  "9d30261f-a4a8-437b-962a-0ed19f6e3b04",
+    "event_type":  "STANDARDEVALUATIONCOMPLETED",
+    "schema_version":  1,
+    "org_unit_id":  "12000000-0000-0000-0000-000000000005",
+    "position_assignment_id":  "19200000-0000-0000-0000-000000000002",
+    "occurred_at":  "2026-07-17T15:05:08.553+00:00",
+    "payload_snapshot":  {
+                             "type":  "jsonb",
+                             "value":  "{\"score\": 60, \"outcome\": \"FAIL\", \"fullScore\": 100, \"orgUnitId\": \"12000000-0000-0000-0000-000000000005\", \"subjectId\": \"4903ad34-34c7-4de0-a85b-d4fb235ace30\", \"subjectType\": \"WORK_RECORD\", \"evaluationId\": \"eac3c06c-4628-4572-bf69-acdb1a120c22\", \"workRecordId\": \"4903ad34-34c7-4de0-a85b-d4fb235ace30\", \"standardVersionId\": \"27000000-0000-0000-0000-000000000002\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000002\"}",
+                             "null":  false
+                         },
+    "processing_status":  "PROCESSED",
+    "attempt_count":  1,
+    "row_version":  2
+}

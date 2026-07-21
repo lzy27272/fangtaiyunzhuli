@@ -1,0 +1,11 @@
+{
+    "status":  403,
+    "correlationId":  "17fff2bf-1eba-4c59-aafe-f2b327a0026b",
+    "body":  {
+                 "type":  "about:blank",
+                 "title":  "访问被拒绝",
+                 "status":  403,
+                 "detail":  "目标组织不在当前账号的有效数据范围内",
+                 "instance":  "/api/v1/dashboards/hotels/12000000-0000-0000-0000-000000000004"
+             }
+}

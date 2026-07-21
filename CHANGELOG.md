@@ -1,0 +1,545 @@
+# Hotel AI OS Change Log
+
+本文件记录Hotel AI OS每一次产品、技术、数据库、API、权限、安全、页面和文档变更。
+
+记录原则：
+
+- 所有变更先进入Unreleased。
+- 只有完成开发、测试和验收后，才能移入正式TECH版本。
+- 产品蓝图变更使用PRODUCT版本，技术交付使用TECH版本。
+- 已发布记录采用追加式维护，不通过覆盖历史隐藏旧决策。
+- 仅有规划、尚未编码的内容必须明确标记为规划中。
+
+## 版本标识
+
+| 类型 | 标识示例 | 当前值 | 含义 |
+|---|---|---|---|
+| 产品蓝图 | PRODUCT-V1.2 | PRODUCT-V1.2 | 产品为什么这样设计、管理链和领域边界 |
+| 技术发行 | TECH-V0.1 | TECH-V0.1 | 当前真正完成并验收的系统能力 |
+| API主版本 | API-V1 | /api/v1 | HTTP向后兼容边界 |
+| 数据库迁移 | DB-V4 | 已发布DB-V4；Pilot运行DB-V16 | 当前已发布基线与Pilot内部测试迁移位置 |
+| OpenAPI契约 | 0.1.0-sprint1 | 已发布0.1.0-sprint1；Pilot运行0.2.3-pilot.6 | 当前已发布与内部测试接口制品 |
+
+禁止只写“V1.2”而不说明是PRODUCT、TECH、API还是数据库版本。
+
+## Unreleased
+
+### Added
+
+#### CHG-20260720-025：实施TECH-V0.2-PILOT.6真实操作闭环及CEO集团模板治理
+
+- 日期：2026-07-20—2026-07-21。
+- 状态：Unreleased / `TECH-V0.2-PILOT.6` / Internal Pilot ACTIVE / Real PostgreSQL, API and Public Browser UAT PASS。
+- 产品蓝图版本：PRODUCT-V1.2；冻结组织树、一人多岗、组织数据范围、标准中心版本模型和任务状态机均未改变。
+- 变更原因：PILOT.5虽能读取真实PostgreSQL，但“我的工作”、团队复核、任务下达和配置中心仍缺少面向真实门店测试所需的统一陈述、多附件、任务证据及模板编辑入口；集团还需要由CEO统一配置所有岗位标准工作、任务和门店驾驶舱模板。
+- 数据库：新增Flyway V16；为岗位工作条目增加结构化提交策略，为工作记录增加完成情况、异常协同和下一步行动；新增不可变补充说明；新增版本化任务/门店驾驶舱企业模板；任务证据增加扫描状态；三张新增表启用并强制RLS。
+- 权限：新增`template.read/manage/publish`；主管及以上只读取已发布模板，只有CEO拥有模板草稿管理和发布权限；模板、任务、记录和附件继续受租户、组织范围及精确任职约束。
+- 后端：新增企业模板API；工作记录支持宽松草稿校验、完整提交校验、提交策略和提交后补充；工作/任务附件支持JPEG、PNG、PDF、DOCX、XLSX及20 MiB上限；任务证据实现上传、下载和提交前删除。
+- 前端：新增CEO“集团模板配置”；岗位标准工作复用工作包版本/发布模型，任务模板和门店驾驶舱模板采用企业模板版本模型；任务中心支持新建并下达；我的工作支持草稿、多附件、文字陈述、提交和补充；团队工作只复核员工证据，不能代替员工修改附件。
+- API与制品：API主版本继续为API-V1；OpenAPI候选升级为`0.2.3-pilot.6`；后端制品升级为`0.2.0-pilot.6`，前端版本升级为`0.2.0-pilot.6`。
+- 部署与验证：后端完整回归53项、失败0、错误0、跳过2；前端Vite Pilot生产构建PASS；真实PostgreSQL升级至Flyway V16，52张表启用并强制RLS；部署前完成51张表的一致性逻辑备份和制品备份；八角色API UAT 8/8 PASS，真实组织→岗位→员工→任职→工作包→草稿→图片→提交闭环PASS；CEO模板写入、店总只读和403越权拒绝PASS；公网页面八角色严格验收8/8 PASS且业务请求无非预期4xx/5xx。
+- 修复：关闭登录后静态回退身份、真实身份和主岗选择之间的竞态，避免店助驾驶舱短暂以部门ID请求酒店资源；两条历史管理事件死信通过受控汇报链修复、审计和重放关闭，修复后Outbox、管理事件和规则动作失败/死信均为0。
+- 发布边界：`https://www.sfgzt.cn`当前运行PILOT.6并允许受控门店测试；TECH-V0.2正式版本仍为Unreleased，Sprint 3未因本次部署自动启动。
+
+#### CHG-20260719-024：完成TECH-V0.2-PILOT.5全岗位真实工作与权限可用性修复
+
+- 日期：2026-07-19。
+- 状态：Unreleased / `TECH-V0.2-PILOT.5` / Real PostgreSQL ACTIVE / 8-Role API and Public Browser UAT PASS。
+- 产品蓝图版本：PRODUCT-V1.2；未改变集团→区域→门店→部门组织模型、一人多岗、组织权限隔离或标准中心模型。
+- 根因：此前只有早期固定UAT任职获得少量工作包；店总、店助、前厅主管及OTA岗位缺少角色专属已发布工作包，新建任职也不会自动获得工作，导致页面虽存在但显示空结果；部分Pilot保护账号曾在主数据验收中被停用。
+- 数据库：新增Flyway V15，为前台员工、前厅主管、客房主管、店助、店总、OTA运营助理、OTA运营经理建立7套结构化岗位表单及已发布日清工作包；按当前有效任职动态下发并生成当日真实工作；恢复保护账号并补齐固定汇报链。
+- 前端：工作包详情显示当前有效下发并按权限区分查看、发布和下发；员工选择后自动带出任职组织；“我的工作”增加可填报和已漏交筛选；无岗位任职的CEO不再生成或展示虚假的“我的工作”；门店驾驶舱完全按`dashboard.hotel`权限控制。
+- 权限边界：执行岗位只读本人任职工作且团队接口403；主管及以上按组织范围查看团队；店助和店总可访问授权门店驾驶舱；OTA经理可访问授权区域多门店；CEO拥有租户配置能力但没有虚假个人工作。
+- 验收：8个保护账号登录、组织、标准、工作包、我的工作、团队工作、任务、评价、通知和对应驾驶舱全部按预期；7个岗位均完成真实工作记录写入，客房主管图片附件验证PASS；新建店总任职自动获得店总工作包；公网Playwright 8角色全部PASS，浏览器控制台、页面错误、请求失败和5xx均为0。
+- 运维：因当前会话无法创建SYSTEM启动任务，新增并安装当前Windows用户登录触发的`SifangguanPilotCoreApiUser`计划任务；实测退出码0且Core API健康为UP。正式生产仍建议改为SYSTEM服务或云端托管。
+- 关联证据：`docs/uat/TECH-V0.2-PILOT.5-ROLE-CAPABILITY-UAT.md`、`docs/uat/evidence/pilot5-role-capability/pilot5-role-capability-audit.md`、`docs/uat/evidence/pilot5-role-capability/pilot5-role-browser-uat.md`。
+
+#### CHG-20260719-023：修复Pilot登录中断并将PostgreSQL纳入Windows自动服务
+
+- 日期：2026-07-19。
+- 状态：Unreleased / `TECH-V0.2-PILOT.4` / Login Incident RESOLVED / Public UAT PASS。
+- 产品蓝图版本：PRODUCT-V1.2；未改变组织模型、一人多岗、权限隔离、标准中心或业务数据结构。
+- 故障表现：公网登录页提示需要有效Bearer JWT或长期停留在“正在验证”，组织、岗位、人员等真实业务功能无法进入。
+- 根因：Core API与公网入口仍在运行，但本机PostgreSQL进程已经停止；原运行方式为当前用户临时进程，未注册Windows服务。只检查HTTP进程存活无法代表数据库可用。
+- 处理内容：恢复`127.0.0.1:55432`数据库；新增`SifangguanPostgreSQL`延迟自动启动服务和三级失败重启策略；把手动启动脚本改为优先管理数据库服务；服务器状态检查增加数据库服务状态；新增安全安装脚本`tools/pilot/Install-PilotPostgresService.ps1`。
+- 数据影响：没有重建数据库、没有修改Flyway版本、没有丢失业务数据；公网UAT产生的临时数据已清理。
+- API与权限影响：API-V1、JWT格式、组织权限和数据范围均未改变。
+- 验证结果：服务状态`Running/Automatic`；本机真实CEO登录返回HTTP 200且成功签发JWT；公网真实账号组织、岗位、人员8步闭环全部PASS；浏览器控制台、页面错误、非预期失败请求和服务端5xx均为0。
+- 已知边界：Core API当前仍依赖部署用户登录启动项，正式生产前需要进一步改为受管Windows服务或迁移至云端运行环境。
+- 关联证据：`docs/uat/evidence/pilot4-master-data/pilot4-master-data-uat.json`、`docs/PILOT-WINDOWS-SERVER-RUNBOOK.md`。
+
+#### CHG-20260719-022：完成TECH-V0.2-PILOT.4组织、岗位与人员全生命周期维护
+
+- 日期：2026-07-19。
+- 状态：Unreleased / `TECH-V0.2-PILOT.4` / Real PostgreSQL ACTIVE / Public Master-Data UAT PASS。
+- 产品蓝图版本：PRODUCT-V1.2；未改变集团→区域→门店→部门组织模型、一人多岗、组织数据范围或历史审计边界。
+- 变更类型：Organization Configuration / RBAC / API / Frontend / Audit / Test / Documentation。
+- 修改内容：为组织、岗位和人员增加编辑、启用/停用及受控删除API与页面操作；组织编辑保留固定类型和上级关系；员工可修改资料、登录名并按需重置密码；任职分配仅允许选择启用的组织、岗位和人员。
+- 生命周期规则：组织停用同步停用下级组织、当前任职和直接组织范围授权；岗位停用结束当前任职；人员停用同步停用登录账号、结束当前任职和角色授权；重新启用不自动恢复旧任职或授权。
+- 删除边界：只有已经停用、没有下级且从未被任职、权限、工作、任务或审计业务引用的主数据允许硬删除；存在历史引用时API明确拒绝并要求保留为停用状态，不级联删除业务历史。
+- 权限与审计：所有写操作继续要求`org.manage`及现有租户/组织范围；岗位、人员和硬删除限租户级管理员；更新和删除写入审计日志；普通前台账号修改组织返回403。
+- 数据库影响：无新增迁移，沿用Flyway V14现有状态字段、外键和FORCE RLS；无历史数据重写。
+- API影响：API-V1向后兼容增加`PUT/DELETE /org/units/{id}`、`PUT/DELETE /org/positions/{id}`、`PUT/DELETE /org/employees/{id}`；组织、岗位和人员列表补齐生命周期字段。
+- 验证结果：新增主数据生命周期集成测试3/3 PASS；后端完整回归51项、失败0、错误0、跳过2；Pilot前端生产构建PASS；公网真实CEO账号完成组织、岗位、人员的8个新建/编辑/停用/删除步骤，控制台0错误、页面0错误、非预期请求失败0、服务端5xx为0；临时数据已清理。
+- 关联证据：`docs/uat/TECH-V0.2-PILOT.4-MASTER-DATA-UAT.md`、`docs/uat/evidence/pilot4-master-data/pilot4-master-data-uat.md`、`docs/PILOT-TEST-USER-GUIDE.md`。
+
+#### CHG-20260719-021：完成TECH-V0.2-PILOT.3真实账号与公网页面全流程可用性收口
+
+- 日期：2026-07-19。
+- 状态：Unreleased / `TECH-V0.2-PILOT.3` / Real PostgreSQL Pilot ACTIVE / Public UI Full-Flow PASS。
+- 产品蓝图版本：PRODUCT-V1.2；未改变组织模型、一人多岗、组织数据范围、标准中心、规则中心或管理闭环。
+- 变更类型：Pilot Runtime / Authentication / Organization Configuration / Work Package / Attachment Security / Frontend / API / UAT / Documentation。
+- 数据库与认证：新增Flyway V14本地Pilot账号认证迁移；公网应用改为真实账号密码登录并签发短期JWT，账号的组织范围、任职和业务角色均从PostgreSQL解析；外层HTTP Basic Auth继续保护整个站点，应用JWT通过独立请求头传入Caddy后再安全转换为上游Bearer认证，避免双层认证争用同一个`Authorization`头。
+- 可操作页面：CEO可通过网页新增区域/门店/部门、岗位、员工登录账号、一人多岗任职及组织范围角色；可创建工作包草稿、绑定已发布表单和标准、发布、下发并生成当日工作；岗位员工可登录查看本人工作、提交结构化工作记录并上传图片附件；低权限账号不显示越权修改入口。
+- 权限隔离：真实公网页面验收中，CEO读取租户全量组织；新建前台员工同时具有自定义兼岗和“前台员工”主岗，登录后仅能读取其被授权的1个门店，不能切换到模拟角色或创建组织/工作包。
+- 附件安全：Pilot本机在AMSI和Defender扫描提供方均不可用时，只允许已成功解码、像素受限且由服务端重新编码的PNG/JPEG进入`SANITIZED_IMAGE`状态；生产默认仍失败关闭，真实扫描拒绝仍不可绕过。下载内容为去除元数据和附加负载后的规范化图片，不保证与原始字节逐字相同。
+- 缺陷修复：修复工作包详情把PostgreSQL `smallint[]`驱动对象直接暴露给Jackson造成HTTP 500的问题；服务返回前把`weekdays`转换为脱离数据库连接的Java列表，并增加HTTP序列化回归断言。
+- 验证结果：工作包定向集成测试1/1 PASS；完整后端回归48项、失败0、错误0、跳过2；真实PostgreSQL API闭环完成门店、岗位、员工账号、任职、范围角色、工作包发布/下发、工作生成、记录提交和附件上传；公网Playwright页面闭环PASS，浏览器控制台0错误、页面0错误、请求失败0、服务端5xx为0；生成员工可见组织数为1，工作记录最终状态`SUBMITTED`。
+- 凭据治理：外层访问凭据与应用测试账号继续仅保存在本机受限ACL文件，不写入仓库、截图、验收JSON或聊天。
+- 发布边界：这是可下发门店开展内部测试的Pilot版本，不把TECH-V0.2自动改为正式Released；组织/岗位/员工现阶段以新增和分配为主，密码自助重置、历史主数据编辑/停用和正式SSO仍属于后续完善项。
+- 关联证据：`docs/uat/evidence/pilot3/pilot3-browser-uat.md`、`docs/uat/evidence/pilot3/pilot3-ui-full-flow.md`、`docs/uat/TECH-V0.2-PILOT.3-UAT-REPORT.md`、`docs/PILOT-TEST-USER-GUIDE.md`。
+
+#### CHG-20260718-020：Pilot切换为真实PostgreSQL业务UAT
+
+- 日期：2026-07-18。
+- 状态：Unreleased / `TECH-V0.2-PILOT.2` / Real PostgreSQL UAT ACTIVE / Public Domain E2E PASS。
+- 产品蓝图版本：PRODUCT-V1.2；未改变组织模型、一人多岗、权限隔离、标准中心模型、规则中心职责边界或任务状态机。
+- 变更类型：Pilot Runtime / PostgreSQL / API / RBAC / Frontend / Security / Operations / Documentation。
+- 数据库：在`D:\SifangguanHotelAIOS`部署PostgreSQL 14.22持久化实例，数据库`hotel_ai_os_uat`完成Flyway V1—V13和Sprint 2.1 UAT种子导入；运行账户为非超级用户且不具有`BYPASSRLS`，49张租户表启用并强制RLS；数据库仅监听`127.0.0.1:55432`，不对公网开放。
+- 后端：Core API仅监听`127.0.0.1:18080`，启用数据库RBAC/RLS、自动化Worker、工作期望SLA调度、附件本地持久化及AMSI扫描；Caddy仅把`/api/*`反向代理至回环API。
+- 前端：Pilot关闭演示回退和`?demo=1`强制演示能力，接入实时API；验收账号选择器扩展为CEO、前台员工、前厅主管、客房主管、店助、店总、区域/运营7个角色；规则中心支持按权限创建、修改/新版本及发布真实规则。
+- 安全边界：公网入口继续经Cloudflare Tunnel；站点与API统一受Caddy Basic Auth保护；数据库、API和附件目录均不直接暴露；测试凭据只保存在本机受限ACL文件，不写入仓库或聊天。Pilot仍使用受保护的开发请求头身份模拟，不等于目标企业SSO。
+- 启动方式：Caddy和Tunnel继续作为Windows自动服务；因当前执行上下文无管理员令牌，PostgreSQL和Core API采用当前用户登录启动项恢复。电脑重启后必须完成该Windows用户登录，真实业务API才会自动恢复。
+- 验证结果：PostgreSQL 14.22、Flyway 13、一人多岗、7角色真实权限均通过；规则创建→修改→发布写入链通过；本机及`https://www.sfgzt.cn`公网Playwright验证读取7个角色和7条数据库规则，真实API标识可见。Cloudflare注入的Browser Insights脚本被本站严格CSP拦截，会产生一条无业务影响的控制台提示。
+- 发布边界：这是内部Pilot UAT通道升级，不把TECH-V0.2改为正式Released，不替代目标SSO、真实现场签署、受控制品、备份恢复与正式生产运维门禁。
+- 关联文件：`apps/web/.env.pilot`、`apps/web/src/App.tsx`、`apps/web/src/api/`、`apps/web/src/data/roles.ts`、`infra/pilot/Caddyfile.windows-tunnel`、`tools/pilot/`、`docs/PILOT-TEST-VERSION-RELEASE.md`、`docs/PILOT-WINDOWS-SERVER-RUNBOOK.md`。
+
+#### CHG-20260718-019：生成贵州四方馆中台Pilot内部测试版与域名部署包
+
+- 日期：2026-07-18。
+- 状态：Unreleased / `TECH-V0.2-PILOT.1` Built / Local UI QA PASS / Custom Domain External QA PASS / ICP Pending。
+- 产品蓝图版本：PRODUCT-V1.2；未改变组织模型、一人多岗、权限隔离、标准中心、规则中心或任务状态机。
+- 变更类型：Branding / Pilot Channel / Frontend / Deployment / Documentation。
+- 修改内容：产品展示名称统一为“贵州四方馆酒店管理有限公司中台”；新增Pilot Test Version、内部测试版和版本标识；新增隔离的`pilot`构建模式、纯演示数据通道、Caddy HTTPS与安全响应头部署配置；目标域名固定为`www.sfgzt.cn`。
+- 安全边界：Pilot静态演示制品不访问真实API，不携带本地JWT、测试令牌、数据库或附件；本地Mock OIDC和开发请求头认证禁止公网暴露。
+- Windows服务器：确认WAN IPv4 `100.64.185.139`属于运营商CGNAT，光猫IPv4端口映射不可形成公网入口；普通账号没有安全的IPv6单端口放行能力，因此采用Cloudflare Tunnel出站架构。Caddy v2.11.4以自动服务运行且仅监听`127.0.0.1:4180`；Windows不开放Pilot入站端口；cloudflared 2026.7.2签名有效。
+- 固定域名部署：`sfgzt.cn`权威Nameserver已切换到Cloudflare；创建Named Tunnel `sifangguan-pilot`，凭据存放于Git忽略运行目录并限制ACL；安装自动服务`SifangguanPilotTunnel`；`www.sfgzt.cn`路由到回环Caddy源站，根域名经独立回环入口308跳转到`https://www.sfgzt.cn`；历史Quick Tunnel已停止。
+- 验证结果：TypeScript/Vite Pilot生产构建PASS；历史Quick Tunnel的1440×1000桌面与390×844移动端渲染、任务中心导航和控制台均PASS；正式域名两个Cloudflare边缘IP返回200，独立外部抓取节点读取到正确标题和完整页面；本机Meta代理仍有旧DNS缓存导致普通本地curl握手失败，登记为环境已知限制；制品SHA-256为`0929DBEFAEE323E20E6113274A7C10C324C61441F301CA28BC8451C0E00DD094`。
+- 外部阻塞：ICP备案号尚未确认；Pilot可访问不等于TECH-V0.2正式Released，也不替代目标SSO、真实现场证据、签署、受控Git制品和目标运行保障。
+- 并行治理：产品负责人允许Pilot测试与Sprint 3后续开发并行；Pilot稳定通道与Sprint 3开发通道必须隔离，V1—V13不可修改，TECH-V0.2正式Released状态不因Pilot可测试而自动改变。
+- 关联文件：`apps/web/src/product.ts`、`apps/web/.env.pilot`、`infra/pilot/`、`tools/pilot/`、`docs/PILOT-TEST-VERSION-RELEASE.md`、`docs/PILOT-WINDOWS-SERVER-RUNBOOK.md`。
+
+#### CHG-20260718-018：完成TECH-V0.2发布门禁稳定快照终审
+
+- 日期：2026-07-18。
+- 状态：Unreleased / Local Release Gate Hardening PASS / Release NO-GO。
+- 产品蓝图版本：PRODUCT-V1.2；组织模型、一人多岗、权限隔离、标准中心和管理闭环均未改变。
+- 目标技术版本：TECH-V0.2。
+- 变更类型：Fixed / Security / Release Governance / Tests / Documentation。
+- 修复内容：将签署保留意见、Worker/测试计数改为严格整数；强制附件存储类型精确为`OBJECT_STORAGE`并拒绝未知或额外角色；冻结五类正式制品各唯一一次；严格校验schema、版本、角色、RC标签与带时区ISO 8601时间；最终门禁从首次锁定的同一字节快照解析Worker JSON/XML、manifest与SHA256SUMS并在结论前末端重验，拒绝manifest瞬时A→B→A替换；严格UTF-8解析兼容至多一个开头BOM。
+- 验证结果：外部证据主体绑定与负向测试`34/34`、最终门禁证据绑定`24/24`、收口契约`19/19`、总控负向`6/6`、本地证据一致性`15/15`全部PASS；PowerShell AST 0错误；独立复核未发现剩余可复现的P0/P1/P2门禁绕过或假PASS路径。
+- 副作用：测试临时残留、签署、审批、Git提交、标签、发布状态修改和网络写入均为0；无数据库迁移、API、业务页面或权限模型变更。
+- 发布判断：正式外部证据包、规范门禁输入、真实SSO/签署/现场附件/目标运维材料、受控Git HEAD/远程/标签及正式RC3制品仍不存在；默认门禁保持1 PASS / 5 BLOCKED，TECH-V0.2继续Unreleased，Sprint 3未启动。
+- 文档版本：主报告`RC-FINAL-V1.6`，候选说明`RC-NOTE-V1.4`。
+- 关联文件：`tools/release/Test-TechV02ExternalEvidenceBundle.ps1`、`tools/release/Test-TechV02ReleaseGate.ps1`、`tools/release/tests/Test-TechV02ExternalEvidenceBundleNegative.ps1`、`tools/release/tests/Test-TechV02ReleaseGateEvidenceBinding.ps1`、`docs/TECH-V0.2-RELEASE-CANDIDATE-FINAL-REPORT.md`。
+
+#### CHG-20260718-017：加固外部证据主体绑定与最终门禁复核
+
+- 日期：2026-07-18。
+- 状态：Unreleased / Local Release Governance Hardening PASS / Release NO-GO。
+- 产品蓝图版本：PRODUCT-V1.2；组织模型、一人多岗、权限隔离、标准中心和管理闭环均未改变。
+- 目标技术版本：TECH-V0.2。
+- 变更类型：Fixed / Security / Release Governance / Tests / Documentation。
+- 受阻根因：目标SSO和目标运维验收文档分别要求10方专项签核，但结构化证据此前只校验单一责任人；现场照片只声明SHA-256，未强制读取原始照片文件；源码追溯只验证本地HEAD、标签和制品，未绑定受控远程、提交身份或仓库责任人审批；最终门禁未逐一重读全部派生证据文件，存在外部重算后证据被替换的时间窗口。
+- 修复内容：目标SSO与目标运维分别冻结10个指定审批角色，强制唯一签名ID、唯一真人签署人、`SIGNED/APPROVED`、零保留意见和受控签署保证；现场照片新增`originalFilePath`，从同一锁定字节快照派生文件URI、SHA-256与大小，并与文件名、声明值、上传、下载和恢复哈希逐项一致；源码追溯强制唯一且一致的受控Git fetch/push URL、远程分支与跟踪提交、HEAD作者/提交者身份，并要求`REPOSITORY_OWNER`审批绑定精确远程、分支、HEAD、RC标签、manifest SHA-256及发布时间，时间顺序必须为“提交不晚于远程发布、不晚于仓库审批”；最终6项门禁对所有证据URI与SHA重新读取核验，制品和照片均使用单次锁定快照。
+- 模板治理：SSO、目标运维、现场照片、外部证据包和派生门禁输入示例同步新结构；所有示例仍为`PENDING`和空身份/空证据，不能作为正式材料。
+- 验证结果：外部证据针对性套件18/18 PASS，覆盖大小写严格状态、10方签核正反路径、受控远程策略、发布时间顺序、真实文件字节绑定、文件名/大小/SHA篡改和验收JSON自引用拒绝；PowerShell AST解析0错误。完整收口契约、总控负向、最终门禁及文档一致性将在同一变更收口时再次执行。
+- 影响：无数据库迁移、无API、无业务页面、无组织或权限模型变更；仅收紧正式发布证据协议和只读校验器。
+- 剩余边界：本地工具不能生成或替代目标SSO事实、真人签署、真实现场照片、受控Git远程/提交/标签或目标运维事实；TECH-V0.2仍为1 PASS / 5 BLOCKED，保持Unreleased，Sprint 3未启动。
+- 关联文件：`tools/release/Test-TechV02ExternalEvidenceBundle.ps1`、`tools/release/Test-TechV02ReleaseGate.ps1`、`tools/release/tests/Test-TechV02ExternalEvidenceBundleNegative.ps1`、`docs/releases/TECH-V0.2-EXTERNAL-EVIDENCE-BUNDLE.md`。
+
+#### CHG-20260718-016：关闭RC发布包默认密码与证据门禁缺口
+
+- 日期：2026-07-18。
+- 状态：Unreleased / Local Security Hardening PASS / Release NO-GO。
+- 产品蓝图版本：PRODUCT-V1.2；未改变组织模型、一人多岗、权限隔离、标准中心或管理闭环。
+- 目标技术版本：TECH-V0.2。
+- 变更类型：Fixed / Security / Release Governance / Test Infrastructure。
+- 问题事实：首次机器可读发布包扫描在两套RC2后端JAR中发现4次`PASSWORD_ASSIGNMENT`命中；源到使用分析确认主数据源与Flyway密码带有JAR内置回退值，缺少外部变量时可进入数据库认证路径。
+- 修复内容：密码配置改为无回退值的必填外部变量；应用主入口在创建Spring上下文、迁移、数据库连接和监听端口前校验两项密钥；UAT Docker启动器在启动数据库前校验必需数据库变量非空；UAT示例不再携带预设密码；新增发布配置与密钥预检回归测试；可复现构建工具支持独立输出根目录，避免覆盖历史候选制品。
+- 证据治理：新增发布包深度敏感信息扫描器；新增外部证据包生成器、校验器、受控签署凭据要求和负向测试；签署身份按Trim/小写归一并拒绝前后空白；工作区证据路径拒绝symlink/junction/reparse point；正式证据和门禁输入统一保存到Git忽略的`.uat-runtime/release/`；发布门禁默认RC标识及示例输入统一到`TECH-V0.2-rc.3`，并要求Git标签建立后从同一HEAD生成`reproducibility-rc3-formal`制品，禁止把`rc.3-local`或历史RC2制品误作正式候选；发布收口总控作为唯一正式入口，逐级核验退出码、大小写严格JSON状态、严格类型副作用字段及门禁输入SHA漂移；READY状态只由四阶段全PASS、最终6/6和消费SHA一致性推导，调用方不能指定；生成器只写同目录唯一暂存文件，独立复算通过后以兼容Windows PowerShell的备份式原子替换晋升规范输入并清理暂存/备份；若替换后的备份清理失败则立即用备份原子恢复原目标，恢复失败时保留备份用于人工恢复；最终门禁锁定输入并返回实际消费SHA，任何阶段失败即停止。
+- 验证结果：发布配置与入口预检定向测试4/4 PASS；无密钥JAR启动0.2秒内失败，未渲染Spring Banner、未连接数据库、未监听端口且不输出密钥值；后端完整回归48项、失败0、错误0、跳过2；Flyway V1—V13成功；真实Live UAT宿主1/1、错误0且Hikari先于PostgreSQL关闭；RC3双构建5项制品完全一致，载荷指纹`546fc5175d97af2e0bbe3736468b1366d8890e89a6c6a6d761db4d40eba089ee`；深度扫描160个文件、120个归档、43,830个归档条目，0命中、0错误；外部证据负向测试4/4 PASS；收口总控负向测试6/6、契约测试19/19 PASS，覆盖大小写状态拒绝、`-AsLibrary`旁路拒绝、输入字节锁定、已有/新建目标原子晋升、复算拒绝、验证异常清理及替换后清理失败回滚；治理及Git引用状态前后指纹一致，残留门禁输入文件0。
+- 安全边界：若旧回退值曾在任何环境实际使用，环境责任人必须轮换并提交受控记录；本地工具不生成签字、不验证现实身份，只绑定受控平台/证书验证证据并失败关闭。
+- 发布判断：本地代码级阻塞已关闭；正式门禁仍为1 PASS / 5 BLOCKED，TECH-V0.2继续Unreleased，Sprint 3仍未启动编码。
+- 文档版本：收口总控及失败关闭流程纳入主报告`RC-FINAL-V1.4`和候选说明`RC-NOTE-V1.2`；未改变业务证据批次、TECH状态或正式发布结论。
+- 关联证据：`docs/uat/evidence/20260718-1306-tech-v02-shutdown-order-fixed/README.md`、`docs/uat/evidence/20260718-1315-tech-v02-rc3-local-hardening/README.md`、`docs/releases/TECH-V0.2-EXTERNAL-EVIDENCE-BUNDLE.md`、`docs/releases/TECH-V0.2-RELEASE-BLOCKER-HANDOFF.md`、`docs/TECH-V0.2-RELEASE-CANDIDATE-FINAL-REPORT.md`。
+
+#### CHG-20260718-015：修复Live UAT测试宿主资源关闭顺序
+
+- 日期：2026-07-18。
+- 状态：Unreleased / Test Infrastructure Hardening / 本地关闭。
+- 产品蓝图版本：PRODUCT-V1.2；未改变冻结架构或业务管理链。
+- 目标技术版本：TECH-V0.2。
+- 变更类型：Fixed / Test Infrastructure / Reliability。
+- 修改内容：Live UAT宿主通过合并Spring默认监听器的自定义`TestExecutionListener`，利用`afterTestClass`逆序语义让`DirtiesContext`先关闭应用上下文/调度器/Hikari，再释放Embedded PostgreSQL和运行标记；任一关闭失败时继续释放后续资源并保留suppressed异常；初始化中途失败时释放已启动的PostgreSQL；新增三项关闭顺序测试。
+- 修改原因：RC2归档日志显示测试数据库先停止后，仍运行的后台Worker在应用结束前产生11条连接错误；该问题不影响已完成的89次业务请求，但会污染测试收尾日志并掩盖真正的停机异常。
+- 数据库/API/生产影响：无；不新增迁移、不改变API或生产运行逻辑，仅加固opt-in Live UAT测试宿主。
+- 验证结果：第一次手工关闭ApplicationContext的Live实跑虽然使Hikari先于PostgreSQL关闭，但触发Spring Test `afterTestClass`监听器错误并以BUILD FAILURE结束，该失败证据继续保留。修订为监听器方案后，生命周期测试3/3 PASS、最终完整后端回归48项失败0/错误0/跳过2；第二次真实Live UAT宿主复验1/1、失败0、错误0、BUILD SUCCESS，Hikari于`13:11:27.817 +08:00`完成关闭，PostgreSQL于`13:11:27.968 +08:00`停止，所有托管进程与临时令牌已清理。
+- 发布边界：失败证据永久保留，不替换RC2业务证据，不改变1 PASS / 5 BLOCKED的正式发布判断。
+- 验证证据：`docs/uat/evidence/20260718-0215-tech-v02-local-hardening/README.md`、`docs/uat/evidence/20260718-0218-tech-v02-shutdown-order/README.md`、`docs/uat/evidence/20260718-1306-tech-v02-shutdown-order-fixed/README.md`。
+
+#### CHG-20260718-014：完成TECH-V0.2 RC2最终证据一致性审计
+
+- 日期：2026-07-18。
+- 状态：Unreleased / Documentation / Release Gate NO-GO。
+- 产品蓝图版本：PRODUCT-V1.2；未改变任何冻结架构或管理模型。
+- 目标技术版本：TECH-V0.2。
+- 变更类型：Documentation / Release Governance。
+- 修改内容：将`TECH-V0.2 Release Candidate Final Report`提升为RC-FINAL-V1.2，并把客房卫生、客诉、工作未提交三条闭环中的动态工作记录/任务标识修正为最终权威批次`20260718-0154-tech-v02-rc2`的实际值；修正数据库恢复演练SHA-256为同一链接证据中的实际值；将现场照片验收的运行状态引用从可变runtime指针改为固定归档路径；澄清89次请求总数已包含10次认证拒绝和6次业务越权拒绝；新增只读`Test-TechV02EvidenceConsistency.ps1`，自动核对报告、API、数据库、制品、恢复演练和截图证据；重新核对JUnit回归和六项REL-P0门禁。
+- 修改原因：RC2复验会生成新的动态UUID，最终报告必须与同一批次API及数据库证据一一对应，不能引用前一轮运行标识。
+- 数据库/API/权限影响：无；仅修正文档证据引用，不改变业务行为、数据库迁移、API契约、组织模型、一人多岗或权限隔离。
+- 验证结果：41项后端测试失败0、错误0、跳过2；89次UAT请求非预期失败0；9份关键文档的43个本地链接全部有效；证据一致性检查10/10 PASS；只读发布门禁结果为1 PASS / 5 BLOCKED。RC2测试宿主停止顺序日志与未独立固化秘密扫描报告已登记为非发布阻断技术债。
+- 发布判断：TECH-V0.2继续为Unreleased，Sprint 3未启动。
+- 关联文档：`docs/TECH-V0.2-RELEASE-CANDIDATE-FINAL-REPORT.md`、`docs/uat/evidence/20260718-0154-tech-v02-rc2/api/summary.json`。
+
+#### CHG-20260718-012：完成TECH-V0.2 RC Final技术收口并执行发布门禁复核
+
+- 日期：2026-07-18。
+- 状态：Unreleased / RC Final技术验证PASS / Release NO-GO。
+- 产品蓝图版本：PRODUCT-V1.2；冻结架构、组织模型、一人多岗、权限隔离和标准中心模型均未改变。
+- 目标技术版本：TECH-V0.2。
+- 变更类型：Release Candidate / UAT / Security / Operations / Documentation。
+- 完成内容：以RS256 Bearer JWT重新完成六角色UAT和三条业务闭环；真实后台Worker自动完成漏交检测、提醒、逾期与升级，UAT未手工调用SLA或Outbox恢复接口；正式模式附件扫描改为外部扫描器失败即拒绝；完成本地可复现制品与PostgreSQL备份恢复演练；修复员工最后有效任职失效后旧JWT仍可能保留角色授权的问题，并验证一人多岗剩余任职不受影响。
+- 收口继续项：增加跨平台换行与二进制属性规则，排除可变UAT运行态；在原空`.git`目录上初始化本地`main`仓库；为现场照片UAT增加真实文件及来源元数据参数；增加目标企业SSO和目标环境运行保障正式验收载体。尚未建立首个提交或标签。
+- 验证结果：后端41项测试，失败0、错误0、跳过2；身份生命周期4/4通过；RC2 UAT共89次请求、非预期失败0，其中10次认证拒绝和6次业务越权拒绝均符合预期；既有25/25页面证据继续有效；RC2双构建载荷指纹一致（`daf7a779fca869ee0208c7ae4588aff3d3f111ee1732f6ff5477612d42a1f1bb`）。
+- 数据库影响：无新增迁移；候选仍为DB-V13 / Flyway V13，正式已发布基线仍为DB-V4。
+- API影响：API主版本仍为API-V1（`/api/v1`），OpenAPI候选仍为`0.2.1-sprint2.1`。
+- 发布判断：Sprint 2.1业务P0/P1技术问题已关闭且未发现开放P1；但目标企业SSO、10方签署、真实现场照片及目标附件链、有效Git提交/标签、目标持久化PostgreSQL运维保障仍未完成，REL-P0未全部关闭。
+- 治理结论：TECH-V0.2保持Unreleased，当前正式发行仍为TECH-V0.1；不得创建正式`TECH-V0.2`标签，不启动Sprint 3编码。
+- 关联文档：`docs/TECH-V0.2-RELEASE-CANDIDATE-FINAL-REPORT.md`、`docs/releases/TECH-V0.2-RELEASE-NOTE-RC.md`、`docs/releases/TECH-V0.2-TARGET-SSO-ACCEPTANCE.md`、`docs/releases/TECH-V0.2-TARGET-OPERATIONS-ACCEPTANCE.md`、`docs/uat/evidence/20260718-0154-tech-v02-rc2/README.md`。
+
+#### CHG-20260718-013：准备TECH-V0.3技术冻结草案并加固启动边界
+
+- 日期：2026-07-18。
+- 状态：Unreleased / Planning / Sprint 3未启动。
+- 产品蓝图版本：PRODUCT-V1.2；未改变冻结管理链。
+- 目标技术版本：TECH-V0.3。
+- 变更类型：Architecture / Security / Planning / Documentation。
+- 修改内容：新增`docs/TECH-V0.3-TECHNICAL-FREEZE-DRAFT.md`，把首个可验收切片收敛为“前台客诉工作记录→工作分析Agent→人工复核→规则→任务→执行验收”；修正V14—V18候选迁移安全顺序，要求每批新增租户表在同一迁移内立即启用并强制RLS。
+- 权限影响：不授予新权限，不创建服务主体，不启用模型调用；继续冻结组织、一人多岗、RBAC、OrgScopeResolver、任职有效期和FORCE RLS边界。
+- 数据库/API影响：无实际迁移或接口；V14+及AI API仍为待批准候选。
+- 启动结论：草案不构成G0-08关闭或开工批准；TECH-V0.2未Released前不得进入Sprint 3编码。
+- 关联文档：`docs/TECH-V0.3-TECHNICAL-FREEZE-DRAFT.md`、`docs/SPRINT-3-PLAN.md`。
+
+#### CHG-20260718-011：将受限CEO Agent纳入Sprint 3计划
+
+- 日期：2026-07-18。
+- 状态：Unreleased / Planning / 未启动编码。
+- 产品蓝图版本：PRODUCT-V1.2，文档修订R1.1；未改变核心中心或冻结管理链。
+- Sprint 3计划版本：S3-PLAN-V1.1。
+- 目标技术版本：TECH-V0.3。
+- 变更类型：Product Boundary / Planning / Security / Documentation。
+- 修改内容：
+  - 增加CEO Agent，定位为CEO每日管理助手。
+  - 每日生成《CEO AI经营简报》，固定覆盖集团经营状态、风险酒店、重大事项、今日需CEO决策事项、AI建议和数据质量限制。
+  - 增加受限AI服务主体、CEO收件任职、简报调度、决策事项、决策记录、页面、API、事件和专项UAT规划。
+  - 有效数据范围按租户、服务主体授权、CEO收件任职、简报策略和Agent工具白名单取交集。
+  - CEO Agent不得持有通配、跨租户、SUPERUSER、BYPASSRLS、IAM管理、标准/规则发布或任务写权限。
+  - AI建议与CEO实际决定严格分离；只有人工记录的`CEODECISIONRECORDED`可进入规则和任务链。
+  - Sprint 3候选周期由15个工作日调整为18个工作日，黄金评测集由60条调整为80条，验收由三场景扩为四场景。
+- 修改原因：让CEO每天获得可执行的集团管理摘要，同时防止“集团视角”等同于“无限数据权限”。
+- 影响模块：产品蓝图、Sprint 3预实施计划、TECH-V0.3候选范围和版本治理文档。
+- 数据库影响：无实际迁移；V14—V18仍是候选规划，增加服务主体、授权、简报调度和CEO决策对象的设计。
+- API影响：无实际接口；API-V1候选规划增加CEO简报、调度、查看确认、决策记录和审计接口。
+- 页面影响：无实际页面；候选增加CEO今日简报、历史简报、决策卡和简报配置页面。
+- 权限影响：只增加最小权限和交集授权规划，不授予无限权限，不改变现有组织、一人多岗、RBAC和FORCE RLS模型。
+- 启动结论：仅完成规划更新；TECH-V0.2仍为Unreleased，Sprint 3仍未启动编码。
+- 关联文档：`docs/SPRINT-3-PLAN.md`、`docs/HOTEL-AI-OS-PRODUCT-BLUEPRINT.md`、`docs/TECHNICAL-VERSION-HISTORY.md`。
+
+#### CHG-20260717-010：输出Sprint 3 AI进入管理闭环预实施计划
+
+- 日期：2026-07-17。
+- 状态：Unreleased / Planning / 未启动编码。
+- 产品蓝图版本：PRODUCT-V1.2，未改变产品方向或冻结管理链。
+- 目标技术版本：TECH-V0.3。
+- 变更类型：Planning / Architecture / Documentation。
+- 修改内容：
+  - 输出`docs/SPRINT-3-PLAN.md`，规划AI Gateway、工作分析Agent、经营分析Agent、点评分析Agent、AI报告和AI任务建议。
+  - 冻结AI边界：所有模型调用经Gateway；Agent只用受控只读工具；AI结果先人工复核；批准后形成事件并由规则中心决定任务动作。
+  - 规划候选Flyway V14—V18、API-V1兼容扩展、AI页面、真实Worker、成本/审计、安全控制和量化UAT。
+  - 将TECH-V0.2的全部发布阻断项和TECH-V0.3技术冻结列为Sprint 3启动门禁。
+- 修改原因：产品负责人在Final UAT选择B后单独授权先输出Sprint 3计划，以便提前进行技术审查和资源安排。
+- 影响模块：仅计划与版本治理文档；无业务代码、数据库或API实际变更。
+- 数据库影响：无；V14—V18仅为候选规划，当前工作树候选仍为DB-V13，正式已发布仍为DB-V4。
+- API影响：无；0.3.0-sprint3仅为目标契约，当前候选仍为0.2.1-sprint2.1。
+- 权限及租户隔离影响：无实际变更；计划要求继续保留服务端RBAC、OrgScopeResolver和FORCE RLS。
+- 启动结论：Sprint 3计划已输出，但TECH-V0.2仍为Unreleased，Sprint 3编码仍未启动。
+- 后续关系：本条只取代CHG-20260717-009中“暂不输出Sprint 3计划”的行政限制，不改变其`B——继续修复`、TECH-V0.2不得发布和Sprint 3不得开工的结论。
+- 关联文档：`docs/SPRINT-3-PLAN.md`、`docs/HOTEL-AI-OS-TECH-V0.2-SPRINT-2.1-FINAL-UAT-REPORT.md`。
+
+#### CHG-20260717-009：完成TECH-V0.2 Sprint 2.1正式Final UAT发布判断
+
+- 日期：2026-07-17。
+- 状态：Unreleased / Final UAT选择B / 继续修复。
+- 产品蓝图版本：PRODUCT-V1.2，未改变产品方向。
+- 目标技术版本：TECH-V0.2。
+- 变更类型：Documentation / Release Gate。
+- 修改内容：
+  - 按版本、P0、三业务场景、六角色和正式发布条件重新审计最终证据。
+  - 确认客诉存在专用业务事件`COMPLAINTREPORTED`，整改规则监听`STANDARDEVALUATIONCOMPLETED`。
+  - 确认工作未完成检测与升级由UAT脚本调用SLA接口，未证明真实后台Worker自动执行。
+  - 正式A/B发布判断选择`B——继续修复`。
+- 修改原因：技术闭环通过不等于满足正式业务发布条件，必须按正式登录、Worker、业务签字、制品和目标环境逐项放行。
+- 影响模块：发布治理、UAT报告和技术版本状态；无业务代码变更。
+- 数据库影响：无；候选仍为DB-V13，正式已发布仍为DB-V4。
+- API影响：无；候选仍为API-V1 / OpenAPI 0.2.1-sprint2.1。
+- 权限及租户隔离影响：无；既有六角色权限和负向证据继续有效。
+- 发布结论：TECH-V0.2保持Unreleased，当前正式发行仍为TECH-V0.1；不生成Release Note，不启动Sprint 3。
+- 待关闭：真实Worker、目标环境SSO/JWT、真实客房照片与生产附件链、正式签字、可追溯制品、备份恢复和回滚演练。
+- 验证证据：`docs/HOTEL-AI-OS-TECH-V0.2-SPRINT-2.1-FINAL-UAT-REPORT.md`、`docs/uat/evidence/20260717-2317-s21-final/README.md`。
+- 后续关系：本条取代CHG-20260717-008的“CONDITIONAL GO”作为当前发布判断；CHG-20260717-008作为技术闭环检查点永久保留。
+
+#### CHG-20260717-008：完成Sprint 2.1真实业务闭环修复与复验
+
+- 日期：2026-07-17。
+- 状态：Unreleased / 技术闭环UAT通过 / 业务签署BLOCKED / 有条件进入发布审批。
+- 产品蓝图版本：PRODUCT-V1.2，未改变产品方向。
+- 目标技术版本：TECH-V0.2。
+- 修改内容：
+  - 建立真实PostgreSQL UAT环境、六角色数据库账号、门店、工作包、标准和规则fixture。
+  - 补齐前厅主管团队工作详情、复核和整改任务入口。
+  - 补齐客房主管真实图片上传、附件管理和标准评价入口。
+  - 补齐店总门店驾驶舱、风险事项和未完成任务汇总，并增加区域多门店驾驶舱。
+  - 补齐工作期望MISSED检测、提醒、规则建任务、任务逾期和升级执行。
+  - 完成客房卫生、客诉、工作未完成提醒升级三条真实业务闭环。
+  - 增加6个权限与非法状态负向用例，覆盖团队数据、跨门店、跨区域、范围外指派、自我验收和附件越权。
+  - 增加前厅主管手工创建整改任务并取消的真实证据。
+- 修改原因：关闭首轮业务UAT的P0阻断项，使TECH-V0.2具备可复验的业务闭环证据。
+- 影响模块：工作数据、附件、标准评价、企业规则、管理任务、通知、驾驶舱、IAM、UAT基础设施和页面。
+- 数据库影响：新增Flyway V13权限迁移；V1—V12不变。UAT fixture不属于正式Flyway迁移。
+- API影响：API-V1内向后兼容扩展；OpenAPI更新为0.2.1-sprint2.1，共68路径、85操作、58模型。
+- 权限及租户隔离影响：保留组织、一人多岗、服务端范围解析和RLS模型；OTA运营经理只看到授权区域门店；6个负向用例均按预期拒绝。
+- 验证证据：最终运行`20260717-2317-s21-final`，83次API请求中77次正向2xx、6次预期拒绝、非预期失败0，83个Correlation ID均存在且唯一；客房主管实际创建卫生标准评价；25张页面截图加载检查失败0，12份数据库记录；Live UAT 1/1通过。
+- 验收结论：Sprint 2.1技术闭环、六角色自动化走查和权限负向验收PASS；业务正式签署BLOCKED；建议CONDITIONAL GO进入发布审批，TECH-V0.2正式发布仍为NO-GO。
+- 发布门槛：真实客房现场照片业务补测与签字、Git标签、制品SHA-256、目标环境SSO/存储/调度/备份恢复与回滚记录。
+- 关联文档：docs/SPRINT-2.1-UAT-ACCEPTANCE-REPORT.md、docs/uat/evidence/20260717-2317-s21-final/README.md。
+
+#### CHG-20260717-005：实施TECH-V0.2管理闭环
+
+- 日期：2026-07-17。
+- 状态：Unreleased / 开发中、技术验收候选；尚未完成业务验收或正式发布。
+- 产品蓝图版本：PRODUCT-V1.2。
+- 目标技术版本：TECH-V0.2。
+- 修改内容：
+  - 实现工作包定义、版本、范围、分配和工作期望基础能力。
+  - 扩展岗位工作记录、提交与复核能力。
+  - 实现企业规则中心基础版、任务状态机、标准评价和站内通知。
+  - 实现标准→工作→任务→执行→验收闭环的技术候选链路。
+  - 首批岗位调整为OTA运营助理、OTA运营经理、前台员工、前厅主管、店助、店总。
+  - 增加Outbox自动投影，将事务事件可靠转换为管理事件并触发确定性规则消费。
+  - 完成事件类型规范化、失败动作恢复、按租户系统身份、已发布规则冻结和对象级权限加固。
+- 修改原因：
+  - 将企业标准转化为岗位每天可执行的具体工作。
+  - 避免把所有日常工作直接任务化。
+  - 支持OTA跨店运营与门店管理责任链。
+- 影响模块：
+  - 工作包、工作记录、事件、规则、任务、评价、通知、IAM和驾驶舱。
+- 数据库影响：新增Flyway V5—V12迁移，其中V12为完整性与可靠性加固；工作树共50张业务表，25张Sprint 2新增表全部启用并强制执行RLS，V1—V4保持不变。
+- API影响：在API-V1（/api/v1）内向后兼容增加工作包、工作记录、规则、任务、评价、通知和身份上下文接口；OpenAPI 0.2.0-sprint2包含63个路径、79个操作并已完成映射一致性复核。
+- 权限影响：工作、任务和验收绑定精确employee_position_assignment，OTA范围与服务端授权取交集。
+- 身份与安全：生产模式使用受信JWT/SSO声明并由数据库RBAC解析最终权限；开发请求头只接受tenant/actor，不接受客户端自报角色或组织范围。
+- 规则边界：规则只执行确定性条件；当前动作限定为CREATE_TASK和CREATE_NOTIFICATION，大模型不参与阈值、状态或升级判断。
+- 兼容性：不得修改V1—V4，不得破坏现有30个API操作。
+- 验证证据：后端27/27自动化测试通过；前端六角色、8个页面的生产构建通过。
+- 当前边界：对象存储与病毒扫描、完整JSON Schema、生产定时/升级Worker、工作记录及人工复核完整幂等、真实SSO生产部署、页面截图和业务验收尚未完成。
+- 关联文档：docs/SPRINT-2-PLAN.md、docs/SPRINT-2-IMPLEMENTATION-REPORT.md、docs/TEST-REPORT.md。
+
+#### CHG-20260717-006：建立长期文档治理
+
+- 日期：2026-07-17。
+- 状态：Unreleased / Documentation。
+- 产品蓝图版本：PRODUCT-V1.2。
+- 当前技术版本：TECH-V0.1。
+- 修改内容：
+  - 建立《Hotel AI OS产品总蓝图》。
+  - 建立Change Log。
+  - 建立技术版本记录。
+  - 在README增加长期维护入口和强制更新规则。
+- 修改原因：保证未来更新、优化和维护可追溯，防止产品版本、技术版本、API版本和数据库版本混淆。
+- 影响模块：文档治理。
+- 数据库影响：无。
+- API影响：无。
+- 业务代码影响：无。
+
+#### CHG-20260717-007：记录TECH-V0.2首轮业务UAT
+
+- 日期：2026-07-17。
+- 状态：Unreleased / Business UAT Blocked / No-Go。
+- 产品蓝图版本：PRODUCT-V1.2。
+- 目标技术版本：TECH-V0.2。
+- 修改内容：
+  - 建立《TECH-V0.2 UAT业务验收报告》和截图证据索引。
+  - 按前台员工、前厅主管、客房主管、店助、店总、区域/运营管理六个角色核对业务验收能力。
+  - 按客房卫生、客诉、工作未完成三个场景核对端到端管理闭环。
+  - 登记真实登录、附件图片、主管复核与整改、客诉规则事实、未提交检测、风险视图和多门店视图等P1阻断项。
+- 修改原因：技术自动化通过不能替代真实业务UAT；禁止使用演示回退伪造验收证据。
+- 验收结论：TECH-V0.2技术候选保持通过，业务UAT为BLOCKED / NO-GO，当前正式版本仍为TECH-V0.1。
+- 发布影响：Sprint 3继续冻结；P0=0、P1=0且六角色、三场景、截图和签字齐全前，不得发布TECH-V0.2。
+- 数据库影响：无。
+- API影响：无。
+- 业务代码影响：无。
+- 关联文档：docs/uat/TECH-V0.2-UAT-BUSINESS-ACCEPTANCE-REPORT.md。
+- 后续状态：该次NO-GO为历史检查点；其P0阻断项已由CHG-20260717-008修复并完成复验，不删除原记录。
+
+## Released
+
+### TECH-V0.1 — 2026-07-17
+
+状态：已发布 / Sprint 1验收通过。
+
+#### Added
+
+##### CHG-20260717-004：完成Hotel AI OS基础底座
+
+- 完成租户、集团、区域、门店、部门组织模型。
+- 完成员工、岗位、一人多岗和上级任职模型。
+- 完成权限点、角色、角色权限和范围授权数据模型。
+- 完成标准分类、定义、版本、范围和发布基础能力。
+- 完成表单、工作记录、附件元数据和经营指标基础能力。
+- 完成CEO和店总驾驶舱框架。
+- 完成审计日志和事务Outbox写入。
+
+#### Security
+
+- 服务查询显式携带tenant_id。
+- PostgreSQL对24张表启用并强制执行RLS。
+- 建立同租户组合外键和双租户隔离测试。
+- 开发请求头认证默认关闭。
+
+#### Database
+
+- 数据库迁移达到DB-V4。
+- 建立25张业务表。
+
+#### API
+
+- API主版本为API-V1。
+- OpenAPI契约版本为0.1.0-sprint1。
+- Controller与OpenAPI均包含30个业务操作。
+
+#### Validation
+
+- 后端11项测试通过。
+- 真实PostgreSQL 14.22迁移和隔离测试通过。
+- 前端生产构建通过。
+- 后端JAR构建通过。
+
+#### Known limitations
+
+- 正式JWT/SSO和数据库驱动运行时RBAC尚未接通。
+- React页面仍以演示数据为主。
+- Outbox可靠投递和消费尚未实现。
+- Rule Engine、任务中心、标准评价和AI Gateway尚未实现。
+
+关联文档：
+
+- docs/HOTEL-AI-OS-V0.1-TECHNICAL-FREEZE-REPORT.md。
+- docs/SPRINT-1-ACCEPTANCE.md。
+- docs/TEST-REPORT.md。
+
+## 产品决策历史
+
+### PRODUCT-V1.2 — 2026-07-17
+
+状态：已冻结、当前有效。
+
+#### CHG-20260717-003：冻结Hotel AI OS核心管理架构
+
+- 修改内容：
+  - 冻结组织与权限→标准→业务入口→分析→规则→任务→绩效→知识→标准优化管理链。
+  - 增加AI主动发现，产品目标形成三类业务入口。
+  - 明确标准中心与知识中心边界。
+  - 冻结AI Gateway。
+  - 明确规则负责确定性判断，AI负责理解、原因和建议。
+  - 冻结组织、一人多岗、权限隔离和标准版本四个核心模型。
+- 修改原因：建立未来10年可持续扩展的酒店集团第二管理体系。
+- 影响：成为TECH-V0.1之后所有技术版本的产品基线。
+- 关联文档：docs/V1.2-ARCHITECTURE-FREEZE.md。
+
+### PRODUCT-V1.1 — 2026-07（历史补录）
+
+原始精确日期未单独记录；本条于2026-07-17补录。
+
+#### CHG-20260717-002：增加标准、规则和双入口
+
+- 修改内容：
+  - 增加企业标准中心，回答“什么是正确”。
+  - 增加企业规则中心，回答“什么时候行动”。
+  - 将单一店总日报入口调整为岗位工作数据和经营数据双入口。
+- 修改原因：让数据判断能够产生确定性管理动作，并覆盖集团所有岗位。
+- 影响：新增标准和规则产品边界，扩展业务数据入口。
+- 状态：已被PRODUCT-V1.2取代，历史永久保留。
+
+### PRODUCT-V1.0 — 2026-07（历史补录）
+
+原始精确日期未单独记录；本条于2026-07-17补录。
+
+#### CHG-20260717-001：建立Hotel AI OS初始产品蓝图
+
+- 修改内容：
+  - 确立“酒店集团第二管理体系”定位。
+  - 提出平台化、模块化、配置化和权限隔离原则。
+  - 提出集团→区域→门店→部门→岗位→员工组织模型。
+  - 提出一人多岗和首个数据→分析→任务→执行→沉淀闭环。
+- 修改原因：支撑集团从20家扩展到50、500和1000家酒店。
+- 状态：已被PRODUCT-V1.1取代，历史永久保留。
+
+## 变更类型
+
+| 类型 | 适用范围 |
+|---|---|
+| Added | 新增产品或技术能力 |
+| Changed | 改变既有行为或边界 |
+| Fixed | 缺陷修复 |
+| Security | 身份、权限、租户隔离或安全变更 |
+| Database | 表、字段、索引、迁移或数据修复 |
+| API | 接口、字段、状态或兼容性变更 |
+| Performance | 性能和容量优化 |
+| Deprecated | 宣布停止新增使用 |
+| Removed | 删除能力 |
+| Documentation | 仅文档和说明 |
+
+## 标准变更模板
+
+复制以下模板到Unreleased，每个重要变更分配唯一CHG编号：
+
+    ### CHG-YYYYMMDD-NNN：变更标题
+
+    - 日期：
+    - 状态：Unreleased / Released
+    - 产品蓝图版本：PRODUCT-Vx.x
+    - 目标技术版本：TECH-Vx.x
+    - 变更类型：
+    - 修改内容：
+    - 修改原因：
+    - 影响模块：
+    - 数据库影响：无 / 迁移编号与内容
+    - API影响：无 / 向后兼容 / 破坏性
+    - 权限及租户隔离影响：
+    - 历史数据影响：
+    - 回滚或降级方案：
+    - 验证证据：
+    - 产品批准人：
+    - 技术批准人：
+    - 关联蓝图、ADR、任务和测试报告：
+
+## 固定维护流程
+
+1. 开始设计前读取产品蓝图、Change Log和技术版本记录。
+2. 为变更分配CHG编号并写入Unreleased。
+3. 判断是否影响PRODUCT蓝图；影响时先完成产品评审和新蓝图冻结。
+4. 确认目标TECH版本、数据库/API兼容性和权限影响。
+5. 实施过程中同步维护迁移、OpenAPI和测试。
+6. 验收通过后，把条目从Unreleased移入正式TECH版本。
+7. 更新技术版本状态、测试证据、制品校验和和恢复说明。
+8. 已发布历史只能追加更正记录，不直接删除。

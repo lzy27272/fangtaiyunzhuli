@@ -1,0 +1,56 @@
+{
+    "hotel":  {
+                  "id":  "12000000-0000-0000-0000-000000000003",
+                  "name":  "杭州中心店",
+                  "city":  "杭州",
+                  "room_count":  128
+              },
+    "activeEmployeeCount":  5,
+    "todayWorkSubmissionCount":  4,
+    "latestMetrics":  [
+                          {
+                              "code":  "ADR",
+                              "name":  "平均房价",
+                              "unit":  "CNY",
+                              "business_date":  "2026-07-17",
+                              "value":  628.0000
+                          },
+                          {
+                              "code":  "OCCUPANCY",
+                              "name":  "入住率",
+                              "unit":  "PERCENT",
+                              "business_date":  "2026-07-17",
+                              "value":  87.6000
+                          },
+                          {
+                              "code":  "OTA_SCORE",
+                              "name":  "OTA评分",
+                              "unit":  "SCORE",
+                              "business_date":  "2026-07-17",
+                              "value":  4.9100
+                          },
+                          {
+                              "code":  "REVENUE",
+                              "name":  "营业收入",
+                              "unit":  "CNY",
+                              "business_date":  "2026-07-17",
+                              "value":  86240.0000
+                          },
+                          {
+                              "code":  "REVPAR",
+                              "name":  "每间可售房收入",
+                              "unit":  "CNY",
+                              "business_date":  "2026-07-17",
+                              "value":  550.1000
+                          }
+                      ],
+    "risks":  [
+
+              ],
+    "incompleteTasks":  [
+
+                        ],
+    "openTaskCount":  0,
+    "overdueTaskCount":  0,
+    "missedWorkCount":  0
+}

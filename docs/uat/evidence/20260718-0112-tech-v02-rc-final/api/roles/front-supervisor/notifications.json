@@ -1,0 +1,19 @@
+{
+    "status":  200,
+    "correlationId":  "9f8e212a-38c0-4154-ba92-ecc67ceb0e55",
+    "body":  {
+                 "value":  [
+                               {
+                                   "id":  "2d000000-0000-0000-0000-000000000004",
+                                   "notification_type":  "UAT_READY",
+                                   "title":  "前厅主管UAT待办",
+                                   "content":  "请检查团队工作并验收。",
+                                   "source_type":  "UAT",
+                                   "recipient_assignment_id":  "19200000-0000-0000-0000-000000000004",
+                                   "delivered_at":  "2026-07-17T17:12:11.561+00:00",
+                                   "row_version":  0
+                               }
+                           ],
+                 "Count":  1
+             }
+}

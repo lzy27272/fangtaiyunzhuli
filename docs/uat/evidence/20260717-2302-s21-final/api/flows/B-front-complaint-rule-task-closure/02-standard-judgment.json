@@ -1,0 +1,92 @@
+{
+    "id":  "35717e3c-ba27-42ab-baaf-ee1d8d650041",
+    "idempotency_key":  "uat-b-front-complaint-judgment",
+    "subject_type":  "WORK_RECORD",
+    "subject_id":  "22e6d6db-9ecd-4e9a-a928-5fad1da60686",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000005",
+    "position_assignment_id":  "19200000-0000-0000-0000-000000000002",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000002",
+    "standard_content_hash":  "c1e1f4e39a4e7288c3f501e62bf115ec8c9d32d81e1672002eaf0ffbbf02c62f",
+    "input_hash":  "c74bdd8750f9b57b1476ff6589bc3a59a6c9055ac3f7dce53c80e1594e2b82b3",
+    "input_snapshot":  {
+                           "type":  "jsonb",
+                           "value":  "{\"guestContacted\": false, \"complaintRecorded\": true, \"resolutionSummary\": \"Complaint logged; guest callback pending\"}",
+                           "null":  false
+                       },
+    "execution_status":  "COMPLETED",
+    "outcome":  "FAIL",
+    "score":  60.00,
+    "full_score":  100.00,
+    "severity":  "HIGH",
+    "evaluator_version":  "deterministic-v1",
+    "row_version":  0,
+    "completed_at":  "2026-07-17T15:02:05.910+00:00",
+    "created_by":  "19000000-0000-0000-0000-000000000005",
+    "created_at":  "2026-07-17T15:02:05.910+00:00",
+    "updated_at":  "2026-07-17T15:02:05.910+00:00",
+    "items":  [
+                  {
+                      "id":  "f871e640-8ff0-49a4-88d5-50695c5ee692",
+                      "item_code":  "complaintRecorded",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "EQ",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "true",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  30.00,
+                      "full_score":  30.00,
+                      "reason":  "符合标准",
+                      "row_version":  0
+                  },
+                  {
+                      "id":  "ea3a267b-263a-4ed6-998b-0492c02a6587",
+                      "item_code":  "guestContacted",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "EQ",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "false",
+                                           "null":  false
+                                       },
+                      "outcome":  "FAIL",
+                      "score":  0.00,
+                      "full_score":  40.00,
+                      "reason":  "未满足标准条件",
+                      "row_version":  0
+                  },
+                  {
+                      "id":  "96765fe6-ce6e-4ae2-bc73-fec16b219cc6",
+                      "item_code":  "resolutionSummary",
+                      "evaluation_mode":  "DETERMINISTIC",
+                      "operator":  "PRESENT",
+                      "expected_value":  {
+                                             "type":  "jsonb",
+                                             "value":  "true",
+                                             "null":  false
+                                         },
+                      "actual_value":  {
+                                           "type":  "jsonb",
+                                           "value":  "\"Complaint logged; guest callback pending\"",
+                                           "null":  false
+                                       },
+                      "outcome":  "PASS",
+                      "score":  30.00,
+                      "full_score":  30.00,
+                      "reason":  "符合标准",
+                      "row_version":  0
+                  }
+              ]
+}

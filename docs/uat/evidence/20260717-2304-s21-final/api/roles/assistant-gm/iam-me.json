@@ -1,0 +1,62 @@
+{
+    "status":  200,
+    "correlationId":  "89b4fd6e-c0ba-463b-a8ab-e0a8a18116a5",
+    "body":  {
+                 "tenantId":  "10000000-0000-0000-0000-000000000001",
+                 "account":  {
+                                 "id":  "19000000-0000-0000-0000-000000000008",
+                                 "loginName":  "assistant.gm",
+                                 "displayName":  "杭州中心店店助沈乔",
+                                 "status":  "ACTIVE"
+                             },
+                 "employee":  {
+                                  "id":  "19100000-0000-0000-0000-000000000007",
+                                  "employeeNo":  "E-AGM-001",
+                                  "name":  "沈乔",
+                                  "employmentStatus":  "ACTIVE"
+                              },
+                 "primaryRole":  "ASSISTANT_GENERAL_MANAGER",
+                 "roles":  [
+                               "ASSISTANT_GENERAL_MANAGER"
+                           ],
+                 "permissions":  [
+                                     "task.act",
+                                     "work-record.review",
+                                     "task.create",
+                                     "work-record.read",
+                                     "task.read",
+                                     "work-package.read",
+                                     "notification.read",
+                                     "org.read",
+                                     "task.dispatch",
+                                     "evaluation.read",
+                                     "work-record.submit",
+                                     "standard.read",
+                                     "work-package.allocate",
+                                     "task.cancel",
+                                     "task.review",
+                                     "dashboard.hotel",
+                                     "evaluation.manual-review"
+                                 ],
+                 "tenantScope":  false,
+                 "organizationScopes":  [
+                                            "12000000-0000-0000-0000-000000000006",
+                                            "12000000-0000-0000-0000-000000000005",
+                                            "12000000-0000-0000-0000-000000000003"
+                                        ],
+                 "positionAssignments":  [
+                                             {
+                                                 "id":  "19200000-0000-0000-0000-000000000008",
+                                                 "organizationId":  "12000000-0000-0000-0000-000000000003",
+                                                 "organizationCode":  "HZ-CENTER",
+                                                 "organizationName":  "杭州中心店",
+                                                 "positionId":  "14000000-0000-0000-0000-000000000007",
+                                                 "positionCode":  "ASSISTANT_GENERAL_MANAGER",
+                                                 "positionName":  "店助",
+                                                 "primary":  true,
+                                                 "assignmentType":  "PERMANENT",
+                                                 "validFrom":  "2023-11-20"
+                                             }
+                                         ]
+             }
+}

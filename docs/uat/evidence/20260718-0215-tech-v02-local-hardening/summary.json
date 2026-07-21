@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260718-0215-tech-v02-local-hardening",
+  "scope": "post-rc2-test-infrastructure-hardening",
+  "status": "PARTIAL",
+  "regression": {
+    "suites": 18,
+    "tests": 43,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "suiteTimeSeconds": 57.674
+  },
+  "lifecycleRegression": {
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "verifiedOrder": [
+      "spring-application-context",
+      "embedded-postgresql",
+      "runtime-marker-cleanup"
+    ],
+    "continuesCleanupAfterFailure": true,
+    "preservesSuppressedFailures": true
+  },
+  "releaseBoundary": {
+    "newLiveUatExecuted": true,
+    "newLiveUatPassed": false,
+    "rc2EvidenceReplaced": false,
+    "releaseGateStatusChanged": false
+  }
+}

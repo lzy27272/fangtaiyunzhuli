@@ -1,0 +1,35 @@
+{
+  "generatedAt": "2026-07-19T05:11:15.003Z",
+  "version": "TECH-V0.2-PILOT.3",
+  "target": "https://www.sfgzt.cn",
+  "browserAutomation": "Playwright fallback (Browser plugin unavailable)",
+  "credentialsPersistedInEvidence": false,
+  "outerHttpCredentialsPersistedInEvidence": false,
+  "passed": true,
+  "created": {
+    "hotelCode": "UI-H-260719051114",
+    "hotelName": "Pilot网页验收酒店260719051114",
+    "positionCode": "UI-P-260719051114",
+    "positionName": "网页验收前台260719051114",
+    "employeeNo": "UI-E-260719051114",
+    "employeeName": "网页验收员工051114",
+    "packageCode": "UI-WP-260719051114",
+    "packageName": "网页全流程工作包260719051114"
+  },
+  "employeeVisibleOrgCount": 1,
+  "workRecordStatus": "SUBMITTED",
+  "attachmentSubmitted": true,
+  "evidence": [
+    "pilot3-ui-created-hotel.png",
+    "pilot3-ui-created-employee-assignment.png",
+    "pilot3-ui-published-allocation.png",
+    "pilot3-ui-employee-scoped-work.png",
+    "pilot3-ui-work-record-with-attachment.png",
+    "pilot3-ui-work-record-submitted.png"
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "serverErrors": [],
+  "error": null
+}

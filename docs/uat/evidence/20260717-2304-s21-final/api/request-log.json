@@ -1,0 +1,1065 @@
+[
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "8e527efb-bf7e-4696-a546-62b8f693da98"
+    },
+    {
+        "path":  "/my/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "5a594519-d0f0-43c9-9d6d-74ce60459c03"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "7f15f147-c558-4ab0-91dd-d7c89a6fb10d"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "fdcb1ff7-ebc4-4caf-a898-9b6481ab69fb"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "aec6e325-6e77-4d32-ac94-7872c7d0c243"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "d081b2cd-73c3-438f-8929-abaf310cdc15"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "da010804-d5ee-4043-a7d5-cbf69ac0cd8f"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b4ceebfe-49bf-4f81-81ed-12d96aedbb27"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "fa592990-a153-46f2-9ad7-5b02bb09637f"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "bccfb4f1-cf34-4d3c-97aa-f29139c7fd04"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ca8db6a6-a5bc-4780-bba1-26073fee4a69"
+    },
+    {
+        "path":  "/my/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "96ffc422-4034-4074-82d9-231a18a666dd"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "3484b159-61a3-47e7-a406-7e813e08525f"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "f54ea3fa-424a-4362-898b-acd7abb54eab"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "433c7cf7-a64d-484f-9664-6d190a736b0a"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "bbd63f68-f41c-4799-872c-68a5a1ee65f2"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "89b4fd6e-c0ba-463b-a8ab-e0a8a18116a5"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "380e7a54-c683-4c38-ac08-f45d6f84b004"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "67ba9dd0-394e-4565-933d-07e02885c670"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "33f26105-9a58-4f08-aff7-300e56a0c175"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ad9bf4a3-66ff-435e-b7de-37df928d4eac"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "31147b51-4f3d-4f9a-8be2-bcf0f1111e40"
+    },
+    {
+        "path":  "/dashboards/hotels/12000000-0000-0000-0000-000000000003",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "70f93dce-dc7e-49b8-9cc9-7b754661360a"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "21b5718c-077a-4fdb-9247-77bac20decc7"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "0b774f2a-5839-4ded-a07f-59e2661d5abb"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a87ba90f-ea25-4c27-a5c5-2fbb5fa368ec"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "218ce429-f90b-4a94-a872-fa471f8a1dd4"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "572e8ac1-b41f-4b66-b1c2-ed22b83981d8"
+    },
+    {
+        "path":  "/dashboards/operations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b5d6aed2-8b11-4c9f-b855-173528c2974c"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "05cb3edb-b992-4f6d-ba8f-e1dae1dedc66"
+    },
+    {
+        "path":  "/rules",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "5909c4d1-4432-4363-af14-32fea6c077ae"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a75f43b9-d334-48a9-9f8e-c77c330e948d"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "9acb7875-f7d3-4a1a-88c8-fe1708585d65"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "8385ec94-8438-4988-9dfa-dfa2ae0a97ee"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a0d813fb-1191-436f-86ba-1c343818cb62"
+    },
+    {
+        "path":  "/tasks/193b09c0-fe64-4cb1-9064-8d6b3e9f010c/actions/cancel",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "08088a5a-c1f3-4edb-b5f5-e325d0318609"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "3110c0f8-724b-4498-bfe4-c3c0cd083c32"
+    },
+    {
+        "path":  "/dashboards/hotels/12000000-0000-0000-0000-000000000004",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "b9f03df9-031c-495b-83af-dfde7a68f1e8"
+    },
+    {
+        "path":  "/dashboards/hotels/21000000-0000-0000-0000-000000000002",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "d246736b-c7e7-401d-a733-00e008cdf53e"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "b3c64dc8-0ba7-4f71-8260-38cdf27f7fc2"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  400,
+        "expectedStatuses":  [
+                                 400
+                             ],
+        "passed":  true,
+        "correlationId":  "3b3b5c76-3d6f-4581-aeed-bb541f4d707b"
+    },
+    {
+        "path":  "/work-data/records/2e000000-0000-0000-0000-000000000001/attachments/upload",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 201
+                             ],
+        "passed":  true,
+        "correlationId":  "3a8b7cff-bb58-46ec-bbe3-8dbe30bdcba5"
+    },
+    {
+        "path":  "/work-data/attachments/ce845914-55b5-49b9-a275-5f16d35d1cbd/content",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "0ad8b096-da90-4316-a130-abc6ced79e31"
+    },
+    {
+        "path":  "/work-data/records/2e000000-0000-0000-0000-000000000001/attachments",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "1cbde8cc-09ac-4a99-b19f-e83a6d6bfc0b"
+    },
+    {
+        "path":  "/work-data/attachments/ce845914-55b5-49b9-a275-5f16d35d1cbd/content",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200
+                             ],
+        "passed":  true,
+        "correlationId":  "e223e89e-9093-407b-8b18-7007e8986a83"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "9b7f8d4f-9f86-4cdf-b223-3ed06743b08b"
+    },
+    {
+        "path":  "/management-events/actions/project-outbox?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "77b97b05-954b-4bb1-9eec-06f691cee48e"
+    },
+    {
+        "path":  "/management-events",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "84a33d22-7d7f-44d8-923c-1e41e5897796"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ba70d74f-9020-4343-95d0-ab129ef7ddf0"
+    },
+    {
+        "path":  "/tasks/c0a80b78-4cc4-4e5e-b8d3-e325f38a67b1",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "aee63833-6503-4757-b91f-06e25fd62a94"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b9c62f61-dfae-4d67-ac7d-6999c348ddba"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "025f5df3-9cf6-4976-800d-00ddfab05c03"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a/actions/acknowledge",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "7f3fe518-04e5-439b-9333-b3d4406fc434"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a/evidence",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "0554082c-e9c1-4f32-96c0-5ad4c9a8986a"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a/actions/submit-result",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "96dda3c8-74bd-408a-b406-13e2d08529f1"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "21b227bb-41e1-4ae0-a9f1-be980138ba78"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "93b6b452-479b-4306-801a-a857af8314dd"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a/actions/approve",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "896b133b-16f9-49c9-8d69-b00739be1d9b"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "bffcec08-1906-444c-84bf-31c00b3d867a"
+    },
+    {
+        "path":  "/tasks/91dd4a1a-9ae6-4619-8fb2-f9c07b4d3c9a/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "6f917b10-dd2d-4576-b204-31f6e230ece8"
+    },
+    {
+        "path":  "/work-data/records",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "32cd6154-bd58-4950-ac2a-97d069370eaa"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "9a703dda-02a1-4bcf-9b86-56f693a354db"
+    },
+    {
+        "path":  "/management-events/actions/project-outbox?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "3b7449c2-948c-46a7-8df9-ffcd50711977"
+    },
+    {
+        "path":  "/management-events",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "5c911408-e674-4db7-a2c9-33c220d16e60"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b936fb85-bd88-4ce6-8de5-0f4078857717"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "bcfc3578-7bbe-48cb-809f-d0f4e10e7cfe"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "1410455c-0290-42ae-80db-b291d4fdbcf7"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab/actions/acknowledge",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b8cb59e0-98d7-4c98-8729-47ffa97f7963"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab/actions/submit-result",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "1219c523-e589-451f-95b7-490678a77d22"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b9661835-1b70-4a8e-8f15-f90e4523ec57"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "e9889549-e350-4631-9c46-6a1f9f198a24"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab/actions/approve",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "7c3c51f3-0561-414f-ad6c-9ffd43f8e54a"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "faf66aa5-64aa-4fd4-9b4b-709de975996c"
+    },
+    {
+        "path":  "/tasks/2fafd428-c93a-4434-aaf5-2471f0848cab/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "14edd54f-cecb-4dbd-94bb-b6a781940192"
+    },
+    {
+        "path":  "/work-expectations/sla/process?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "2b3e6ae4-21a0-4e74-87b9-27d0bc276f2e"
+    },
+    {
+        "path":  "/work-expectations/2a500000-0000-0000-0000-000000000005",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "d6a94dcd-f43a-4dfc-bc27-7eab59a619c4"
+    },
+    {
+        "path":  "/management-events/actions/project-outbox?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "00436fb6-c36b-41f0-81f3-2bbd24ff9dbd"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a2b07894-e3eb-4d0f-a6a7-55a5e9f1a462"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "6e6bf99c-eee9-4b4f-85f4-2a39e0f5ec50"
+    },
+    {
+        "path":  "/tasks/56f74b72-9385-4a8f-97a6-01cacb7174ce",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "eb1070fd-d44f-4195-afa3-3978d60afc5a"
+    },
+    {
+        "path":  "/tasks/sla/process",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "be48a13f-9217-4bdc-9827-d03c7dc910d3"
+    },
+    {
+        "path":  "/tasks/56f74b72-9385-4a8f-97a6-01cacb7174ce",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ce68a748-54aa-4462-a28b-b8a51eccb4ae"
+    },
+    {
+        "path":  "/tasks/56f74b72-9385-4a8f-97a6-01cacb7174ce/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "3f99ceec-3894-4d24-a2f3-d754f96c413c"
+    }
+]

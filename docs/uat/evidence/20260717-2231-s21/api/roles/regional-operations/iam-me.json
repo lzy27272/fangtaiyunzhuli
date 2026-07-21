@@ -1,0 +1,62 @@
+﻿{
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "account":  {
+                    "id":  "19000000-0000-0000-0000-000000000007",
+                    "loginName":  "ota.manager",
+                    "displayName":  "OTAè¿è¥ç»çè®¸æ¨",
+                    "status":  "ACTIVE"
+                },
+    "employee":  {
+                     "id":  "19100000-0000-0000-0000-000000000006",
+                     "employeeNo":  "E-OTA-M-001",
+                     "name":  "è®¸æ¨",
+                     "employmentStatus":  "ACTIVE"
+                 },
+    "primaryRole":  "OTA_OPERATION_MANAGER",
+    "roles":  [
+                  "OTA_OPERATION_MANAGER"
+              ],
+    "permissions":  [
+                        "work-record.submit",
+                        "task.dispatch",
+                        "dashboard.hotel",
+                        "work-record.read",
+                        "evaluation.manual-review",
+                        "task.act",
+                        "notification.read",
+                        "task.create",
+                        "standard.read",
+                        "work-record.review",
+                        "task.cancel",
+                        "work-package.read",
+                        "rule.simulate",
+                        "rule.read",
+                        "work-package.allocate",
+                        "evaluation.read",
+                        "task.read",
+                        "org.read",
+                        "task.review"
+                    ],
+    "tenantScope":  false,
+    "organizationScopes":  [
+                               "12000000-0000-0000-0000-000000000006",
+                               "12000000-0000-0000-0000-000000000002",
+                               "12000000-0000-0000-0000-000000000003",
+                               "12000000-0000-0000-0000-000000000004",
+                               "12000000-0000-0000-0000-000000000005"
+                           ],
+    "positionAssignments":  [
+                                {
+                                    "id":  "19200000-0000-0000-0000-000000000007",
+                                    "organizationId":  "12000000-0000-0000-0000-000000000002",
+                                    "organizationCode":  "EAST-REGION",
+                                    "organizationName":  "åä¸åºå",
+                                    "positionId":  "14000000-0000-0000-0000-000000000006",
+                                    "positionCode":  "OTA_OPERATION_MANAGER",
+                                    "positionName":  "OTAè¿è¥ç»ç",
+                                    "primary":  true,
+                                    "assignmentType":  "PERMANENT",
+                                    "validFrom":  "2023-08-15"
+                                }
+                            ]
+}

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <title>Hotel AI OS · Sprint 1</title>
+  <link rel="stylesheet" href="../src/styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand-mark"><div>四</div><span><strong>Hotel AI OS</strong><small>酒店集团第二管理体系</small></span></div>
+    <nav>
+      <button class="active" data-view="dashboard"><i>⌂</i>管理驾驶舱</button>
+      <button data-view="organization"><i>◎</i>组织与权限</button>
+      <button data-view="standards"><i>◇</i>企业标准中心</button>
+      <button data-view="work"><i>▤</i>岗位工作数据</button>
+      <button data-view="metrics"><i>↗</i>经营数据</button>
+    </nav>
+    <div class="sidebar-footer"><span>V1.2 架构已冻结</span><small>Sprint 1 · 基础底座</small></div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <div><span class="live-dot"></span>数据更新至 10:00</div>
+      <div class="role-switch"><button class="active" data-role="CEO">CEO</button><button data-role="店总">店总</button></div>
+      <div class="user"><span id="user-avatar">赵</span><div><strong id="user-name">集团CEO</strong><small id="user-scope">集团视角</small></div></div>
+    </div>
+    <div class="canvas">
+      <div id="dashboard-view">
+        <section class="hero">
+          <div><span class="eyebrow">HOTEL AI OPERATING SYSTEM</span><h1 id="dashboard-title">集团管理驾驶舱</h1><p>组织、标准、数据与执行的统一管理视图</p></div>
+          <div class="hero-badge"><span>系统状态</span><strong>基础底座运行中</strong><small>V1.2 · Sprint 1</small></div>
+        </section>
+        <section class="stats-grid">
+          <article class="stat-card blue"><div class="stat-icon" id="stat-one-icon">运</div><div><span id="stat-one-label">运营门店</span><strong id="stat-one-value">24</strong><small id="stat-one-hint">4个区域 · 2个品牌</small></div></article>
+          <article class="stat-card teal"><div class="stat-icon">工</div><div><span>今日工作提交</span><strong id="work-total">386</strong><small id="work-hint">集团完成率 91.6%</small></div></article>
+          <article class="stat-card gold"><div class="stat-icon">标</div><div><span>已发布标准</span><strong>128</strong><small>本月新增 12 项</small></div></article>
+          <article class="stat-card violet"><div class="stat-icon" id="stat-four-icon">数</div><div><span id="stat-four-label">经营数据完整率</span><strong id="stat-four-value">96.8%</strong><small>数据截至 10:00</small></div></article>
+        </section>
+        <section class="content-grid">
+          <article class="panel span-2">
+            <header><div><span class="panel-kicker">经营概览</span><h2 id="hotel-table-title">门店关键指标</h2></div><button class="ghost">查看全部</button></header>
+            <div class="hotel-table">
+              <div class="hotel-row table-head"><span>门店</span><span>入住率</span><span>ADR</span><span>OTA</span><span>工作完成</span><span>趋势</span></div>
+              <div class="hotel-row hotel-data"><strong>杭州中心店</strong><span>87.6%</span><span>¥628</span><span>4.91</span><span><i></i>92%</span><b class="up">+3.2%</b></div>
+              <div class="hotel-row hotel-data ceo-only"><strong>上海滨江店</strong><span>81.4%</span><span>¥711</span><span>4.88</span><span><i></i>86%</span><b class="down">-1.1%</b></div>
+              <div class="hotel-row hotel-data ceo-only"><strong>南京南站店</strong><span>84.2%</span><span>¥566</span><span>4.93</span><span><i></i>94%</span><b class="up">+1.8%</b></div>
+              <div class="hotel-row hotel-data ceo-only"><strong>苏州园区店</strong><span>79.8%</span><span>¥603</span><span>4.90</span><span><i></i>89%</span><b class="up">+0.4%</b></div>
+            </div>
+          </article>
+          <article class="panel standard-progress">
+            <header><div><span class="panel-kicker">STANDARD CENTER</span><h2>标准建设进度</h2></div></header>
+            <div class="donut"><div><strong>128</strong><span>已发布</span></div></div>
+            <ul><li><i class="dot blue"></i>岗位标准 <strong>36</strong></li><li><i class="dot teal"></i>工作标准 <strong>42</strong></li><li><i class="dot gold"></i>SOP与检查 <strong>31</strong></li><li><i class="dot violet"></i>KPI标准 <strong>19</strong></li></ul>
+          </article>
+          <article class="panel span-2">
+            <header><div><span class="panel-kicker">岗位工作入口</span><h2>今日工作动态</h2></div><button class="ghost">提交情况</button></header>
+            <div class="feed">
+              <div class="feed-item"><div class="avatar">悦</div><div><strong>林悦<em>前台员工</em></strong><p>入住46间，客诉1起，VIP接待2位</p><small>杭州中心店 · 09:42</small></div><span class="pill">已提交</span></div>
+              <div class="feed-item"><div class="avatar">敏</div><div><strong>周敏<em>客房主管</em></strong><p>巡检32间，发现2项需维护</p><small>杭州中心店 · 09:18</small></div><span class="pill">待复核</span></div>
+              <div class="feed-item"><div class="avatar">航</div><div><strong>陈航<em>前厅主管</em></strong><p>在岗8人，完成班组交接</p><small>杭州中心店 · 08:56</small></div><span class="pill">已提交</span></div>
+            </div>
+          </article>
+          <article class="panel evolution">
+            <header><div><span class="panel-kicker">管理进化链</span><h2>系统能力状态</h2></div></header>
+            <div class="chain"><div class="active"><i>1</i><span>组织权限</span><b>已搭建</b></div><div class="active"><i>2</i><span>企业标准</span><b>基础版</b></div><div class="active"><i>3</i><span>双入口数据</span><b>基础版</b></div><div><i>4</i><span>规则与任务</span><b>Sprint 2</b></div><div><i>5</i><span>AI分析</span><b>Sprint 3</b></div></div>
+          </article>
+        </section>
+      </div>
+
+      <section id="standards-view" class="page-section" hidden>
+        <header class="page-title"><div><span class="eyebrow">STANDARD CENTER</span><h1>企业标准中心</h1><p>定义“什么是正确”，所有AI判断引用已发布标准版本。</p></div><button class="primary" id="create-standard">＋ 创建标准</button></header>
+        <div class="notice" id="create-notice" hidden>新标准草稿已创建。发布前需配置条目、证据、评分和适用范围。</div>
+        <div class="filter-row"><button class="selected">全部 128</button><button>岗位标准 36</button><button>工作标准 42</button><button>SOP 18</button><button>检查标准 13</button><button>KPI标准 19</button></div>
+        <article class="panel"><div class="standard-table">
+          <div class="standard-row table-head"><span>标准编码 / 名称</span><span>分类</span><span>版本</span><span>适用范围</span><span>状态</span></div>
+          <div class="standard-row"><span><small>STD-FD-CHECKIN</small><strong>前台入住服务标准</strong></span><span>岗位标准</span><span>V1</span><span>前台员工</span><b class="status 已发布">已发布</b></div>
+          <div class="standard-row"><span><small>STD-HK-ROOM</small><strong>客房清洁检查标准</strong></span><span>检查标准</span><span>V3</span><span>客房部</span><b class="status 已发布">已发布</b></div>
+          <div class="standard-row"><span><small>STD-GM-DAILY</small><strong>店总每日工作标准</strong></span><span>工作标准</span><span>V2</span><span>全部门店</span><b class="status 待发布">待发布</b></div>
+          <div class="standard-row"><span><small>STD-GM-KPI</small><strong>店总月度KPI标准</strong></span><span>KPI标准</span><span>V1</span><span>店总</span><b class="status 草稿">草稿</b></div>
+        </div></article>
+      </section>
+
+      <section id="foundation-view" class="page-section" hidden>
+        <header class="page-title"><div><span class="eyebrow">SPRINT 1 FOUNDATION</span><h1 id="foundation-title">组织与权限</h1><p id="foundation-copy">集团 → 区域 → 门店 → 部门 → 岗位 → 员工</p></div><button class="primary">＋ 新增记录</button></header>
+        <div class="simple-grid" id="foundation-cards"></div>
+        <article class="panel empty-state"><div>◇</div><h2>配置驱动，逐步完善</h2><p>Sprint 1 建立数据和页面框架；规则、任务和AI能力在后续迭代接入。</p></article>
+      </section>
+    </div>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,60 @@
+﻿{
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "account":  {
+                    "id":  "19000000-0000-0000-0000-000000000002",
+                    "loginName":  "gm.hz",
+                    "displayName":  "æ­å·ä¸­å¿åºåºæ»",
+                    "status":  "ACTIVE"
+                },
+    "employee":  {
+                     "id":  "19100000-0000-0000-0000-000000000001",
+                     "employeeNo":  "E-GM-001",
+                     "name":  "èµµæ¨",
+                     "employmentStatus":  "ACTIVE"
+                 },
+    "primaryRole":  "GENERAL_MANAGER",
+    "roles":  [
+                  "GENERAL_MANAGER"
+              ],
+    "permissions":  [
+                        "task.dispatch",
+                        "dashboard.hotel",
+                        "work-record.read",
+                        "evaluation.manual-review",
+                        "task.act",
+                        "notification.read",
+                        "task.create",
+                        "standard.read",
+                        "work-record.review",
+                        "task.cancel",
+                        "work-package.read",
+                        "rule.read",
+                        "work-package.allocate",
+                        "evaluation.read",
+                        "task.read",
+                        "org.read",
+                        "task.review",
+                        "metric.record",
+                        "work-record.submit"
+                    ],
+    "tenantScope":  false,
+    "organizationScopes":  [
+                               "12000000-0000-0000-0000-000000000003",
+                               "12000000-0000-0000-0000-000000000005",
+                               "12000000-0000-0000-0000-000000000006"
+                           ],
+    "positionAssignments":  [
+                                {
+                                    "id":  "19200000-0000-0000-0000-000000000001",
+                                    "organizationId":  "12000000-0000-0000-0000-000000000003",
+                                    "organizationCode":  "HZ-CENTER",
+                                    "organizationName":  "æ­å·ä¸­å¿åº",
+                                    "positionId":  "14000000-0000-0000-0000-000000000004",
+                                    "positionCode":  "GENERAL_MANAGER",
+                                    "positionName":  "åºæ»",
+                                    "primary":  true,
+                                    "assignmentType":  "PERMANENT",
+                                    "validFrom":  "2022-03-01"
+                                }
+                            ]
+}

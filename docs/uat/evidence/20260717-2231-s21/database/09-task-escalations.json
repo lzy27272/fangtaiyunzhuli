@@ -1,0 +1,45 @@
+[ {
+  "task_id" : "dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+  "title" : "客房卫生图片整改（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "c1838807-5706-46b8-94f8-5114a876613c",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 00:29:50.883121+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-17 22:32:55.518413+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "dabb2129-c9b0-4169-9c2c-f4c9053b325c",
+  "title" : "区域多门店OTA评分风险整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "c721d911-35c6-4907-a7c7-b80d3b1fa86c",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-17 22:29:50.956341+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-17 22:32:55.518413+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "ffb84da7-68fc-426a-ab5a-21dcafee72b4",
+  "title" : "前台客诉跟进整改（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "87b78115-8f6d-4537-a13f-a5defc3c473f",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 00:32:55.030725+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000004",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-17 22:32:55.518413+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "85adf162-1b0b-41a1-8045-8e4f5b2624b5",
+  "title" : "岗位漏交整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "5b97afef-9e75-4d4d-b83f-8571aed340d4",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-17 22:32:55.376726+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000008",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-17 22:32:55.518413+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+} ]

@@ -1,0 +1,35 @@
+name: hotel-ai-os-uat
+
+services:
+  postgres:
+    image: ${UAT_POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${UAT_DB_NAME:-hotel_ai_os_uat}
+      POSTGRES_USER: ${UAT_DB_OWNER:-hotel_ai_os_owner}
+      POSTGRES_PASSWORD: ${UAT_DB_OWNER_PASSWORD:-uat-owner-only-change-me}
+      UAT_DB_RUNTIME_USER: ${UAT_DB_RUNTIME_USER:-hotel_ai_os_app}
+      UAT_DB_RUNTIME_PASSWORD: ${UAT_DB_RUNTIME_PASSWORD:-uat-app-only-change-me}
+      TZ: Asia/Shanghai
+    ports:
+      - "${UAT_DB_PORT:-55432}:5432"
+    volumes:
+      - hotel-ai-os-uat-postgres:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - ../../database/uat:/uat-fixtures:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+    labels:
+      cn.sifangguan.environment: uat-local
+      cn.sifangguan.data-policy: disposable
+
+volumes:
+  hotel-ai-os-uat-postgres:
+    name: hotel-ai-os-uat-postgres
+

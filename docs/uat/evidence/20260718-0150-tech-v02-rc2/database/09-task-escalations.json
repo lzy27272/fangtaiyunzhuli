@@ -1,0 +1,34 @@
+[ {
+  "task_id" : "5c4d6659-5ded-4608-8a36-c32e21f52ded",
+  "title" : "岗位漏交整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "a8efdc86-491e-444c-a716-c2aa9eaec308",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 01:46:51.378754+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000008",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-18 01:46:51.51822+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "20cc3cf1-d935-41fc-b96c-9a755c711c29",
+  "title" : "区域多门店OTA评分风险整改（UAT）",
+  "sla_status" : "OVERDUE",
+  "escalation_id" : "4e8f5883-32af-4989-81f0-7fbfd5b5a2ce",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 01:46:51.468968+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000001",
+  "status" : "EXECUTED",
+  "executed_at" : "2026-07-18 01:46:51.51822+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+}, {
+  "task_id" : "7475d461-30f9-4113-875a-720299a03f9f",
+  "title" : "前厅主管手工发起整改任务（UAT）",
+  "sla_status" : "ON_TIME",
+  "escalation_id" : "2a22f8b0-66c5-4d28-91b1-f8186e02fdae",
+  "escalation_level" : 1,
+  "scheduled_at" : "2026-07-18 05:47:05.811799+08",
+  "resolved_assignment_id" : "19200000-0000-0000-0000-000000000004",
+  "status" : "CANCELLED",
+  "executed_at" : "2026-07-18 01:47:06.0524+08",
+  "resolver_snapshot" : "{\"resolver\": \"REVIEWER\"}"
+} ]

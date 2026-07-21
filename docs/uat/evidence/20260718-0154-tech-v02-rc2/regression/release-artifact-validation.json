@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "releaseVersion": "TECH-V0.2-rc.2-local",
+  "databaseVersion": "DB-V13",
+  "apiBase": "/api/v1",
+  "payloadFingerprintSha256": "daf7a779fca869ee0208c7ae4588aff3d3f111ee1732f6ff5477612d42a1f1bb",
+  "artifactCount": 5,
+  "sourceCommit": null,
+  "sourceDirty": null,
+  "artifacts": [
+    {"file": "hotel-ai-os-api-TECH-V0.2-rc.2-local.md", "sizeBytes": 6004, "sha256": "0196e2c8b9731effd6fb34f0efe3686d0bc0d4eabdcc0103d4486d383c160a4e", "status": "PASS"},
+    {"file": "hotel-ai-os-core-api-TECH-V0.2-rc.2-local.jar", "sizeBytes": 33582889, "sha256": "e3b422216fe4109ac868ceba017912a1cbca1ec9e2d40b6b6a6eaa05fa2cc51d", "status": "PASS"},
+    {"file": "hotel-ai-os-db-v13-TECH-V0.2-rc.2-local.zip", "sizeBytes": 24397, "sha256": "30856c7bbfcc6c042ecfefe3169f6d4682b9ea8b4ed604a77a59fb469f7f28c9", "status": "PASS"},
+    {"file": "hotel-ai-os-openapi-TECH-V0.2-rc.2-local.yaml", "sizeBytes": 70263, "sha256": "cdfb24bcdd9ad498f7e2938d108bbc70d1f34a921270df9f6cb54ebc7c4791e6", "status": "PASS"},
+    {"file": "hotel-ai-os-web-TECH-V0.2-rc.2-local.zip", "sizeBytes": 89160, "sha256": "3baaf43304f779ec30ad57c7616f2d5c1d820ce4262a7ee7ed3276003fa40225", "status": "PASS"}
+  ]
+}

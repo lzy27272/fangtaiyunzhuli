@@ -1,0 +1,527 @@
+﻿[
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "c909c8e8-b15b-475e-99cb-f3f72c9a7f0c"
+    },
+    {
+        "path":  "/my/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "a2935cf6-4d10-423c-b19b-ab890824cf30"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "c3fcd476-c2c3-41db-baea-93df162b1828"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "5fb10ff4-86a6-4281-becd-437baf446a49"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "7f9ea029-dcbf-4801-b3b1-378bb417fe8f"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "2e0b8d91-c086-42ef-b8d3-855de68f7ce4"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "0cdc5a9c-0b8c-44f4-b364-cbe56bc6ad0e"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "78f5df22-d454-4f82-8dcc-3e73b36bf856"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "56171c64-482f-4a15-aeed-91ba4d84e03c"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "9e3a5c6c-e31b-48e5-9375-bf4a62d31e25"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "e4fd7fd8-7767-4407-ac6b-67fb9bcd45b7"
+    },
+    {
+        "path":  "/my/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "55f6268a-4d9e-4b27-8b3a-69b21f97b494"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "482e0b81-75ef-4754-9f52-15a8173637ac"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "72a66f58-9fdc-4886-85a3-a02f147bba12"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "ddbb1848-812d-4718-be28-f85a74d2b860"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "ecf73103-9634-4372-bf47-d062d80460a7"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "e2b3dc89-f312-47e8-b3f1-b5ee1ef4f1a3"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "e90fabb6-40f2-4864-bfec-8bd3a08593a7"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "7dbfa878-934f-4831-a0fe-53bc7a28812c"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "b6578dca-f1c2-4948-a9e1-0b0665f6d6cd"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "7cd465ab-90c9-43d9-b114-acc02b74f285"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "e232adfa-b366-4172-8f70-4863b4b488c9"
+    },
+    {
+        "path":  "/dashboards/hotels/12000000-0000-0000-0000-000000000003",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "b089c704-42b1-4d5d-a93f-35ca95f473c7"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "007d7614-bb07-49b1-b34d-031487a5b547"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "4acd2599-e1d7-4747-a5ab-2bc84a48d0a5"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "d1a90788-f639-4981-9f28-8a68d7a9c729"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "fa132f2f-5efd-4029-9aa6-5fc2af431943"
+    },
+    {
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "3b9a3b41-30d0-419f-a154-292e07063564"
+    },
+    {
+        "path":  "/dashboards/operations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "b42f6877-7fde-4f05-aed5-5f3aebbbec13"
+    },
+    {
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "961ccb4b-1a72-4e77-96df-fd60b105208e"
+    },
+    {
+        "path":  "/rules",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "c60b60e6-85af-4bcd-83c3-cda7fec08510"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "03b54381-e7af-4fea-84c6-d4fe329a8310"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "982a422c-1af8-4632-b782-aa31ea6ae40f"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "eea42a91-70da-41ff-941a-6005de1b10a0"
+    },
+    {
+        "path":  "/work-data/records/2e000000-0000-0000-0000-000000000001/attachments/upload",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  201,
+        "correlationId":  "c9893787-1dea-41d7-90de-554b70831766"
+    },
+    {
+        "path":  "/work-data/records/2e000000-0000-0000-0000-000000000001/attachments",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "a198c7eb-26e1-4939-8012-25fad70a59fd"
+    },
+    {
+        "path":  "/work-data/attachments/bc606488-c308-421b-bca8-c3136747ba20/content",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "67e7cf17-3bc0-4bc4-b7c4-28aa71f9956b"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  201,
+        "correlationId":  "25ac58e4-3e2d-4b5c-90ad-c4917e899d66"
+    },
+    {
+        "path":  "/management-events/actions/project-outbox?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "9d2e0582-4ee0-4a76-aa3a-573a856ee734"
+    },
+    {
+        "path":  "/management-events",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "83a6b2d1-01d6-4e99-ba4b-ea5acf33680c"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "0ccaed98-f901-4eb9-8b3a-c0e7b53fe2ec"
+    },
+    {
+        "path":  "/tasks/dabb2129-c9b0-4169-9c2c-f4c9053b325c",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "62005d18-ccf3-4d29-b717-b4cd39e992cb"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "9e7b75cf-002a-4ce7-936a-5124a38e5ef7"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "39675f0b-842a-4409-a98d-92c881925c13"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32/actions/acknowledge",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "edcdff6d-dea3-42a1-922e-e0da4837feff"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32/evidence",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  201,
+        "correlationId":  "4f6dbd19-22d7-43c5-8b06-62007bdbc8f1"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32/actions/submit-result",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "766c1fb0-f7f9-43fa-b2ed-04f8c8cfd704"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  201,
+        "correlationId":  "af9ceed5-ef27-4dbe-bb8e-fc0a24bc4e7f"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "ad6286fd-673b-4fe2-b8f2-97810c3434a8"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32/actions/approve",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "55d031a4-369b-4eee-b75f-53a778042ea7"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "45db724c-93ab-4b0e-bd04-807fe8e0021b"
+    },
+    {
+        "path":  "/tasks/dd51551f-3cd8-4b4a-90ac-04faf79afb32/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "002829f7-b726-4f33-a7ef-768aaa315c37"
+    },
+    {
+        "path":  "/work-data/records",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  201,
+        "correlationId":  "f6605c32-ff93-4f5e-9cf9-a4179a783507"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "correlationId":  "9ad868d7-729e-466a-a25d-b35c7944b84c"
+    },
+    {
+        "path":  "/management-events/actions/project-outbox?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "695c3904-44d0-4aef-921a-108a5ae2437b"
+    },
+    {
+        "path":  "/management-events",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "d8833ed5-8f8f-4ae8-ab9a-6967de13f0e9"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "ac0c35de-11ee-4dcc-8990-e2f99a074329"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "5a4c833b-b974-4e2c-8342-feec11123a99"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "5e7312f0-8f53-4c53-90ff-7d599d5fd456"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4/actions/acknowledge",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "e88f8c0e-307d-4a25-bfde-bae333f70d7f"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4/actions/submit-result",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "93f3bf35-316c-426f-aee4-6c16aec87dca"
+    },
+    {
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "correlationId":  "4c30596b-d128-4ad2-8dda-2e99a662556c"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "aca81067-f930-4b0a-bf19-40e36e927681"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4/actions/approve",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "9753faa8-87de-4ade-b3da-d530748b3bef"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "a37f21e8-2b8d-46b9-bf16-0b69c9f097f1"
+    },
+    {
+        "path":  "/tasks/ffb84da7-68fc-426a-ab5a-21dcafee72b4/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "09034cef-bc0a-4f22-b5a6-420dedafce8e"
+    },
+    {
+        "path":  "/work-expectations/sla/process?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "b7bdb1be-4b71-4d2d-80ac-2e9cf873a158"
+    },
+    {
+        "path":  "/work-expectations/2a500000-0000-0000-0000-000000000005",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "19589c64-7f66-4cf0-9f8a-fba8d29ab1d9"
+    },
+    {
+        "path":  "/management-events/actions/project-outbox?limit=100",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "4662fad7-46e9-4a76-9058-019eef8c94e8"
+    },
+    {
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "7af519c4-33ae-4752-a10b-37f52509cdbd"
+    },
+    {
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "297a0c57-e451-4f38-bd54-bfc449b7b5e1"
+    },
+    {
+        "path":  "/tasks/85adf162-1b0b-41a1-8045-8e4f5b2624b5",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "7f814efc-ae5f-4ae1-8215-72e51d90c49d"
+    },
+    {
+        "path":  "/tasks/sla/process",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "POST",
+        "status":  200,
+        "correlationId":  "84d6e7f0-56c8-4f33-baf7-a5fbfd51ca5d"
+    },
+    {
+        "path":  "/tasks/85adf162-1b0b-41a1-8045-8e4f5b2624b5",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "d0ee08c4-9986-4c6c-846f-52f64c27713b"
+    },
+    {
+        "path":  "/tasks/85adf162-1b0b-41a1-8045-8e4f5b2624b5/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "correlationId":  "86195a0e-d951-40a5-a40f-398ff16acb59"
+    }
+]

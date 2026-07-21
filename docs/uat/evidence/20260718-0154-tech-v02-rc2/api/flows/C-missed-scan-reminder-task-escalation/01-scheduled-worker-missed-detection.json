@@ -1,0 +1,48 @@
+{
+    "mode":  "scheduled-worker",
+    "manualTrigger":  false,
+    "expectation":  {
+                        "id":  "2a500000-0000-0000-0000-000000000005",
+                        "tenant_id":  "10000000-0000-0000-0000-000000000001",
+                        "work_package_item_id":  "2a200000-0000-0000-0000-000000000003",
+                        "work_package_allocation_id":  "2a300000-0000-0000-0000-000000000004",
+                        "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                        "target_org_unit_id":  "12000000-0000-0000-0000-000000000006",
+                        "business_date":  "2026-07-17",
+                        "period_key":  "UAT-HK-MISSED-2026-07-17",
+                        "available_at":  "2026-07-16T17:48:38.774+00:00",
+                        "due_at":  "2026-07-17T17:43:38.774+00:00",
+                        "status":  "MISSED",
+                        "waiver_allowed":  false,
+                        "row_version":  1,
+                        "created_at":  "2026-07-17T17:48:38.774+00:00",
+                        "updated_at":  "2026-07-17T17:48:39.032+00:00",
+                        "item_code":  "HK_ROOM_CHECK",
+                        "item_name":  "客房巡检与图片证据",
+                        "item_type":  "INSPECTION",
+                        "form_version_id":  "29700000-0000-0000-0000-000000000003",
+                        "grace_minutes":  30,
+                        "review_mode":  "STANDARD_EVALUATION",
+                        "work_package_id":  "2a000000-0000-0000-0000-000000000003",
+                        "work_package_code":  "WP-UAT-HK-ROOM-CHECK",
+                        "work_package_name":  "客房巡检与图片证据工作包（UAT）",
+                        "work_package_version_id":  "2a100000-0000-0000-0000-000000000003",
+                        "version_no":  1,
+                        "employee_name":  "周敏",
+                        "position_name":  "客房主管",
+                        "target_org_unit_name":  "客房部",
+                        "standards":  [
+                                          {
+                                              "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+                                              "usage_type":  "ACCEPTANCE",
+                                              "weight":  1.0000,
+                                              "standard_code":  "STD-UAT-HK-ROOM-CHECK",
+                                              "standard_version_no":  1,
+                                              "title":  "客房巡检与图片证据标准 V1（UAT）"
+                                          }
+                                      ],
+                        "records":  [
+
+                                    ]
+                    }
+}

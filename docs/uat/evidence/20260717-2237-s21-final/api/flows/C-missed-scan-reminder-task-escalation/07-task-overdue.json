@@ -1,0 +1,81 @@
+﻿{
+    "id":  "4712b7e6-e0df-4e6d-b839-7e79103fbada",
+    "task_no":  "T-20260717-4712B7E6",
+    "source_event_id":  "1934ff82-39e0-4024-b1ed-321e006f76d2",
+    "source_action_id":  "0a5bcfbb-d33b-4018-8d91-f941d06296f1",
+    "standard_version_id":  "27000000-0000-0000-0000-000000000003",
+    "org_unit_id":  "12000000-0000-0000-0000-000000000006",
+    "org_unit_name":  "å®¢æ¿é¨",
+    "title":  "å²ä½æ¼äº¤æ´æ¹ï¼UATï¼",
+    "description":  "è¡¥é½æ¼äº¤è®°å½å¹¶æäº¤æ´æ¹è¯æ®ã",
+    "lifecycle_status":  "PENDING_ACK",
+    "sla_status":  "OVERDUE",
+    "priority":  "URGENT",
+    "due_at":  "2026-07-17T14:37:53.646+00:00",
+    "source_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{\"dueAt\": \"2026-07-17T14:32:41.231423Z\", \"status\": \"MISSED\", \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"businessDate\": \"2026-07-16\", \"workExpectationId\": \"2a500000-0000-0000-0000-000000000005\", \"workPackageItemId\": \"2a200000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+                            "null":  false
+                        },
+    "responsibility_snapshot":  {
+                                    "type":  "jsonb",
+                                    "value":  "{\"assigneeAssignmentId\": \"19200000-0000-0000-0000-000000000003\", \"reviewerAssignmentId\": \"19200000-0000-0000-0000-000000000008\"}",
+                                    "null":  false
+                                },
+    "result_snapshot":  {
+                            "type":  "jsonb",
+                            "value":  "{}",
+                            "null":  false
+                        },
+    "row_version":  2,
+    "created_by":  "19000000-0000-0000-0000-000000000009",
+    "created_at":  "2026-07-17T14:37:53.641+00:00",
+    "updated_at":  "2026-07-17T14:37:53.813+00:00",
+    "participants":  [
+                         {
+                             "id":  "b4a290a1-94b3-4fb9-a6c7-27c65e54345f",
+                             "participant_type":  "ASSIGNEE",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000003",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000003\", \"name\": \"å¨æ\", \"employeeNo\": \"E-HK-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000002\", \"code\": \"HOUSEKEEPING_SUPERVISOR\", \"name\": \"å®¢æ¿ä¸»ç®¡\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000006\", \"code\": \"HZ-HOUSEKEEPING\", \"name\": \"å®¢æ¿é¨\", \"unitType\": \"DEPARTMENT\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T14:37:53.641+00:00"
+                         },
+                         {
+                             "id":  "3d4f47c0-a7af-4062-868a-19b80898255b",
+                             "participant_type":  "REVIEWER",
+                             "position_assignment_id":  "19200000-0000-0000-0000-000000000008",
+                             "employee_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"19100000-0000-0000-0000-000000000007\", \"name\": \"æ²ä¹\", \"employeeNo\": \"E-AGM-001\"}",
+                                                       "null":  false
+                                                   },
+                             "position_snapshot":  {
+                                                       "type":  "jsonb",
+                                                       "value":  "{\"id\": \"14000000-0000-0000-0000-000000000007\", \"code\": \"ASSISTANT_GENERAL_MANAGER\", \"name\": \"åºå©\"}",
+                                                       "null":  false
+                                                   },
+                             "org_snapshot":  {
+                                                  "type":  "jsonb",
+                                                  "value":  "{\"id\": \"12000000-0000-0000-0000-000000000003\", \"code\": \"HZ-CENTER\", \"name\": \"æ­å·ä¸­å¿åº\", \"unitType\": \"HOTEL\"}",
+                                                  "null":  false
+                                              },
+                             "valid_from":  "2026-07-17T14:37:53.641+00:00"
+                         }
+                     ],
+    "evidence":  [
+
+                 ]
+}

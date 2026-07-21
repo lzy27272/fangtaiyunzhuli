@@ -1,0 +1,1301 @@
+[
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "no-bearer",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "256524d3-f388-4037-8edb-d71c1d00f52d"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "dev-headers-disabled",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "09d98434-e8e4-4e53-9bc1-bd7e06b5d25c"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "malformed-token",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "b2a1985b-a615-4731-bbc7-812841338965"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "expired-token",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "c135d59a-b1b0-4299-b21d-d39769dce537"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "wrong-audience",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "8b27172f-8250-4616-b79d-db24e6ee579c"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "wrong-issuer",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "a0a67af9-bceb-4702-a446-2bcfd1dcc366"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "missing-tenant-claim",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "514c4a43-5513-4ac3-8613-6e1a5977efac"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "missing-account-identity",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "ac001dc4-4f29-428c-847d-c7b84182d436"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "unknown-account",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "63029d7e-065c-4073-8c97-1f89a43e5a8f"
+    },
+    {
+        "category":  "authentication",
+        "authMode":  "bearer-jwt",
+        "authCase":  "cross-tenant-token",
+        "path":  "/iam/me",
+        "method":  "GET",
+        "status":  401,
+        "expectedStatuses":  [
+                                 401
+                             ],
+        "passed":  true,
+        "correlationId":  "f46917a3-111c-4ec9-9932-700d3deaa3d5"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "895d37ae-7d96-4ded-bcd2-9c1c1c2dda22"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/my/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "0373870c-fbeb-4a5b-a190-5d62d19c775a"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "c47d2f53-8186-4fbf-b9c0-3a0f31f8bd58"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "90381414-ac99-4bfb-9b46-73c1f5922792"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "0e788777-6c49-4d46-a871-9373c7eaa2d7"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "c1f3a0ea-b453-4b91-9d16-54f47f7d739f"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a2d50887-38e8-4388-a5a6-fd8da8cd6649"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b8d153bd-fa9a-4116-9970-5071dd7a7379"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "f0a32fcd-2895-400b-a598-ed3e5869d403"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "2d00eb21-66cc-4552-932e-006cf192b4b1"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "6ee1b5d0-d919-43c7-bf87-0535d8a0eb87"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/my/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "2e299b53-f1da-4541-b5ca-c55ca0ed8d19"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "4ec6ec10-eec8-4b4e-b35e-e9053e220a61"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "52416316-292c-4cf2-9cc5-6d3c8e45d1f0"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ad0ddd28-7eeb-4bf2-b26b-989ab87f136d"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "d1fad2af-1bf8-4037-b580-4003b1c16e77"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "d6537c42-269d-4d99-b017-f6fadf9334fb"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "86098169-f946-443d-a1e0-8dffb2e40024"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a7731546-9681-4e4c-9874-c921df2a1d85"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "c6defdeb-ef21-467c-86a0-4861e819435d"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "c850ba33-8941-44ca-8210-d44b46233bb9"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ff947dc6-f2af-4ed7-96d5-8baa32c124e9"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/dashboards/hotels/12000000-0000-0000-0000-000000000003",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "112bd052-ad8d-4cd4-8f4e-ff3e1d6f02c3"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "3bbc1308-5737-43ab-bb20-6b1bf669ddfe"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "6a8020b9-ea84-4d05-8cf5-482bdf668e52"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "1fd64865-622b-4e17-8662-ddf0074a71c5"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "3fa3faf1-61cd-4b4b-afff-64fabef6451c"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/iam/me",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "d4fcb382-05cb-4268-b36c-dfb6209cd8e9"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/dashboards/operations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a5d7cd70-d8c3-4196-9b12-92edac416bad"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "989474b8-e342-4e26-ad8e-f6c0671ec296"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/rules",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "c642de85-efed-4f92-b516-86425f71101b"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "6e849d9b-4d49-43f6-a40b-abf9f5011bfc"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "06219fcd-850e-45d9-9b9c-61d0e8f68ebd"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "9fd853be-ee4d-43c2-8a49-d9b7a6956efe"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "7617ce5e-d5fc-4d74-9a26-082f9154cb47"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/566cb15c-23f7-453d-b20b-02687bcb3e5b/actions/cancel",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "8af06b44-8233-452e-bc86-0453a75800c1"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/team/work-expectations",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "71558ce3-82ae-420a-a509-a66da8935a60"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/dashboards/hotels/12000000-0000-0000-0000-000000000004",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "91ff9a20-f93f-4a32-a7bd-46b623260bf9"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/dashboards/hotels/21000000-0000-0000-0000-000000000002",
+        "actor":  "19000000-0000-0000-0000-000000000007",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "b1b98827-ea11-4e27-8cc5-911d74d3cc8f"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "65b3f0ac-7b2a-4e53-9619-6c8bc0b6bb6a"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  400,
+        "expectedStatuses":  [
+                                 400
+                             ],
+        "passed":  true,
+        "correlationId":  "562c74ca-e248-4edf-ac31-46b95ed19ee7"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/work-data/records/2e000000-0000-0000-0000-000000000001/attachments/upload",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 201
+                             ],
+        "passed":  true,
+        "correlationId":  "e4e73be1-9321-4970-a7c5-7446a86ba5bb"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/work-data/attachments/00b84449-a039-40d3-b34f-0ff9fe2bad1b/content",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  403,
+        "expectedStatuses":  [
+                                 403
+                             ],
+        "passed":  true,
+        "correlationId":  "77808436-44be-405b-9cdd-733676feee9a"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/work-data/records/2e000000-0000-0000-0000-000000000001/attachments",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "16c2fb4c-cc52-475a-9533-c3ced6720ead"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/work-data/attachments/00b84449-a039-40d3-b34f-0ff9fe2bad1b/content",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200
+                             ],
+        "passed":  true,
+        "correlationId":  "c1038996-3eff-400a-a0a3-6e6a4ead8aaa"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "e7a54fa3-d14d-4b48-b938-d9decabfe58b"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/management-events",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b4b801fe-063a-42fb-9693-2d083ffb20dc"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "26d44afd-f05b-4b20-b2b3-425ab2ce0abb"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ae02d54b-8447-4b8f-9401-bcaa34b42ac1"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "ccaf4f11-17e7-4231-b8bf-f28f99b997e0"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b/actions/acknowledge",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "5574b86e-c68b-4b2b-8cbe-89f250ab6a01"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b/evidence",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "bc0e8cfa-a446-4643-bac7-3dcdbfd6b55b"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b/actions/submit-result",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "6c81ed1d-72ab-402f-b379-cb3d8fef7134"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "a1166daf-3a13-4eac-9679-79afc071ba00"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "f6c559b9-a36d-427e-9ee0-5d237f13af19"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b/actions/approve",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "765eafff-7696-4b35-917e-98335f021813"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "48233f4e-bab5-4071-8275-f0eb70caa174"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000002",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "15bfa47e-6bce-4e85-8ff7-2b00f093a2d4"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/work-data/records",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "7fd8fda0-edea-4244-9cb1-730787016785"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "dc28db5a-3ecf-4e3c-a083-56086b93521c"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/management-events",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "4c58dc98-a4bb-40d3-a89f-2d55cb1a819b"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "f9f25bc2-61e2-463c-80ff-3cda93975b2b"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "11ce2499-d943-4a25-94d5-4477073bbdc4"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "495a291a-f203-4bb1-b30a-f1e778f33bce"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468/actions/acknowledge",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "02341d60-b747-45a1-aae8-a144efd3a6fd"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468/actions/submit-result",
+        "actor":  "19000000-0000-0000-0000-000000000003",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "33747f49-0e19-4b19-b4cc-a5f85e511035"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/standard-evaluations",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  201,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "b9af3db0-2800-4473-bd2d-6ea5781d97df"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "22367701-1d12-4c8c-b909-83afddd3f1e2"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468/actions/approve",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "POST",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "13df1101-550d-4b57-ba09-c32f84017e5c"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "e6803859-e804-4af9-8f91-a65b2cf41439"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/f3e14bc5-7d17-4386-a436-f0f5067c6468/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000005",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "c81c2be8-370e-4910-9f08-5123357a70a7"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/work-expectations/2a500000-0000-0000-0000-000000000005",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "c757d723-ba86-4cdc-83a4-8af21a4c1082"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/management-events",
+        "actor":  "19000000-0000-0000-0000-000000000001",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "afbf597f-aba9-4641-8872-7bb5e8fd17e6"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/notifications",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "00bbcc0c-438e-4ed2-a71c-c57e052c58e9"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "4c5e038f-c993-4514-b223-4cbdabddc034"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/487c7d1d-0fbb-499e-962e-6fe91e926f6b",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "934adcc1-5015-46a4-b3f1-b7a8189c54b9"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/ae93939f-2be8-421d-b372-ef7c5c1ed37e",
+        "actor":  "19000000-0000-0000-0000-000000000004",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "d2e89a4b-c756-4e8c-b6d2-f8699424d415"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/ae93939f-2be8-421d-b372-ef7c5c1ed37e",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "15d1ab1c-37c3-4465-b6fc-21a1b8f5d13c"
+    },
+    {
+        "category":  "api",
+        "authMode":  "bearer-jwt",
+        "path":  "/tasks/ae93939f-2be8-421d-b372-ef7c5c1ed37e/timeline",
+        "actor":  "19000000-0000-0000-0000-000000000008",
+        "method":  "GET",
+        "status":  200,
+        "expectedStatuses":  [
+                                 200,
+                                 201,
+                                 204
+                             ],
+        "passed":  true,
+        "correlationId":  "71e6fe3a-882d-4b03-b689-5725b31b4f8c"
+    }
+]

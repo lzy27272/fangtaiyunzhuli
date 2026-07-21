@@ -1,0 +1,12 @@
+{
+  "name": "hotel-ai-os-uat-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node ./capture-uat-screenshots.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.53.0"
+  }
+}
+

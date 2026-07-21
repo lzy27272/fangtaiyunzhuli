@@ -1,0 +1,70 @@
+﻿{
+    "tenantId":  "10000000-0000-0000-0000-000000000001",
+    "account":  {
+                    "id":  "19000000-0000-0000-0000-000000000005",
+                    "loginName":  "fo.supervisor",
+                    "displayName":  "åå\u0085ä¸»ç®¡éèª",
+                    "status":  "ACTIVE"
+                },
+    "employee":  {
+                     "id":  "19100000-0000-0000-0000-000000000004",
+                     "employeeNo":  "E-FO-001",
+                     "name":  "éèª",
+                     "employmentStatus":  "ACTIVE"
+                 },
+    "primaryRole":  "FRONT_OFFICE_SUPERVISOR",
+    "roles":  [
+                  "FRONT_OFFICE_SUPERVISOR"
+              ],
+    "permissions":  [
+                        "task.dispatch",
+                        "dashboard.hotel",
+                        "work-record.read",
+                        "evaluation.manual-review",
+                        "work.submit",
+                        "task.act",
+                        "notification.read",
+                        "task.create",
+                        "standard.read",
+                        "work-record.review",
+                        "task.cancel",
+                        "work-package.read",
+                        "rule.read",
+                        "work-package.allocate",
+                        "evaluation.read",
+                        "task.read",
+                        "org.read",
+                        "task.review",
+                        "work-record.submit"
+                    ],
+    "tenantScope":  false,
+    "organizationScopes":  [
+                               "12000000-0000-0000-0000-000000000005"
+                           ],
+    "positionAssignments":  [
+                                {
+                                    "id":  "19200000-0000-0000-0000-000000000004",
+                                    "organizationId":  "12000000-0000-0000-0000-000000000005",
+                                    "organizationCode":  "HZ-FRONT",
+                                    "organizationName":  "åå\u0085é¨",
+                                    "positionId":  "14000000-0000-0000-0000-000000000003",
+                                    "positionCode":  "FRONT_OFFICE_SUPERVISOR",
+                                    "positionName":  "åå\u0085ä¸»ç®¡",
+                                    "primary":  true,
+                                    "assignmentType":  "PERMANENT",
+                                    "validFrom":  "2023-02-08"
+                                },
+                                {
+                                    "id":  "19200000-0000-0000-0000-000000000005",
+                                    "organizationId":  "12000000-0000-0000-0000-000000000003",
+                                    "organizationCode":  "HZ-CENTER",
+                                    "organizationName":  "æ­å·ä¸­å¿åº",
+                                    "positionId":  "14000000-0000-0000-0000-000000000001",
+                                    "positionCode":  "FRONT_DESK",
+                                    "positionName":  "åå°åå·¥",
+                                    "primary":  false,
+                                    "assignmentType":  "PERMANENT",
+                                    "validFrom":  "2026-07-01"
+                                }
+                            ]
+}

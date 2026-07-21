@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "releaseVersion": "TECH-V0.2-rc.3-local",
+  "buildTimestamp": "2026-07-18T05:00:00Z",
+  "buildCount": 2,
+  "artifactCountPerBuild": 5,
+  "payloadFingerprintSha256": "546fc5175d97af2e0bbe3736468b1366d8890e89a6c6a6d761db4d40eba089ee",
+  "manifests": [
+    "build-1-manifest.json",
+    "build-2-manifest.json"
+  ],
+  "differences": []
+}

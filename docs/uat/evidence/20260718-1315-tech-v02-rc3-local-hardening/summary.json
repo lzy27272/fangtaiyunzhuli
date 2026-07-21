@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260718-1315-tech-v02-rc3-local-hardening",
+  "scope": "local-release-security-hardening",
+  "status": "PASS",
+  "candidateVersion": "TECH-V0.2-rc.3-local",
+  "backendRegression": {
+    "tests": 48,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "databaseMigrations": 13
+  },
+  "reproducibleBuild": {
+    "status": "PASS",
+    "artifactCount": 5,
+    "buildCount": 2,
+    "payloadFingerprintSha256": "546fc5175d97af2e0bbe3736468b1366d8890e89a6c6a6d761db4d40eba089ee"
+  },
+  "sensitiveInformationScan": {
+    "status": "PASS",
+    "decision": "CLEAN",
+    "inputSetSha256": "e5b3f36e2ed5ddad69dce7adfe16a3bbbf3457c1fd5c8baa1da605b0fe5a95f3",
+    "filesScanned": 160,
+    "archivesScanned": 120,
+    "archiveEntriesInspected": 43830,
+    "findingGroups": 0,
+    "matchCount": 0,
+    "errorGroups": 0,
+    "errorCount": 0
+  },
+  "requiredSecretFailFast": {
+    "status": "PASS",
+    "processExitCode": 1,
+    "durationMilliseconds": 198,
+    "springBannerRendered": false,
+    "databaseConnectionAttempted": false,
+    "serverStarted": false,
+    "knownSecretSentinelRendered": false
+  },
+  "releaseBoundary": {
+    "gitCommitBound": false,
+    "formalReleaseStatusChanged": false,
+    "externalReleaseGatesChanged": false
+  }
+}
