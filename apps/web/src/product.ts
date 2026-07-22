@@ -5,6 +5,6 @@ export const product = Object.freeze({
   shortName: value(import.meta.env.VITE_PRODUCT_SHORT_NAME, '四方馆中台'),
   edition: value(import.meta.env.VITE_PRODUCT_EDITION, 'Pilot Test Version'),
   editionLabel: value(import.meta.env.VITE_PRODUCT_EDITION_LABEL, '内部测试版'),
-  version: value(import.meta.env.VITE_PRODUCT_VERSION, 'TECH-V0.2-PILOT.6'),
+  version: value(import.meta.env.VITE_PRODUCT_VERSION, 'TECH-V0.2-PILOT.7'),
   publicUrl: value(import.meta.env.VITE_PUBLIC_URL, 'https://www.sfgzt.cn'),
 })

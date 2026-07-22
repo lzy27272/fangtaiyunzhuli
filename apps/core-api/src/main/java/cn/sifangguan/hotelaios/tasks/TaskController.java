@@ -24,10 +24,16 @@ public class TaskController {
 
     @GetMapping
     public List<Map<String, Object>> list(
+            @RequestParam(required = false) String view,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) UUID orgUnitId
     ) {
-        return service.list(status, orgUnitId);
+        return service.list(view, status, orgUnitId);
+    }
+
+    @GetMapping("/targets")
+    public List<Map<String, Object>> targets() {
+        return service.targets();
     }
 
     @PostMapping

@@ -15,14 +15,16 @@ public final class TaskModels {
     public record CreateTask(
             @NotNull UUID orgUnitId,
             @NotNull UUID assigneeAssignmentId,
-            @NotNull UUID reviewerAssignmentId,
+            UUID reviewerAssignmentId,
             UUID standardVersionId,
             UUID workRecordId,
             @NotBlank String title,
             String description,
             String priority,
             OffsetDateTime dueAt,
-            JsonNode sourceSnapshot
+            JsonNode sourceSnapshot,
+            UUID creatorAssignmentId,
+            Boolean dispatchNow
     ) {
     }
 

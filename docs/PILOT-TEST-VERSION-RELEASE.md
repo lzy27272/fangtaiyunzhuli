@@ -33,7 +33,7 @@
 - Windows不开放Pilot入站端口；临时4174、4175入口均已关闭。
 - 历史Quick Tunnel已完成1440×1000桌面与390×844移动端渲染、任务中心导航及控制台验收，错误0、警告0，现已停止。
 - 固定Named Tunnel、`www.sfgzt.cn`和根域名DNS路由已建立；根域名308跳转到`https://www.sfgzt.cn`；两个Cloudflare边缘IP及独立外部抓取节点均验证正式域名返回200和正确页面内容。
-- 站点和`/api/*`统一受Caddy Basic Auth保护；本机测试账号与数据库密钥保存在受限ACL文件中，不进入仓库或聊天。
+- 公网页面直接进入中台应用登录；除登录接口外，`/api/*`继续要求有效JWT，账号组织范围和权限由服务端解析。本机测试账号与数据库密钥保存在受限ACL文件中，不进入仓库或聊天。
 - 本机Playwright完成真实规则创建→修改→发布；公网Playwright完成8个真实角色登录、七岗位填报表单、团队隔离和对应驾驶舱走查，页面显示“实时API”。
 - CEO可在“集团模板配置”创建、修订和发布集团岗位标准工作、任务与门店驾驶舱模板；其他管理角色只能在授权组织范围内读取已发布模板。
 - 岗位工作支持草稿、统一文字陈述、多附件和最终提交；任务支持精确执行/验收任职、证据上传、结果提交、返工和验收。
@@ -44,8 +44,8 @@
 ## 2. 上线所需外部条件
 
 1. 确认`sfgzt.cn`已完成ICP备案并提供备案号用于页面底部展示。
-2. Pilot目前仍是“外层Basic Auth＋本地应用账号JWT”；正式发布前必须接入目标企业SSO并完成正式账号生命周期验收。
-3. PostgreSQL已作为Windows自动服务运行；Core API由当前Windows用户登录计划任务恢复。正式生产前必须改为SYSTEM受管服务或云端托管，并补齐监控、告警、备份和恢复演练。
+2. Pilot目前使用本地应用账号、短期JWT、连续失败5次临时锁定和服务端RBAC/RLS；正式发布前仍需接入目标企业SSO并完成正式账号生命周期验收。
+3. PostgreSQL已作为Windows自动服务运行；Core API由当前Windows用户计划任务在登录时及每5分钟检查恢复。正式生产前必须改为SYSTEM受管服务或云端托管，并补齐监控、告警、备份和恢复演练。
 4. 附件当前保存于本机D盘；正式生产前必须切换对象存储并落实容量、病毒扫描、保留期和灾备策略。
 5. Cloudflare Browser Insights注入脚本会被本站严格CSP拦截并产生一条无业务影响的控制台提示；可在Cloudflare关闭该注入，或在安全评审后单独决定是否放行。
 
@@ -53,9 +53,9 @@
 
 - 测试入口：`https://www.sfgzt.cn/#/workbench`。
 - 不再使用包含`?demo=1`的旧链接。
-- 浏览器首先要求站点用户名和密码；凭据只保存在本机`D:\SifangguanHotelAIOS\Pilot-Test-Access.txt`。
+- 浏览器直接显示中台登录页；应用测试账号只保存在本机`D:\SifangguanHotelAIOS\Pilot-Account-Access.txt`并通过安全渠道单独发放。
 - 测试数据会真实写入PostgreSQL。创建规则、提交记录、创建任务或发布标准前，应使用UAT命名并避免录入真实客人隐私数据。
-- 该电脑必须保持开机和联网；重启后需登录部署该任务的Windows用户，`SifangguanPilotCoreApiUser`会检查并恢复Core API。
+- 该电脑必须保持开机和联网；重启后需登录部署该任务的Windows用户，`SifangguanPilotCoreApiUser`会立即检查并每5分钟恢复Core API。
 
 ## 4. 测试与Sprint 3并行规则
 

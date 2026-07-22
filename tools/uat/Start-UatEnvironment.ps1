@@ -275,6 +275,8 @@ if (-not $SkipWeb) {
 
 $state = [ordered]@{
     createdAt = (Get-Date).ToString('o')
+    expiresAt = (Get-Date).AddHours(12).ToString('o')
+    purpose = 'ISOLATED_UAT'
     authenticationMode = 'bearer-jwt'
     devHeaderAuthEnabled = $false
     jwtIssuer = $issuer

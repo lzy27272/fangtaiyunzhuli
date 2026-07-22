@@ -190,9 +190,12 @@ export async function loadMyWork(identity: ApiIdentity) {
   }, () => demoValue<WorkExpectation[]>('demoExpectations'))
 }
 
-export async function loadTeamWork(identity: ApiIdentity) {
+export async function loadTeamWork(identity: ApiIdentity, options: { orgUnitId?: string } = {}) {
   return withFallback(async () => {
-    const payload = await apiRequest<unknown>('/team/work-expectations?page=0&size=100', identity)
+    const query = new URLSearchParams({ page: '0', size: '100' })
+    if (options.orgUnitId) query.set('targetOrgUnitId', options.orgUnitId)
+    const endpoint = options.orgUnitId ? '/work-expectations' : '/team/work-expectations'
+    const payload = await apiRequest<unknown>(`${endpoint}?${query.toString()}`, identity)
     return asList<JsonObject>(payload).map(normalizeExpectation)
   }, () => demoValue<WorkExpectation[]>('demoExpectations'))
 }
@@ -356,6 +359,7 @@ export async function createCorrectiveTask(identity: ApiIdentity, input: {
   orgUnitId: string
   assigneeAssignmentId: string
   reviewerAssignmentId: string
+  creatorAssignmentId?: string
   standardVersionId?: string
   workRecordId: string
   title: string
@@ -366,7 +370,12 @@ export async function createCorrectiveTask(identity: ApiIdentity, input: {
   return apiRequest('/tasks', identity, {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
-    body: JSON.stringify({ ...input, sourceSnapshot: { source: 'TEAM_WORK_REVIEW', workRecordId: input.workRecordId } }),
+    body: JSON.stringify({
+      ...input,
+      creatorAssignmentId: input.creatorAssignmentId ?? identity.assignmentId,
+      dispatchNow: true,
+      sourceSnapshot: { source: 'TEAM_WORK_REVIEW', workRecordId: input.workRecordId },
+    }),
   })
 }
 
@@ -497,7 +506,7 @@ function normalizeTask(item: JsonObject): ManagementTask {
   const participants = asList<JsonObject>(item.participants)
   const participantName = (kind: string) => {
     const participant = participants.find((row) => text(row, ['participantType', 'participant_type'], '') === kind)
-    const employee = object(value(participant ?? {}, 'employeeSnapshot', 'employee_snapshot'))
+    const employee = object(jsonColumn(value(participant ?? {}, 'employeeSnapshot', 'employee_snapshot')))
     return participant ? text(employee, ['name', 'employeeName'], '待解析') : '待解析'
   }
   const participantId = (kind: string) => {
@@ -613,9 +622,18 @@ export async function publishEnterpriseTemplate(identity: ApiIdentity, templateI
   })
 }
 
-export async function loadTasks(identity: ApiIdentity, team = false) {
+export type TaskListQuery = {
+  view?: 'mine' | 'team' | 'review' | 'all'
+  status?: string
+  orgUnitId?: string
+}
+
+export async function loadTasks(identity: ApiIdentity, options: TaskListQuery = {}) {
   return withFallback(async () => {
-    const payload = await apiRequest<unknown>(`/tasks?view=${team ? 'team' : 'mine'}&page=0&size=100`, identity)
+    const query = new URLSearchParams({ view: options.view ?? 'mine', page: '0', size: '100' })
+    if (options.status) query.set('status', options.status)
+    if (options.orgUnitId) query.set('orgUnitId', options.orgUnitId)
+    const payload = await apiRequest<unknown>(`/tasks?${query.toString()}`, identity)
     return asList<JsonObject>(payload).map(normalizeTask)
   }, () => demoValue<ManagementTask[]>('demoTasks'))
 }
@@ -661,8 +679,11 @@ function normalizeMetric(item: JsonObject): DashboardMetric {
 }
 
 function normalizeRisk(item: JsonObject, index: number): DashboardRisk {
+  const sourceId = text(item, ['sourceId', 'source_id'], '') || undefined
   return {
-    id: text(item, ['id'], `risk-${index}`),
+    id: text(item, ['id'], sourceId ?? `risk-${index}`),
+    sourceId,
+    orgUnitId: text(item, ['orgUnitId', 'org_unit_id'], '') || undefined,
     title: text(item, ['title', 'name', 'summary'], '待处理风险事项'),
     type: text(item, ['type', 'riskType', 'risk_type'], 'MANAGEMENT_RISK'),
     severity: text(item, ['severity', 'priority'], 'MEDIUM'),
@@ -738,6 +759,7 @@ function normalizeEvaluation(item: JsonObject): StandardEvaluation {
       executionStatus: text(item, ['executionStatus', 'execution_status'], 'PENDING'),
       evaluatedAt: text(item, ['evaluatedAt', 'evaluated_at', 'completed_at', 'createdAt', 'created_at'], '') || undefined,
       targetOrgName: text(item, ['targetOrgName', 'orgUnitName', 'org_unit_name', 'org_unit_id'], '当前组织'),
+      targetOrgUnitId: text(item, ['targetOrgUnitId', 'orgUnitId', 'org_unit_id'], '') || undefined,
       assignmentId: text(item, ['positionAssignmentId', 'position_assignment_id'], '') || undefined,
       items: Array.isArray(item.items) ? item.items.map((raw) => {
         const row = object(raw)
@@ -746,15 +768,18 @@ function normalizeEvaluation(item: JsonObject): StandardEvaluation {
     }
 }
 
-export async function loadEvaluations(identity: ApiIdentity) {
+export async function loadEvaluations(identity: ApiIdentity, options: { orgUnitId?: string; outcome?: string } = {}) {
   return withFallback(async () => {
-    const payload = await apiRequest<unknown>('/standard-evaluations?page=0&size=100', identity)
+    const query = new URLSearchParams({ page: '0', size: '100' })
+    if (options.orgUnitId) query.set('orgUnitId', options.orgUnitId)
+    if (options.outcome) query.set('outcome', options.outcome)
+    const payload = await apiRequest<unknown>(`/standard-evaluations?${query.toString()}`, identity)
     return asList<JsonObject>(payload).map(normalizeEvaluation)
   }, () => demoValue<StandardEvaluation[]>('demoEvaluations'))
 }
 
-export async function loadEvaluation(identity: ApiIdentity, id: string, fallback: StandardEvaluation) {
-  return withFallback(async () => normalizeEvaluation(object(await apiRequest<unknown>(`/standard-evaluations/${id}`, identity))), fallback)
+export async function loadEvaluation(identity: ApiIdentity, id: string, fallback?: StandardEvaluation) {
+  return withFallback(async () => normalizeEvaluation(object(await apiRequest<unknown>(`/standard-evaluations/${id}`, identity))), fallback ?? normalizeEvaluation({ id }))
 }
 
 export async function loadNotifications(identity: ApiIdentity) {

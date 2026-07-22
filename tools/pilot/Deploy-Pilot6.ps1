@@ -34,7 +34,7 @@ $repo = [IO.Path]::GetFullPath($RepoRoot)
 $backupRoot = [IO.Path]::GetFullPath((Join-Path $runtime 'Backups'))
 $databaseSource = [IO.Path]::GetFullPath((Join-Path $runtime 'Data\PostgreSQL'))
 $attachmentsSource = [IO.Path]::GetFullPath((Join-Path $runtime 'Data\Attachments'))
-$candidateJar = [IO.Path]::GetFullPath((Join-Path $repo 'apps\core-api\target\hotel-ai-os-core-api-0.2.0-pilot.6.jar'))
+$candidateJar = [IO.Path]::GetFullPath((Join-Path $repo 'apps\core-api\target\hotel-ai-os-core-api-0.2.0-pilot.7.jar'))
 $legacyJar = [IO.Path]::GetFullPath((Join-Path $repo 'apps\core-api\target\hotel-ai-os-core-api-0.1.0-SNAPSHOT.jar'))
 $webDist = [IO.Path]::GetFullPath((Join-Path $repo 'apps\web\dist'))
 
@@ -52,7 +52,7 @@ foreach ($required in @($databaseSource, $candidateJar, $webDist)) {
 
 New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backup = [IO.Path]::GetFullPath((Join-Path $backupRoot "TECH-V0.2-PILOT.6-predeploy-$stamp"))
+$backup = [IO.Path]::GetFullPath((Join-Path $backupRoot "TECH-V0.2-PILOT.7-predeploy-$stamp"))
 if (-not $backup.StartsWith($backupRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Backup target escaped the approved backup root.'
 }
@@ -62,14 +62,33 @@ if (Test-Path -LiteralPath $backup) {
 
 $result = @{
     status = 'STARTED'
-    version = 'TECH-V0.2-PILOT.6'
+    version = 'TECH-V0.2-PILOT.7'
     startedAt = (Get-Date).ToString('o')
     backupPath = $backup
 }
 Write-DeploymentResult $result
 
+$coreApiTaskName = 'SifangguanPilotCoreApiUser'
+$coreApiTask = $null
+$coreApiTaskWasEnabled = $false
+
 try {
+    $coreApiTask = Get-ScheduledTask -TaskName $coreApiTaskName -ErrorAction SilentlyContinue
+    if (-not $coreApiTask) {
+        throw "Required Core API watchdog task is not installed: $coreApiTaskName"
+    }
+    $coreApiTaskWasEnabled = [bool]$coreApiTask.Settings.Enabled
+    if (-not $coreApiTaskWasEnabled) {
+        throw "Core API watchdog task is disabled before deployment: $coreApiTaskName"
+    }
+
     New-Item -ItemType Directory -Path $backup | Out-Null
+
+    # Quiesce the watchdog before stopping the API/database. Otherwise its
+    # five-minute trigger can restart the runtime while the physical database
+    # directory is being copied and make the backup inconsistent.
+    Disable-ScheduledTask -TaskName $coreApiTaskName | Out-Null
+    Stop-ScheduledTask -TaskName $coreApiTaskName -ErrorAction SilentlyContinue
 
     $webService = Get-Service -Name 'SifangguanPilot'
     if ($webService.Status -eq 'Running') {
@@ -100,15 +119,16 @@ try {
     if (Test-Path -LiteralPath $legacyJar) {
         Copy-Item -LiteralPath $legacyJar -Destination (Join-Path $backup 'hotel-ai-os-core-api-0.1.0-SNAPSHOT.jar')
     }
-    Copy-Item -LiteralPath $candidateJar -Destination (Join-Path $backup 'hotel-ai-os-core-api-0.2.0-pilot.6.candidate.jar')
+    Copy-Item -LiteralPath $candidateJar -Destination (Join-Path $backup 'hotel-ai-os-core-api-0.2.0-pilot.7.candidate.jar')
     Copy-Item -LiteralPath $webDist -Destination (Join-Path $backup 'web-dist-pilot6-candidate') -Recurse
 
     Start-Service -Name 'SifangguanPostgreSQL'
     (Get-Service -Name 'SifangguanPostgreSQL').WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
 
-    Start-ScheduledTask -TaskName 'SifangguanPilotCoreApiUser'
+    Enable-ScheduledTask -TaskName $coreApiTaskName | Out-Null
+    Start-ScheduledTask -TaskName $coreApiTaskName
     if (-not (Wait-HttpHealth -Uri 'http://127.0.0.1:18080/actuator/health')) {
-        throw 'PILOT.6 Core API did not become healthy within 120 seconds.'
+        throw 'PILOT.7 Core API did not become healthy within 120 seconds.'
     }
 
     Start-Service -Name 'SifangguanPilot'
@@ -116,8 +136,8 @@ try {
 
     $apiConnection = Get-NetTCPConnection -LocalPort 18080 -State Listen | Select-Object -First 1
     $apiProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$($apiConnection.OwningProcess)"
-    if ($apiProcess.CommandLine -notmatch 'hotel-ai-os-core-api-0\.2\.0-pilot\.6\.jar') {
-        throw 'Healthy API is not running the PILOT.6 JAR.'
+    if ($apiProcess.CommandLine -notmatch 'hotel-ai-os-core-api-0\.2\.0-pilot\.7\.jar') {
+        throw 'Healthy API is not running the PILOT.7 JAR.'
     }
 
     $result.status = 'SUCCEEDED'
@@ -141,6 +161,14 @@ try {
     try {
         if ((Get-Service -Name 'SifangguanPilot' -ErrorAction SilentlyContinue).Status -ne 'Running') {
             Start-Service -Name 'SifangguanPilot'
+        }
+    } catch {
+    }
+    try {
+        if ($coreApiTaskWasEnabled) {
+            Enable-ScheduledTask -TaskName $coreApiTaskName | Out-Null
+            Start-ScheduledTask -TaskName $coreApiTaskName
+            Wait-HttpHealth -Uri 'http://127.0.0.1:18080/actuator/health' -TimeoutSeconds 120 | Out-Null
         }
     } catch {
     }

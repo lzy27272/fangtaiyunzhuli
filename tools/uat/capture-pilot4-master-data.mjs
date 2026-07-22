@@ -4,14 +4,15 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { requireExplicitUatFile, resolveIsolatedUatWebBase } from './isolated-uat-target.mjs'
 
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.UAT_PLAYWRIGHT_MODULE ?? 'playwright')
 const toolRoot = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(toolRoot, '..', '..')
-const webBase = (process.env.PILOT_WEB_BASE ?? 'https://www.sfgzt.cn').replace(/\/$/, '')
-const accountFile = process.env.PILOT_ACCOUNT_FILE ?? 'D:\\SifangguanHotelAIOS\\Pilot-Account-Access.txt'
-const outerAccessFile = process.env.PILOT_OUTER_ACCESS_FILE ?? 'D:\\SifangguanHotelAIOS\\Pilot-Test-Access.txt'
+const webBase = await resolveIsolatedUatWebBase(repoRoot)
+const accountFile = requireExplicitUatFile('PILOT_ACCOUNT_FILE')
+const outerAccessFile = requireExplicitUatFile('PILOT_OUTER_ACCESS_FILE')
 const browserExecutable = process.env.UAT_BROWSER_EXECUTABLE
   ?? ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'].find(existsSync)
 const outputRoot = path.resolve(process.env.UAT_SCREENSHOT_DIR ?? path.join(repoRoot, 'docs', 'uat', 'evidence', 'pilot4-master-data'))

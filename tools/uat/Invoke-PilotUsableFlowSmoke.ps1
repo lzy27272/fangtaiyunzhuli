@@ -1,10 +1,44 @@
 [CmdletBinding()]
 param(
     [string]$RuntimeRoot = 'D:\SifangguanHotelAIOS',
-    [string]$ApiBase = 'http://127.0.0.1:18080/api/v1'
+    [string]$ApiBase = '',
+    [string]$StateFile = '',
+    [string]$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss-pilot-flow')
 )
 
 $ErrorActionPreference = 'Stop'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+if (-not $StateFile) {
+    $StateFile = Join-Path $repoRoot 'docs\uat\evidence\runtime\uat-processes.json'
+}
+if (-not (Test-Path -LiteralPath $StateFile)) {
+    throw "Disposable UAT state is missing: $StateFile. Run Start-UatEnvironment.ps1 first."
+}
+$uatState = Get-Content -LiteralPath $StateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+if ([string]$uatState.purpose -cne 'ISOLATED_UAT') {
+    throw 'Mutating Pilot smoke is blocked unless the state declares purpose=ISOLATED_UAT.'
+}
+$expiresAt = [DateTimeOffset]::Parse([string]$uatState.expiresAt)
+if ($expiresAt -le [DateTimeOffset]::Now) {
+    throw 'Disposable UAT state has expired. Restart the UAT environment.'
+}
+$stateApiOrigin = ([string]$uatState.apiUrl).TrimEnd('/')
+$stateUri = [Uri]$stateApiOrigin
+if ($stateUri.Scheme -ne 'http' -or $stateUri.Host -notin @('127.0.0.1', 'localhost', '::1')) {
+    throw "Mutating Pilot smoke requires a loopback disposable API, received $stateApiOrigin."
+}
+if ($uatState.apiPid -and -not (Get-Process -Id ([int]$uatState.apiPid) -ErrorAction SilentlyContinue)) {
+    throw 'The API process recorded by the disposable UAT state is no longer running.'
+}
+if ($ApiBase -and $ApiBase.TrimEnd('/') -ne "$stateApiOrigin/api/v1") {
+    throw 'ApiBase does not match the active disposable UAT state.'
+}
+
+Write-Warning 'Invoke-PilotUsableFlowSmoke.ps1 is retained as a compatibility entry point; it now delegates to isolated signed-JWT UAT and cannot write to the shared Pilot database.'
+& (Join-Path $PSScriptRoot 'Invoke-UatApiSmoke.ps1') -ApiOrigin $stateApiOrigin -RunId $RunId
+if ($LASTEXITCODE -ne 0) { throw "Isolated UAT smoke failed with exit code $LASTEXITCODE." }
+return
+
 $tenantId = '10000000-0000-0000-0000-000000000001'
 $credentialFile = Join-Path ([IO.Path]::GetFullPath($RuntimeRoot)) 'Pilot-Account-Access.txt'
 

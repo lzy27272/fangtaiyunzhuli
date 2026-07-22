@@ -206,7 +206,7 @@ class Sprint2AuthorizationIntegrationTest {
     }
 
     @Test
-    void nonTenantManagerCannotAssignTaskToPositionOutsideAuthorizedOrganization() throws Exception {
+    void taskOrganizationCannotExcludeTheAssigneeDepartment() throws Exception {
         mockMvc.perform(post("/api/v1/tasks")
                         .header("X-Tenant-Id", TENANT)
                         .header("X-Actor-Id", FRONT_OFFICE_SUPERVISOR)

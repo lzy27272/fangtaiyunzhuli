@@ -210,6 +210,8 @@ try {
 
     $state = [ordered]@{
         createdAt = (Get-Date).ToString('o')
+        expiresAt = (Get-Date).AddHours(12).ToString('o')
+        purpose = 'ISOLATED_UAT'
         runId = $RunId
         environmentType = 'embedded-postgresql'
         authenticationMode = 'bearer-jwt'

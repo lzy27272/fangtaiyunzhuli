@@ -2,7 +2,7 @@
 
 酒店集团第二管理体系。当前产品基线为PRODUCT-V1.2；TECH-V0.1已发布。TECH-V0.2已完成RC Final本地业务收口，并完成RC3安全加固：六角色、三业务闭环、正式JWT路径、真实后台Worker、附件安全扫描、数据库密码外部必填、Live宿主干净停机、可复现构建和数据库恢复演练均有证据；但正式签署、目标企业SSO、真实现场照片与目标附件链、有效Git标签以及目标环境运维保障仍未完成，因此TECH-V0.2保持Unreleased。Sprint 3预实施计划已输出，但仍待TECH-V0.2正式发布和TECH-V0.3技术冻结，尚未启动编码。
 
-当前可供门店开展受控内部业务测试的版本为`TECH-V0.2-PILOT.5`，产品名称“贵州四方馆酒店管理有限公司中台”，公网地址为https://www.sfgzt.cn。该Pilot已接入本机真实PostgreSQL和真实应用账号，支持网页维护组织/岗位/人员与一人多岗，支持工作包创建、发布、下发，以及七类运营岗位的真实结构化填报和图片附件；8个真实角色的API写入与公网页面UAT均已通过。操作说明见`docs/PILOT-TEST-USER-GUIDE.md`，岗位能力验收报告见`docs/uat/TECH-V0.2-PILOT.5-ROLE-CAPABILITY-UAT.md`。Pilot可用不改变TECH-V0.2正式版仍为Unreleased的发布判断。
+当前可供门店开展受控内部业务测试的版本为`TECH-V0.2-PILOT.7`，产品名称“贵州四方馆酒店管理有限公司中台”，公网地址为https://www.sfgzt.cn。该Pilot已接入本机真实PostgreSQL和真实应用账号，支持可点击工作台与驾驶舱、原子任务投递、多角色数据隔离、15秒任务/通知自动刷新、任务图片证据和有/无标准验收。8个真实角色登录与下达入口回归、真实账号API闭环和公网UI任务闭环均已通过。操作说明见`docs/PILOT-TEST-USER-GUIDE.md`，本轮报告见`docs/TECH-V0.2-PILOT.7-REPAIR-REPORT.md`。Pilot可用不改变TECH-V0.2正式版仍为Unreleased的发布判断。
 
 ## Sprint 1 范围
 
@@ -25,7 +25,7 @@
 - 未完成闭环：工作期望MISSED检测、提醒、规则建任务、任务OVERDUE和升级。
 - 驾驶舱：店总门店风险/未完成任务汇总和区域多门店运营视图。
 
-当前Pilot工作树数据库迁移已达到Flyway V15，共50张业务表；V5—V13新增/加固25张Sprint 2租户业务表并补齐区域驾驶舱权限，V14增加Pilot本地账号认证数据，V15补齐七类运营岗位的结构化表单、工作包、动态下发和当日真实工作，租户业务表继续启用并强制RLS。当前Pilot OpenAPI仍为0.2.2-pilot.4（71路径、91操作、61模型），本次无破坏性API变更。正式判断见`docs/TECH-V0.2-RELEASE-CANDIDATE-FINAL-REPORT.md`。
+当前Pilot数据库迁移已达Flyway V17。V16增加结构化工作提交、任务证据和版本化企业模板；V17补齐OTA运营助理任务下达/验收权限。租户业务表继续启用并强制RLS。当前Pilot OpenAPI为`0.2.4-pilot.7`（OpenAPI 3.1.0，81路径、67模型），API主版本仍为`/api/v1`，本轮无破坏性主版本变更。正式判断见`docs/TECH-V0.2-RELEASE-CANDIDATE-FINAL-REPORT.md`。
 
 RC3本地加固运行移除了发布JAR中的数据库密码回退值，并在应用入口增加缺失密钥预检；48项后端测试零失败，真实Live UAT宿主1/1通过并确认Hikari先于PostgreSQL关闭；两次独立构建的5项制品指纹一致，深度敏感信息扫描覆盖160个文件和43,830个归档条目，0命中、0错误。无密钥启动在0.2秒内失败，未创建Spring上下文、未尝试数据库连接、未监听端口。该结果关闭本地代码级问题，但制品仍未绑定Git提交，不能替代正式发布门禁。
 
@@ -93,6 +93,13 @@ TECH-V0.3技术冻结草案见`docs/TECH-V0.3-TECHNICAL-FREEZE-DRAFT.md`。草�
 5. 尚未开发的能力只能标记“规划中”，不得写成已完成。
 6. 已发布记录采用追加式维护，不覆盖历史结论。
 
+## 在研设计任务
+
+- OTA自动化房态对账与小时经营简报：`docs/tasks/OTA-AUTOMATION-V0.1-DESIGN-DISCUSSION.md`
+- 在研任务总索引：`docs/tasks/README.md`
+
+当前OTA任务处于逐板块需求沟通阶段，尚未编码、未纳入正式技术版本，也不改变TECH-V0.2和Sprint 3的现有发布判断。
+
 ## Sprint 1 交付索引
 
 - 架构冻结：`docs/V1.2-ARCHITECTURE-FREEZE.md`
@@ -115,6 +122,8 @@ TECH-V0.3技术冻结草案见`docs/TECH-V0.3-TECHNICAL-FREEZE-DRAFT.md`。草�
 - Sprint 2.1技术闭环UAT报告：`docs/SPRINT-2.1-UAT-ACCEPTANCE-REPORT.md`
 - Sprint 2.1正式Final UAT报告：`docs/HOTEL-AI-OS-TECH-V0.2-SPRINT-2.1-FINAL-UAT-REPORT.md`
 - Sprint 2.1最终证据：`docs/uat/evidence/20260717-2317-s21-final/README.md`
+- TECH-V0.2-PILOT.7角色任务与驾驶舱修复报告：`docs/TECH-V0.2-PILOT.7-REPAIR-REPORT.md`
+- TECH-V0.2-PILOT.7公网证据：`docs/uat/evidence/pilot7-public/`、`docs/uat/evidence/pilot7-all-roles/`、`docs/uat/evidence/pilot7-public-live-flow/`
 - TECH-V0.2 RC Final报告：`docs/TECH-V0.2-RELEASE-CANDIDATE-FINAL-REPORT.md`
 - TECH-V0.2 RC Release Note：`docs/releases/TECH-V0.2-RELEASE-NOTE-RC.md`
 - TECH-V0.2 RC Final证据：`docs/uat/evidence/20260718-0112-tech-v02-rc-final/README.md`

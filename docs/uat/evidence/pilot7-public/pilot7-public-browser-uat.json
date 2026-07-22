@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-07-21T20:27:42.173Z",
+  "version": "TECH-V0.2-PILOT.7",
+  "webBase": "https://www.sfgzt.cn",
+  "passed": true,
+  "summary": {
+    "passed": 8,
+    "total": 8,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "name": "workbench_metric_navigation",
+      "passed": true,
+      "details": {
+        "today": "#/my-work?status=PENDING_WORK",
+        "active": "#/tasks?view=mine&status=ACTIVE",
+        "review": "#/tasks?view=review"
+      }
+    },
+    {
+      "name": "ceo_hotel_dashboard_access",
+      "passed": true,
+      "details": {
+        "hotelOptionCount": 3,
+        "dashboardTitle": "上海滨江店门店驾驶舱"
+      }
+    },
+    {
+      "name": "hotel_dashboard_task_navigation",
+      "passed": true,
+      "details": {
+        "hash": "#/tasks?view=team&status=ACTIVE&hotelId=12000000-0000-0000-0000-000000000004"
+      }
+    },
+    {
+      "name": "hotel_dashboard_risk_navigation",
+      "passed": true,
+      "details": {
+        "riskCount": 0,
+        "hash": null
+      }
+    },
+    {
+      "name": "ceo_task_target_dialog",
+      "passed": true,
+      "details": {
+        "hotelOptions": 2,
+        "assigneeOptions": 2
+      }
+    },
+    {
+      "name": "front_recipient_task_visible",
+      "passed": true,
+      "details": {
+        "expectedTaskId": "00535677-f39e-4a54-8d21-cc1e4ad0df8c",
+        "detailDrawerVisible": true,
+        "participantNamesResolved": true
+      }
+    },
+    {
+      "name": "front_recipient_notification_visible",
+      "passed": true,
+      "details": {}
+    },
+    {
+      "name": "ota_management_target_dialog",
+      "passed": true,
+      "details": {
+        "hotelOptions": 2,
+        "totalTargets": 6,
+        "managementOnly": true
+      }
+    }
+  ],
+  "credentialsPersistedInEvidence": false
+}

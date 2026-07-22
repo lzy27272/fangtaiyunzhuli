@@ -85,5 +85,5 @@ PILOT.6按已确认推荐方案实施，并增加CEO集团模板治理：
 - 备份包含51张表、序列状态、附件、旧/新后端制品、候选前端制品、manifest与SHA-256；总计62个文件、35,247,547字节。
 - 数据库只追加Flyway V16，不修改V1—V15；组织、一人多岗、权限隔离和标准版本模型保持不变。
 - Core API健康检查为`UP`，修复完成后规则自动化未再产生新的人工处理错误。
-- 当前Windows电脑仍是内部Pilot单机：PostgreSQL、Caddy和Tunnel为自动服务，Core API由登录用户计划任务恢复。电脑必须保持开机、联网且该用户已登录。
+- 当前Windows电脑仍是内部Pilot单机：PostgreSQL、Caddy和Tunnel为自动服务，Core API由用户计划任务在登录时及每5分钟检查恢复。电脑必须保持开机、联网且该用户已登录。
 - 本状态只证明PILOT.6具备受控内部测试条件，不等于TECH-V0.2正式Released，也不代表Sprint 3已启动。

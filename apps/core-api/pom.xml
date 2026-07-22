@@ -13,9 +13,9 @@
 
     <groupId>cn.sifangguan</groupId>
     <artifactId>hotel-ai-os-core-api</artifactId>
-    <version>0.2.0-pilot.6</version>
+    <version>0.2.0-pilot.7</version>
     <name>Hotel AI OS Core API</name>
-    <description>Guizhou Sifangguan Hotel AI OS TECH-V0.2-PILOT.6 core API</description>
+    <description>Guizhou Sifangguan Hotel AI OS TECH-V0.2-PILOT.7 core API</description>
 
     <properties>
         <java.version>21</java.version>

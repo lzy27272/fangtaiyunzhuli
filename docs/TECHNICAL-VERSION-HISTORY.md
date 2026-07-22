@@ -3,13 +3,13 @@
 | 项目 | 当前值 |
 |---|---|
 | 当前技术发行 | TECH-V0.1 |
-| 当前状态 | TECH-V0.1已发布；TECH-V0.2-PILOT.6内部测试运行中，真实PostgreSQL、八角色API和公网页面UAT均PASS；TECH-V0.2正式发布门禁仍NO-GO；Sprint 3未启动 |
+| 当前状态 | TECH-V0.1已发布；TECH-V0.2-PILOT.7内部修复版运行中，真实PostgreSQL、角色任务API闭环、公网页面回归与公网UI任务闭环已PASS；TECH-V0.2正式发布门禁仍NO-GO；Sprint 3未启动 |
 | 当前产品蓝图 | PRODUCT-V1.2 |
 | 当前API主版本 | API-V1（/api/v1） |
-| 当前OpenAPI契约 | 已发布0.1.0-sprint1；Pilot运行0.2.3-pilot.6 |
-| 当前数据库迁移 | 已发布DB-V4；Pilot运行DB-V16（Flyway V16） |
-| 当前后端制品 | 0.2.0-pilot.6运行中 |
-| 最后更新 | 2026-07-21 |
+| 当前OpenAPI契约 | 已发布0.1.0-sprint1；Pilot运行0.2.4-pilot.7 |
+| 当前数据库迁移 | 已发布DB-V4；Pilot运行DB-V17（Flyway V17） |
+| 当前后端制品 | 0.2.0-pilot.7内部候选 |
+| 最后更新 | 2026-07-22 |
 
 ## 0. 文档职责
 
@@ -56,7 +56,8 @@
 |---|---|---|---|
 | TECH-V0.1 | 已发布 | 基础组织权限、标准中心基础、岗位与经营数据入口、基础驾驶舱 | PRODUCT-V1.2 |
 | TECH-V0.2-PILOT.5 | 已由PILOT.6替代 / 保留为回滚历史 | 真实PostgreSQL、真实应用账号、组织岗位人员维护、七岗位专属工作包、真实填报、图片附件、团队权限及驾驶舱 | PRODUCT-V1.2 |
-| TECH-V0.2-PILOT.6 | 内部测试运行中 / API与公网页面UAT PASS | 统一工作提交、多附件、任务下达与证据、CEO岗位工作/任务/门店驾驶舱模板治理 | PRODUCT-V1.2 |
+| TECH-V0.2-PILOT.6 | 已由PILOT.7替代 / 保留为回滚历史 | 统一工作提交、多附件、任务下达与证据、CEO岗位工作/任务/门店驾驶舱模板治理 | PRODUCT-V1.2 |
+| TECH-V0.2-PILOT.7 | 内部修复版 / 技术与公网业务闭环PASS / 待持续门店试用 | 可点击角色工作台与驾驶舱、原子任务投递、任务读取隔离、自动刷新接收、无标准人工验收、全角色任务目标矩阵、UAT数据清理 | PRODUCT-V1.2 |
 | TECH-V0.2 | RC Final技术验证PASS / Release NO-GO / Unreleased | 标准→工作包→记录→评价→规则→任务→执行→验收闭环 | PRODUCT-V1.2 |
 | TECH-V0.3 | 预实施计划V1.1已输出 / 待技术冻结 / 未启动 | AI Gateway、工作/经营/点评/CEO Agent、AI简报和AI主动发现 | PRODUCT-V1.2 |
 | TECH-V0.4 | 建议阶段 | 绩效复盘、知识沉淀和标准优化建议 | PRODUCT-V1.2 |
@@ -343,6 +344,15 @@
 - 公网页面结果：8个真实账号全部PASS；7个岗位均能打开结构化填报表单，CEO工作包创建表单全部关键字段可用；浏览器控制台、页面错误、非预期请求失败和服务端5xx均为0。
 - 运行恢复：PostgreSQL、Caddy和Cloudflare Tunnel为自动服务；Core API已增加当前Windows用户登录触发任务并实测退出码0。SYSTEM级启动任务仍需管理员会话，正式生产前应服务化或迁移云端。
 - 证据：`docs/uat/TECH-V0.2-PILOT.5-ROLE-CAPABILITY-UAT.md`及`docs/uat/evidence/pilot5-role-capability/`。
+
+### 5.20 TECH-V0.2-PILOT.6公网登录恢复（2026-07-22）
+
+- 故障表现：公网登录页可见，但提交账号后Cloudflare报告源站响应无效；Caddy代理业务API返回502。
+- 根因：Core API Java进程停止，当前用户登录恢复任务未处于可用注册状态；Caddy、Tunnel和PostgreSQL均保持运行。
+- 恢复结果：Core API重新启动并健康为`UP`；`SifangguanPilotCoreApiUser`重新注册为登录触发加每5分钟健康检查，实测最近退出码0；公网真实CEO登录HTTP 200并签发JWT。
+- 入口调整：取消不兼容部分移动端和内置浏览器的外层Basic Auth，用户直接进入应用登录页；未登录业务API继续返回401。
+- 安全边界：应用账号连续失败5次临时锁定，登录后使用短期JWT；服务端RBAC、组织范围和PostgreSQL RLS保持不变。
+- 版本影响：无数据库迁移、无业务数据修改、无API主版本变化；PILOT.6继续内部测试运行，TECH-V0.2仍为Unreleased。
 
 ## 6. TECH-V0.3
 

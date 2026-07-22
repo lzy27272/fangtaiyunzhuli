@@ -1,6 +1,6 @@
 # Hotel AI OS API-V1 使用说明
 
-当前机器可读契约见 [`openapi.yaml`](./openapi.yaml)，候选契约版本为 `0.2.3-pilot.6`。PILOT.6 在 `/api/v1` 内兼容补齐真实工作提交、任务证据和CEO企业模板治理，不改变 API 主版本。
+当前机器可读契约见 [`openapi.yaml`](./openapi.yaml)，候选契约版本为 `0.2.4-pilot.7`。PILOT.7 在 `/api/v1` 内兼容补齐任务视图、可下发对象、原子创建派发和CEO门店驾驶舱，不改变 API 主版本。
 
 ## 身份与权限
 
@@ -49,6 +49,15 @@
 - `POST /api/v1/tasks/{taskId}/evidence/upload`、`GET .../content`、`DELETE .../{evidenceId}`：执行负责人提交任务证据；提交结果后证据不可删除。
 - `/api/v1/templates`：任务和门店驾驶舱模板采用定义→草稿版本→发布→历史版本模型，管理和发布仅授予CEO。
 - 岗位标准工作模板仍使用`/api/v1/work-packages`，由CEO创建草稿版本、配置提交策略、发布并按任职下发。
+
+## TECH-V0.2-PILOT.7 修复契约
+
+- `GET /api/v1/tasks?view=mine|team|review|all`：由服务端按账号全部有效任职和任务专用管理范围返回数据；可叠加`status`及`orgUnitId`组织子树筛选。
+- `GET /api/v1/tasks/targets`：只返回调用者可下发的有效任职。CEO为租户全量，店内管理岗为所在门店，OTA岗位为授权范围内门店管理岗位；不会扩大其他模块的通用组织权限。
+- `POST /api/v1/tasks`：`reviewerAssignmentId`可省略并由服务端确定安全验收人；`creatorAssignmentId`记录发起任职；`dispatchNow=true`时创建、派发、通知和审计在同一事务提交。
+- 任务读取范围与下发目标范围独立计算：跨店下发能力不会扩大`team/all`读取范围；读取始终服从账号的有效角色授权范围。
+- 未绑定标准的临时任务可由指定验收人在`RESULT_SUBMITTED`直接`APPROVE`或`REJECT`并写入审计；绑定标准的任务仍禁止绕过标准评价。
+- `GET /api/v1/dashboards/operations`与`GET /api/v1/dashboards/hotels/{hotelId}`：CEO可选择租户内门店；店内主管只可访问其所属门店，跨门店仍拒绝。
 
 主数据维护继续使用API-V1向后兼容边界。`PUT`负责资料和`ACTIVE/INACTIVE`生命周期；`DELETE`只接受已停用且没有业务引用的数据。已存在任职、授权、工作或任务历史时返回400并要求保留停用记录，禁止级联删除历史。所有写操作要求`org.manage`，并继续执行租户和组织范围检查。
 

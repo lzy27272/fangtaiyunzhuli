@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiCommand, apiRequest, asList } from './api/client'
+import { apiRequest, asList } from './api/client'
 import {
   createEnterpriseTemplate,
   createManagementTask,
@@ -11,8 +11,7 @@ import { WorkPackageCenter } from './ConfigurationPages'
 import type { EnterpriseTemplate, EnterpriseTemplateType, RoleContext } from './domain'
 
 type Row = Record<string, unknown>
-type AssignmentOption = { id: string; employeeName: string; positionName: string; orgUnitId: string; orgName: string }
-type OrgOption = { id: string; name: string; type: string; status: string }
+type AssignmentOption = { id: string; employeeName: string; positionName: string; levelCode?: string; orgUnitId: string; orgName: string; hotelId?: string; hotelName?: string }
 type StandardOption = { versionId: string; name: string; status: string }
 
 const field = (row: Row, ...keys: string[]) => keys.map((key) => row[key]).find((candidate) => candidate !== undefined && candidate !== null)
@@ -20,7 +19,7 @@ const text = (row: Row, ...keys: string[]) => String(field(row, ...keys) ?? '')
 
 function Modal({ title, children, onClose, footer }: { title: string; children: React.ReactNode; onClose: () => void; footer: React.ReactNode }) {
   return <div className="modal-backdrop"><section className="modal configuration-modal pilot6-editor" role="dialog" aria-modal="true">
-    <header><div><span className="panel-kicker">TECH-V0.2-PILOT.6</span><h2>{title}</h2></div><button className="close" onClick={onClose}>×</button></header>
+    <header><div><span className="panel-kicker">TECH-V0.2-PILOT.7</span><h2>{title}</h2></div><button className="close" onClick={onClose}>×</button></header>
     <div className="form-body configuration-form">{children}</div><footer>{footer}</footer>
   </section></div>
 }
@@ -120,38 +119,38 @@ export function EnterpriseTemplateCenter({ identity, permissions }: { identity: 
 }
 
 export function TaskCreateDialog({ identity, onClose, onCreated }: { identity: RoleContext; onClose: () => void; onCreated: () => Promise<void> }) {
-  const [orgs, setOrgs] = useState<OrgOption[]>([])
   const [assignments, setAssignments] = useState<AssignmentOption[]>([])
   const [standards, setStandards] = useState<StandardOption[]>([])
   const [templates, setTemplates] = useState<EnterpriseTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
-  const [form, setForm] = useState({ orgUnitId: '', assigneeAssignmentId: '', reviewerAssignmentId: identity.assignmentId ?? '', standardVersionId: '', templateId: '', title: '', description: '', priority: 'NORMAL', dueAt: new Date(Date.now() + 24 * 3600_000).toISOString().slice(0, 16), dispatch: true })
+  const [form, setForm] = useState({ hotelId: '', assigneeAssignmentId: '', reviewerAssignmentId: '', standardVersionId: '', templateId: '', title: '', description: '', priority: 'NORMAL', dueAt: new Date(Date.now() + 24 * 3600_000).toISOString().slice(0, 16) })
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     let active = true
     void Promise.all([
-      apiRequest<unknown>('/org/units', identity), apiRequest<unknown>('/org/employees', identity),
-      apiRequest<unknown>('/standards', identity), loadEnterpriseTemplates(identity, 'TASK'),
-    ]).then(([orgRaw, employeeRaw, standardRaw, templateRows]) => {
+      apiRequest<unknown>('/tasks/targets', identity), apiRequest<unknown>('/standards', identity), loadEnterpriseTemplates(identity, 'TASK'),
+    ]).then(([targetRaw, standardRaw, templateRows]) => {
       if (!active) return
-      setOrgs(asList<Row>(orgRaw).map((row) => ({ id: text(row, 'id'), name: text(row, 'name'), type: text(row, 'unit_type', 'unitType'), status: text(row, 'status') })))
-      setAssignments(asList<Row>(employeeRaw).filter((row) => text(row, 'assignment_id', 'assignmentId')).map((row) => ({ id: text(row, 'assignment_id', 'assignmentId'), employeeName: text(row, 'name'), positionName: text(row, 'position_name', 'positionName'), orgUnitId: text(row, 'org_unit_id', 'orgUnitId'), orgName: text(row, 'org_unit_name', 'orgUnitName') })))
+      const targetRows = asList<Row>(targetRaw).filter((row) => text(row, 'assignment_id', 'assignmentId')).map((row): AssignmentOption => ({
+        id: text(row, 'assignment_id', 'assignmentId'), employeeName: text(row, 'employee_name', 'employeeName'),
+        positionName: text(row, 'position_name', 'positionName'), levelCode: text(row, 'level_code', 'levelCode') || undefined, orgUnitId: text(row, 'org_unit_id', 'orgUnitId'),
+        orgName: text(row, 'org_unit_name', 'orgUnitName'), hotelId: text(row, 'hotel_id', 'hotelId') || undefined,
+        hotelName: text(row, 'hotel_name', 'hotelName') || undefined,
+      }))
+      setAssignments(targetRows)
+      const firstHotel = targetRows.find((row) => row.hotelId)?.hotelId ?? targetRows[0]?.orgUnitId ?? ''
+      setForm((current) => ({ ...current, hotelId: current.hotelId || firstHotel }))
       setStandards(asList<Row>(standardRaw).map((row) => ({ versionId: text(row, 'latest_version_id', 'latestVersionId'), name: text(row, 'name'), status: text(row, 'lifecycle_status', 'lifecycleStatus') })).filter((row) => row.versionId))
       setTemplates(templateRows.flatMap((row) => row.lifecycleStatus === 'PUBLISHED' ? [row] : row.publishedVersionId && row.publishedConfiguration ? [{ ...row, latestVersionId: row.publishedVersionId, versionNo: row.publishedVersionNo ?? row.versionNo, lifecycleStatus: 'PUBLISHED', configuration: row.publishedConfiguration }] : []))
     }).catch((reason) => setError(reason instanceof Error ? reason.message : '任务上下文加载失败。')).finally(() => active && setLoading(false))
     return () => { active = false }
   }, [identity.key])
-  const visibleAssignments = useMemo(() => {
-    if (!form.orgUnitId) return assignments
-    const exactScope = assignments.filter((row) => row.orgUnitId === form.orgUnitId)
-    // Hotel-scoped employees may belong to departments below the selected hotel.
-    // The API already limits assignments to the caller's data scope, so preserve
-    // all visible options until the organization endpoint exposes ancestry paths.
-    return exactScope.length
-      ? [...exactScope, ...assignments.filter((row) => !exactScope.some((exact) => exact.id === row.id))]
-      : assignments
-  }, [assignments, form.orgUnitId])
+  const hotels = useMemo(() => Array.from(new Map(assignments.map((row) => [
+    row.hotelId ?? row.orgUnitId,
+    { id: row.hotelId ?? row.orgUnitId, name: row.hotelName ?? row.orgName },
+  ])).values()), [assignments])
+  const visibleAssignments = useMemo(() => assignments.filter((row) => (row.hotelId ?? row.orgUnitId) === form.hotelId), [assignments, form.hotelId])
   const applyTemplate = (templateId: string) => {
     const template = templates.find((item) => item.id === templateId)
     if (!template) { setForm({ ...form, templateId }); return }
@@ -161,11 +160,16 @@ export function TaskCreateDialog({ identity, onClose, onCreated }: { identity: R
   const save = async () => {
     setSaving(true); setError(undefined)
     try {
-      if (!form.orgUnitId || !form.assigneeAssignmentId || !form.reviewerAssignmentId || !form.title.trim()) throw new Error('目标组织、负责人、验收人和任务标题不能为空。')
+      const selectedAssignee = assignments.find((row) => row.id === form.assigneeAssignmentId)
+      if (!selectedAssignee || !form.title.trim()) throw new Error('目标门店、负责人和任务标题不能为空。')
       const selectedTemplate = templates.find((item) => item.id === form.templateId)
-      const created = await createManagementTask(identity, {
-        orgUnitId: form.orgUnitId, assigneeAssignmentId: form.assigneeAssignmentId,
-        reviewerAssignmentId: form.reviewerAssignmentId, standardVersionId: form.standardVersionId || null,
+      await createManagementTask(identity, {
+        orgUnitId: selectedAssignee.hotelId ?? selectedAssignee.orgUnitId,
+        assigneeAssignmentId: form.assigneeAssignmentId,
+        reviewerAssignmentId: form.reviewerAssignmentId || null,
+        creatorAssignmentId: identity.assignmentId ?? null,
+        dispatchNow: true,
+        standardVersionId: form.standardVersionId || null,
         workRecordId: null, title: form.title.trim(), description: form.description || null,
         priority: form.priority, dueAt: new Date(form.dueAt).toISOString(),
         sourceSnapshot: {
@@ -175,15 +179,12 @@ export function TaskCreateDialog({ identity, onClose, onCreated }: { identity: R
           taskPolicy: selectedTemplate?.configuration.evidencePolicy ?? {},
         },
       })
-      const taskId = text(created, 'id')
-      const version = Number(field(created, 'row_version', 'rowVersion', 'version') ?? 0)
-      if (form.dispatch && taskId) await apiCommand(`/tasks/${taskId}/actions/dispatch`, identity, { actorAssignmentId: identity.assignmentId, payload: { remark: '任务中心创建并下达' } }, version)
       await onCreated(); onClose()
     } catch (reason) { setError(reason instanceof Error ? reason.message : '任务创建失败。') }
     finally { setSaving(false) }
   }
-  return <Modal title="新建并下达管理任务" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>取消</button><button className="primary" disabled={saving || loading} onClick={() => void save()}>{saving ? '保存中…' : form.dispatch ? '创建并下达' : '保存待派发'}</button></>}>
-    {loading ? <div className="state-card"><div className="spinner" /><strong>正在读取组织、任职和模板</strong></div> : <div className="form-grid"><label>任务模板<select value={form.templateId} onChange={(event) => applyTemplate(event.target.value)}><option value="">不使用模板</option>{templates.map((item) => <option value={item.id} key={item.id}>{item.name} · V{item.versionNo}</option>)}</select></label><label>目标组织<select value={form.orgUnitId} onChange={(event) => setForm({ ...form, orgUnitId: event.target.value, assigneeAssignmentId: '' })}><option value="">请选择</option>{orgs.filter((row) => row.status === 'ACTIVE' && ['HOTEL', 'DEPARTMENT'].includes(row.type)).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}</select></label><label>执行负责人<select value={form.assigneeAssignmentId} onChange={(event) => setForm({ ...form, assigneeAssignmentId: event.target.value })}><option value="">请选择精确任职</option>{visibleAssignments.map((row) => <option value={row.id} key={row.id}>{row.employeeName} · {row.positionName} · {row.orgName}</option>)}</select></label><label>验收负责人<select value={form.reviewerAssignmentId} onChange={(event) => setForm({ ...form, reviewerAssignmentId: event.target.value })}><option value="">请选择精确任职</option>{assignments.map((row) => <option value={row.id} key={row.id}>{row.employeeName} · {row.positionName} · {row.orgName}</option>)}</select></label><label>关联标准<select value={form.standardVersionId} onChange={(event) => setForm({ ...form, standardVersionId: event.target.value })}><option value="">暂不关联</option>{standards.filter((row) => row.status === 'PUBLISHED').map((row) => <option value={row.versionId} key={row.versionId}>{row.name}</option>)}</select></label><label>优先级<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option value="LOW">低</option><option value="NORMAL">普通</option><option value="HIGH">高</option><option value="URGENT">紧急</option></select></label><label className="full-field">任务标题<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="full-field">执行要求<textarea rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label><label>截止时间<input type="datetime-local" value={form.dueAt} onChange={(event) => setForm({ ...form, dueAt: event.target.value })} /></label><label className="checkbox-label"><input type="checkbox" checked={form.dispatch} onChange={(event) => setForm({ ...form, dispatch: event.target.checked })} />创建后立即下达</label></div>}
+  return <Modal title="新建并下达管理任务" onClose={onClose} footer={<><button className="secondary" onClick={onClose}>取消</button><button className="primary" disabled={saving || loading} onClick={() => void save()}>{saving ? '下达中…' : '创建并下达'}</button></>}>
+    {loading ? <div className="state-card"><div className="spinner" /><strong>正在读取可投递岗位和模板</strong></div> : <div className="form-grid"><label>任务模板<select value={form.templateId} onChange={(event) => applyTemplate(event.target.value)}><option value="">不使用模板</option>{templates.map((item) => <option value={item.id} key={item.id}>{item.name} · V{item.versionNo}</option>)}</select></label><label>目标门店<select value={form.hotelId} onChange={(event) => setForm({ ...form, hotelId: event.target.value, assigneeAssignmentId: '', reviewerAssignmentId: '' })}><option value="">请选择门店</option>{hotels.map((hotel) => <option value={hotel.id} key={hotel.id}>{hotel.name}</option>)}</select></label><label>执行负责人<select value={form.assigneeAssignmentId} onChange={(event) => setForm({ ...form, assigneeAssignmentId: event.target.value })}><option value="">请选择门店岗位人员</option>{visibleAssignments.map((row) => <option value={row.id} key={row.id}>{row.employeeName} · {row.positionName} · {row.orgName}</option>)}</select></label><label>验收负责人（可选）<select value={form.reviewerAssignmentId} onChange={(event) => setForm({ ...form, reviewerAssignmentId: event.target.value })}><option value="">自动：发起人 / 直属上级 / 门店管理岗</option>{visibleAssignments.filter((row) => row.levelCode?.startsWith('M')).map((row) => <option value={row.id} key={row.id}>{row.employeeName} · {row.positionName} · {row.orgName}</option>)}</select></label><label>关联标准<select value={form.standardVersionId} onChange={(event) => setForm({ ...form, standardVersionId: event.target.value })}><option value="">暂不关联</option>{standards.filter((row) => row.status === 'PUBLISHED').map((row) => <option value={row.versionId} key={row.versionId}>{row.name}</option>)}</select></label><label>优先级<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option value="LOW">低</option><option value="NORMAL">普通</option><option value="HIGH">高</option><option value="URGENT">紧急</option></select></label><label className="full-field">任务标题<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="full-field">执行要求<textarea rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label><label>截止时间<input type="datetime-local" value={form.dueAt} onChange={(event) => setForm({ ...form, dueAt: event.target.value })} /></label></div>}
     {error && <div className="inline-error">{error}</div>}
   </Modal>
 }

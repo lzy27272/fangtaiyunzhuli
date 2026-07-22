@@ -12,8 +12,11 @@ import {
 } from './api/resources'
 import type {
   ApiSource,
+  HotelDashboard,
   ManagementTask,
+  Navigate,
   RoleContext,
+  RouteParams,
   TeamWorkCase,
   WorkExpectation,
   WorkRecordAttachment,
@@ -63,8 +66,8 @@ function LoadingState({ loading, error, empty, retry }: { loading: boolean; erro
   return null
 }
 
-function PageHeader({ eyebrow, title, description, source }: { eyebrow: string; title: string; description: string; source: ApiSource }) {
-  return <header className="page-title"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div><div className="page-actions"><SourceFlag source={source} /></div></header>
+function PageHeader({ eyebrow, title, description, source, actions }: { eyebrow: string; title: string; description: string; source: ApiSource; actions?: React.ReactNode }) {
+  return <header className="page-title"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div><div className="page-actions"><SourceFlag source={source} />{actions}</div></header>
 }
 
 function demoScopedTeam(items: WorkExpectation[], roleCode: string) {
@@ -73,10 +76,25 @@ function demoScopedTeam(items: WorkExpectation[], roleCode: string) {
   return items
 }
 
-export function TeamWorkPage({ identity, permissions }: { identity: RoleContext; permissions: string[] }) {
-  const resource = useResource(`${identity.key}:p0-team-work`, () => loadTeamWork(identity), [])
+export function TeamWorkPage({ identity, permissions, routeParams = {} }: { identity: RoleContext; permissions: string[]; routeParams?: RouteParams }) {
+  const resource = useResource(`${identity.key}:p0-team-work:${routeParams.hotelId ?? 'all'}`, () => loadTeamWork(identity, {
+    orgUnitId: routeParams.hotelId,
+  }), [])
   const [selected, setSelected] = useState<WorkExpectation>()
-  const items = resource.source === 'demo' ? demoScopedTeam(resource.data, identity.roleCode) : resource.data
+  const scopedItems = resource.source === 'demo' ? demoScopedTeam(resource.data, identity.roleCode) : resource.data
+  const statusFilter = (routeParams.status || 'ALL').toUpperCase()
+  const items = scopedItems.filter((item) => {
+    if (statusFilter === 'ALL') return true
+    if (statusFilter === 'PENDING_WORK') return !['SUBMITTED', 'SATISFIED', 'WAIVED', 'CANCELLED'].includes(item.status)
+    if (statusFilter === 'SUBMITTED') return ['SUBMITTED', 'COMPLETED', 'SATISFIED'].includes(item.status)
+    if (statusFilter === 'EXCEPTION') return ['OVERDUE', 'MISSED', 'FAILED'].includes(item.status) || ['FAIL', 'WARNING'].includes(item.evaluationOutcome ?? '')
+    return item.status === statusFilter
+  })
+  useEffect(() => {
+    if (!routeParams.expectationId) return
+    const linkedExpectation = scopedItems.find((item) => item.id === routeParams.expectationId)
+    if (linkedExpectation) setSelected(linkedExpectation)
+  }, [routeParams.expectationId, scopedItems])
   const submitted = items.filter((item) => ['SUBMITTED', 'COMPLETED', 'SATISFIED'].includes(item.status)).length
   const exception = items.filter((item) => ['OVERDUE', 'MISSED', 'FAILED'].includes(item.status) || ['FAIL', 'WARNING'].includes(item.evaluationOutcome ?? '')).length
 
@@ -162,9 +180,10 @@ function TeamWorkDrawer({ initial, identity, permissions, onClose, onChanged }: 
     }
     void mutation('task', () => createCorrectiveTask(identity, {
       orgUnitId: record.targetOrgUnitId!, assigneeAssignmentId: record.positionAssignmentId!, reviewerAssignmentId: identity.assignmentId!,
+      creatorAssignmentId: identity.assignmentId!,
       standardVersionId: selectedStandard || undefined, workRecordId: record.id, title: taskTitle,
       description: taskDescription, priority: taskPriority, dueAt: taskDueAt ? new Date(taskDueAt).toISOString() : undefined,
-    }), '整改任务已创建，责任人与验收人已冻结。')
+    }), '整改任务已创建并派发，接收人可立即在任务与通知中心查看。')
   }
 
   const preview = async (attachment: WorkRecordAttachment) => {
@@ -211,30 +230,48 @@ function TeamWorkDrawer({ initial, identity, permissions, onClose, onChanged }: 
   </aside></div>
 }
 
-function TaskList({ tasks }: { tasks: ManagementTask[] }) {
+function TaskList({ tasks, onSelect }: { tasks: ManagementTask[]; onSelect: (task: ManagementTask) => void }) {
   if (!tasks.length) return <p className="muted">当前门店没有未完成任务。</p>
-  return <div className="dashboard-task-list">{tasks.map((task) => <div key={task.id}><span><strong>{task.title}</strong><small>{task.assigneeName} · 截止 {formatDate(task.dueAt)}</small></span><span><Status value={task.slaStatus} /><Status value={task.status} /></span></div>)}</div>
+  return <div className="dashboard-task-list">{tasks.map((task) => <button type="button" className="dashboard-task-row" key={task.id} onClick={() => onSelect(task)}><span><strong>{task.title}</strong><small>{task.assigneeName} · 截止 {formatDate(task.dueAt)}</small></span><span><Status value={task.slaStatus} /><Status value={task.status} /></span></button>)}</div>
 }
 
-export function HotelDashboardPage({ identity }: { identity: RoleContext }) {
-  const hotelId = identity.assignmentOrgUnitId ?? identity.orgScopes[0] ?? ''
-  const resource = useResource(`${identity.key}:hotel-dashboard:${hotelId}`, () => loadHotelDashboard(identity, hotelId), {
-    hotel: { id: hotelId, name: identity.orgName }, activeEmployeeCount: 0, todayWorkSubmissionCount: 0, latestMetrics: [], risks: [], incompleteTasks: [],
-  })
+export function HotelDashboardPage({ identity, routeParams, go }: { identity: RoleContext; routeParams: RouteParams; go: Navigate }) {
+  const hotelsResource = useResource(`${identity.key}:dashboard-hotels`, () => loadOperationsDashboard(identity), { hotels: [] })
+  const hotels = hotelsResource.data.hotels
+  const requestedHotel = hotels.find((hotel) => hotel.id === routeParams.hotelId)
+  const assignedHotel = hotels.find((hotel) => hotel.id === identity.assignmentOrgUnitId)
+  const selectedHotel = requestedHotel ?? assignedHotel ?? hotels[0]
+  const hotelId = selectedHotel?.id ?? ''
+  const emptyDashboard: HotelDashboard = {
+    hotel: { id: hotelId, name: selectedHotel?.name ?? '门店' }, activeEmployeeCount: 0, todayWorkSubmissionCount: 0, latestMetrics: [], risks: [], incompleteTasks: [],
+  }
+  const resource = useResource(`${identity.key}:hotel-dashboard:${hotelId}`, () => hotelId
+    ? loadHotelDashboard(identity, hotelId)
+    : Promise.resolve({ data: emptyDashboard, source: 'api' as const }), emptyDashboard)
   const dashboard = resource.data
   const sections = new Set(dashboard.templateSections?.length ? dashboard.templateSections : ['OPERATING_METRICS', 'RISKS', 'INCOMPLETE_TASKS', 'WORK_COMPLETION'])
   const overdue = dashboard.incompleteTasks.filter((task) => ['OVERDUE', 'ESCALATED'].includes(task.slaStatus)).length
   const highRisks = dashboard.risks.filter((risk) => ['HIGH', 'URGENT'].includes(risk.severity)).length
+  const loading = hotelsResource.loading || (!!hotelId && resource.loading)
+  const error = hotelsResource.error || resource.error || (!hotelsResource.loading && !hotelId ? '当前账号没有可访问的门店驾驶舱。' : undefined)
+  const openTask = (task: ManagementTask) => go('tasks', { view: 'team', status: 'ACTIVE', hotelId, taskId: task.id })
+  const openRisk = (risk: typeof dashboard.risks[number]) => {
+    const common = { hotelId }
+    if (risk.type === 'STANDARD_EVALUATION') return go('evaluations', { ...common, evaluationId: risk.sourceId, outcome: 'FAIL' })
+    if (risk.type === 'OVERDUE_TASK') return go('tasks', { ...common, view: 'team', status: 'OVERDUE', taskId: risk.sourceId })
+    if (risk.type === 'MISSED_WORK') return go('team-work', { ...common, status: 'MISSED', expectationId: risk.sourceId })
+    return go('team-work', { ...common, status: 'EXCEPTION' })
+  }
 
   return <section className="page-section">
-    <PageHeader eyebrow="HOTEL MANAGEMENT COCKPIT" title={`${dashboard.hotel.name}门店驾驶舱`} description="店总视角聚合经营指标、风险事项与未完成任务；所有明细仍回到原始记录和任务。" source={resource.source} />
-    <LoadingState loading={resource.loading} error={resource.error || (!hotelId ? '当前任职缺少门店组织。' : undefined)} retry={resource.reload} />
-    {!resource.loading && !resource.error && !!hotelId && <>
-      <section className="metrics-grid p0-dashboard-metrics"><article className="metric blue"><div>员</div><span>在岗员工<strong>{dashboard.activeEmployeeCount}</strong><small>{dashboard.hotel.city ?? '当前门店'} · {dashboard.hotel.roomCount ?? '—'}间客房</small></span></article>{sections.has('WORK_COMPLETION') && <article className="metric teal"><div>工</div><span>今日工作提交<strong>{dashboard.todayWorkSubmissionCount}</strong><small>岗位工作记录</small></span></article>}{sections.has('RISKS') && <article className="metric gold"><div>险</div><span>开放风险<strong>{dashboard.risks.length}</strong><small>{highRisks}项高风险</small></span></article>}{sections.has('INCOMPLETE_TASKS') && <article className="metric violet"><div>任</div><span>未完成任务<strong>{dashboard.incompleteTasks.length}</strong><small>{overdue}项已逾期/升级</small></span></article>}</section>
+    <PageHeader eyebrow="HOTEL MANAGEMENT COCKPIT" title={`${dashboard.hotel.name}门店驾驶舱`} description="店总视角聚合经营指标、风险事项与未完成任务；所有明细仍回到原始记录和任务。" source={resource.source} actions={hotels.length > 1 ? <label className="dashboard-hotel-select"><span>查看门店</span><select value={hotelId} onChange={(event) => go('hotel-dashboard', { hotelId: event.target.value })}>{hotels.map((hotel) => <option value={hotel.id} key={hotel.id}>{hotel.name}</option>)}</select></label> : undefined} />
+    <LoadingState loading={loading} error={error} retry={() => void Promise.all([hotelsResource.reload(), resource.reload()])} />
+    {!loading && !error && !!hotelId && <>
+      <section className="metrics-grid p0-dashboard-metrics"><button type="button" className="metric metric-action blue" onClick={() => go('team-work', { hotelId })}><div>员</div><span>在岗员工<strong>{dashboard.activeEmployeeCount}</strong><small>{dashboard.hotel.city ?? '当前门店'} · {dashboard.hotel.roomCount ?? '—'}间客房</small></span></button>{sections.has('WORK_COMPLETION') && <button type="button" className="metric metric-action teal" onClick={() => go('team-work', { hotelId, status: 'SUBMITTED' })}><div>工</div><span>今日工作提交<strong>{dashboard.todayWorkSubmissionCount}</strong><small>岗位工作记录</small></span></button>}{sections.has('RISKS') && <button type="button" className="metric metric-action gold" onClick={() => go('team-work', { hotelId, status: 'EXCEPTION' })}><div>险</div><span>开放风险<strong>{dashboard.risks.length}</strong><small>{highRisks}项高风险</small></span></button>}{sections.has('INCOMPLETE_TASKS') && <button type="button" className="metric metric-action violet" onClick={() => go('tasks', { view: 'team', status: 'ACTIVE', hotelId })}><div>任</div><span>未完成任务<strong>{dashboard.incompleteTasks.length}</strong><small>{overdue}项已逾期/升级</small></span></button>}</section>
       <section className="dashboard-grid">
         {sections.has('OPERATING_METRICS') && <article className="panel span-3"><header><div><span className="panel-kicker">LATEST OPERATING METRICS</span><h2>门店经营快照</h2></div></header><div className="operation-metric-grid">{dashboard.latestMetrics.map((metric) => <div key={metric.code}><span>{metric.name}</span><strong>{metric.value.toLocaleString('zh-CN')}{metric.unit === 'PERCENT' ? '%' : ''}</strong><small>{metric.code} · {metric.businessDate ?? '最新'}</small></div>)}</div>{!dashboard.latestMetrics.length && <p className="muted">暂无经营指标。</p>}</article>}
-        {sections.has('RISKS') && <article className="panel"><header><div><span className="panel-kicker">RISK ITEMS</span><h2>风险事项</h2></div></header><div className="risk-list">{dashboard.risks.map((risk) => <div key={risk.id}><i /><span><strong>{risk.title}</strong><small>{risk.ownerName ?? risk.source ?? label(risk.type)} · {formatDate(risk.occurredAt)}</small></span><Status value={risk.severity} /></div>)}</div>{!dashboard.risks.length && <p className="muted">当前没有开放风险。</p>}</article>}
-        {sections.has('INCOMPLETE_TASKS') && <article className="panel span-2"><header><div><span className="panel-kicker">INCOMPLETE TASKS</span><h2>未完成任务汇总</h2></div><button className="link-button" onClick={() => { window.location.hash = '/tasks' }}>进入任务中心</button></header><TaskList tasks={dashboard.incompleteTasks} /></article>}
+        {sections.has('RISKS') && <article className="panel"><header><div><span className="panel-kicker">RISK ITEMS</span><h2>风险事项</h2></div></header><div className="risk-list">{dashboard.risks.map((risk) => <button type="button" className="risk-row" key={risk.id} onClick={() => openRisk(risk)}><i /><span><strong>{risk.title}</strong><small>{risk.ownerName ?? risk.source ?? label(risk.type)} · {formatDate(risk.occurredAt)}</small></span><Status value={risk.severity} /></button>)}</div>{!dashboard.risks.length && <p className="muted">当前没有开放风险。</p>}</article>}
+        {sections.has('INCOMPLETE_TASKS') && <article className="panel span-2"><header><div><span className="panel-kicker">INCOMPLETE TASKS</span><h2>未完成任务汇总</h2></div><button className="link-button" onClick={() => go('tasks', { view: 'team', status: 'ACTIVE', hotelId })}>进入任务中心</button></header><TaskList tasks={dashboard.incompleteTasks} onSelect={openTask} /></article>}
       </section>
     </>}
   </section>

@@ -13,10 +13,12 @@ if (-not (Test-Path -LiteralPath $runner)) { throw "Pilot runtime runner is miss
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $argument = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$runner`" -RuntimeRoot `"$RuntimeRoot`""
 $action = New-ScheduledTaskAction -Execute (Join-Path $PSHOME 'powershell.exe') -Argument $argument -WorkingDirectory $repoRoot
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
-$settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable
+$logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
+$watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+$settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($logonTrigger, $watchdogTrigger) -Settings $settings -Principal $principal -Force | Out-Null
 if ($StartTask) { Start-ScheduledTask -TaskName $TaskName }
 Get-ScheduledTask -TaskName $TaskName | Select-Object TaskName, State

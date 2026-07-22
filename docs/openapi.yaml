@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Hotel AI OS Core API
-  version: 0.2.3-pilot.6
+  version: 0.2.4-pilot.7
   description: >-
     PRODUCT-V1.2 / TECH-V0.2 Sprint 2.1 UAT-candidate contract. Production requests use a
     trusted JWT/SSO bearer token; roles, permissions, organization scope and
@@ -932,6 +932,7 @@ paths:
       operationId: listTasks
       summary: List tasks in effective data scope
       parameters:
+        - { name: view, in: query, description: Defaults to the caller's complete authorized read scope; clients should send an explicit view., schema: { type: string, enum: [mine, team, review, all], default: all } }
         - { name: status, in: query, schema: { type: string } }
         - { name: orgUnitId, in: query, schema: { type: string, format: uuid } }
       responses:
@@ -939,8 +940,11 @@ paths:
     post:
       tags: [Task Center]
       operationId: createTask
-      summary: Create a task idempotently
-      description: Assignee and reviewer must resolve to different active position assignments in scope.
+      summary: Create, and optionally dispatch, a task idempotently
+      description: >-
+        The assignee must be an active assignment allowed by the task-specific target policy.
+        reviewerAssignmentId may be omitted and is then resolved by the server. When dispatchNow
+        is true, creation, dispatch, notification and audit records commit atomically.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -951,6 +955,15 @@ paths:
       responses:
         '201': { $ref: '#/components/responses/ObjectResponse' }
         '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/tasks/targets:
+    get:
+      tags: [Task Center]
+      operationId: listTaskTargets
+      summary: List active assignments allowed by the caller's task-specific target policy
+      responses:
+        '200': { $ref: '#/components/responses/ListResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/v1/tasks/{taskId}:
     get:
       tags: [Task Center]
@@ -1041,6 +1054,11 @@ paths:
       tags: [Task Center]
       operationId: transitionTask
       summary: Apply an idempotent task state command using expectedVersion
+      description: >-
+        The exact task participant assignment is validated for every command. A task bound
+        to a standard must complete its standard evaluation before approve/rework/reject.
+        A task without a bound standard may be approved or rejected directly from
+        RESULT_SUBMITTED by its designated reviewer; that manual path is audited.
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - name: command
@@ -1048,7 +1066,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [dispatch, acknowledge, start, submit-result, approve, rework, cancel]
+            enum: [dispatch, acknowledge, start, submit-result, approve, rework, reject, cancel]
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -1851,11 +1869,13 @@ components:
         facts: { type: object, additionalProperties: true }
     CreateTask:
       type: object
-      required: [orgUnitId, assigneeAssignmentId, reviewerAssignmentId, title]
+      required: [orgUnitId, assigneeAssignmentId, title]
       properties:
         orgUnitId: { type: string, format: uuid }
         assigneeAssignmentId: { type: string, format: uuid }
-        reviewerAssignmentId: { type: string, format: uuid }
+        reviewerAssignmentId: { type: [string, 'null'], format: uuid }
+        creatorAssignmentId: { type: [string, 'null'], format: uuid }
+        dispatchNow: { type: boolean, default: false }
         standardVersionId: { type: [string, 'null'], format: uuid }
         workRecordId: { type: [string, 'null'], format: uuid }
         title: { type: string }

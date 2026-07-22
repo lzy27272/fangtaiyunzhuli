@@ -14,6 +14,10 @@ export type ViewId =
   | 'templates'
   | 'organization'
 
+export type RouteParams = Record<string, string>
+export type NavigationParams = Record<string, string | undefined>
+export type Navigate = (view: ViewId, params?: NavigationParams) => void
+
 export type RoleContext = ApiIdentity & {
   key: string
   label: string
@@ -278,6 +282,7 @@ export type StandardEvaluation = {
   executionStatus: string
   evaluatedAt?: string
   targetOrgName: string
+  targetOrgUnitId?: string
   assignmentId?: string
   items?: EvaluationItem[]
 }
@@ -316,6 +321,8 @@ export type DashboardMetric = {
 
 export type DashboardRisk = {
   id: string
+  sourceId?: string
+  orgUnitId?: string
   title: string
   type: string
   severity: string

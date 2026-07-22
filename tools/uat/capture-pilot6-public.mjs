@@ -11,7 +11,6 @@ const toolRoot = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(toolRoot, '..', '..')
 const webBase = (process.env.PILOT_WEB_BASE ?? 'https://www.sfgzt.cn').replace(/\/$/, '')
 const accountFile = process.env.PILOT_ACCOUNT_FILE ?? 'D:\\SifangguanHotelAIOS\\Pilot-Account-Access.txt'
-const outerAccessFile = process.env.PILOT_OUTER_ACCESS_FILE ?? 'D:\\SifangguanHotelAIOS\\Pilot-Test-Access.txt'
 const outputRoot = path.resolve(process.env.UAT_SCREENSHOT_DIR
   ?? path.join(repoRoot, 'docs', 'uat', 'evidence', 'pilot6-public'))
 const browserExecutable = process.env.UAT_BROWSER_EXECUTABLE
@@ -19,18 +18,11 @@ const browserExecutable = process.env.UAT_BROWSER_EXECUTABLE
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'].find(existsSync)
 
 if (!browserExecutable || !existsSync(browserExecutable)) throw new Error('Chrome or Edge is required.')
-if (!existsSync(accountFile) || !existsSync(outerAccessFile)) throw new Error('Protected Pilot access files are required.')
+if (!existsSync(accountFile)) throw new Error('Protected Pilot application account file is required.')
 
 const accountRows = (await readFile(accountFile, 'utf8')).split(/\r?\n/).filter(Boolean)
   .map((line) => line.split('\t')).filter((parts) => parts.length >= 3)
 const accounts = new Map(accountRows.map((parts) => [parts[1], parts[2]]))
-const outerLines = (await readFile(outerAccessFile, 'utf8')).split(/\r?\n/)
-const outerValue = (label) => {
-  const line = outerLines.find((item) => item.trim().startsWith(`${label}：`) || item.trim().startsWith(`${label}:`))
-  if (!line) throw new Error(`Pilot outer access field is missing: ${label}`)
-  const separator = line.includes('：') ? line.indexOf('：') : line.indexOf(':')
-  return line.slice(separator + 1).trim()
-}
 
 const roles = [
   { login: 'front.demo', slug: 'front-desk', view: 'my-work' },
@@ -66,7 +58,6 @@ try {
       locale: 'zh-CN',
       timezoneId: 'Asia/Shanghai',
       ignoreHTTPSErrors: false,
-      httpCredentials: { username: outerValue('用户名'), password: outerValue('密码') },
     })
     const page = await context.newPage()
     const consoleErrors = []

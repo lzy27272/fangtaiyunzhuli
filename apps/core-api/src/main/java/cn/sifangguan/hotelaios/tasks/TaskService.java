@@ -11,6 +11,7 @@ import cn.sifangguan.hotelaios.shared.security.AccessPolicy;
 import cn.sifangguan.hotelaios.workdata.AttachmentService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -32,8 +33,9 @@ public class TaskService {
             "ACKNOWLEDGE", Map.of("PENDING_ACK", "IN_PROGRESS"),
             "START", Map.of("REWORK", "IN_PROGRESS"),
             "SUBMIT_RESULT", Map.of("IN_PROGRESS", "RESULT_SUBMITTED"),
-            "APPROVE", Map.of("AWAITING_REVIEW", "COMPLETED"),
-            "REWORK", Map.of("AWAITING_REVIEW", "REWORK")
+            "APPROVE", Map.of("RESULT_SUBMITTED", "COMPLETED", "AWAITING_REVIEW", "COMPLETED"),
+            "REWORK", Map.of("RESULT_SUBMITTED", "REWORK", "AWAITING_REVIEW", "REWORK"),
+            "REJECT", Map.of("RESULT_SUBMITTED", "REWORK", "AWAITING_REVIEW", "REWORK")
     );
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -43,6 +45,7 @@ public class TaskService {
     private final NotificationService notificationService;
     private final TenantSystemAccountResolver systemAccountResolver;
     private final AttachmentService attachmentService;
+    private final TaskTargetPolicy taskTargetPolicy;
     private final long defaultEscalationDelayHours;
 
     public TaskService(
@@ -53,6 +56,7 @@ public class TaskService {
             NotificationService notificationService,
             TenantSystemAccountResolver systemAccountResolver,
             AttachmentService attachmentService,
+            TaskTargetPolicy taskTargetPolicy,
             @Value("${app.tasks.default-escalation-delay-hours:48}") long defaultEscalationDelayHours
     ) {
         this.jdbc = jdbc;
@@ -62,14 +66,24 @@ public class TaskService {
         this.notificationService = notificationService;
         this.systemAccountResolver = systemAccountResolver;
         this.attachmentService = attachmentService;
+        this.taskTargetPolicy = taskTargetPolicy;
         this.defaultEscalationDelayHours = Math.max(0, defaultEscalationDelayHours);
     }
 
     @Transactional(readOnly = true)
-    public List<Map<String, Object>> list(String status, UUID orgUnitId) {
+    public List<Map<String, Object>> list(String view, String status, UUID orgUnitId) {
         accessPolicy.requirePermission("task.read");
         TenantPrincipal principal = prepare();
+        String normalizedView = normalizeView(view);
+        if ("TEAM".equals(normalizedView)
+                && !principal.hasTenantScope()
+                && !principal.hasPermission("task.review")
+                && !principal.hasPermission("task.dispatch")
+                && !principal.hasPermission("task.create")) {
+            throw new AccessDeniedException("当前角色无权查看团队任务");
+        }
         MapSqlParameterSource params = visibleParams(principal)
+                .addValue("view", normalizedView)
                 .addValue("status", normalize(status))
                 .addValue("orgUnitId", orgUnitId);
         return jdbc.queryForList("""
@@ -88,25 +102,54 @@ public class TaskService {
                     and r.participant_type = 'REVIEWER' and r.valid_to is null
                 where t.tenant_id = :tenantId
                   and (cast(:status as varchar) is null or t.lifecycle_status = :status)
-                  and (cast(:orgUnitId as uuid) is null or t.org_unit_id = :orgUnitId)
+                  and (cast(:orgUnitId as uuid) is null or exists (
+                    select 1 from org_unit_closure requested_scope
+                    where requested_scope.tenant_id = t.tenant_id
+                      and requested_scope.ancestor_id = :orgUnitId
+                      and requested_scope.descendant_id = t.org_unit_id
+                  ))
                   and (
-                    :tenantScope = true
-                    or (:canReadOrg = true and exists (
-                        select 1 from org_unit_closure c
-                        where c.tenant_id = t.tenant_id and c.descendant_id = t.org_unit_id
-                          and c.ancestor_id in (:orgScopes)
-                    ))
-                    or exists (
+                    (:view = 'MINE' and exists (
                         select 1 from task_participant p
                         join employee_position_assignment pa on pa.tenant_id = p.tenant_id and pa.id = p.position_assignment_id
                         join employee e on e.tenant_id = pa.tenant_id and e.id = pa.employee_id
                         where p.tenant_id = t.tenant_id and p.task_id = t.id and e.account_id = :actorId
                           and p.valid_to is null
-                    )
+                    ))
+                    or (:view = 'REVIEW' and exists (
+                        select 1 from task_participant p
+                        join employee_position_assignment pa on pa.tenant_id = p.tenant_id and pa.id = p.position_assignment_id
+                        join employee e on e.tenant_id = pa.tenant_id and e.id = pa.employee_id
+                        where p.tenant_id = t.tenant_id and p.task_id = t.id and e.account_id = :actorId
+                          and p.participant_type = 'REVIEWER' and p.valid_to is null
+                    ))
+                    or (:view = 'TEAM' and (
+                        :tenantReadScope = true
+                        or t.org_unit_id in (:readOrgUnits)
+                    ))
+                    or (:view = 'ALL' and (
+                        :tenantReadScope = true
+                        or (:canReadOrg = true and t.org_unit_id in (:readOrgUnits))
+                        or t.created_by = :actorId
+                        or exists (
+                            select 1 from task_participant p
+                            join employee_position_assignment pa on pa.tenant_id = p.tenant_id and pa.id = p.position_assignment_id
+                            join employee e on e.tenant_id = pa.tenant_id and e.id = pa.employee_id
+                            where p.tenant_id = t.tenant_id and p.task_id = t.id and e.account_id = :actorId
+                              and p.valid_to is null
+                        )
+                    ))
                   )
                 order by t.created_at desc
                 limit 500
                 """, params);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> targets() {
+        accessPolicy.requirePermission("task.create");
+        TenantPrincipal principal = prepare();
+        return taskTargetPolicy.listTargets(principal);
     }
 
     @Transactional(readOnly = true)
@@ -151,12 +194,30 @@ public class TaskService {
     public Map<String, Object> create(TaskModels.CreateTask request, String idempotencyKey) {
         accessPolicy.requirePermission("task.create");
         TenantPrincipal principal = prepare();
-        accessPolicy.requireOrgScope(request.orgUnitId());
+        UUID reviewerAssignmentId = taskTargetPolicy.resolveReviewer(
+                principal,
+                request.orgUnitId(),
+                request.assigneeAssignmentId(),
+                request.reviewerAssignmentId(),
+                request.creatorAssignmentId()
+        );
         TaskModels.RuleTaskSpec spec = new TaskModels.RuleTaskSpec(
-                null, null, request.orgUnitId(), request.assigneeAssignmentId(), request.reviewerAssignmentId(),
+                null, null, request.orgUnitId(), request.assigneeAssignmentId(), reviewerAssignmentId,
                 request.standardVersionId(), request.workRecordId(), request.title(), request.description(),
                 request.priority(), request.dueAt(), request.sourceSnapshot());
         UUID id = createTask(spec, idempotencyKey, false);
+        if (Boolean.TRUE.equals(request.dispatchNow())) {
+            accessPolicy.requirePermission("task.dispatch");
+            Map<String, Object> row = taskRow(principal, id, true);
+            if ("PROPOSED".equals(row.get("lifecycle_status"))) {
+                TaskModels.Command dispatch = new TaskModels.Command(
+                        ((Number) row.get("row_version")).longValue(),
+                        request.creatorAssignmentId(),
+                        JsonNodeFactory.instance.objectNode().put("source", "CREATE_AND_DISPATCH")
+                );
+                transition(id, "DISPATCH", idempotencyKey + ":dispatch", dispatch, false, null);
+            }
+        }
         return detailResult(principal, id);
     }
 
@@ -179,7 +240,7 @@ public class TaskService {
         switch (normalizedCommand) {
             case "DISPATCH" -> accessPolicy.requirePermission("task.dispatch");
             case "ACKNOWLEDGE", "START", "SUBMIT_RESULT" -> accessPolicy.requirePermission("task.act");
-            case "APPROVE", "REWORK" -> accessPolicy.requirePermission("task.review");
+            case "APPROVE", "REWORK", "REJECT" -> accessPolicy.requirePermission("task.review");
             case "CANCEL" -> accessPolicy.requirePermission("task.cancel");
             default -> throw new IllegalArgumentException("不支持的任务命令: " + normalizedCommand);
         }
@@ -479,8 +540,10 @@ public class TaskService {
         if (spec.assigneeAssignmentId().equals(spec.reviewerAssignmentId())) {
             throw new IllegalArgumentException("任务责任人与验收人不得为同一任职");
         }
-        requireAssignment(principal, spec.assigneeAssignmentId());
-        requireAssignment(principal, spec.reviewerAssignmentId());
+        if (fromRule || principal.hasTenantScope()) {
+            requireAssignment(principal, spec.assigneeAssignmentId());
+            requireAssignment(principal, spec.reviewerAssignmentId());
+        }
         requireOwnedOptional(principal, "standard_version", spec.standardVersionId());
         requireOwnedOptional(principal, "work_record", spec.workRecordId());
         if (spec.sourceActionId() != null) {
@@ -571,11 +634,34 @@ public class TaskService {
         }
         Map<String, Object> task = taskRow(principal, taskId, true);
         String from = String.valueOf(task.get("lifecycle_status"));
+        boolean manualNoStandardReview = validateReviewPath(task, command, from);
         String to = targetState(command, from);
         if (!internal) {
             authorizeCommand(principal, taskId, command, request.actorAssignmentId());
         }
         JsonNode payload = request.payload() == null ? JsonNodeFactory.instance.objectNode() : request.payload();
+        if (manualNoStandardReview) {
+            ObjectNode auditedPayload = JsonNodeFactory.instance.objectNode();
+            if (payload.isObject()) {
+                auditedPayload.setAll((ObjectNode) payload);
+            } else {
+                auditedPayload.set("requestPayload", payload);
+            }
+            auditedPayload.put("reviewMode", "MANUAL_NO_STANDARD");
+            payload = auditedPayload;
+        }
+        // Keep the existing task_transition command constraint backward compatible.
+        // REJECT is the explicit API/audit action; its lifecycle transition is the
+        // established REWORK event and the original action remains in the payload.
+        String persistedCommand = command;
+        if ("REJECT".equals(command)) {
+            persistedCommand = "REWORK";
+            ObjectNode auditedPayload = payload.isObject()
+                    ? ((ObjectNode) payload).deepCopy()
+                    : JsonNodeFactory.instance.objectNode().set("requestPayload", payload);
+            auditedPayload.put("requestedCommand", "REJECT");
+            payload = auditedPayload;
+        }
         if ("SUBMIT_RESULT".equals(command)) {
             validateTaskResultPolicy(principal, taskId, payload);
         }
@@ -609,7 +695,7 @@ public class TaskService {
                 .addValue("taskId", taskId)
                 .addValue("fromStatus", from)
                 .addValue("toStatus", to)
-                .addValue("command", command)
+                .addValue("command", persistedCommand)
                 .addValue("actorId", principal.actorId())
                 .addValue("actorAssignmentId", request.actorAssignmentId())
                 .addValue("evaluationId", evaluationId)
@@ -617,7 +703,8 @@ public class TaskService {
                 .addValue("key", idempotencyKey)
                 .addValue("payload", payload.toString()));
         auditWriter.record("TASK_" + command, "TASK", taskId,
-                "{\"from\":\"" + from + "\",\"to\":\"" + to + "\"}");
+                "{\"from\":\"" + from + "\",\"to\":\"" + to + "\""
+                        + (manualNoStandardReview ? ",\"reviewMode\":\"MANUAL_NO_STANDARD\"" : "") + "}");
         auditWriter.emit("TASK", taskId, "TaskTransitioned",
                 "{\"taskId\":\"" + taskId + "\",\"from\":\"" + from + "\",\"to\":\"" + to + "\"}");
         if ("DISPATCH".equals(command)) {
@@ -628,7 +715,7 @@ public class TaskService {
             UUID reviewer = participantAssignment(principal, taskId, "REVIEWER");
             notificationService.createForAssignment(reviewer, "TASK_RESULT_SUBMITTED", "任务结果待评价",
                     String.valueOf(task.get("title")), "TASK", taskId, "task-result:" + taskId + ":" + newVersion);
-        } else if ("REWORK".equals(command)) {
+        } else if ("REWORK".equals(command) || "REJECT".equals(command)) {
             UUID assignee = participantAssignment(principal, taskId, "ASSIGNEE");
             notificationService.createForAssignment(assignee, "TASK_REWORK", "任务被要求返工",
                     String.valueOf(task.get("title")), "TASK", taskId, "task-rework:" + taskId + ":" + newVersion);
@@ -695,6 +782,17 @@ public class TaskService {
         }
     }
 
+    private boolean validateReviewPath(Map<String, Object> task, String command, String from) {
+        if (!"RESULT_SUBMITTED".equals(from)
+                || !Set.of("APPROVE", "REWORK", "REJECT").contains(command)) {
+            return false;
+        }
+        if (task.get("standard_version_id") != null) {
+            throw new IllegalArgumentException("已绑定标准的任务必须先完成标准评价，再进行验收或驳回");
+        }
+        return true;
+    }
+
     private String targetState(String command, String from) {
         if ("CANCEL".equals(command) && !Set.of("COMPLETED", "CANCELLED").contains(from)) {
             return "CANCELLED";
@@ -715,7 +813,7 @@ public class TaskService {
             requireParticipant(principal, taskId, actorAssignmentId, Set.of("ASSIGNEE"));
             return;
         }
-        if (Set.of("APPROVE", "REWORK").contains(command)) {
+        if (Set.of("APPROVE", "REWORK", "REJECT").contains(command)) {
             requireActorAssignment(principal, actorAssignmentId);
             requireParticipant(principal, taskId, actorAssignmentId, Set.of("REVIEWER"));
             UUID assignee = participantAssignment(principal, taskId, "ASSIGNEE");
@@ -729,7 +827,27 @@ public class TaskService {
                 return;
             }
             requireActorAssignment(principal, actorAssignmentId);
-            requireParticipant(principal, taskId, actorAssignmentId, Set.of("REVIEWER"));
+            Integer authorized = jdbc.queryForObject("""
+                    select count(*)
+                    from management_task task
+                    where task.tenant_id = :tenantId and task.id = :taskId
+                      and (
+                        task.created_by = :actorId
+                        or exists (
+                          select 1 from task_participant participant
+                          where participant.tenant_id = task.tenant_id
+                            and participant.task_id = task.id
+                            and participant.position_assignment_id = :assignmentId
+                            and participant.participant_type = 'REVIEWER'
+                            and participant.valid_to is null
+                        )
+                      )
+                    """, base(principal).addValue("taskId", taskId)
+                    .addValue("actorId", principal.actorId())
+                    .addValue("assignmentId", actorAssignmentId), Integer.class);
+            if (authorized == null || authorized != 1) {
+                throw new AccessDeniedException("只有任务创建人或验收负责人可以派发、取消任务");
+            }
             return;
         }
         throw new IllegalArgumentException("不支持的任务命令: " + command);
@@ -763,9 +881,9 @@ public class TaskService {
                 select count(*) from management_task t
                 where t.tenant_id = :tenantId and t.id = :taskId
                   and (
-                    :tenantScope = true
-                    or (:canReadOrg = true and exists (select 1 from org_unit_closure c where c.tenant_id = t.tenant_id
-                        and c.descendant_id = t.org_unit_id and c.ancestor_id in (:orgScopes)))
+                    :tenantReadScope = true
+                    or (:canReadOrg = true and t.org_unit_id in (:readOrgUnits))
+                    or t.created_by = :actorId
                     or exists (
                         select 1 from task_participant p
                         join employee_position_assignment pa on pa.tenant_id = p.tenant_id and pa.id = p.position_assignment_id
@@ -856,14 +974,14 @@ public class TaskService {
     }
 
     private MapSqlParameterSource visibleParams(TenantPrincipal principal) {
-        Collection<UUID> scopes = principal.orgScopes().isEmpty()
-                ? List.of(new UUID(0, 0)) : principal.orgScopes();
+        TaskTargetPolicy.ReadScope readScope = taskTargetPolicy.readScope(principal);
         return base(principal)
-                .addValue("tenantScope", principal.hasTenantScope())
+                .addValue("tenantReadScope", readScope.tenantScope())
                 .addValue("canReadOrg", principal.hasPermission("task.review")
                         || principal.hasPermission("task.dispatch")
                         || principal.hasPermission("task.create"))
-                .addValue("orgScopes", scopes)
+                .addValue("readOrgUnits", readScope.orgUnitIds().isEmpty()
+                        ? List.of(new UUID(0, 0)) : readScope.orgUnitIds())
                 .addValue("actorId", principal.actorId());
     }
 
@@ -879,6 +997,14 @@ public class TaskService {
 
     private String normalize(String value) {
         return value == null || value.isBlank() ? null : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeView(String value) {
+        String view = value == null || value.isBlank() ? "ALL" : value.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("ALL", "MINE", "TEAM", "REVIEW").contains(view)) {
+            throw new IllegalArgumentException("不支持的任务视图: " + value);
+        }
+        return view;
     }
 
     private String normalizePriority(String value) {

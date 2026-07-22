@@ -104,8 +104,8 @@ Cloudflare Browser Insights脚本因本站严格CSP被浏览器阻止，属于�
 
 ## 9. 运行限制
 
-- 当前Windows电脑必须保持开机、联网且部署用户已经登录；Core API目前由登录用户计划任务恢复。
-- Pilot仍采用外层Basic Auth加本地应用账号JWT，尚未接入正式企业SSO。
+- 当前Windows电脑必须保持开机、联网且部署用户已经登录；Core API目前由用户计划任务在登录时及每5分钟检查恢复。
+- Pilot当前采用本地应用账号、短期JWT、连续失败锁定和服务端RBAC/RLS；尚未接入正式企业SSO。
 - 附件保存在本机D盘，正式生产前应迁移到对象存储并完成容量、病毒扫描、保留期和灾备设计。
 - ICP备案号仍待业务负责人确认并展示。
 - 本报告只批准受控内部Pilot测试，不批准TECH-V0.2正式Released。
@@ -117,4 +117,3 @@ Cloudflare Browser Insights脚本因本站严格CSP被浏览器阻止，属于�
 - 公网页面结构化记录：`docs/uat/evidence/pilot6-public/pilot6-public-browser-uat.json`
 - 八角色及CEO三类模板截图：`docs/uat/evidence/pilot6-public/`
 - 实施状态：`docs/TECH-V0.2-PILOT.6-IMPLEMENTATION-STATUS.md`
-

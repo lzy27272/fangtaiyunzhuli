@@ -1,0 +1,74 @@
+{
+  "generatedAt": "2026-07-21T20:25:53.858Z",
+  "version": "TECH-V0.2-PILOT.7",
+  "webBase": "https://www.sfgzt.cn",
+  "passed": true,
+  "summary": {
+    "passed": 7,
+    "total": 7,
+    "failed": 0
+  },
+  "taskId": "bb05b1a6-82e7-4ead-a2c2-dcc36df16c02",
+  "taskTitle": "[PILOT7-PUBLIC-UAT] polling manual review 2026-07-21T20-22-15-954Z",
+  "resumeMode": true,
+  "checks": [
+    {
+      "name": "ceo_ui_create_and_dispatch",
+      "passed": true,
+      "details": {
+        "taskId": "bb05b1a6-82e7-4ead-a2c2-dcc36df16c02",
+        "resumedFromPriorRun": true
+      }
+    },
+    {
+      "name": "front_open_page_auto_refresh",
+      "passed": true,
+      "details": {
+        "resumedFromPriorRun": true,
+        "priorEvidence": "02-front-auto-received.png"
+      }
+    },
+    {
+      "name": "front_ui_acknowledge",
+      "passed": true,
+      "details": {
+        "resumedFromPriorRun": true,
+        "lifecycleStatus": "IN_PROGRESS"
+      }
+    },
+    {
+      "name": "front_ui_upload_image",
+      "passed": true,
+      "details": {
+        "httpStatus": 201,
+        "fileType": "image/png"
+      }
+    },
+    {
+      "name": "front_ui_submit_result",
+      "passed": true,
+      "details": {
+        "httpStatus": 200,
+        "lifecycleStatus": "RESULT_SUBMITTED"
+      }
+    },
+    {
+      "name": "reviewer_manual_no_standard_actions",
+      "passed": true,
+      "details": {
+        "approveVisible": true,
+        "rejectVisible": true
+      }
+    },
+    {
+      "name": "reviewer_ui_approve_completed",
+      "passed": true,
+      "details": {
+        "httpStatus": 200,
+        "lifecycleStatus": "COMPLETED"
+      }
+    }
+  ],
+  "credentialsPersistedInEvidence": false,
+  "retentionNote": "The completed, clearly labelled task is retained as auditable public UI evidence."
+}

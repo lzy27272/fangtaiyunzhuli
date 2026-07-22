@@ -36,6 +36,8 @@ import type {
   IdentitySnapshot,
   ManagementRule,
   ManagementTask,
+  Navigate,
+  RouteParams,
   RuleDetail,
   RuleVersionDraft,
   RoleContext,
@@ -74,22 +76,33 @@ const statusText: Record<string, string> = {
   ON_TIME: '正常', DUE_SOON: '即将到期', HIGH: '高', URGENT: '紧急', NORMAL: '普通', LOW: '低',
 }
 
-function useHashView() {
+function useHashRoute() {
   const read = () => {
-    const raw = window.location.hash.replace(/^#\/?/, '').split('/')[0] as ViewId
-    return viewIds.has(raw) ? raw : 'workbench'
+    const raw = window.location.hash.replace(/^#\/?/, '')
+    const queryIndex = raw.indexOf('?')
+    const path = (queryIndex >= 0 ? raw.slice(0, queryIndex) : raw).split('/')[0] as ViewId
+    const search = new URLSearchParams(queryIndex >= 0 ? raw.slice(queryIndex + 1) : '')
+    return {
+      view: viewIds.has(path) ? path : 'workbench',
+      params: Object.fromEntries(search.entries()) as RouteParams,
+    }
   }
-  const [view, setViewState] = useState<ViewId>(read)
+  const [route, setRoute] = useState(read)
   useEffect(() => {
-    const listener = () => setViewState(read())
+    const listener = () => setRoute(read())
     window.addEventListener('hashchange', listener)
     return () => window.removeEventListener('hashchange', listener)
   }, [])
-  const setView = (next: ViewId) => {
-    window.location.hash = `/${next}`
-    setViewState(next)
+  const navigate: Navigate = (next, params = {}) => {
+    const search = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') search.set(key, value)
+    })
+    const nextHash = `/${next}${search.size ? `?${search.toString()}` : ''}`
+    window.location.hash = nextHash
+    setRoute(read())
   }
-  return [view, setView] as const
+  return [route, navigate] as const
 }
 
 function formatDate(value?: string, includeTime = true) {
@@ -120,7 +133,7 @@ function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string;
 function DataState({ loading, error, empty, onRetry }: { loading: boolean; error?: string; empty?: boolean; onRetry: () => void }) {
   if (loading) return <div className="state-card"><div className="spinner" /><strong>正在读取管理数据</strong><span>数据来自当前任职权限范围</span></div>
   if (error) return <div className="state-card error-state"><b>!</b><strong>数据读取失败</strong><span>{error}</span><button className="secondary" onClick={onRetry}>重新加载</button></div>
-  if (empty) return <div className="state-card"><b>◇</b><strong>当前范围暂无数据</strong><span>这里不会用演示数据填充真实 API 的空结果。</span></div>
+  if (empty) return <div className="state-card"><b>◇</b><strong>当前范围暂无数据</strong><span>这里不会用演示数据填充真实 API 的空结果。</span><button className="secondary" onClick={onRetry}>立即刷新</button></div>
   return null
 }
 
@@ -130,36 +143,42 @@ function SourceFlag({ source }: { source: ApiSource }) {
     : <span className="source-flag api">实时 API</span>
 }
 
-function Metric({ label: title, value, hint, tone = 'blue' }: { label: string; value: string | number; hint: string; tone?: string }) {
-  return <article className={`metric ${tone}`}><div>{title.slice(0, 1)}</div><span>{title}<strong>{value}</strong><small>{hint}</small></span></article>
+function Metric({ label: title, value, hint, tone = 'blue', onClick }: { label: string; value: string | number; hint: string; tone?: string; onClick?: () => void }) {
+  const content = <><div>{title.slice(0, 1)}</div><span>{title}<strong>{value}</strong><small>{hint}</small></span></>
+  return onClick
+    ? <button type="button" className={`metric metric-action ${tone}`} onClick={onClick} aria-label={`${title}：${value}，查看明细`}>{content}</button>
+    : <article className={`metric ${tone}`}>{content}</article>
 }
 
-function Workbench({ identity, go }: { identity: RoleContext; go: (view: ViewId) => void }) {
+function Workbench({ identity, permissions, go }: { identity: RoleContext; permissions: string[]; go: Navigate }) {
   const hasAssignment = Boolean(identity.assignmentId)
-  const myWork = useResource(`${identity.key}:my-work`, () => hasAssignment ? loadMyWork(identity) : Promise.resolve({ data: [], source: 'api' as const }), [])
-  const tasks = useResource(`${identity.key}:tasks`, () => loadTasks(identity), [])
-  const notices = useResource(`${identity.key}:notices`, () => loadNotifications(identity), [])
-  const loading = myWork.loading || tasks.loading || notices.loading
-  const scopedWork = myWork.data.filter((item) => !identity.assignmentId || !item.assignmentId || item.assignmentId === identity.assignmentId)
-  const scopedTasks = tasks.data.filter((item) => !identity.assignmentId || (!item.assigneeAssignmentId && !item.reviewerAssignmentId) || item.assigneeAssignmentId === identity.assignmentId || item.reviewerAssignmentId === identity.assignmentId)
-  const scopedNotices = notices.data.filter((item) => !identity.assignmentId || !item.recipientAssignmentId || item.recipientAssignmentId === identity.assignmentId)
+  const canReview = permissions.includes('task.review')
+  const primaryTaskView = hasAssignment ? 'mine' : 'team'
+  const myWork = useResource(`${identity.key}:my-work`, () => hasAssignment ? loadMyWork(identity) : Promise.resolve({ data: [], source: 'api' as const }), [], 30_000)
+  const tasks = useResource(`${identity.key}:tasks`, () => loadTasks(identity, { view: primaryTaskView }), [], 15_000)
+  const reviewTaskResource = useResource(`${identity.key}:review-tasks:${canReview}`, () => canReview ? loadTasks(identity, { view: 'review' }) : Promise.resolve({ data: [], source: 'api' as const }), [], 15_000)
+  const notices = useResource(`${identity.key}:notices`, () => loadNotifications(identity), [], 15_000)
+  const loading = myWork.loading || tasks.loading || reviewTaskResource.loading || notices.loading
+  const scopedWork = myWork.data
+  const scopedTasks = tasks.data
+  const scopedNotices = notices.data
   const pendingWork = scopedWork.filter((item) => !['SATISFIED', 'SUBMITTED', 'WAIVED', 'CANCELLED'].includes(item.status))
   const activeTasks = scopedTasks.filter((item) => !['COMPLETED', 'CANCELLED'].includes(item.status))
-  const reviewTasks = scopedTasks.filter((item) => item.status === 'AWAITING_REVIEW' && (!identity.assignmentId || item.reviewerAssignmentId === identity.assignmentId))
+  const reviewTasks = reviewTaskResource.data.filter((item) => ['RESULT_SUBMITTED', 'AWAITING_REVIEW'].includes(item.status))
   const unread = scopedNotices.filter((item) => !item.readAt)
-  const source: ApiSource = [myWork.source, tasks.source, notices.source].includes('demo') ? 'demo' : 'api'
+  const source: ApiSource = [myWork.source, tasks.source, reviewTaskResource.source, notices.source].includes('demo') ? 'demo' : 'api'
 
   return <>
     <section className="hero">
       <div><span className="eyebrow">SPRINT 2 · MANAGEMENT LOOP</span><h1>{identity.label}工作台</h1><p>{identity.focus}</p></div>
       <div className="hero-context"><span>当前有效任职</span><strong>{identity.label}</strong><small>{identity.orgName}</small><SourceFlag source={source} /></div>
     </section>
-    {loading ? <DataState loading onRetry={() => void Promise.all([myWork.reload(), tasks.reload(), notices.reload()])} /> : <>
+    {loading ? <DataState loading onRetry={() => void Promise.all([myWork.reload(), tasks.reload(), reviewTaskResource.reload(), notices.reload()])} /> : <>
       <section className="metrics-grid">
-        <Metric label={hasAssignment ? '今日待完成' : '岗位待办'} value={pendingWork.length} hint={hasAssignment ? `当前任职工作 ${scopedWork.length} 项` : '管理账号没有岗位任职，不生成个人工作'} />
-        <Metric label="执行中任务" value={activeTasks.length} hint={`${scopedTasks.filter((x) => x.slaStatus === 'OVERDUE').length} 项已逾期`} tone="teal" />
-        <Metric label="待我验收" value={reviewTasks.length} hint="验收必须引用标准评价" tone="gold" />
-        <Metric label="未读通知" value={unread.length} hint="任务、逾期与升级提醒" tone="violet" />
+        <Metric label={hasAssignment ? '今日待完成' : '岗位待办'} value={pendingWork.length} hint={hasAssignment ? `当前任职工作 ${scopedWork.length} 项` : '管理账号查看授权团队工作'} onClick={() => go(hasAssignment ? 'my-work' : 'team-work', { status: 'PENDING_WORK' })} />
+        <Metric label="执行中任务" value={activeTasks.length} hint={`${scopedTasks.filter((x) => x.slaStatus === 'OVERDUE').length} 项已逾期`} tone="teal" onClick={() => go('tasks', { view: primaryTaskView, status: 'ACTIVE' })} />
+        {canReview && <Metric label="待我验收" value={reviewTasks.length} hint="有标准按标准评价，无标准由验收人人工判定" tone="gold" onClick={() => go('tasks', { view: 'review' })} />}
+        <Metric label="未读通知" value={unread.length} hint="任务、逾期与升级提醒" tone="violet" onClick={() => go('notifications', { unread: 'true' })} />
       </section>
       <section className="dashboard-grid">
         <article className="panel span-2"><header><div><span className="panel-kicker">{hasAssignment ? "TODAY'S WORK" : 'MANAGEMENT SCOPE'}</span><h2>{hasAssignment ? '今日岗位工作' : '集团管理视图'}</h2></div><button className="link-button" onClick={() => go(hasAssignment ? 'my-work' : 'team-work')}>{hasAssignment ? '查看全部' : '查看团队执行'}</button></header>
@@ -168,8 +187,8 @@ function Workbench({ identity, go }: { identity: RoleContext; go: (view: ViewId)
         <article className="panel"><header><div><span className="panel-kicker">NOTIFICATIONS</span><h2>管理提醒</h2></div><button className="link-button" onClick={() => go('notifications')}>通知中心</button></header>
           <div className="notice-list">{scopedNotices.slice(0, 4).map((item) => <div className={item.readAt ? 'read' : ''} key={item.id}><i /><span><strong>{item.title}</strong><small>{item.content}</small></span></div>)}</div>
         </article>
-        <article className="panel span-3"><header><div><span className="panel-kicker">EXECUTION LOOP</span><h2>执行任务</h2></div><button className="link-button" onClick={() => go('tasks')}>进入任务中心</button></header>
-          <TaskRows tasks={scopedTasks.slice(0, 5)} onSelect={() => go('tasks')} />
+        <article className="panel span-3"><header><div><span className="panel-kicker">EXECUTION LOOP</span><h2>执行任务</h2></div><button className="link-button" onClick={() => go('tasks', { view: primaryTaskView })}>进入任务中心</button></header>
+          <TaskRows tasks={scopedTasks.slice(0, 5)} onSelect={(task) => go('tasks', { view: primaryTaskView, taskId: task.id })} />
         </article>
       </section>
     </>}
@@ -303,14 +322,21 @@ function WorkRecordDialog({ item, identity, onClose, onSaved }: { item: WorkExpe
   </section></div>
 }
 
-function MyWork({ identity }: { identity: RoleContext }) {
+const workFilters = ['ALL', 'PENDING_WORK', 'AVAILABLE', 'PLANNED', 'IN_PROGRESS', 'SUBMITTED', 'SATISFIED', 'FAILED', 'MISSED'] as const
+
+function MyWork({ identity, routeParams, go }: { identity: RoleContext; routeParams: RouteParams; go: Navigate }) {
   const resource = useResource(`${identity.key}:my-work`, () => loadMyWork(identity), [])
-  const [filter, setFilter] = useState('ALL')
+  const requestedFilter = workFilters.includes(routeParams.status as typeof workFilters[number]) ? routeParams.status : 'ALL'
+  const [filter, setFilter] = useState(requestedFilter)
   const [editing, setEditing] = useState<WorkExpectation>()
   const [opening, setOpening] = useState<string>()
   const [openError, setOpenError] = useState<string>()
-  const assignedItems = resource.data.filter((item) => !identity.assignmentId || !item.assignmentId || item.assignmentId === identity.assignmentId)
-  const items = filter === 'ALL' ? assignedItems : assignedItems.filter((item) => item.status === filter)
+  useEffect(() => setFilter(requestedFilter), [requestedFilter])
+  const items = filter === 'ALL'
+    ? resource.data
+    : filter === 'PENDING_WORK'
+      ? resource.data.filter((item) => !['SUBMITTED', 'SATISFIED', 'WAIVED', 'CANCELLED'].includes(item.status))
+      : resource.data.filter((item) => item.status === filter)
   const openRecord = async (item: WorkExpectation) => {
     setOpening(item.id); setOpenError(undefined)
     try {
@@ -320,15 +346,15 @@ function MyWork({ identity }: { identity: RoleContext }) {
     finally { setOpening(undefined) }
   }
   return <section className="page-section"><PageHeader eyebrow="POSITION WORK" title="我的工作" description={`当前任职：${identity.label} · ${identity.orgName}。每条记录绑定精确任职，不因切换岗位而串岗。`} actions={<SourceFlag source={resource.source} />} />
-    <div className="filters">{['ALL', 'AVAILABLE', 'PLANNED', 'IN_PROGRESS', 'SUBMITTED', 'SATISFIED', 'FAILED', 'MISSED'].map((item) => <button className={filter === item ? 'active' : ''} onClick={() => setFilter(item)} key={item}>{item === 'ALL' ? '全部' : label(item)}</button>)}</div>
+    <div className="filters">{workFilters.map((item) => <button className={filter === item ? 'active' : ''} onClick={() => { setFilter(item); go('my-work', { ...routeParams, status: item === 'ALL' ? undefined : item }) }} key={item}>{item === 'ALL' ? '全部' : item === 'PENDING_WORK' ? '待完成' : label(item)}</button>)}</div>
     {openError && <div className="inline-error page-error">{openError}</div>}
     <article className="panel table-panel"><DataState loading={resource.loading || !!opening} error={resource.error} empty={!items.length} onRetry={resource.reload} />{!resource.loading && !opening && !resource.error && !!items.length && <WorkTable items={items} own onFill={openRecord} />}</article>
     {editing && <WorkRecordDialog item={editing} identity={identity} onClose={() => setEditing(undefined)} onSaved={resource.reload} />}
   </section>
 }
 
-function TeamWork({ identity, permissions }: { identity: RoleContext; permissions: string[] }) {
-  return <TeamWorkPage identity={identity} permissions={permissions} />
+function TeamWork({ identity, permissions, routeParams }: { identity: RoleContext; permissions: string[]; routeParams: RouteParams }) {
+  return <TeamWorkPage identity={identity} permissions={permissions} routeParams={routeParams} />
 }
 
 const defaultCondition = '{\n  "op": "EXISTS",\n  "fact": "workRecordId"\n}'
@@ -432,6 +458,7 @@ const actionsByStatus: Record<string, Array<{ command: string; label: string; to
   PENDING_ACK: [{ command: 'acknowledge', label: '确认接单' }],
   IN_PROGRESS: [{ command: 'submit-result', label: '提交执行结果' }],
   REWORK: [{ command: 'start', label: '开始返工' }],
+  RESULT_SUBMITTED: [{ command: 'approve', label: '验收通过' }, { command: 'reject', label: '退回整改', tone: 'danger' }],
   AWAITING_REVIEW: [{ command: 'approve', label: '验收通过' }, { command: 'rework', label: '打回返工', tone: 'danger' }],
 }
 
@@ -442,11 +469,14 @@ function TaskDetail({ initial, identity, permissions, onClose, onChanged }: { in
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
+  const isAssignee = Boolean(identity.assignmentId && identity.assignmentId === task.assigneeAssignmentId)
+  const isReviewer = Boolean(identity.assignmentId && identity.assignmentId === task.reviewerAssignmentId)
   const canEditEvidence = Boolean(identity.assignmentId && identity.assignmentId === task.assigneeAssignmentId && ['IN_PROGRESS', 'REWORK'].includes(task.status))
   const allowedActions = (actionsByStatus[task.status] ?? []).filter((action) => {
-    if (['approve', 'rework'].includes(action.command)) return permissions.includes('task.review')
+    if (task.status === 'RESULT_SUBMITTED' && task.standardVersionId) return false
+    if (['approve', 'rework', 'reject'].includes(action.command)) return isReviewer && permissions.includes('task.review')
     if (action.command === 'dispatch') return permissions.includes('task.dispatch')
-    return permissions.includes('task.act')
+    return isAssignee && permissions.includes('task.act')
   })
   const run = async (command: string) => {
     setBusy(command); setError(undefined)
@@ -494,22 +524,60 @@ function TaskDetail({ initial, identity, permissions, onClose, onChanged }: { in
       <section className="detail-section"><h3>执行要求</h3><p>{task.description ?? '任务来源已记录，执行结果需提交结构化说明和证据。'}</p></section>
       <section className="detail-section"><h3>执行证据</h3>{task.evidence?.length ? <div className="attachment-list">{task.evidence.map((evidence) => <span className="evidence-chip" key={evidence.id}><button className="secondary" disabled={!evidence.objectKey} onClick={() => void previewEvidence(evidence.id)}>{evidence.originalName || label(evidence.evidenceType)} · {evidence.scanStatus}</button>{canEditEvidence && evidence.submittedByAssignmentId === identity.assignmentId && <button className="text-action danger" disabled={busy === `delete:${evidence.id}`} onClick={() => void removeEvidence(evidence.id)}>删除</button>}</span>)}</div> : <p className="muted">尚未上传图片或文档证据。</p>}{canEditEvidence && <div className="evidence-uploader"><input type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.docx,.xlsx" onChange={(event) => setEvidenceFiles(Array.from(event.target.files ?? []).slice(0, 10))} /><button className="secondary" disabled={!!busy || !evidenceFiles.length} onClick={() => void uploadEvidence()}>{busy === 'upload-evidence' ? '上传中…' : `上传证据${evidenceFiles.length ? `（${evidenceFiles.length}）` : ''}`}</button><small>支持图片、PDF、Word、Excel；单文件不超过20MB。</small></div>}</section>
       {!!allowedActions.length && <section className="action-box"><label>处理说明<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="填写执行结果、验收意见或返工原因" /></label>{error && <div className="inline-error">{error}</div>}<div>{allowedActions.map((action) => <button className={action.tone === 'danger' ? 'danger-button' : 'primary'} disabled={!!busy || !remark.trim()} onClick={() => run(action.command)} key={action.command}>{busy === action.command ? '处理中…' : action.label}</button>)}</div></section>}
-      {task.status === 'RESULT_SUBMITTED' && permissions.includes('evaluation.manual-review') && <section className="action-box"><h3>任务结果标准评价</h3><p className="muted">系统使用任务创建时冻结的标准版本评价执行结果；评价完成后任务进入待验收状态。</p>{error && <div className="inline-error">{error}</div>}<div><button className="primary" disabled={!!busy || !task.standardVersionId} onClick={evaluateResult}>{busy === 'evaluate-result' ? '评价中…' : '按绑定标准评价结果'}</button></div></section>}
+      {task.status === 'RESULT_SUBMITTED' && task.standardVersionId && isReviewer && permissions.includes('evaluation.manual-review') && <section className="action-box"><h3>任务结果标准评价</h3><p className="muted">系统使用任务创建时冻结的标准版本评价执行结果；评价完成后任务进入待验收状态。</p>{error && <div className="inline-error">{error}</div>}<div><button className="primary" disabled={!!busy} onClick={evaluateResult}>{busy === 'evaluate-result' ? '评价中…' : '按绑定标准评价结果'}</button></div></section>}
       <section className="detail-section"><h3>不可变时间线</h3><div className="timeline">{task.timeline?.length ? task.timeline.map((item) => <div key={item.id}><i /><span><strong>{label(item.toStatus)}</strong><small>{item.actorName} · {formatDate(item.occurredAt)}</small>{item.remark && <p>{item.remark}</p>}</span></div>) : <p className="muted">暂无流转记录。</p>}</div></section>
     </div>
   </aside></div>
 }
 
-function Tasks({ identity, permissions }: { identity: RoleContext; permissions: string[] }) {
-  const [team, setTeam] = useState(false)
-  const resource = useResource(`${identity.key}:tasks:${team}`, () => loadTasks(identity, team), [])
+const taskViews = ['mine', 'team', 'review'] as const
+
+function Tasks({ identity, permissions, routeParams, go }: { identity: RoleContext; permissions: string[]; routeParams: RouteParams; go: Navigate }) {
+  const requestedView = taskViews.includes(routeParams.view as typeof taskViews[number])
+    ? routeParams.view as typeof taskViews[number]
+    : identity.assignmentId ? 'mine' : 'team'
+  const [taskView, setTaskView] = useState<typeof taskViews[number]>(requestedView)
+  useEffect(() => setTaskView(requestedView), [requestedView])
+  const statusFilter = (routeParams.status || 'ALL').toUpperCase()
+  const serverStatus = ['ALL', 'ACTIVE', 'OVERDUE'].includes(statusFilter) ? undefined : statusFilter
+  const taskQueryKey = `${taskView}:${serverStatus ?? 'all'}:${routeParams.hotelId ?? 'all'}`
+  const resource = useResource(`${identity.key}:tasks:${taskQueryKey}`, () => loadTasks(identity, {
+    view: taskView,
+    status: serverStatus,
+    orgUnitId: routeParams.hotelId,
+  }), [], 15_000)
   const [selected, setSelected] = useState<ManagementTask>()
+  const [linkedTaskError, setLinkedTaskError] = useState<string>()
   const [creating, setCreating] = useState(false)
-  const tasks = team ? resource.data : resource.data.filter((item) => !identity.assignmentId || (!item.assigneeAssignmentId && !item.reviewerAssignmentId) || item.assigneeAssignmentId === identity.assignmentId || item.reviewerAssignmentId === identity.assignmentId)
+  const tasks = resource.data.filter((item) => {
+    if (statusFilter === 'ALL') return true
+    if (statusFilter === 'ACTIVE') return !['COMPLETED', 'CANCELLED'].includes(item.status)
+    if (statusFilter === 'OVERDUE') return item.slaStatus === 'OVERDUE'
+    return item.status === statusFilter
+  })
+  useEffect(() => {
+    if (!routeParams.taskId) return
+    const linkedTask = resource.data.find((item) => item.id === routeParams.taskId)
+    if (linkedTask) { setSelected(linkedTask); setLinkedTaskError(undefined); return }
+    if (resource.loading) return
+    let active = true
+    setLinkedTaskError(undefined)
+    void loadTask(identity, routeParams.taskId)
+      .then((task) => { if (active) setSelected(task.data) })
+      .catch((reason) => { if (active) setLinkedTaskError(reason instanceof Error ? reason.message : '任务详情加载失败') })
+    return () => { active = false }
+  }, [identity, resource.data, resource.loading, routeParams.taskId])
+  const switchView = (next: typeof taskViews[number]) => {
+    setTaskView(next)
+    go('tasks', { ...routeParams, view: next, taskId: undefined })
+  }
+  const switchStatus = (next: string) => go('tasks', { ...routeParams, status: next === 'ALL' ? undefined : next, taskId: undefined })
   return <section className="page-section"><PageHeader eyebrow="TASK EXECUTION CENTER" title="任务中心" description="任务绑定责任任职、验收任职、来源标准和完整状态时间线。" actions={<><SourceFlag source={resource.source} />{permissions.includes('task.create') && <button className="primary" onClick={() => setCreating(true)}>＋ 新建任务</button>}</>} />
-    <div className="filters"><button className={!team ? 'active' : ''} onClick={() => setTeam(false)}>我的任务</button>{permissions.includes('task.review') && <button className={team ? 'active' : ''} onClick={() => setTeam(true)}>团队任务</button>}</div>
+    <div className="filters"><button className={taskView === 'mine' ? 'active' : ''} onClick={() => switchView('mine')}>我的任务</button>{permissions.includes('task.review') && <><button className={taskView === 'review' ? 'active' : ''} onClick={() => switchView('review')}>待我验收</button><button className={taskView === 'team' ? 'active' : ''} onClick={() => switchView('team')}>团队任务</button></>}</div>
+    <div className="filters task-status-filters">{['ALL', 'ACTIVE', 'AWAITING_REVIEW', 'OVERDUE', 'COMPLETED'].map((item) => <button className={statusFilter === item ? 'active' : ''} onClick={() => switchStatus(item)} key={item}>{item === 'ALL' ? '全部状态' : item === 'ACTIVE' ? '未完成' : item === 'OVERDUE' ? '已逾期' : label(item)}</button>)}</div>
+    {linkedTaskError && <div className="inline-error page-error">{linkedTaskError}</div>}
     <article className="panel table-panel"><DataState loading={resource.loading} error={resource.error} empty={!tasks.length} onRetry={resource.reload} />{!resource.loading && !resource.error && !!tasks.length && <TaskRows tasks={tasks} onSelect={setSelected} />}</article>
-    {selected && <TaskDetail initial={selected} identity={identity} permissions={permissions} onClose={() => setSelected(undefined)} onChanged={resource.reload} />}
+    {selected && <TaskDetail initial={selected} identity={identity} permissions={permissions} onClose={() => { setSelected(undefined); if (routeParams.taskId) go('tasks', { ...routeParams, taskId: undefined }) }} onChanged={resource.reload} />}
     {creating && <TaskCreateDialog identity={identity} onClose={() => setCreating(false)} onCreated={resource.reload} />}
   </section>
 }
@@ -525,21 +593,42 @@ function EvaluationDetail({ initial, identity, onClose }: { initial: StandardEva
   </div></aside></div>
 }
 
-function Evaluations({ identity }: { identity: RoleContext }) {
-  const resource = useResource(`${identity.key}:evaluations`, () => loadEvaluations(identity), [])
+function Evaluations({ identity, routeParams, go }: { identity: RoleContext; routeParams: RouteParams; go: Navigate }) {
+  const outcomeFilter = (routeParams.outcome || 'ALL').toUpperCase()
+  const evaluationQueryKey = `${routeParams.hotelId ?? 'all'}:${outcomeFilter}`
+  const resource = useResource(`${identity.key}:evaluations:${evaluationQueryKey}`, () => loadEvaluations(identity, {
+    orgUnitId: routeParams.hotelId,
+    outcome: outcomeFilter === 'ALL' ? undefined : outcomeFilter,
+  }), [], 30_000)
   const [selected, setSelected] = useState<StandardEvaluation>()
-  const evaluations = resource.data.filter((item) => !identity.assignmentId || !item.assignmentId || item.assignmentId === identity.assignmentId)
+  const [linkedEvaluationError, setLinkedEvaluationError] = useState<string>()
+  const evaluations = outcomeFilter === 'ALL' ? resource.data : resource.data.filter((item) => item.outcome === outcomeFilter)
+  useEffect(() => {
+    if (!routeParams.evaluationId) return
+    const linkedEvaluation = resource.data.find((item) => item.id === routeParams.evaluationId)
+    if (linkedEvaluation) { setSelected(linkedEvaluation); setLinkedEvaluationError(undefined); return }
+    if (resource.loading) return
+    let active = true
+    setLinkedEvaluationError(undefined)
+    void loadEvaluation(identity, routeParams.evaluationId)
+      .then((evaluation) => { if (active) setSelected(evaluation.data) })
+      .catch((reason) => { if (active) setLinkedEvaluationError(reason instanceof Error ? reason.message : '评价详情加载失败') })
+    return () => { active = false }
+  }, [identity, resource.data, resource.loading, routeParams.evaluationId])
   return <section className="page-section"><PageHeader eyebrow="STANDARD EVALUATION" title="标准评价" description="评价永远引用已发布标准版本和输入快照，结果可解释、可复算。" actions={<SourceFlag source={resource.source} />} />
+    <div className="filters">{['ALL', 'FAIL', 'WARNING', 'PASS', 'PENDING'].map((item) => <button className={outcomeFilter === item ? 'active' : ''} onClick={() => go('evaluations', { ...routeParams, outcome: item === 'ALL' ? undefined : item, evaluationId: undefined })} key={item}>{item === 'ALL' ? '全部结果' : label(item)}</button>)}</div>
+    {linkedEvaluationError && <div className="inline-error page-error">{linkedEvaluationError}</div>}
     <article className="panel table-panel"><DataState loading={resource.loading} error={resource.error} empty={!evaluations.length} onRetry={resource.reload} />{!resource.loading && !resource.error && !!evaluations.length && <div className="data-table evaluation-table"><div className="table-row table-head"><span>评价对象</span><span>引用标准</span><span>目标组织</span><span>评分</span><span>结果</span><span>操作</span></div>{evaluations.map((item) => <div className="table-row" key={item.id}><span><strong>{item.subjectTitle}</strong><small>{label(item.subjectType)} · {formatDate(item.evaluatedAt)}</small></span><span>{item.standardTitle}<small>{item.standardCode} · V{item.standardVersion}</small></span><span>{item.targetOrgName}</span><span className="score">{item.score ?? '—'}</span><span><Status value={item.outcome} /></span><span><button className="link-button" onClick={() => setSelected(item)}>查看逐项判断</button></span></div>)}</div>}</article>
-    {selected && <EvaluationDetail initial={selected} identity={identity} onClose={() => setSelected(undefined)} />}
+    {selected && <EvaluationDetail initial={selected} identity={identity} onClose={() => { setSelected(undefined); if (routeParams.evaluationId) go('evaluations', { ...routeParams, evaluationId: undefined }) }} />}
   </section>
 }
 
-function Notifications({ identity }: { identity: RoleContext }) {
-  const resource = useResource(`${identity.key}:notifications`, () => loadNotifications(identity), [])
+function Notifications({ identity, routeParams, go }: { identity: RoleContext; routeParams: RouteParams; go: Navigate }) {
+  const resource = useResource(`${identity.key}:notifications`, () => loadNotifications(identity), [], 15_000)
   const [busy, setBusy] = useState<string>()
   const [commandError, setCommandError] = useState<string>()
-  const notices = resource.data.filter((item) => !identity.assignmentId || !item.recipientAssignmentId || item.recipientAssignmentId === identity.assignmentId)
+  const unreadOnly = routeParams.unread === 'true'
+  const notices = unreadOnly ? resource.data.filter((item) => !item.readAt) : resource.data
   const markRead = async (id: string) => {
     setBusy(id); setCommandError(undefined)
     try {
@@ -550,6 +639,7 @@ function Notifications({ identity }: { identity: RoleContext }) {
     finally { setBusy(undefined) }
   }
   return <section className="page-section"><PageHeader eyebrow="NOTIFICATION CENTER" title="通知中心" description="任务提醒、逾期、返工和升级集中送达；通知不替代任务主状态。" actions={<SourceFlag source={resource.source} />} />
+    <div className="filters"><button className={!unreadOnly ? 'active' : ''} onClick={() => go('notifications')}>全部通知</button><button className={unreadOnly ? 'active' : ''} onClick={() => go('notifications', { unread: 'true' })}>仅未读</button></div>
     {commandError && <div className="inline-error page-error">{commandError}</div>}
     <DataState loading={resource.loading} error={resource.error} empty={!notices.length} onRetry={resource.reload} />
     {!resource.loading && !resource.error && <div className="notification-page">{notices.map((item) => <article className={item.readAt ? 'read' : ''} key={item.id}><i /><div><span><Status value={item.type} /><small>{formatDate(item.createdAt)}</small></span><h2>{item.title}</h2><p>{item.content}</p></div>{!item.readAt && <button className="secondary" disabled={busy === item.id} onClick={() => markRead(item.id)}>{busy === item.id ? '处理中…' : '标记已读'}</button>}</article>)}</div>}
@@ -585,7 +675,8 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 }
 
 function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
-  const [view, setView] = useHashView()
+  const [route, navigate] = useHashRoute()
+  const { view, params: routeParams } = route
   let storedRole: string | null = null
   try { storedRole = localStorage.getItem(roleStorageKey) } catch { /* private mode may disable storage */ }
   const [identity, setIdentity] = useState<RoleContext>(() => roleContexts.find((role) => role.key === storedRole) ?? roleContexts.find((role) => role.key === 'front-desk') ?? roleContexts[0])
@@ -632,8 +723,8 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
     orgName: selectedAssignment?.orgName ?? resolvedRoleContext?.orgName ?? identity.orgName,
     focus: resolvedRoleContext?.focus ?? identity.focus,
   }), [identity, me.data, resolvedRoleContext, selectedAssignment])
-  const unreadResource = useResource(`${identity.key}:sidebar-notices`, () => loadNotifications(activeIdentity), [])
-  const unreadCount = unreadResource.data.filter((item) => !item.readAt && (!activeIdentity.assignmentId || !item.recipientAssignmentId || item.recipientAssignmentId === activeIdentity.assignmentId)).length
+  const unreadResource = useResource(`${identity.key}:sidebar-notices`, () => loadNotifications(activeIdentity), [], 15_000)
+  const unreadCount = unreadResource.data.filter((item) => !item.readAt).length
   const pilotDemoMode = demoFallbackEnabled && me.source === 'demo'
   const visibleNavigation = navigation.filter((item) => {
     if (item.id === 'my-work' && !activeIdentity.assignmentId) return false
@@ -647,37 +738,37 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
       return <section className="page-section"><div className="empty-state"><strong>{me.error ? '身份与权限读取失败' : '正在读取身份与权限'}</strong><span>{me.error ?? '系统将在权限解析完成后加载业务页面，避免使用错误的岗位或组织范围。'}</span></div></section>
     }
     switch (view) {
-      case 'workbench': return <Workbench identity={activeIdentity} go={setView} />
-      case 'hotel-dashboard': return <HotelDashboardPage identity={activeIdentity} />
+      case 'workbench': return <Workbench identity={activeIdentity} permissions={me.data.permissions} go={navigate} />
+      case 'hotel-dashboard': return <HotelDashboardPage identity={activeIdentity} routeParams={routeParams} go={navigate} />
       case 'operations-dashboard': return <OperationsDashboardPage identity={activeIdentity} />
       case 'work-packages': return <WorkPackageCenter identity={activeIdentity} permissions={me.data.permissions} />
-      case 'my-work': return <MyWork identity={activeIdentity} />
-      case 'team-work': return <TeamWork identity={activeIdentity} permissions={me.data.permissions} />
+      case 'my-work': return <MyWork identity={activeIdentity} routeParams={routeParams} go={navigate} />
+      case 'team-work': return <TeamWork identity={activeIdentity} permissions={me.data.permissions} routeParams={routeParams} />
       case 'rules': return <Rules identity={activeIdentity} permissions={me.data.permissions} />
-      case 'tasks': return <Tasks identity={activeIdentity} permissions={me.data.permissions} />
-      case 'evaluations': return <Evaluations identity={activeIdentity} />
-      case 'notifications': return <Notifications identity={activeIdentity} />
+      case 'tasks': return <Tasks identity={activeIdentity} permissions={me.data.permissions} routeParams={routeParams} go={navigate} />
+      case 'evaluations': return <Evaluations identity={activeIdentity} routeParams={routeParams} go={navigate} />
+      case 'notifications': return <Notifications identity={activeIdentity} routeParams={routeParams} go={navigate} />
       case 'templates': return <EnterpriseTemplateCenter identity={activeIdentity} permissions={me.data.permissions} />
       case 'organization': return <OrganizationCenter identity={activeIdentity} permissions={me.data.permissions} />
     }
-  }, [view, activeIdentity, me.data.permissions, me.error, me.loading])
+  }, [view, routeParams, activeIdentity, me.data.permissions, me.error, me.loading])
   const changeRole = (key: string) => {
     const next = roleContexts.find((role) => role.key === key)
     if (!next) return
     try { localStorage.setItem(roleStorageKey, next.key) } catch { /* role still changes for this session */ }
     setIdentity(next)
-    setView('workbench')
+    navigate('workbench')
   }
 
   return <div className="shell">
     <aside className="sidebar"><div className="brand-mark"><div>四</div><span><strong>{product.name}</strong><small>{product.edition} · {product.editionLabel}</small></span></div>
-      <nav>{visibleNavigation.map((item, index) => <div key={item.id}>{item.group && <span className="nav-group">{item.group}</span>}<button className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{item.label}</span>{item.id === 'notifications' && unreadCount > 0 && <b>{unreadCount}</b>}</button>{index === 0 && <div className="nav-separator" />}</div>)}</nav>
+      <nav>{visibleNavigation.map((item, index) => <div key={item.id}>{item.group && <span className="nav-group">{item.group}</span>}<button className={view === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><i>{item.icon}</i><span>{item.label}</span>{item.id === 'notifications' && unreadCount > 0 && <b>{unreadCount}</b>}</button>{index === 0 && <div className="nav-separator" />}</div>)}</nav>
       <div className="sidebar-footer"><span>{product.version}</span><small>标准 → 工作 → 任务 → 执行 → 验收</small></div>
     </aside>
     <main><header className="topbar"><div className={`connection ${me.error ? 'offline' : pilotDemoMode ? 'demo' : ''}`}><span className="live-dot" />{pilotDemoMode ? 'Pilot 演示数据' : me.error ? '身份接口异常' : '服务端权限已解析'}<small>{pilotDemoMode ? '仅用于界面与流程走查，不代表真实业务数据或权限' : authMode === 'dev-header' ? '本地验收账号 · 权限由数据库决定' : 'JWT/SSO 会话身份'}</small></div><span className="pilot-badge">{product.editionLabel}</span>
       {authMode === 'dev-header' && <label className="context-select"><span>验收账号</span><select value={identity.key} onChange={(event) => changeRole(event.target.value)}>{roleContexts.map((role) => <option value={role.key} key={role.key}>{role.label} · {role.userName}</option>)}</select></label>}
       {!!me.data.assignments.length && <label className="context-select"><span>当前任职</span><select value={selectedAssignment?.id ?? ''} onChange={(event) => setSelectedAssignmentId(event.target.value)}>{me.data.assignments.map((assignment) => <option value={assignment.id} key={assignment.id}>{assignment.positionName} · {assignment.orgName}{assignment.primary ? '（主岗）' : ''}</option>)}</select></label>}
-      <button className="bell" onClick={() => setView('notifications')} aria-label="通知">◉{unreadCount > 0 && <b>{unreadCount}</b>}</button>
+      <button className="bell" onClick={() => navigate('notifications')} aria-label="通知">◉{unreadCount > 0 && <b>{unreadCount}</b>}</button>
       <div className="user"><span>{activeIdentity.userName.slice(-1)}</span><div><strong>{activeIdentity.userName}</strong><small>{activeIdentity.label}</small></div></div>
       {authMode === 'bearer' && <button className="logout-button" onClick={onLogout}>退出</button>}
     </header>

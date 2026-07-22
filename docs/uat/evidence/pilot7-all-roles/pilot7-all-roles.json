@@ -1,0 +1,94 @@
+{
+  "generatedAt": "2026-07-21T20:40:42.065Z",
+  "version": "TECH-V0.2-PILOT.7",
+  "webBase": "https://www.sfgzt.cn",
+  "passed": true,
+  "summary": {
+    "passed": 8,
+    "total": 8,
+    "failed": 0
+  },
+  "results": [
+    {
+      "login": "front.demo",
+      "home": "workbench",
+      "homeTitle": "前台员工工作台",
+      "expectedCanCreate": false,
+      "createButtonVisible": false,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "fo.supervisor",
+      "home": "workbench",
+      "homeTitle": "前厅主管工作台",
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "hk.supervisor",
+      "home": "workbench",
+      "homeTitle": "客房主管工作台",
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "assistant.gm",
+      "home": "hotel-dashboard",
+      "homeTitle": "门店门店驾驶舱",
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "gm.hz",
+      "home": "hotel-dashboard",
+      "homeTitle": "门店门店驾驶舱",
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "ota.assistant",
+      "home": "tasks?view=team",
+      "homeTitle": "任务中心",
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "ota.manager",
+      "home": "operations-dashboard",
+      "homeTitle": "区域多门店运营视图",
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "ceo.demo",
+      "home": "hotel-dashboard",
+      "homeTitle": "门店门店驾驶舱",
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "apiFailures": [],
+      "passed": true
+    }
+  ],
+  "credentialsPersistedInEvidence": false
+}

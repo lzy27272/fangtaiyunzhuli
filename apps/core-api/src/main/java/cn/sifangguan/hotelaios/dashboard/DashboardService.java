@@ -2,6 +2,7 @@ package cn.sifangguan.hotelaios.dashboard;
 
 import cn.sifangguan.hotelaios.shared.context.TenantPrincipal;
 import cn.sifangguan.hotelaios.shared.db.TenantDatabaseContext;
+import cn.sifangguan.hotelaios.shared.security.AccessDeniedException;
 import cn.sifangguan.hotelaios.shared.security.AccessPolicy;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -61,7 +62,7 @@ public class DashboardService {
     public Map<String, Object> hotelDashboard(UUID hotelId) {
         accessPolicy.requirePermission("dashboard.hotel");
         TenantPrincipal principal = prepare();
-        accessPolicy.requireOrgScope(hotelId);
+        requireHotelScope(principal, hotelId);
         MapSqlParameterSource params = base(principal).addValue("hotelId", hotelId);
         Map<String, Object> hotel = jdbc.queryForMap("""
                 select o.id, o.name, h.city, h.room_count
@@ -136,8 +137,10 @@ public class DashboardService {
                     and exists (
                       select 1 from org_unit_closure visible
                       where visible.tenant_id = hotel.tenant_id
-                        and visible.descendant_id = hotel.id
-                        and visible.ancestor_id in (:scopeIds)
+                        and (
+                          (visible.descendant_id = hotel.id and visible.ancestor_id in (:scopeIds))
+                          or (visible.ancestor_id = hotel.id and visible.descendant_id in (:scopeIds))
+                        )
                     )
                     """;
         }
@@ -183,6 +186,38 @@ public class DashboardService {
                         + number(item.get("failed_evaluation_count")) + number(item.get("missed_work_count")))
                 .sum();
         return Map.of("hotelCount", hotels.size(), "riskCount", riskCount, "hotels", hotels);
+    }
+
+    /**
+     * Dashboard-specific scope: a hotel manager scoped to a department may
+     * inspect the containing hotel dashboard. This intentionally does not
+     * alter generic organization or record permissions.
+     */
+    private void requireHotelScope(TenantPrincipal principal, UUID hotelId) {
+        if (principal.hasTenantScope()) {
+            return;
+        }
+        if (principal.orgScopes().isEmpty()) {
+            throw new AccessDeniedException("Hotel dashboard is outside the current authorization range");
+        }
+        Integer visible = jdbc.queryForObject("""
+                select count(*)
+                from org_unit hotel
+                where hotel.tenant_id = :tenantId and hotel.id = :hotelId
+                  and hotel.unit_type = 'HOTEL' and hotel.status = 'ACTIVE'
+                  and exists (
+                    select 1 from org_unit_closure relation
+                    where relation.tenant_id = hotel.tenant_id
+                      and (
+                        (relation.descendant_id = hotel.id and relation.ancestor_id in (:scopeIds))
+                        or (relation.ancestor_id = hotel.id and relation.descendant_id in (:scopeIds))
+                      )
+                  )
+                """, base(principal).addValue("hotelId", hotelId)
+                .addValue("scopeIds", principal.orgScopes()), Integer.class);
+        if (visible == null || visible != 1) {
+            throw new AccessDeniedException("Hotel dashboard is outside the current authorization range");
+        }
     }
 
     private List<Map<String, Object>> hotelRisks(MapSqlParameterSource params) {
