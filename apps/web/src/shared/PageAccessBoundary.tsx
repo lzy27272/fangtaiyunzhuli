@@ -5,14 +5,16 @@ export function PageAccessBoundary({
   permissions,
   requiredAny,
   requiredAll = [],
+  allowed = true,
   children,
 }: {
   permissions: string[]
   requiredAny: readonly string[]
   requiredAll?: readonly string[]
+  allowed?: boolean
   children: ReactNode
 }) {
-  if (hasAllPermissions(permissions, requiredAll) && hasAnyPermission(permissions, requiredAny)) return children
+  if (allowed && hasAllPermissions(permissions, requiredAll) && hasAnyPermission(permissions, requiredAny)) return children
   return <section className="page-section">
     <div className="state-card error-state" role="alert">
       <b>!</b>

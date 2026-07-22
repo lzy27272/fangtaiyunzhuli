@@ -118,13 +118,13 @@ export const dailyFeatureRoutes: readonly RouteDefinition[] = [
     id: 'daily-operation-snapshot-detail',
     pattern: '/daily-operations/snapshots/:snapshotId',
     sectionId: 'daily-operations',
-    requiredAny: [permissions.snapshot.read, permissions.dailyOperations.readHotel, permissions.dailyOperations.readCrossHotel],
+    requiredAny: [permissions.snapshot.read],
   },
   {
     id: 'daily-operation-snapshots',
     pattern: '/daily-operations/snapshots',
     sectionId: 'daily-operations',
-    requiredAny: [permissions.snapshot.read, permissions.dailyOperations.readHotel, permissions.dailyOperations.readCrossHotel],
+    requiredAny: [permissions.snapshot.read],
   },
   {
     id: 'daily-operation-exports',
@@ -211,6 +211,10 @@ export function requiredPermissionsForRoute(view: AppRouteId): readonly string[]
   return featureById.get(view as DailyFeatureRouteId)?.requiredAny ?? []
 }
 
-export function requiredAllPermissionsForRoute(view: AppRouteId): readonly string[] {
-  return featureById.get(view as DailyFeatureRouteId)?.requiredAll ?? []
+export function requiredAllPermissionsForRoute(view: AppRouteId, params: RouteParams = {}): readonly string[] {
+  const configured = featureById.get(view as DailyFeatureRouteId)?.requiredAll ?? []
+  if (view === 'daily-operations' && params.mode === 'SNAPSHOT') {
+    return [...configured, permissions.snapshot.read]
+  }
+  return configured
 }

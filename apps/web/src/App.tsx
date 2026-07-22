@@ -63,7 +63,7 @@ const DailyOperationFeature = lazy(() => import('./features/dailyOperations/Dail
 const navigation: Array<{ id: AppRouteId; sectionId?: string; label: string; icon: string; group?: string; permissions?: string[]; roles?: string[] }> = [
   { id: 'workbench', label: '角色工作台', icon: '⌂' },
   { id: 'hotel-dashboard', label: '门店驾驶舱', icon: '▤', group: '管理驾驶舱', permissions: ['dashboard.hotel'] },
-  { id: 'operations-dashboard', label: '区域多门店', icon: '▥', group: '管理驾驶舱', roles: ['OTA_OPERATION_MANAGER'] },
+  { id: 'operations-dashboard', label: '区域多门店', icon: '▥', group: '管理驾驶舱', permissions: ['dashboard.hotel'], roles: ['OTA_OPERATION_MANAGER'] },
   { id: 'work-packages', label: '工作包中心', icon: '▦', group: '标准与工作', permissions: ['work-package.read', 'work-package.manage', 'standard.read'] },
   { id: 'my-work', label: '我的工作', icon: '✓', permissions: ['work-record.read', 'work-record.submit', 'work.submit'] },
   { id: 'team-work', label: '团队工作', icon: '◎', permissions: ['work-record.review', 'work-record.read-team'] },
@@ -686,13 +686,17 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
   }), [identity])
   const me = useResource(`${identity.key}:me`, () => loadIdentity(identity, fallbackIdentity), fallbackIdentity)
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(identity.assignmentId ?? '')
+  const compatibleAssignments = useMemo(() => authMode !== 'bearer'
+    ? me.data.assignments
+    : me.data.assignments.filter((assignment) => assignment.positionCode === me.data.primaryRoleCode),
+  [me.data.assignments, me.data.primaryRoleCode])
   useEffect(() => {
-    const preferred = me.data.assignments.find((item) => item.primary) ?? me.data.assignments[0]
+    const preferred = compatibleAssignments.find((item) => item.primary) ?? compatibleAssignments[0]
     setSelectedAssignmentId(preferred?.id ?? (authMode === 'bearer' ? '' : identity.assignmentId ?? ''))
-  }, [identity.key, me.data.assignments])
-  const selectedAssignment = me.data.assignments.find((item) => item.id === selectedAssignmentId)
-    ?? me.data.assignments.find((item) => item.primary)
-    ?? me.data.assignments[0]
+  }, [identity.key, compatibleAssignments])
+  const selectedAssignment = compatibleAssignments.find((item) => item.id === selectedAssignmentId)
+    ?? compatibleAssignments.find((item) => item.primary)
+    ?? compatibleAssignments[0]
   const resolvedRoleContext = roleContexts.find((role) => role.roleCode === me.data.primaryRoleCode)
   const activeIdentity: RoleContext = useMemo(() => ({
     ...(resolvedRoleContext ?? identity),
@@ -738,25 +742,37 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
       return <PageAccessBoundary
         permissions={me.data.permissions}
         requiredAny={requiredPermissionsForRoute(view)}
-        requiredAll={requiredAllPermissionsForRoute(view)}
+        requiredAll={requiredAllPermissionsForRoute(view, routeParams)}
       >
         <Suspense fallback={<div className="state-card"><div className="spinner" /><strong>正在加载业务模块</strong></div>}>{feature}</Suspense>
       </PageAccessBoundary>
     }
+    let legacyPage: React.ReactNode
     switch (view) {
-      case 'workbench': return <Workbench identity={activeIdentity} permissions={me.data.permissions} go={navigate} />
-      case 'hotel-dashboard': return <HotelDashboardPage identity={activeIdentity} routeParams={routeParams} go={navigate} />
-      case 'operations-dashboard': return <OperationsDashboardPage identity={activeIdentity} />
-      case 'work-packages': return <WorkPackageCenter identity={activeIdentity} permissions={me.data.permissions} />
-      case 'my-work': return <MyWork identity={activeIdentity} routeParams={routeParams} go={navigate} />
-      case 'team-work': return <TeamWork identity={activeIdentity} permissions={me.data.permissions} routeParams={routeParams} />
-      case 'rules': return <Rules identity={activeIdentity} permissions={me.data.permissions} />
-      case 'tasks': return <Tasks identity={activeIdentity} permissions={me.data.permissions} routeParams={routeParams} go={navigate} />
-      case 'evaluations': return <Evaluations identity={activeIdentity} routeParams={routeParams} go={navigate} />
-      case 'notifications': return <Notifications identity={activeIdentity} routeParams={routeParams} go={navigate} />
-      case 'templates': return <EnterpriseTemplateCenter identity={activeIdentity} permissions={me.data.permissions} />
-      case 'organization': return <OrganizationCenter identity={activeIdentity} permissions={me.data.permissions} />
+      case 'workbench': legacyPage = <Workbench identity={activeIdentity} permissions={me.data.permissions} go={navigate} />; break
+      case 'hotel-dashboard': legacyPage = <HotelDashboardPage identity={activeIdentity} routeParams={routeParams} go={navigate} />; break
+      case 'operations-dashboard': legacyPage = <OperationsDashboardPage identity={activeIdentity} />; break
+      case 'work-packages': legacyPage = <WorkPackageCenter identity={activeIdentity} permissions={me.data.permissions} />; break
+      case 'my-work': legacyPage = <MyWork identity={activeIdentity} routeParams={routeParams} go={navigate} />; break
+      case 'team-work': legacyPage = <TeamWork identity={activeIdentity} permissions={me.data.permissions} routeParams={routeParams} />; break
+      case 'rules': legacyPage = <Rules identity={activeIdentity} permissions={me.data.permissions} />; break
+      case 'tasks': legacyPage = <Tasks identity={activeIdentity} permissions={me.data.permissions} routeParams={routeParams} go={navigate} />; break
+      case 'evaluations': legacyPage = <Evaluations identity={activeIdentity} routeParams={routeParams} go={navigate} />; break
+      case 'notifications': legacyPage = <Notifications identity={activeIdentity} routeParams={routeParams} go={navigate} />; break
+      case 'templates': legacyPage = <EnterpriseTemplateCenter identity={activeIdentity} permissions={me.data.permissions} />; break
+      case 'organization': legacyPage = <OrganizationCenter identity={activeIdentity} permissions={me.data.permissions} />; break
     }
+    const routeAccess = navigation.find((item) => item.id === view)
+    const contextAllowed = (view !== 'my-work' || Boolean(activeIdentity.assignmentId)) &&
+      (!routeAccess?.roles?.length || routeAccess.roles.includes(activeIdentity.roleCode))
+    const boundaryPermissions = demoFallbackEnabled && me.source === 'demo' ? ['*'] : me.data.permissions
+    return <PageAccessBoundary
+      permissions={boundaryPermissions}
+      requiredAny={routeAccess?.permissions ?? []}
+      allowed={contextAllowed}
+    >
+      {legacyPage}
+    </PageAccessBoundary>
   }, [view, routeParams, activeIdentity, me.data.permissions, me.error, me.loading])
   const changeRole = (key: string) => {
     const next = roleContexts.find((role) => role.key === key)
@@ -773,7 +789,7 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
     </aside>
     <main><header className="topbar"><div className={`connection ${me.error ? 'offline' : pilotDemoMode ? 'demo' : ''}`}><span className="live-dot" />{pilotDemoMode ? 'Pilot 演示数据' : me.error ? '身份接口异常' : '服务端权限已解析'}<small>{pilotDemoMode ? '仅用于界面与流程走查，不代表真实业务数据或权限' : authMode === 'dev-header' ? '本地验收账号 · 权限由数据库决定' : 'JWT/SSO 会话身份'}</small></div><span className="pilot-badge">{product.editionLabel}</span>
       {authMode === 'dev-header' && <label className="context-select"><span>验收账号</span><select value={identity.key} onChange={(event) => changeRole(event.target.value)}>{roleContexts.map((role) => <option value={role.key} key={role.key}>{role.label} · {role.userName}</option>)}</select></label>}
-      {!!me.data.assignments.length && <label className="context-select"><span>当前任职</span><select value={selectedAssignment?.id ?? ''} onChange={(event) => setSelectedAssignmentId(event.target.value)}>{me.data.assignments.map((assignment) => <option value={assignment.id} key={assignment.id}>{assignment.positionName} · {assignment.orgName}{assignment.primary ? '（主岗）' : ''}</option>)}</select></label>}
+      {!!compatibleAssignments.length && <label className="context-select"><span>当前任职</span><select value={selectedAssignment?.id ?? ''} onChange={(event) => setSelectedAssignmentId(event.target.value)}>{compatibleAssignments.map((assignment) => <option value={assignment.id} key={assignment.id}>{assignment.positionName} · {assignment.orgName}{assignment.primary ? '（主岗）' : ''}</option>)}</select></label>}
       <button className="bell" onClick={() => navigate('notifications')} aria-label="通知">◉{unreadCount > 0 && <b>{unreadCount}</b>}</button>
       <div className="user"><span>{activeIdentity.userName.slice(-1)}</span><div><strong>{activeIdentity.userName}</strong><small>{activeIdentity.label}</small></div></div>
       {authMode === 'bearer' && <button className="logout-button" onClick={onLogout}>退出</button>}
