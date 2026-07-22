@@ -28,6 +28,12 @@ import java.util.*;
 
 @Service
 public class TaskService {
+    private enum CreationSource {
+        MANUAL,
+        RULE_ENGINE,
+        TASK_CANDIDATE
+    }
+
     private static final Map<String, Map<String, String>> TRANSITIONS = Map.of(
             "DISPATCH", Map.of("PROPOSED", "PENDING_ACK"),
             "ACKNOWLEDGE", Map.of("PENDING_ACK", "IN_PROGRESS"),
@@ -205,7 +211,7 @@ public class TaskService {
                 null, null, request.orgUnitId(), request.assigneeAssignmentId(), reviewerAssignmentId,
                 request.standardVersionId(), request.workRecordId(), request.title(), request.description(),
                 request.priority(), request.dueAt(), request.sourceSnapshot());
-        UUID id = createTask(spec, idempotencyKey, false);
+        UUID id = createTask(spec, idempotencyKey, CreationSource.MANUAL);
         if (Boolean.TRUE.equals(request.dispatchNow())) {
             accessPolicy.requirePermission("task.dispatch");
             Map<String, Object> row = taskRow(principal, id, true);
@@ -224,7 +230,7 @@ public class TaskService {
     @Transactional
     public UUID createFromRule(TaskModels.RuleTaskSpec spec, String idempotencyKey) {
         prepare();
-        UUID taskId = createTask(spec, idempotencyKey, true);
+        UUID taskId = createTask(spec, idempotencyKey, CreationSource.RULE_ENGINE);
         Map<String, Object> row = taskRow(accessPolicy.principal(), taskId, true);
         if ("PROPOSED".equals(row.get("lifecycle_status"))) {
             TaskModels.Command dispatch = new TaskModels.Command(((Number) row.get("row_version")).longValue(), null,
@@ -232,6 +238,60 @@ public class TaskService {
             transition(taskId, "DISPATCH", idempotencyKey + ":dispatch", dispatch, true, null);
         }
         return taskId;
+    }
+
+    @Transactional
+    public UUID createFromCandidate(TaskModels.CandidateTaskSpec candidate, String idempotencyKey) {
+        prepare();
+        ObjectNode sourceSnapshot = JsonNodeFactory.instance.objectNode();
+        if (candidate.sourceSnapshot() != null && candidate.sourceSnapshot().isObject()) {
+            sourceSnapshot.setAll((ObjectNode) candidate.sourceSnapshot().deepCopy());
+        } else if (candidate.sourceSnapshot() != null) {
+            sourceSnapshot.set("candidateSource", candidate.sourceSnapshot().deepCopy());
+        }
+        sourceSnapshot.put("taskCandidateId", candidate.candidateId().toString());
+        TaskModels.RuleTaskSpec spec = new TaskModels.RuleTaskSpec(
+                null,
+                null,
+                candidate.orgUnitId(),
+                candidate.assigneeAssignmentId(),
+                candidate.reviewerAssignmentId(),
+                candidate.standardVersionId(),
+                null,
+                candidate.title(),
+                candidate.description(),
+                candidate.priority(),
+                candidate.dueAt(),
+                sourceSnapshot
+        );
+        UUID taskId = createTask(spec, idempotencyKey, CreationSource.TASK_CANDIDATE);
+        Map<String, Object> row = taskRow(accessPolicy.principal(), taskId, true);
+        if ("PROPOSED".equals(row.get("lifecycle_status"))) {
+            TaskModels.Command dispatch = new TaskModels.Command(
+                    ((Number) row.get("row_version")).longValue(),
+                    null,
+                    JsonNodeFactory.instance.objectNode()
+                            .put("source", CreationSource.TASK_CANDIDATE.name())
+                            .put("taskCandidateId", candidate.candidateId().toString())
+            );
+            transition(taskId, "DISPATCH", idempotencyKey + ":dispatch", dispatch, true, null);
+        }
+        return taskId;
+    }
+
+    /** Read-only service contract for closed-loop modules; controllers still use detail(). */
+    @Transactional(readOnly = true)
+    public TaskModels.TaskReference integrationReference(UUID taskId) {
+        TenantPrincipal principal = prepare();
+        Map<String, Object> row = taskRow(principal, taskId, false);
+        return new TaskModels.TaskReference(
+                (UUID) row.get("id"),
+                String.valueOf(row.get("task_no")),
+                (UUID) row.get("org_unit_id"),
+                String.valueOf(row.get("title")),
+                String.valueOf(row.get("lifecycle_status")),
+                ((Number) row.get("row_version")).longValue()
+        );
     }
 
     @Transactional
@@ -523,7 +583,7 @@ public class TaskService {
         return result;
     }
 
-    private UUID createTask(TaskModels.RuleTaskSpec spec, String idempotencyKey, boolean fromRule) {
+    private UUID createTask(TaskModels.RuleTaskSpec spec, String idempotencyKey, CreationSource source) {
         TenantPrincipal principal = accessPolicy.principal();
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new IllegalArgumentException("Idempotency-Key不能为空");
@@ -540,7 +600,7 @@ public class TaskService {
         if (spec.assigneeAssignmentId().equals(spec.reviewerAssignmentId())) {
             throw new IllegalArgumentException("任务责任人与验收人不得为同一任职");
         }
-        if (fromRule || principal.hasTenantScope()) {
+        if (source != CreationSource.MANUAL || principal.hasTenantScope()) {
             requireAssignment(principal, spec.assigneeAssignmentId());
             requireAssignment(principal, spec.reviewerAssignmentId());
         }
@@ -596,7 +656,7 @@ public class TaskService {
                 .addValue("taskId", taskId)
                 .addValue("actorId", principal.actorId())
                 .addValue("key", idempotencyKey + ":create")
-                .addValue("payload", fromRule ? "{\"source\":\"RULE_ENGINE\"}" : "{\"source\":\"MANUAL\"}"));
+                .addValue("payload", "{\"source\":\"" + source.name() + "\"}"));
         if (spec.dueAt() != null) {
             jdbc.update("""
                     insert into task_escalation
@@ -608,7 +668,8 @@ public class TaskService {
                     .addValue("scheduledAt", spec.dueAt().plusHours(defaultEscalationDelayHours))
                     .addValue("reviewerAssignmentId", spec.reviewerAssignmentId()));
         }
-        auditWriter.record("TASK_CREATED", "TASK", taskId, "{\"taskNo\":\"" + taskNo + "\"}");
+        auditWriter.record("TASK_CREATED", "TASK", taskId,
+                "{\"taskNo\":\"" + taskNo + "\",\"source\":\"" + source.name() + "\"}");
         auditWriter.emit("TASK", taskId, "TaskCreated", "{\"taskId\":\"" + taskId + "\"}");
         return taskId;
     }

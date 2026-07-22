@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { apiCommand, apiRequest, authMode, clearAccessToken, demoFallbackEnabled, hasAccessToken, login } from './api/client'
 import {
   addWorkRecordSupplement,
@@ -42,28 +42,42 @@ import type {
   RuleVersionDraft,
   RoleContext,
   StandardEvaluation,
-  ViewId,
   WorkExpectation,
   WorkRecordDetail,
 } from './domain'
 import { useResource } from './useResource'
+import { permissions as permissionCodes } from './app/permissions'
+import {
+  isDailyFeatureRoute,
+  requiredAllPermissionsForRoute,
+  requiredPermissionsForRoute,
+  type AppRouteId,
+} from './app/routeConfig'
+import { useHashRoute } from './app/useHashRoute'
+import { PageAccessBoundary } from './shared/PageAccessBoundary'
 
-const navigation: Array<{ id: ViewId; label: string; icon: string; group?: string; permissions?: string[]; roles?: string[] }> = [
+const DailyReportFeature = lazy(() => import('./features/dailyReports/DailyReportRoutes').then((module) => ({ default: module.DailyReportRoutes })))
+const DailyReportTemplateFeature = lazy(() => import('./features/dailyReportTemplates/DailyReportTemplateRoutes').then((module) => ({ default: module.DailyReportTemplateRoutes })))
+const DailyOperationFeature = lazy(() => import('./features/dailyOperations/DailyOperationRoutes').then((module) => ({ default: module.DailyOperationRoutes })))
+
+const navigation: Array<{ id: AppRouteId; sectionId?: string; label: string; icon: string; group?: string; permissions?: string[]; roles?: string[] }> = [
   { id: 'workbench', label: '角色工作台', icon: '⌂' },
   { id: 'hotel-dashboard', label: '门店驾驶舱', icon: '▤', group: '管理驾驶舱', permissions: ['dashboard.hotel'] },
   { id: 'operations-dashboard', label: '区域多门店', icon: '▥', group: '管理驾驶舱', roles: ['OTA_OPERATION_MANAGER'] },
   { id: 'work-packages', label: '工作包中心', icon: '▦', group: '标准与工作', permissions: ['work-package.read', 'work-package.manage', 'standard.read'] },
   { id: 'my-work', label: '我的工作', icon: '✓', permissions: ['work-record.read', 'work-record.submit', 'work.submit'] },
   { id: 'team-work', label: '团队工作', icon: '◎', permissions: ['work-record.review', 'work-record.read-team'] },
+  { id: 'daily-reports-my', sectionId: 'daily-reports', label: '日报中心', icon: '▣', group: '日报与运营', permissions: [permissionCodes.dailyReport.readOwn, permissionCodes.dailyReport.submit, permissionCodes.dailyReport.readTeam] },
+  { id: 'daily-operations', label: '日运营中心', icon: '◫', permissions: [permissionCodes.dailyOperations.readHotel, permissionCodes.dailyOperations.readCrossHotel] },
   { id: 'rules', label: '企业规则中心', icon: '◇', group: '管理闭环', permissions: ['rule.read', 'rule.manage'] },
   { id: 'tasks', label: '任务中心', icon: '↗', permissions: ['task.read', 'task.act', 'task.review'] },
   { id: 'evaluations', label: '标准评价', icon: '★', permissions: ['evaluation.read', 'evaluation.manual-review'] },
   { id: 'notifications', label: '通知中心', icon: '◉', permissions: ['notification.read'] },
   { id: 'templates', label: '集团模板配置', icon: '▧', group: '系统配置', permissions: ['template.manage'] },
+  { id: 'daily-report-templates', label: '日报模板中心', icon: '▤', permissions: [permissionCodes.dailyReportTemplate.read, permissionCodes.dailyReportTemplate.edit, permissionCodes.dailyReportTemplate.publish] },
   { id: 'organization', label: '组织与权限', icon: '⚙', group: '系统配置', permissions: ['org.read'] },
 ]
 
-const viewIds = new Set<ViewId>(navigation.map((item) => item.id))
 const roleStorageKey = 'hotel-ai-os-role:v1'
 const statusText: Record<string, string> = {
   DRAFT: '草稿', PUBLISHED: '已发布', RETIRED: '已停用', PENDING: '待完成',
@@ -74,35 +88,6 @@ const statusText: Record<string, string> = {
   AWAITING_REVIEW: '待验收', REWORK: '返工中', CANCELLED: '已取消',
   PASS: '通过', WARNING: '预警', FAIL: '不通过', PENDING_MANUAL: '待人工', PENDING_AI: '待AI',
   ON_TIME: '正常', DUE_SOON: '即将到期', HIGH: '高', URGENT: '紧急', NORMAL: '普通', LOW: '低',
-}
-
-function useHashRoute() {
-  const read = () => {
-    const raw = window.location.hash.replace(/^#\/?/, '')
-    const queryIndex = raw.indexOf('?')
-    const path = (queryIndex >= 0 ? raw.slice(0, queryIndex) : raw).split('/')[0] as ViewId
-    const search = new URLSearchParams(queryIndex >= 0 ? raw.slice(queryIndex + 1) : '')
-    return {
-      view: viewIds.has(path) ? path : 'workbench',
-      params: Object.fromEntries(search.entries()) as RouteParams,
-    }
-  }
-  const [route, setRoute] = useState(read)
-  useEffect(() => {
-    const listener = () => setRoute(read())
-    window.addEventListener('hashchange', listener)
-    return () => window.removeEventListener('hashchange', listener)
-  }, [])
-  const navigate: Navigate = (next, params = {}) => {
-    const search = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') search.set(key, value)
-    })
-    const nextHash = `/${next}${search.size ? `?${search.toString()}` : ''}`
-    window.location.hash = nextHash
-    setRoute(read())
-  }
-  return [route, navigate] as const
 }
 
 function formatDate(value?: string, includeTime = true) {
@@ -676,7 +661,7 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 
 function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
   const [route, navigate] = useHashRoute()
-  const { view, params: routeParams } = route
+  const { view, params: routeParams, sectionId } = route
   let storedRole: string | null = null
   try { storedRole = localStorage.getItem(roleStorageKey) } catch { /* private mode may disable storage */ }
   const [identity, setIdentity] = useState<RoleContext>(() => roleContexts.find((role) => role.key === storedRole) ?? roleContexts.find((role) => role.key === 'front-desk') ?? roleContexts[0])
@@ -730,12 +715,33 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
     if (item.id === 'my-work' && !activeIdentity.assignmentId) return false
     if (item.roles?.length && !item.roles.includes(activeIdentity.roleCode)) return false
     return !item.permissions?.length ||
-      (demoFallbackEnabled && me.source === 'demo') ||
+      (demoFallbackEnabled && me.source === 'demo' && !isDailyFeatureRoute(item.id)) ||
+      me.data.permissions.includes('*') ||
       item.permissions.some((permission) => me.data.permissions.includes(permission))
   })
+  const navigationTarget = (id: AppRouteId): AppRouteId => {
+    if (id !== 'daily-reports-my') return id
+    const canUseOwnReport = Boolean(activeIdentity.assignmentId) &&
+      (me.data.permissions.includes('*') || me.data.permissions.includes(permissionCodes.dailyReport.readOwn) || me.data.permissions.includes(permissionCodes.dailyReport.submit))
+    return canUseOwnReport ? 'daily-reports-my' : 'daily-reports-team'
+  }
   const page = useMemo(() => {
     if (authMode === 'bearer' && (me.loading || me.error)) {
       return <section className="page-section"><div className="empty-state"><strong>{me.error ? '身份与权限读取失败' : '正在读取身份与权限'}</strong><span>{me.error ?? '系统将在权限解析完成后加载业务页面，避免使用错误的岗位或组织范围。'}</span></div></section>
+    }
+    if (isDailyFeatureRoute(view)) {
+      const feature = view.startsWith('daily-report-template')
+        ? <DailyReportTemplateFeature view={view} params={routeParams} identity={activeIdentity} grantedPermissions={me.data.permissions} go={navigate} />
+        : view.startsWith('daily-report')
+          ? <DailyReportFeature view={view} params={routeParams} identity={activeIdentity} grantedPermissions={me.data.permissions} go={navigate} />
+          : <DailyOperationFeature view={view} params={routeParams} identity={activeIdentity} grantedPermissions={me.data.permissions} go={navigate} />
+      return <PageAccessBoundary
+        permissions={me.data.permissions}
+        requiredAny={requiredPermissionsForRoute(view)}
+        requiredAll={requiredAllPermissionsForRoute(view)}
+      >
+        <Suspense fallback={<div className="state-card"><div className="spinner" /><strong>正在加载业务模块</strong></div>}>{feature}</Suspense>
+      </PageAccessBoundary>
     }
     switch (view) {
       case 'workbench': return <Workbench identity={activeIdentity} permissions={me.data.permissions} go={navigate} />
@@ -762,7 +768,7 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
 
   return <div className="shell">
     <aside className="sidebar"><div className="brand-mark"><div>四</div><span><strong>{product.name}</strong><small>{product.edition} · {product.editionLabel}</small></span></div>
-      <nav>{visibleNavigation.map((item, index) => <div key={item.id}>{item.group && <span className="nav-group">{item.group}</span>}<button className={view === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><i>{item.icon}</i><span>{item.label}</span>{item.id === 'notifications' && unreadCount > 0 && <b>{unreadCount}</b>}</button>{index === 0 && <div className="nav-separator" />}</div>)}</nav>
+      <nav>{visibleNavigation.map((item, index) => <div key={item.id}>{item.group && <span className="nav-group">{item.group}</span>}<button className={sectionId === (item.sectionId ?? item.id) ? 'active' : ''} onClick={() => navigate(navigationTarget(item.id))}><i>{item.icon}</i><span>{item.label}</span>{item.id === 'notifications' && unreadCount > 0 && <b>{unreadCount}</b>}</button>{index === 0 && <div className="nav-separator" />}</div>)}</nav>
       <div className="sidebar-footer"><span>{product.version}</span><small>标准 → 工作 → 任务 → 执行 → 验收</small></div>
     </aside>
     <main><header className="topbar"><div className={`connection ${me.error ? 'offline' : pilotDemoMode ? 'demo' : ''}`}><span className="live-dot" />{pilotDemoMode ? 'Pilot 演示数据' : me.error ? '身份接口异常' : '服务端权限已解析'}<small>{pilotDemoMode ? '仅用于界面与流程走查，不代表真实业务数据或权限' : authMode === 'dev-header' ? '本地验收账号 · 权限由数据库决定' : 'JWT/SSO 会话身份'}</small></div><span className="pilot-badge">{product.editionLabel}</span>

@@ -32,7 +32,7 @@ class PostgresBackupRestoreRollbackIntegrationTest {
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
 
     @Test
-    void coldPhysicalBackupRestoresV16AndRollsBackPostBackupMutation() throws Exception {
+    void coldPhysicalBackupRestoresV21AndRollsBackPostBackupMutation() throws Exception {
         String runId = safeName(System.getProperty("release.drill-run-id", "manual"));
         Path evidenceDir = requiredDirectory("release.evidence-dir");
         Path drillRoot = Path.of(System.getProperty("java.io.tmpdir"), "hotel-ai-os-release-db-drill", runId)
@@ -56,7 +56,7 @@ class PostgresBackupRestoreRollbackIntegrationTest {
                     .load()
                     .migrate()
                     .migrationsExecuted;
-            assertEquals(16, migrationsExecuted);
+            assertEquals(21, migrationsExecuted);
             execute(owner, """
                     create table release_drill_marker (
                       marker varchar(80) primary key,
@@ -103,6 +103,12 @@ class PostgresBackupRestoreRollbackIntegrationTest {
                      where n.nspname = 'public' and c.relkind = 'r'
                        and c.relrowsecurity and c.relforcerowsecurity
                     """));
+            verification.put("dailyReportForcedRls", scalarBoolean(owner,
+                    "select relrowsecurity and relforcerowsecurity from pg_class where oid = 'daily_report'::regclass"));
+            verification.put("issueEventForcedRls", scalarBoolean(owner,
+                    "select relrowsecurity and relforcerowsecurity from pg_class where oid = 'issue_event'::regclass"));
+            verification.put("aiRequestForcedRls", scalarBoolean(owner,
+                    "select relrowsecurity and relforcerowsecurity from pg_class where oid = 'ai_request'::regclass"));
             verification.put("runtimeRoleSuperuser", scalarBoolean(owner,
                     "select rolsuper from pg_roles where rolname = 'hotel_ai_os_app'"));
             verification.put("runtimeRoleBypassRls", scalarBoolean(owner,
@@ -114,9 +120,11 @@ class PostgresBackupRestoreRollbackIntegrationTest {
             verification.put("seedTenantRows", scalarInt(owner,
                     "select count(*) from tenant where id = '10000000-0000-0000-0000-000000000001'::uuid"));
 
-            assertEquals("16", verification.get("flywayVersion"));
-            assertEquals(16, verification.get("successfulMigrations"));
-            assertTrue((Integer) verification.get("forcedRlsTables") >= 49);
+            assertEquals("21", verification.get("flywayVersion"));
+            assertEquals(21, verification.get("successfulMigrations"));
+            assertTrue((Boolean) verification.get("dailyReportForcedRls"));
+            assertTrue((Boolean) verification.get("issueEventForcedRls"));
+            assertTrue((Boolean) verification.get("aiRequestForcedRls"));
             assertFalse((Boolean) verification.get("runtimeRoleSuperuser"));
             assertFalse((Boolean) verification.get("runtimeRoleBypassRls"));
             assertEquals(SENTINEL, verification.get("restoredPayload"));

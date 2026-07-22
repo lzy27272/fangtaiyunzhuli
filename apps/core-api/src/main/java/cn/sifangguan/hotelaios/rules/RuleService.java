@@ -1,6 +1,7 @@
 package cn.sifangguan.hotelaios.rules;
 
 import cn.sifangguan.hotelaios.notifications.NotificationService;
+import cn.sifangguan.hotelaios.dailyoperations.TaskCandidateService;
 import cn.sifangguan.hotelaios.shared.audit.AuditWriter;
 import cn.sifangguan.hotelaios.shared.context.TenantPrincipal;
 import cn.sifangguan.hotelaios.shared.db.TenantDatabaseContext;
@@ -23,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.util.*;
 
 @Service
@@ -34,6 +36,7 @@ public class RuleService {
     private final RuleConditionEvaluator evaluator;
     private final ObjectMapper objectMapper;
     private final TaskService taskService;
+    private final TaskCandidateService taskCandidateService;
     private final NotificationService notificationService;
 
     public RuleService(
@@ -44,6 +47,7 @@ public class RuleService {
             RuleConditionEvaluator evaluator,
             ObjectMapper objectMapper,
             TaskService taskService,
+            TaskCandidateService taskCandidateService,
             NotificationService notificationService
     ) {
         this.jdbc = jdbc;
@@ -53,6 +57,7 @@ public class RuleService {
         this.evaluator = evaluator;
         this.objectMapper = objectMapper;
         this.taskService = taskService;
+        this.taskCandidateService = taskCandidateService;
         this.notificationService = notificationService;
     }
 
@@ -292,6 +297,7 @@ public class RuleService {
         TenantPrincipal principal = prepare();
         return jdbc.queryForList("""
                 select e.id, e.source_event_id, e.event_type, e.schema_version, e.org_unit_id,
+                       e.hotel_org_unit_id, e.business_date, e.trace_id,
                        e.position_assignment_id, e.occurred_at, e.payload_snapshot,
                        e.processing_status, e.attempt_count, e.last_error, e.row_version
                 from management_event e
@@ -437,6 +443,7 @@ public class RuleService {
         try {
             UUID targetId = switch (actionType) {
                 case "CREATE_TASK" -> createTaskAction(event, action, actionId, idempotencyKey);
+                case "CREATE_TASK_CANDIDATE" -> createTaskCandidateAction(event, action, actionId, idempotencyKey);
                 case "CREATE_NOTIFICATION" -> createNotificationAction(event, action, idempotencyKey);
                 default -> throw new IllegalArgumentException("不支持的规则动作类型: " + actionType);
             };
@@ -487,6 +494,28 @@ public class RuleService {
                 action.path("title").asText("管理规则已触发"),
                 action.path("content").asText("请查看相关管理事件"),
                 "MANAGEMENT_EVENT", (UUID) event.get("id"), key);
+    }
+
+    private UUID createTaskCandidateAction(Map<String, Object> event, JsonNode action, UUID actionId, String key) {
+        UUID assignee = resolveAssignment(event, action.path("assigneeResolver").asText("CURRENT_ASSIGNMENT"), action);
+        UUID reviewer = resolveAssignment(event, action.path("reviewerResolver").asText("DIRECT_MANAGER_ASSIGNMENT"), action);
+        int dueMinutes = action.path("dueMinutes").asInt(48 * 60);
+        JsonNode sourceSnapshot = parse(event.get("payload_snapshot"));
+        UUID standardVersionId = uuid(action.get("standardVersionId"));
+        if (standardVersionId == null) standardVersionId = uuid(sourceSnapshot.get("standardVersionId"));
+        UUID issueId = uuid(sourceSnapshot.get("issueId"));
+        UUID orgUnitId = (UUID) event.get("org_unit_id");
+        if (orgUnitId == null) throw new IllegalArgumentException("任务候选规则事件必须包含orgUnitId");
+        return taskCandidateService.createFromRule(new TaskCandidateService.RuleCandidateSpec(
+                (UUID) event.get("id"), actionId, issueId, orgUnitId,
+                (LocalDate) event.get("business_date"), assignee, reviewer, standardVersionId,
+                action.path("title").asText("规则触发的任务候选"),
+                action.path("description").asText("由企业规则中心提出，须经负责人确认后生成正式任务"),
+                action.path("priority").asText("NORMAL"),
+                OffsetDateTime.now().plusMinutes(Math.max(dueMinutes, 0)),
+                action.path("acceptanceCriteria").asText(null),
+                (UUID) event.get("position_assignment_id"), sourceSnapshot
+        ), key);
     }
 
     private UUID resolveAssignment(Map<String, Object> event, String resolver, JsonNode action) {
@@ -623,6 +652,7 @@ public class RuleService {
     private Map<String, Object> requireEventVisible(TenantPrincipal principal, UUID eventId, boolean forUpdate) {
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 select e.id, e.source_event_id, e.event_type, e.schema_version, e.org_unit_id,
+                       e.hotel_org_unit_id, e.business_date, e.trace_id,
                        e.position_assignment_id, e.occurred_at, e.payload_snapshot,
                        e.processing_status, e.attempt_count, e.row_version
                 from management_event e
@@ -680,7 +710,7 @@ public class RuleService {
                 throw new IllegalArgumentException("每个规则动作必须是对象");
             }
             String type = action.path("type").asText().toUpperCase(Locale.ROOT);
-            if (!Set.of("CREATE_TASK", "CREATE_NOTIFICATION").contains(type)) {
+            if (!Set.of("CREATE_TASK", "CREATE_TASK_CANDIDATE", "CREATE_NOTIFICATION").contains(type)) {
                 throw new IllegalArgumentException("不支持的规则动作: " + type);
             }
             String key = action.path("key").asText();

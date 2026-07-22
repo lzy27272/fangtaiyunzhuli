@@ -25,10 +25,11 @@ public class AuditWriter {
         TenantPrincipal principal = TenantContext.require();
         jdbc.update("""
                 insert into audit_log
-                    (tenant_id, actor_id, action, resource_type, resource_id, correlation_id, after_data)
+                    (tenant_id, actor_id, action, resource_type, resource_id,
+                     correlation_id, trace_id, outcome, sensitivity_level, after_data)
                 values
-                    (:tenantId, :actorId, :action, :resourceType, :resourceId, :correlationId,
-                     cast(:afterJson as jsonb))
+                    (:tenantId, :actorId, :action, :resourceType, :resourceId,
+                     :correlationId, :traceId, 'SUCCESS', 'INTERNAL', cast(:afterJson as jsonb))
                 """, new MapSqlParameterSource()
                 .addValue("tenantId", principal.tenantId())
                 .addValue("actorId", principal.actorId())
@@ -36,6 +37,7 @@ public class AuditWriter {
                 .addValue("resourceType", resourceType)
                 .addValue("resourceId", resourceId)
                 .addValue("correlationId", principal.correlationId())
+                .addValue("traceId", principal.correlationId())
                 .addValue("afterJson", afterJson == null ? "{}" : afterJson));
     }
 
@@ -44,15 +46,23 @@ public class AuditWriter {
         UUID eventId = UUID.randomUUID();
         jdbc.update("""
                 insert into outbox_event
-                    (id, tenant_id, aggregate_type, aggregate_id, event_type, payload)
+                    (id, tenant_id, aggregate_type, aggregate_id, event_type, payload,
+                     producer, trace_id, correlation_id, idempotency_key,
+                     actor_account_id, sensitivity_level)
                 values
-                    (:id, :tenantId, :aggregateType, :aggregateId, :eventType, cast(:payload as jsonb))
+                    (:id, :tenantId, :aggregateType, :aggregateId, :eventType, cast(:payload as jsonb),
+                     'core-api', :traceId, :correlationId, :idempotencyKey,
+                     :actorId, 'INTERNAL')
                 """, new MapSqlParameterSource()
                 .addValue("id", eventId)
                 .addValue("tenantId", principal.tenantId())
                 .addValue("aggregateType", aggregateType)
                 .addValue("aggregateId", aggregateId)
                 .addValue("eventType", EventTypeNames.normalize(eventType))
+                .addValue("traceId", principal.correlationId())
+                .addValue("correlationId", principal.correlationId())
+                .addValue("idempotencyKey", "event:" + eventId)
+                .addValue("actorId", principal.actorId())
                 .addValue("payload", payloadJson));
         events.publishEvent(new OutboxCreatedEvent(principal.tenantId(), eventId, principal.correlationId()));
         return eventId;

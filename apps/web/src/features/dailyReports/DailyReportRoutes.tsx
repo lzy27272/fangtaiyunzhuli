@@ -1,0 +1,81 @@
+import { useEffect, useMemo, useState } from 'react'
+import { ApiError } from '../../api/client'
+import { hasPermission, permissions } from '../../app/permissions'
+import type { AppNavigate, DailyFeatureRouteId } from '../../app/routeConfig'
+import type { RoleContext, RouteParams } from '../../domain'
+import { AsyncState } from '../../shared/AsyncState'
+import { useScopedResource } from '../../shared/useScopedResource'
+import { useStableCommand } from '../../shared/useStableCommand'
+import { AiRecommendationCard, FeatureHeader, StatusBadge, featureStyles as styles, formatLocalDateTime } from '../shared/FeatureUI'
+import { loadDailyReport, loadMyDailyReports, loadTeamDailyReports, requestDailyReportCorrection, reviewDailyReport, reviewDailyReportRevision, saveDailyReportDraft, submitDailyReport } from './api'
+import type { DailyReportDetail, DailyReportDraftInput, DailyReportSummary } from './types'
+
+export function DailyReportRoutes({ view, params, identity, grantedPermissions, go }: { view: DailyFeatureRouteId; params: RouteParams; identity: RoleContext; grantedPermissions: string[]; go: AppNavigate }) {
+  if (view === 'daily-reports-my') return <ReportList mode="my" identity={identity} params={params} go={go} />
+  if (view === 'daily-reports-team') return <ReportList mode="team" identity={identity} params={params} go={go} />
+  if (!params.reportId) return <AsyncState loading={false} error={new Error('路由缺少日报编号')} />
+  return <ReportDetailPage identity={identity} grantedPermissions={grantedPermissions} reportId={params.reportId} correctionRevisionId={view === 'daily-report-correction' ? params.revisionId : undefined} go={go} />
+}
+
+function ReportList({ mode, identity, params, go }: { mode: 'my' | 'team'; identity: RoleContext; params: RouteParams; go: AppNavigate }) {
+  const [businessDate, setBusinessDate] = useState(params.businessDate || new Date().toISOString().slice(0, 10))
+  const [status, setStatus] = useState(params.status || '')
+  const key = `${identity.key}:daily-reports:${mode}:${businessDate}:${status}:${params.orgUnitId ?? ''}`
+  const resource = useScopedResource(key, (signal) => mode === 'my'
+    ? loadMyDailyReports(identity, signal, { businessDate, status })
+    : loadTeamDailyReports(identity, signal, { businessDate, status, orgUnitId: params.orgUnitId || identity.assignmentOrgUnitId || identity.orgScopes[0] }), [])
+  const updateFilters = (nextDate: string, nextStatus: string) => {
+    setBusinessDate(nextDate); setStatus(nextStatus)
+    go(mode === 'my' ? 'daily-reports-my' : 'daily-reports-team', { ...params, businessDate: nextDate, status: nextStatus || undefined })
+  }
+  return <section className={styles.page}>
+    <FeatureHeader eyebrow={mode === 'my' ? 'MY DAILY REPORTS' : 'TEAM DAILY REPORTS'} title={mode === 'my' ? '我的日报' : '团队日报'} description={mode === 'my' ? '由当前岗位工作包驱动，按模块填报，不使用统一长表。' : '集中处理未提交、异常日报、待补充和修订审核。'} />
+    <div className={styles.toolbar}><label>营业日<input type="date" value={businessDate} onChange={(event) => updateFilters(event.target.value, status)} /></label><label>状态<select value={status} onChange={(event) => updateFilters(businessDate, event.target.value)}><option value="">全部</option><option value="DRAFT">草稿</option><option value="SUBMITTED">已提交</option><option value="ARCHIVED">已归档</option></select></label><button className="secondary" onClick={() => void resource.reload()}>刷新</button></div>
+    <AsyncState loading={resource.loading} error={resource.error} empty={!resource.data.length} onRetry={resource.reload} emptyTitle="该营业日暂无日报" emptyDescription="这是有效空结果；若接口不可用，页面会显示单独的错误状态。" />
+    {!resource.loading && !resource.error && <div className={styles.cardGrid}>{resource.data.map((report) => <ReportCard key={report.id} report={report} go={go} />)}</div>}
+  </section>
+}
+
+function ReportCard({ report, go }: { report: DailyReportSummary; go: AppNavigate }) {
+  return <article className={styles.card}><header><div className={styles.meta}><span>{report.businessDate}</span><span>{report.positionName}</span></div><StatusBadge value={report.status} /></header><h2>{report.employeeName || '我的日报'}</h2><p>{report.templateName} · {report.templateVersionNo ? `V${report.templateVersionNo}` : '版本待解析'}</p><div className={styles.progress}><i style={{ width: `${Math.max(0, Math.min(100, report.completionRate ?? 0))}%` }} /></div><div className={styles.meta}><span>完成 {report.completionRate ?? '—'}%</span><span>缺失 {report.missingRequiredCount ?? '—'}</span><span>异常 {report.exceptionCount ?? '—'}</span><span>证据 {report.evidenceCount ?? '—'}</span></div><footer><button className="primary" onClick={() => go('daily-report-detail', { reportId: report.id })}>{report.status === 'DRAFT' ? '继续填报' : '查看日报'}</button></footer></article>
+}
+
+function ReportDetailPage({ identity, grantedPermissions, reportId, correctionRevisionId, go }: { identity: RoleContext; grantedPermissions: string[]; reportId: string; correctionRevisionId?: string; go: AppNavigate }) {
+  const resource = useScopedResource(`${identity.key}:daily-report:${reportId}`, (signal) => loadDailyReport(identity, reportId, signal), undefined as never)
+  return <section className={styles.page}><FeatureHeader eyebrow="POSITION DAILY REPORT" title={resource.data ? `${resource.data.businessDate} · ${resource.data.positionName}日报` : '日报详情'} description="系统预填与员工补充明确区分；提交后原版本和证据锁定。" actions={<button className="secondary" onClick={() => go(hasPermission(grantedPermissions, permissions.dailyReport.readTeam) ? 'daily-reports-team' : 'daily-reports-my')}>返回列表</button>} /><AsyncState loading={resource.loading} error={resource.error} onRetry={resource.reload} />{resource.data && <ReportEditor report={resource.data} identity={identity} grantedPermissions={grantedPermissions} correctionRevisionId={correctionRevisionId} onChanged={resource.reload} go={go} />}</section>
+}
+
+function ReportEditor({ report, identity, grantedPermissions, correctionRevisionId, onChanged, go }: { report: DailyReportDetail; identity: RoleContext; grantedPermissions: string[]; correctionRevisionId?: string; onChanged: () => Promise<void>; go: AppNavigate }) {
+  const initialValues = useMemo(() => Object.fromEntries(report.currentRevision.sections.flatMap((section) => section.items.map((item) => [item.id, item.employeeValue ?? '']))), [report])
+  const initialExceptions = useMemo(() => new Set(report.currentRevision.sections.flatMap((section) => section.items.filter((item) => item.exception).map((item) => item.id))), [report])
+  const [values, setValues] = useState<Record<string, string>>(initialValues)
+  const [exceptions, setExceptions] = useState<Set<string>>(initialExceptions)
+  const [message, setMessage] = useState<string>()
+  const [conflict, setConflict] = useState(false)
+  const [reason, setReason] = useState('')
+  const command = useStableCommand(`daily-report-${report.id}`)
+  useEffect(() => { setValues(initialValues); setExceptions(initialExceptions) }, [initialValues, initialExceptions])
+  const editable = report.status === 'DRAFT' && report.currentRevision.status === 'DRAFT' && report.allowedActions.includes('EDIT') && hasPermission(grantedPermissions, permissions.dailyReport.submit)
+  const input: DailyReportDraftInput = { itemValues: report.currentRevision.sections.flatMap((section) => section.items.map((item) => ({ templateItemId: item.templateItemId, value: values[item.id], exception: exceptions.has(item.id) }))) }
+  const reviewingHistoricalRevision = Boolean(correctionRevisionId && correctionRevisionId !== report.currentRevision.id)
+  const reviewPermission = report.currentRevision.revisionType === 'CORRECTION' ? permissions.dailyReport.reviewCorrection : permissions.dailyReport.reviewException
+  const canReviewCurrentRevision = !reviewingHistoricalRevision && Boolean(identity.assignmentId) && hasPermission(grantedPermissions, reviewPermission)
+  const run = async (action: 'save' | 'submit' | 'correction' | 'approve' | 'reject') => {
+    setMessage(undefined); setConflict(false)
+    try {
+      await command.run((key) => {
+        if (action === 'save') return saveDailyReportDraft(identity, report, input, key)
+        if (action === 'submit') return submitDailyReport(identity, report, key)
+        if (action === 'correction') return requestDailyReportCorrection(identity, report, reason, key)
+        if (correctionRevisionId) return reviewDailyReportRevision(identity, report, correctionRevisionId, action === 'approve' ? 'APPROVED' : 'REJECTED', reason, key)
+        return reviewDailyReport(identity, report, action === 'approve' ? 'APPROVED' : 'REJECTED', reason, key)
+      })
+      await onChanged()
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) { setConflict(true); setMessage('服务器已有新版本；你的本地填写内容仍保留。请查看最新版本后重新应用修改。') }
+      else setMessage(error instanceof Error ? error.message : '操作失败')
+    }
+  }
+  const toggleException = (id: string) => setExceptions((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  return <div className={styles.split}><main className={styles.stack}><section className={styles.section}><header><h2>填报内容</h2><div className={styles.actions}><StatusBadge value={report.status} /><StatusBadge value={report.reviewStatus} /></div></header>{!editable && <div className={styles.locked}>日报已提交或当前任职无编辑权限，原始填报内容只读。需要修改时发起修订，不覆盖历史版本。</div>}{report.currentRevision.sections.filter((section) => section.applicable).map((section) => <section className={styles.reportGroup} key={section.id}><header><strong>{section.name}</strong>{section.conditional && <span className={styles.badge}>条件模块</span>}</header>{section.items.map((item) => <div className={styles.reportItem} key={item.id}><label>{item.label}{item.required ? ' *' : ''}{item.systemValue !== undefined && <span className={styles.locked}>系统预填：{item.systemValue}</span>}<textarea rows={item.inputType === 'NARRATIVE' ? 4 : 2} disabled={!editable || item.dataSource === 'SYSTEM'} value={values[item.id] ?? ''} onChange={(event) => setValues({ ...values, [item.id]: event.target.value })} /></label><div className={styles.actions}><label><input type="checkbox" disabled={!editable} checked={exceptions.has(item.id)} onChange={() => toggleException(item.id)} /> 标记异常</label><span className={styles.meta}>{item.evidenceRequired ? '需要证据' : '证据可选'} · 来源 {item.sourceLabels.join('、') || '员工填报'}</span></div>{item.evidence.map((evidence) => <div className={styles.meta} key={evidence.id}><span>{evidence.fileName}</span><span>{evidence.sensitivity === 'SENSITIVE' ? '敏感证据' : '普通证据'}</span><span>{evidence.invalidatedAt ? '已失效，历史保留' : evidence.scanStatus || '已上传'}</span></div>)}</div>)}</section>)}</section>{conflict && <div className={styles.conflict}>{message}</div>}{message && !conflict && <div className="inline-error">{message}</div>}<section className={styles.section}><div className={styles.actions}>{editable && <button className="secondary" disabled={command.busy} onClick={() => void run('save')}>保存草稿</button>}{editable && report.allowedActions.includes('SUBMIT') && <button className="primary" disabled={command.busy || (report.missingRequiredCount ?? 0) > 0} onClick={() => void run('submit')}>提交日报</button>}{!editable && report.allowedActions.includes('REQUEST_CORRECTION') && <button className="secondary" disabled={command.busy || !reason.trim()} onClick={() => void run('correction')}>发起修订</button>}</div>{!editable && report.allowedActions.includes('REQUEST_CORRECTION') && <label className={styles.formGrid}>修订原因<textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} /></label>}{report.blockedActionReasons.SUBMIT && <p className={styles.locked}>{report.blockedActionReasons.SUBMIT}</p>}</section></main><aside className={styles.stack}><section className={styles.section}><h2>日报上下文</h2><div className={styles.meta}><span>模板 {report.templateVersionNo ? `V${report.templateVersionNo}` : '版本待解析'}</span><span>完成 {report.completionRate ?? '—'}%</span><span>异常 {report.exceptionCount ?? '—'}</span><span>证据 {report.evidenceCount ?? '—'}</span></div><p>截止：{formatLocalDateTime(report.dueAt)}</p><div className={styles.timeline}>{report.revisions.map((revision) => <article key={revision.id}><strong>修订 V{revision.revisionNo} · {revision.status}</strong><small>{formatLocalDateTime(revision.submittedAt)} {revision.correctionReason || ''}</small>{revision.id !== report.currentRevision.id && <button className="link-button" onClick={() => go('daily-report-correction', { reportId: report.id, revisionId: revision.id })}>查看修订</button>}</article>)}</div></section>{reviewingHistoricalRevision && <div className={styles.locked}>历史修订只读；后端仅允许审核当前修订。</div>}{canReviewCurrentRevision && (report.allowedActions.includes('REVIEW_APPROVE') || report.allowedActions.includes('REVIEW_REJECT')) && <section className={styles.section}><h2>主管审核</h2><label className={styles.formGrid}>审核意见<textarea rows={3} value={reason} onChange={(event) => setReason(event.target.value)} /></label><div className={styles.actions}>{report.allowedActions.includes('REVIEW_APPROVE') && <button className="primary" disabled={command.busy || !reason.trim()} onClick={() => void run('approve')}>确认通过</button>}{report.allowedActions.includes('REVIEW_REJECT') && <button className="danger-button" disabled={command.busy || !reason.trim()} onClick={() => void run('reject')}>退回补充</button>}</div><p className={styles.meta}>是否允许审核由服务端依据任职、组织范围和禁止自审规则返回。</p></section>}{report.aiRecommendations.map((item) => <AiRecommendationCard key={item.id} facts={item.facts} analysis={item.analysis} recommendation={item.recommendation} sources={item.sourceLabels} actions={<button className="secondary" disabled>采纳后生成可编辑草稿</button>} />)}</aside></div>
+}

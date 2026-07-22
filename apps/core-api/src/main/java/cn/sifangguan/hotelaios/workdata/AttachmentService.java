@@ -20,9 +20,12 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -138,6 +141,80 @@ public class AttachmentService {
         }
     }
 
+    /**
+     * Stores bytes produced by a trusted server-side renderer under the same guarded storage root as attachments.
+     * The caller owns the object-key namespace; path traversal is rejected by {@link #resolveObjectKey(String)}.
+     */
+    public StoredObject storeGeneratedBytes(
+            String objectKey,
+            String originalName,
+            String mediaType,
+            byte[] content
+    ) {
+        if (objectKey == null || objectKey.isBlank()) {
+            throw new IllegalArgumentException("服务端生成文件的对象键不能为空");
+        }
+        if (content == null || content.length == 0) {
+            throw new IllegalArgumentException("服务端生成文件不能为空");
+        }
+        if (content.length > maxSizeBytes) {
+            throw new IllegalArgumentException("服务端生成文件超过允许大小");
+        }
+        String normalizedName = normalizeOriginalName(originalName);
+        String normalizedType = normalizedMediaType(mediaType).split(";", 2)[0].trim();
+        if (!Set.of("text/csv", PDF, XLSX).contains(normalizedType)) {
+            throw new IllegalArgumentException("不支持的服务端生成文件类型");
+        }
+
+        Path path = resolveObjectKey(objectKey);
+        Path temporary = path.resolveSibling(path.getFileName() + ".tmp-" + UUID.randomUUID());
+        String digest = sha256(content);
+        try {
+            Files.createDirectories(path.getParent());
+            Files.write(temporary, content, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+            try {
+                Files.move(temporary, path,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return new StoredObject(
+                    objectKey, normalizedName, normalizedType, content.length, digest, "SERVER_GENERATED");
+        } catch (Exception exception) {
+            deleteQuietly(temporary);
+            throw new IllegalArgumentException("服务端生成文件保存失败", exception);
+        }
+    }
+
+    /** Opens only a server-generated object after its owning service has performed authorization checks. */
+    public Download openGeneratedObject(
+            String objectKey,
+            String originalName,
+            String mediaType,
+            long sizeBytes,
+            String expectedSha256
+    ) {
+        Path path = resolveObjectKey(objectKey);
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalArgumentException("服务端生成文件不存在或尚未完成生成");
+        }
+        try {
+            if (Files.size(path) != sizeBytes) {
+                throw new IllegalArgumentException("服务端生成文件大小校验失败");
+            }
+            if (expectedSha256 == null || !expectedSha256.matches("[0-9a-f]{64}")
+                    || !expectedSha256.equals(sha256(path))) {
+                throw new IllegalArgumentException("服务端生成文件摘要校验失败");
+            }
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("无法校验服务端生成文件", exception);
+        }
+        return new Download(new FileSystemResource(path), normalizeOriginalName(originalName),
+                normalizedMediaType(mediaType), sizeBytes);
+    }
+
     public Download openStoredObject(
             String objectKey,
             String originalName,
@@ -160,6 +237,40 @@ public class AttachmentService {
             Files.deleteIfExists(resolveObjectKey(objectKey));
         } catch (Exception exception) {
             throw new IllegalArgumentException("附件文件删除失败", exception);
+        }
+    }
+
+    /**
+     * Deletes generated export attempts only inside the server-owned tenant/job UUID namespace.
+     * When a winner key is supplied, that file and its ancestor directories are retained.
+     */
+    public void cleanupGeneratedExportJob(UUID tenantId, UUID jobId, String winnerObjectKey) {
+        String jobPrefix = tenantId + "/operation-exports/" + jobId + "/";
+        Path jobDirectory = resolveObjectKey(jobPrefix);
+        Path winner = null;
+        if (winnerObjectKey != null) {
+            if (!winnerObjectKey.startsWith(jobPrefix)
+                    || !winnerObjectKey.substring(jobPrefix.length())
+                    .matches("attempt-[0-9]+/[\\p{L}\\p{N}._-]{1,160}")) {
+                throw new IllegalArgumentException("导出对象键不属于指定租户和作业命名空间");
+            }
+            winner = resolveObjectKey(winnerObjectKey);
+        }
+        if (!Files.exists(jobDirectory)) return;
+        Path retained = winner;
+        try (var paths = Files.walk(jobDirectory)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                if (retained != null && (path.equals(retained) || retained.startsWith(path))) return;
+                try {
+                    Files.deleteIfExists(path);
+                } catch (Exception exception) {
+                    throw new GeneratedObjectCleanupException(exception);
+                }
+            });
+        } catch (GeneratedObjectCleanupException exception) {
+            throw new IllegalArgumentException("导出作业目录清理失败", exception.getCause());
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("导出作业目录清理失败", exception);
         }
     }
 
@@ -388,6 +499,18 @@ public class AttachmentService {
         }
     }
 
+    private static String sha256(Path path) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (var input = Files.newInputStream(path, StandardOpenOption.READ)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                if (read > 0) digest.update(buffer, 0, read);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
     private static Map<String, Object> attachmentResponse(
             UUID id, UUID recordId, String objectKey, String originalName, String mediaType,
             long sizeBytes, String sha256, String scanStatus
@@ -430,5 +553,11 @@ public class AttachmentService {
     }
 
     private record ValidatedUpload(byte[] content, String mediaType) {
+    }
+
+    private static final class GeneratedObjectCleanupException extends RuntimeException {
+        GeneratedObjectCleanupException(Throwable cause) {
+            super(cause);
+        }
     }
 }

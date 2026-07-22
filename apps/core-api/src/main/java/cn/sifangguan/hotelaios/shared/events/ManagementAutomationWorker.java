@@ -1,5 +1,7 @@
 package cn.sifangguan.hotelaios.shared.events;
 
+import cn.sifangguan.hotelaios.dailyoperations.OperationExportProcessor;
+import cn.sifangguan.hotelaios.dailyoperations.TaskCandidateRecoveryService;
 import cn.sifangguan.hotelaios.tasks.TaskService;
 import cn.sifangguan.hotelaios.workpackage.WorkPackageModels;
 import cn.sifangguan.hotelaios.workpackage.WorkExpectationSlaService;
@@ -34,6 +36,8 @@ public class ManagementAutomationWorker {
 
     private final WorkExpectationSlaService workExpectationSlaService;
     private final OutboxAutomationService outboxAutomationService;
+    private final TaskCandidateRecoveryService taskCandidateRecoveryService;
+    private final OperationExportProcessor operationExportProcessor;
     private final TaskService taskService;
     private final AutomationWorkerMetrics metrics;
     private final List<UUID> tenantIds;
@@ -43,6 +47,8 @@ public class ManagementAutomationWorker {
     public ManagementAutomationWorker(
             WorkExpectationSlaService workExpectationSlaService,
             OutboxAutomationService outboxAutomationService,
+            TaskCandidateRecoveryService taskCandidateRecoveryService,
+            OperationExportProcessor operationExportProcessor,
             TaskService taskService,
             AutomationWorkerMetrics metrics,
             @Value("${app.automation.worker.tenant-ids:}") String tenantIds,
@@ -50,6 +56,8 @@ public class ManagementAutomationWorker {
     ) {
         this.workExpectationSlaService = workExpectationSlaService;
         this.outboxAutomationService = outboxAutomationService;
+        this.taskCandidateRecoveryService = taskCandidateRecoveryService;
+        this.operationExportProcessor = operationExportProcessor;
         this.taskService = taskService;
         this.metrics = metrics;
         this.tenantIds = parseTenantIds(tenantIds);
@@ -72,7 +80,72 @@ public class ManagementAutomationWorker {
             UUID correlationId = UUID.randomUUID();
             processWorkExpectations(tenantId, correlationId);
             processEventQueues(tenantId, correlationId);
+            processTaskCandidateSync(tenantId, correlationId);
+            processOperationExports(tenantId, correlationId);
             processTaskSla(tenantId, correlationId);
+        }
+    }
+
+    private void processOperationExports(UUID tenantId, UUID correlationId) {
+        String pipeline = "operation_export";
+        Instant startedAt = Instant.now();
+        try {
+            OperationExportProcessor.ProcessingResult result = operationExportProcessor.processTenant(
+                    tenantId, batchSize, correlationId);
+            metrics.success(pipeline, result.processed() + result.expired(),
+                    Duration.between(startedAt, Instant.now()));
+            if (result.failed() + result.expiryFailed() > 0) {
+                metrics.alert(pipeline, "EXPORT_JOB_FAILED");
+                log.atWarn()
+                        .addKeyValue("alert_code", "EXPORT_JOB_FAILED")
+                        .addKeyValue("pipeline", pipeline)
+                        .addKeyValue("tenant_id", tenantId)
+                        .addKeyValue("correlation_id", correlationId)
+                        .addKeyValue("processed_count", result.processed())
+                        .addKeyValue("export_failed_count", result.failed())
+                        .addKeyValue("expiry_failed_count", result.expiryFailed())
+                        .log("Operation export jobs completed with failures");
+            } else if (result.processed() + result.expired() > 0) {
+                log.atInfo()
+                        .addKeyValue("pipeline", pipeline)
+                        .addKeyValue("tenant_id", tenantId)
+                        .addKeyValue("correlation_id", correlationId)
+                        .addKeyValue("succeeded_count", result.succeeded())
+                        .addKeyValue("cleaned_expired_count", result.expired())
+                        .log("Automation worker completed pipeline");
+            }
+        } catch (RuntimeException exception) {
+            pipelineFailure(pipeline, tenantId, correlationId, startedAt, exception);
+        }
+    }
+
+    private void processTaskCandidateSync(UUID tenantId, UUID correlationId) {
+        String pipeline = "task_candidate_sync";
+        Instant startedAt = Instant.now();
+        try {
+            TaskCandidateRecoveryService.RecoveryResult result = taskCandidateRecoveryService.processTenant(
+                    tenantId, batchSize, correlationId);
+            metrics.success(pipeline, result.processed(), Duration.between(startedAt, Instant.now()));
+            if (result.failed() > 0) {
+                metrics.alert(pipeline, "RETRY_SCHEDULED");
+                log.atWarn()
+                        .addKeyValue("alert_code", "RETRY_SCHEDULED")
+                        .addKeyValue("pipeline", pipeline)
+                        .addKeyValue("tenant_id", tenantId)
+                        .addKeyValue("correlation_id", correlationId)
+                        .addKeyValue("processed_count", result.processed())
+                        .addKeyValue("failed_count", result.failed())
+                        .log("Task-candidate synchronization scheduled retries");
+            } else if (result.processed() > 0) {
+                log.atInfo()
+                        .addKeyValue("pipeline", pipeline)
+                        .addKeyValue("tenant_id", tenantId)
+                        .addKeyValue("correlation_id", correlationId)
+                        .addKeyValue("succeeded_count", result.succeeded())
+                        .log("Automation worker completed pipeline");
+            }
+        } catch (RuntimeException exception) {
+            pipelineFailure(pipeline, tenantId, correlationId, startedAt, exception);
         }
     }
 

@@ -1,0 +1,354 @@
+import type { ApiIdentity } from '../../api/client'
+import { featureApiMutation, featureApiRequest } from '../shared/featureApi'
+import { queryString, requireItems, type PageEnvelope } from '../shared/apiEnvelope'
+import type {
+  DailyReportDetail,
+  DailyReportDraftInput,
+  DailyReportEvidence,
+  DailyReportItemResult,
+  DailyReportRevision,
+  DailyReportSectionResult,
+  DailyReportStatus,
+  DailyReportSummary,
+} from './types'
+
+const base = '/daily-reports'
+type Row = Record<string, unknown>
+
+const row = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
+const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(row) : []
+const text = (value: unknown, fallback = '') => value === undefined || value === null ? fallback : String(value)
+const number = (value: unknown, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback
+
+function jsonRow(value: unknown): Row {
+  if (typeof value === 'string') {
+    try { return row(JSON.parse(value)) } catch { return {} }
+  }
+  return row(value)
+}
+
+function reportStatus(value: unknown): DailyReportStatus {
+  const status = text(value).toUpperCase()
+  return ['DRAFT', 'SUBMITTED', 'ARCHIVED'].includes(status) ? status as DailyReportStatus : 'DRAFT'
+}
+
+function reviewStatus(value: unknown): DailyReportSummary['reviewStatus'] {
+  const status = text(value).toUpperCase()
+  return ['NOT_REQUIRED', 'PENDING', 'APPROVED', 'REJECTED'].includes(status)
+    ? status as DailyReportSummary['reviewStatus']
+    : 'NOT_REQUIRED'
+}
+
+function revisionStatus(value: unknown): DailyReportRevision['status'] {
+  const status = text(value).toUpperCase()
+  return ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'].includes(status)
+    ? status as DailyReportRevision['status']
+    : 'DRAFT'
+}
+
+function inputType(value: unknown): DailyReportItemResult['inputType'] {
+  const normalized = text(value, 'TEXT').toUpperCase()
+  if (['SINGLE_SELECT', 'MULTI_SELECT', 'SELECT'].includes(normalized)) return 'SELECT'
+  if (['LONG_TEXT', 'NARRATIVE'].includes(normalized)) return 'NARRATIVE'
+  if (['WORK_RECORD_REFERENCE', 'METRIC_REFERENCE', 'EVIDENCE'].includes(normalized)) return 'EVIDENCE'
+  if (normalized === 'NUMBER' || normalized === 'BOOLEAN') return normalized
+  return 'TEXT'
+}
+
+function dataSource(value: unknown): DailyReportItemResult['dataSource'] {
+  const normalized = text(value, 'MANUAL').toUpperCase()
+  if (['MANUAL', 'EMPLOYEE'].includes(normalized)) return 'EMPLOYEE'
+  if (normalized === 'SYSTEM') return 'SYSTEM'
+  return 'MIXED'
+}
+
+function displayValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try { return JSON.stringify(value) } catch { return String(value) }
+}
+
+function normalizeEvidence(value: unknown, index: number): DailyReportEvidence {
+  const source = row(value)
+  return {
+    id: text(source.id, `evidence:${index}`),
+    fileName: text(source.originalName || source.fileName || source.evidenceType, '未命名证据'),
+    mediaType: text(source.mediaType) || undefined,
+    sensitivity: text(source.sensitivity).toUpperCase() === 'NORMAL' ? 'NORMAL' : 'SENSITIVE',
+    scanStatus: text(source.scanStatus) || undefined,
+    invalidatedAt: text(source.invalidatedAt) || undefined,
+  }
+}
+
+function sourceLabelsFor(itemResultId: string, sourceRows: Row[], sourceSummary: unknown): string[] {
+  const labels = sourceRows
+    .filter((source) => text(source.itemResultId) === itemResultId)
+    .map((source) => text(source.sourceExternalKey || source.sourceType))
+    .filter(Boolean)
+  const summary = jsonRow(sourceSummary)
+  labels.push(...Object.keys(summary))
+  return [...new Set(labels)]
+}
+
+function normalizeItem(
+  value: unknown,
+  index: number,
+  resultRows: Row[],
+  sourceRows: Row[],
+  evidenceRows: Row[],
+): DailyReportItemResult {
+  const template = row(value)
+  const templateItemId = text(template.templateItemId || template.id)
+  const result = resultRows.find((candidate) => text(candidate.templateItemId) === templateItemId) || {}
+  const itemResultId = text(result.id)
+  const evidencePolicy = jsonRow(template.evidencePolicy)
+  const resolvedValue = result.value
+  const systemPrefilled = result.systemPrefilled === true
+  return {
+    id: itemResultId || templateItemId || `item:${index}`,
+    templateItemId: templateItemId || text(result.templateItemId),
+    code: text(template.itemCode || template.code || result.itemCode, `ITEM_${index + 1}`),
+    label: text(template.label || result.label, `日报字段 ${index + 1}`),
+    description: text(template.description || template.helpText) || undefined,
+    inputType: inputType(template.valueType || template.inputType),
+    required: template.required !== false,
+    evidenceRequired: template.evidenceRequired === true || evidencePolicy.required === true || number(evidencePolicy.minimumCount) > 0,
+    dataSource: dataSource(template.dataSourceType || template.dataSource),
+    systemValue: systemPrefilled ? displayValue(resolvedValue) : undefined,
+    employeeValue: systemPrefilled ? undefined : displayValue(resolvedValue),
+    exception: result.exceptionFlag === true || result.resultStatus === 'EXCEPTION',
+    sourceLabels: sourceLabelsFor(itemResultId, sourceRows, result.sourceSummary),
+    evidence: evidenceRows
+      .filter((evidence) => text(evidence.itemResultId) === itemResultId)
+      .map(normalizeEvidence),
+  }
+}
+
+function normalizeSections(configuration: Row, resultRows: Row[], sourceRows: Row[], evidenceRows: Row[]): DailyReportSectionResult[] {
+  const configuredItemIds = new Set<string>()
+  const sections = rows(configuration.sections).map((value, sectionIndex) => {
+    const section = row(value)
+    const condition = jsonRow(section.applicabilityCondition)
+    const items = rows(section.items).map((item, itemIndex) => {
+      const normalized = normalizeItem(item, itemIndex, resultRows, sourceRows, evidenceRows)
+      if (normalized.templateItemId) configuredItemIds.add(normalized.templateItemId)
+      return normalized
+    })
+    return {
+      id: text(section.id || section.sectionVersionId || section.sectionCode, `section:${sectionIndex}`),
+      name: text(section.title || section.name, `日报模块 ${sectionIndex + 1}`),
+      conditional: Object.keys(condition).length > 0 || text(section.sectionRole).toUpperCase() === 'CONDITIONAL',
+      applicable: section.applicable !== false,
+      items,
+    }
+  })
+  const unconfiguredResults = resultRows.filter((result) => !configuredItemIds.has(text(result.templateItemId)))
+  if (unconfiguredResults.length) {
+    sections.push({
+      id: 'unconfigured-results',
+      name: '历史填报字段',
+      conditional: false,
+      applicable: true,
+      items: unconfiguredResults.map((result, index) => normalizeItem({
+        id: result.templateItemId,
+        itemCode: result.itemCode,
+        label: result.label,
+        required: false,
+      }, index, resultRows, sourceRows, evidenceRows)),
+    })
+  }
+  return sections
+}
+
+function normalizeSummary(value: unknown): DailyReportSummary {
+  const source = row(value)
+  return {
+    ...source,
+    id: text(source.id),
+    businessDate: text(source.businessDate),
+    hotelName: text(source.hotelName) || undefined,
+    departmentName: text(source.departmentName) || undefined,
+    positionName: text(source.positionName, '未解析岗位'),
+    employeeName: text(source.employeeName) || undefined,
+    templateName: text(source.templateName, '岗位日报模板'),
+    templateVersionNo: number(source.templateVersionNo),
+    status: reportStatus(source.reportStatus || source.status),
+    reviewStatus: reviewStatus(source.reviewStatus),
+    completionRate: source.completionRate === undefined ? undefined : number(source.completionRate),
+    missingRequiredCount: source.missingRequiredCount === undefined ? undefined : number(source.missingRequiredCount),
+    exceptionCount: source.exceptionCount === undefined ? undefined : number(source.exceptionCount),
+    evidenceCount: source.evidenceCount === undefined ? undefined : number(source.evidenceCount),
+    dueAt: text(source.reportDeadlineAt || source.dueAt) || undefined,
+    updatedAt: text(source.updatedAt) || undefined,
+    rowVersion: number(source.rowVersion),
+  } as DailyReportSummary
+}
+
+function normalizeRevision(value: unknown): DailyReportRevision {
+  const source = row(value)
+  const snapshot = jsonRow(source.payloadSnapshot)
+  const type = text(source.revisionType).toUpperCase()
+  return {
+    id: text(source.id),
+    revisionNo: number(source.revisionNo),
+    revisionType: ['ORIGINAL', 'CORRECTION'].includes(type) ? type as DailyReportRevision['revisionType'] : undefined,
+    status: revisionStatus(source.revisionStatus || source.status),
+    correctionReason: text(snapshot.correctionReason || source.correctionReason || (type === 'CORRECTION' ? source.narrative : undefined)) || undefined,
+    rowVersion: number(source.rowVersion),
+    sections: [],
+    submittedAt: text(source.submittedAt) || undefined,
+    submittedByAccountId: text(source.submittedByAccountId) || undefined,
+  }
+}
+
+function derivedActions(identity: ApiIdentity, summary: DailyReportSummary, currentRevision: DailyReportRevision): string[] {
+  const source = summary as DailyReportSummary & { positionAssignmentId?: string }
+  const owner = Boolean(identity.assignmentId && source.positionAssignmentId === identity.assignmentId)
+  const actions: string[] = []
+  if (owner && summary.status === 'DRAFT' && currentRevision.status === 'DRAFT') actions.push('EDIT', 'SUBMIT')
+  if (owner && ['SUBMITTED', 'ARCHIVED'].includes(summary.status)) actions.push('REQUEST_CORRECTION')
+  const independentReviewer = Boolean(identity.assignmentId && currentRevision.status === 'SUBMITTED'
+    && summary.status === 'SUBMITTED' && summary.reviewStatus === 'PENDING'
+    && currentRevision.submittedByAccountId !== identity.actorId)
+  if (independentReviewer) actions.push('REVIEW_APPROVE', 'REVIEW_REJECT')
+  return actions
+}
+
+function normalizeDetail(value: unknown, identity: ApiIdentity): DailyReportDetail {
+  const source = row(value)
+  const rawRevisions = rows(source.revisions)
+  const revisions = rawRevisions.map(normalizeRevision)
+  const currentRevisionId = text(source.currentRevisionId)
+  const currentIndex = rawRevisions.findIndex((revision) => text(revision.id) === currentRevisionId)
+  const rawCurrent = rawRevisions[currentIndex >= 0 ? currentIndex : 0] || {}
+  const currentRevision = revisions[currentIndex >= 0 ? currentIndex : 0] || normalizeRevision({
+    id: currentRevisionId,
+    revisionNo: source.currentRevisionNo,
+    revisionStatus: source.reportStatus,
+    rowVersion: 0,
+  })
+  const snapshot = jsonRow(rawCurrent.payloadSnapshot)
+  const configuration = jsonRow(snapshot.resolvedTemplate)
+  const resolution = jsonRow(snapshot.templateResolution)
+  const baseTemplate = jsonRow(resolution.baseTemplate)
+  const currentItemRows = rows(source.itemResults).filter((item) => text(item.revisionId) === currentRevision.id)
+  const currentSourceRows = rows(source.sources).filter((item) => text(item.revisionId) === currentRevision.id)
+  const currentEvidenceRows = rows(source.evidence).filter((item) => text(item.revisionId) === currentRevision.id)
+  currentRevision.sections = normalizeSections(configuration, currentItemRows, currentSourceRows, currentEvidenceRows)
+  const allItems = currentRevision.sections.flatMap((section) => section.items)
+  const completedItems = allItems.filter((item) => item.exception || Boolean(item.employeeValue?.trim()) || item.systemValue !== undefined)
+  const missingRequiredCount = allItems.filter((item) => item.required && !item.exception && !item.employeeValue?.trim() && item.systemValue === undefined).length
+  const summary = normalizeSummary({
+    ...source,
+    templateName: source.templateName || configuration.title || baseTemplate.name,
+    templateVersionNo: source.templateVersionNo ?? baseTemplate.versionNo,
+    completionRate: allItems.length ? Math.round((completedItems.length / allItems.length) * 100) : 0,
+    missingRequiredCount,
+    exceptionCount: allItems.filter((item) => item.exception).length,
+    evidenceCount: currentEvidenceRows.length,
+  })
+  const allowedActions = Array.isArray(source.allowedActions)
+    ? source.allowedActions.map(String)
+    : derivedActions(identity, summary, currentRevision)
+  const blockedActionReasons = row(source.blockedActionReasons) as Record<string, string>
+  if (missingRequiredCount > 0 && !blockedActionReasons.SUBMIT) {
+    blockedActionReasons.SUBMIT = `仍有 ${missingRequiredCount} 个必填项未完成`
+  }
+  return {
+    ...summary,
+    currentRevision,
+    revisions,
+    aiRecommendations: rows(source.aiRecommendations).map((recommendation, index) => ({
+      id: text(recommendation.id, `ai:${index}`),
+      facts: text(recommendation.facts, '暂无结构化事实'),
+      analysis: text(recommendation.analysis, '暂无补充分析'),
+      recommendation: text(recommendation.recommendation, '暂无建议内容'),
+      sourceLabels: Array.isArray(recommendation.sourceLabels) ? recommendation.sourceLabels.map(String) : [],
+      createdAt: text(recommendation.createdAt),
+    })),
+    allowedActions,
+    blockedActionReasons,
+  }
+}
+
+function requiredAssignmentId(identity: ApiIdentity): string {
+  if (!identity.assignmentId) throw new Error('请先选择当前任职后再执行该操作')
+  return identity.assignmentId
+}
+
+export async function loadMyDailyReports(identity: ApiIdentity, signal: AbortSignal, filters: { businessDate?: string; status?: string } = {}) {
+  const endpoint = `${base}/my${queryString(filters)}`
+  const payload = await featureApiRequest<unknown[] | PageEnvelope<unknown>>(endpoint, identity, { signal })
+  return requireItems(payload, endpoint).map(normalizeSummary)
+}
+
+export async function loadTeamDailyReports(identity: ApiIdentity, signal: AbortSignal, filters: { businessDate?: string; status?: string; orgUnitId?: string } = {}) {
+  if (!filters.orgUnitId) throw new Error('团队日报需要先选择组织范围')
+  const endpoint = `${base}/team${queryString(filters)}`
+  const payload = await featureApiRequest<unknown[] | PageEnvelope<unknown>>(endpoint, identity, { signal })
+  return requireItems(payload, endpoint).map(normalizeSummary)
+}
+
+export async function loadDailyReport(identity: ApiIdentity, reportId: string, signal?: AbortSignal) {
+  return normalizeDetail(await featureApiRequest<unknown>(`${base}/${encodeURIComponent(reportId)}`, identity, { signal }), identity)
+}
+
+export async function createDailyReport(identity: ApiIdentity, input: { businessDate: string; orgUnitId: string; positionAssignmentId: string; templateVersionId?: string }, idempotencyKey: string) {
+  return normalizeDetail(await featureApiMutation<unknown>(base, identity, { body: input, idempotencyKey }), identity)
+}
+
+function commandValue(value: string | undefined, type: DailyReportItemResult['inputType']): unknown {
+  if (value === undefined || value.trim() === '') return null
+  if (type === 'NUMBER') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : value
+  }
+  if (type === 'BOOLEAN') return value.toLowerCase() === 'true'
+  return value
+}
+
+export async function saveDailyReportDraft(identity: ApiIdentity, report: DailyReportDetail, input: DailyReportDraftInput, idempotencyKey: string) {
+  const itemTypes = new Map(report.currentRevision.sections.flatMap((section) => section.items.map((item) => [item.templateItemId, item.inputType] as const)))
+  const body = {
+    revisionId: report.currentRevision.id,
+    narrative: input.narrative,
+    items: input.itemValues.map((item) => ({
+      templateItemId: item.templateItemId,
+      value: commandValue(item.value, itemTypes.get(item.templateItemId) || 'TEXT'),
+      confirmed: Boolean(item.value?.trim()),
+      exception: item.exception,
+      comment: item.comment,
+    })),
+  }
+  return normalizeDetail(await featureApiMutation<unknown>(`${base}/${encodeURIComponent(report.id)}/draft`, identity, {
+    method: 'PUT', body, expectedVersion: report.rowVersion, idempotencyKey,
+  }), identity)
+}
+
+export async function submitDailyReport(identity: ApiIdentity, report: DailyReportDetail, idempotencyKey: string) {
+  return normalizeDetail(await featureApiMutation<unknown>(`${base}/${encodeURIComponent(report.id)}/actions/submit`, identity, {
+    body: { revisionId: report.currentRevision.id }, expectedVersion: report.rowVersion, idempotencyKey,
+  }), identity)
+}
+
+export async function requestDailyReportCorrection(identity: ApiIdentity, report: DailyReportDetail, reason: string, idempotencyKey: string) {
+  return normalizeDetail(await featureApiMutation<unknown>(`${base}/${encodeURIComponent(report.id)}/corrections`, identity, {
+    body: { reason }, expectedVersion: report.rowVersion, idempotencyKey,
+  }), identity)
+}
+
+export async function reviewDailyReport(identity: ApiIdentity, report: DailyReportDetail, outcome: 'APPROVED' | 'REJECTED', reason: string, idempotencyKey: string) {
+  return normalizeDetail(await featureApiMutation<unknown>(`${base}/${encodeURIComponent(report.id)}/reviews`, identity, {
+    body: { outcome, comment: reason, reviewerAssignmentId: requiredAssignmentId(identity) },
+    expectedVersion: report.rowVersion,
+    idempotencyKey,
+  }), identity)
+}
+
+export function reviewDailyReportRevision(identity: ApiIdentity, report: DailyReportDetail, revisionId: string, outcome: 'APPROVED' | 'REJECTED', reason: string, idempotencyKey: string) {
+  if (revisionId !== report.currentRevision.id) {
+    return Promise.reject(new Error('后端仅允许审核当前修订；历史修订保持只读'))
+  }
+  return reviewDailyReport(identity, report, outcome, reason, idempotencyKey)
+}

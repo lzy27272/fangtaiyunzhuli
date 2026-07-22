@@ -38,19 +38,24 @@ class PostgresMigrationIntegrationTest {
                     .migrate()
                     .migrationsExecuted;
 
-            assertEquals(17, migrations);
+            assertEquals(21, migrations);
 
             try (Connection owner = ownerDataSource.getConnection();
                  Statement statement = owner.createStatement()) {
-                assertEquals(53, scalarInt(statement,
-                        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> 'flyway_schema_history'"));
+                for (String table : REQUIRED_DAILY_OPERATIONS_TABLES) {
+                    assertEquals(1, scalarInt(statement, """
+                            SELECT count(*) FROM information_schema.tables
+                            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                              AND table_name = '%s'
+                            """.formatted(table)), table + " must exist");
+                }
                 assertEquals(1, scalarInt(statement,
                         "SELECT count(*) FROM tenant WHERE id = '" + DEMO_TENANT + "'::uuid"));
                 assertEquals(8, scalarInt(statement,
                         "SELECT count(*) FROM app_role WHERE tenant_id = '" + DEMO_TENANT + "'::uuid"));
                 assertTrue(scalarBoolean(statement,
                         "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'work_record'::regclass"));
-                for (String table : SPRINT_2_TENANT_TABLES) {
+                for (String table : TENANT_RLS_TABLES) {
                     assertTrue(scalarBoolean(statement,
                             "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = '" + table + "'::regclass"),
                             table + " must enforce tenant RLS");
@@ -66,6 +71,7 @@ class PostgresMigrationIntegrationTest {
 
                 verifyEventNormalizationAndFrozenRule(statement);
                 verifyWorkPackageChildCannotMoveFromPublishedParent(statement);
+                verifyDailyOperationsFoundationAndImmutability(statement);
                 statement.executeUpdate("INSERT INTO tenant (id, code, name) VALUES ('" + OTHER_TENANT + "', 'OTHER', 'Other tenant')");
                 statement.executeUpdate("INSERT INTO org_unit (id, tenant_id, code, name, unit_type) VALUES ('22000000-0000-0000-0000-000000000001', '" + OTHER_TENANT + "', 'OTHER-GROUP', 'Other group', 'GROUP')");
             }
@@ -98,6 +104,10 @@ class PostgresMigrationIntegrationTest {
                 """.formatted(outboxId, DEMO_TENANT));
         assertEquals("WORKRECORDSUBMITTED", scalarString(statement,
                 "SELECT event_type FROM outbox_event WHERE id = '" + outboxId + "'::uuid"));
+        assertEquals(outboxId, scalarString(statement,
+                "SELECT trace_id::text FROM outbox_event WHERE id = '" + outboxId + "'::uuid"));
+        assertEquals("event:" + outboxId, scalarString(statement,
+                "SELECT idempotency_key FROM outbox_event WHERE id = '" + outboxId + "'::uuid"));
 
         String ruleId = "30000000-0000-0000-0000-000000000002";
         String versionId = "30000000-0000-0000-0000-000000000003";
@@ -213,7 +223,79 @@ class PostgresMigrationIntegrationTest {
                 "UPDATE work_package_scope SET scope_type = 'TENANT' WHERE id = '" + scopeId + "'::uuid"));
     }
 
-    private static final String[] SPRINT_2_TENANT_TABLES = {
+    private static void verifyDailyOperationsFoundationAndImmutability(Statement statement) throws Exception {
+        String auditId = "30000000-0000-0000-0000-000000000020";
+        String correlationId = "30000000-0000-0000-0000-000000000021";
+        statement.executeUpdate("""
+                INSERT INTO audit_log
+                    (id, tenant_id, action, resource_type, resource_id, correlation_id, after_data)
+                VALUES
+                    ('%s', '%s', 'MIGRATION_TEST', 'DAILY_OPERATION', gen_random_uuid(), '%s', '{}'::jsonb)
+                """.formatted(auditId, DEMO_TENANT, correlationId));
+        assertEquals(correlationId, scalarString(statement,
+                "SELECT trace_id::text FROM audit_log WHERE id = '" + auditId + "'::uuid"));
+        assertThrows(SQLException.class, () -> statement.executeUpdate(
+                "UPDATE audit_log SET after_data = '{\"tampered\":true}'::jsonb WHERE id = '" + auditId + "'::uuid"));
+
+        String templateId = "30000000-0000-0000-0000-000000000022";
+        String versionId = "30000000-0000-0000-0000-000000000023";
+        statement.executeUpdate("""
+                INSERT INTO daily_report_template_definition
+                    (id, tenant_id, code, name, template_origin, owner_org_unit_id, position_id, created_by)
+                VALUES
+                    ('%s', '%s', 'MIGRATION-DAILY-REPORT', 'Migration daily report', 'HQ',
+                     '12000000-0000-0000-0000-000000000001',
+                     '14000000-0000-0000-0000-000000000001',
+                     '19000000-0000-0000-0000-000000000001')
+                """.formatted(templateId, DEMO_TENANT));
+        statement.executeUpdate("""
+                INSERT INTO daily_report_template_version
+                    (id, tenant_id, template_id, version_no, lifecycle_status,
+                     work_package_version_id, configuration, content_hash, created_by)
+                SELECT
+                    '%s', '%s', '%s', 1, 'DRAFT', id, '{}'::jsonb, repeat('d', 64),
+                    '19000000-0000-0000-0000-000000000001'
+                FROM work_package_version
+                WHERE tenant_id = '%s'::uuid
+                ORDER BY created_at
+                LIMIT 1
+                """.formatted(versionId, DEMO_TENANT, templateId, DEMO_TENANT));
+        statement.executeUpdate("""
+                UPDATE daily_report_template_version
+                SET lifecycle_status = 'PUBLISHED', effective_from = now(),
+                    published_by = '19000000-0000-0000-0000-000000000001', published_at = now(),
+                    row_version = row_version + 1
+                WHERE id = '%s'::uuid
+                """.formatted(versionId));
+        assertThrows(SQLException.class, () -> statement.executeUpdate(
+                "UPDATE daily_report_template_version SET configuration = '{\"changed\":true}'::jsonb "
+                        + "WHERE id = '" + versionId + "'::uuid"));
+        assertThrows(SQLException.class, () -> statement.executeUpdate(
+                "DELETE FROM daily_report_template_version WHERE id = '" + versionId + "'::uuid"));
+
+        assertTrue(scalarString(statement, """
+                SELECT pg_get_constraintdef(oid)
+                FROM pg_constraint
+                WHERE conrelid = 'rule_action_execution'::regclass
+                  AND conname = 'ck_rule_action_execution_type'
+                """).contains("CREATE_TASK_CANDIDATE"));
+    }
+
+    private static final String[] REQUIRED_DAILY_OPERATIONS_TABLES = {
+            "hotel_business_day_config", "closed_loop_trace", "command_idempotency_record",
+            "daily_report_template_definition", "daily_report_template_version",
+            "daily_report_section_definition", "daily_report_section_version",
+            "daily_report_template_section", "daily_report_template_item",
+            "daily_report_template_assignment", "daily_report", "daily_report_revision",
+            "daily_report_item_result", "daily_report_source_reference", "daily_report_evidence",
+            "daily_report_review", "issue_event", "issue_source_link", "issue_transition",
+            "task_candidate", "issue_task_link", "sync_operation", "business_day_run",
+            "daily_operation_snapshot", "daily_operation_snapshot_metric", "action_item",
+            "notification_delivery", "ai_request", "ai_recommendation",
+            "ai_recommendation_source", "ai_decision", "operation_export_job"
+    };
+
+    private static final String[] TENANT_RLS_TABLES = {
             "work_package_definition", "work_package_version", "work_package_scope",
             "work_package_item", "work_package_item_standard", "work_package_item_responsibility",
             "work_package_allocation", "work_duty_period", "work_expectation",
@@ -221,7 +303,18 @@ class PostgresMigrationIntegrationTest {
             "rule_definition", "rule_version", "rule_scope", "rule_evaluation", "rule_action_execution",
             "management_task", "task_participant", "task_transition", "task_evidence", "task_escalation",
             "standard_evaluation", "standard_evaluation_item", "evaluation_evidence", "notification"
-            , "enterprise_template_definition", "enterprise_template_version", "work_record_supplement"
+            , "enterprise_template_definition", "enterprise_template_version", "work_record_supplement",
+            "hotel_business_day_config", "closed_loop_trace", "command_idempotency_record",
+            "daily_report_template_definition", "daily_report_template_version",
+            "daily_report_section_definition", "daily_report_section_version",
+            "daily_report_template_section", "daily_report_template_item",
+            "daily_report_template_assignment", "daily_report", "daily_report_revision",
+            "daily_report_item_result", "daily_report_source_reference", "daily_report_evidence",
+            "daily_report_review", "issue_event", "issue_source_link", "issue_transition",
+            "task_candidate", "issue_task_link", "sync_operation", "business_day_run",
+            "daily_operation_snapshot", "daily_operation_snapshot_metric", "action_item",
+            "notification_delivery", "ai_request", "ai_recommendation",
+            "ai_recommendation_source", "ai_decision", "operation_export_job"
     };
 
     private static int scalarInt(Statement statement, String sql) throws Exception {

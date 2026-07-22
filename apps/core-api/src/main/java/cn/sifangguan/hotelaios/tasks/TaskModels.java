@@ -62,4 +62,34 @@ public final class TaskModels {
             JsonNode sourceSnapshot
     ) {
     }
+
+    /**
+     * A human-confirmed task candidate promoted into the existing task center.
+     * The candidate remains the source of truth for the confirmation and sync
+     * lifecycle; the task center only receives the immutable responsibility
+     * and source snapshot required to create the formal task.
+     */
+    public record CandidateTaskSpec(
+            @NotNull UUID candidateId,
+            @NotNull UUID orgUnitId,
+            @NotNull UUID assigneeAssignmentId,
+            @NotNull UUID reviewerAssignmentId,
+            UUID standardVersionId,
+            @NotBlank String title,
+            String description,
+            String priority,
+            OffsetDateTime dueAt,
+            JsonNode sourceSnapshot
+    ) {
+    }
+
+    public record TaskReference(
+            UUID id,
+            String taskNo,
+            UUID orgUnitId,
+            String title,
+            String lifecycleStatus,
+            long rowVersion
+    ) {
+    }
 }

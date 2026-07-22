@@ -142,13 +142,36 @@ export async function apiCommand<T>(
   body: unknown,
   expectedVersion?: number,
 ): Promise<T> {
+  return apiMutation<T>(path, identity, {
+    body,
+    expectedVersion,
+    idempotencyKey: createIdempotencyKey('command'),
+  })
+}
+
+export type ApiMutationOptions = {
+  method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  body?: unknown
+  expectedVersion?: number
+  idempotencyKey?: string
+  signal?: AbortSignal
+}
+
+export async function apiMutation<T>(
+  path: string,
+  identity: ApiIdentity,
+  options: ApiMutationOptions = {},
+): Promise<T> {
+  const body = options.body === undefined ? {} : options.body
+  const payload = {
+    ...(typeof body === 'object' && body !== null && !Array.isArray(body) ? body : { value: body }),
+    ...(options.expectedVersion === undefined ? {} : { expectedVersion: options.expectedVersion }),
+  }
   return apiRequest<T>(path, identity, {
-    method: 'POST',
-    headers: { 'Idempotency-Key': createIdempotencyKey('command') },
-    body: JSON.stringify({
-      ...(typeof body === 'object' && body !== null ? body : { value: body }),
-      ...(expectedVersion === undefined ? {} : { expectedVersion }),
-    }),
+    method: options.method ?? 'POST',
+    headers: { 'Idempotency-Key': options.idempotencyKey ?? createIdempotencyKey('command') },
+    body: JSON.stringify(payload),
+    signal: options.signal,
   })
 }
 
