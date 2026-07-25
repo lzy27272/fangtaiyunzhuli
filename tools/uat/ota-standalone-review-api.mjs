@@ -9,11 +9,17 @@ import {
   renameSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   decryptCookie,
   encryptCookie,
 } from './report-source-cookie-crypto.mjs'
+import {
+  appendAndPersistSnapshot,
+  collectLiveReports,
+  loadSnapshotStore,
+  monitorFromSnapshot,
+} from './live-report-collector.mjs'
 
 const host = '127.0.0.1'
 const port = Number.parseInt(process.env.OTA_REVIEW_API_PORT ?? '8091', 10)
@@ -24,6 +30,17 @@ const dataPath = process.env.OTA_REVIEW_DATA_PATH?.trim()
 const cookieSecretsPath =
   process.env.OTA_REVIEW_COOKIE_SECRETS_PATH?.trim()
 const cookieSecretKey = process.env.OTA_REVIEW_SECRET_KEY?.trim()
+const automaticHourlyCollectionEnabled =
+  process.env.OTA_REVIEW_AUTO_COLLECTION_ENABLED === 'true'
+const liveSnapshotPath = dataPath
+  ? join(dirname(dataPath), 'live-report-snapshots.json')
+  : null
+const businessDayControlPath = dataPath
+  ? join(dirname(dataPath), 'business-day-controls.json')
+  : null
+const hotSellingRoomTypePath = dataPath
+  ? join(dirname(dataPath), 'hot-selling-room-types.json')
+  : null
 
 if (
   !Number.isInteger(port)
@@ -116,6 +133,10 @@ const onboardingTemplates = [
 const simulationRuns = new Map()
 const reportSourcesByHotel = new Map()
 const cookieSecretsByHotel = new Map()
+const liveCollectionLocks = new Map()
+const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
+const businessDayControlsByHotel = new Map()
+const hotSellingRoomTypesByHotel = new Map()
 
 const defaultReportSources = () => [
   {
@@ -359,6 +380,111 @@ if (existsSync(cookieSecretsPath)) {
   }
 }
 
+if (businessDayControlPath && existsSync(businessDayControlPath)) {
+  try {
+    const persistedControls = JSON.parse(
+      readFileSync(businessDayControlPath, 'utf8'),
+    )
+    for (const [hotelId, control] of Object.entries(persistedControls)) {
+      if (
+        !hotels.some((hotel) => hotel.hotelId === hotelId)
+        || !control
+        || typeof control !== 'object'
+        || !/^\d{4}-\d{2}-\d{2}$/.test(control.businessDate)
+      ) {
+        continue
+      }
+      businessDayControlsByHotel.set(hotelId, {
+        businessDate: control.businessDate,
+        mode: 'PMS_CONFIRMED',
+        updatedAt:
+          typeof control.updatedAt === 'string' ? control.updatedAt : null,
+      })
+    }
+  } catch {
+    process.stderr.write('REVIEW_BUSINESS_DAY_STORE_IGNORED\n')
+  }
+}
+
+const businessDayControlFor = (hotelId) =>
+  businessDayControlsByHotel.get(hotelId) ?? {
+    businessDate: null,
+    mode: 'UNCONFIRMED',
+    updatedAt: null,
+  }
+
+const persistBusinessDayControls = () => {
+  if (!businessDayControlPath) return
+  mkdirSync(dirname(businessDayControlPath), { recursive: true })
+  const temporaryPath = `${businessDayControlPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      Object.fromEntries(businessDayControlsByHotel),
+      null,
+      2,
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, businessDayControlPath)
+}
+
+if (hotSellingRoomTypePath && existsSync(hotSellingRoomTypePath)) {
+  try {
+    const persistedHotRooms = JSON.parse(
+      readFileSync(hotSellingRoomTypePath, 'utf8'),
+    )
+    for (const [hotelId, config] of Object.entries(persistedHotRooms)) {
+      if (
+        !hotels.some((hotel) => hotel.hotelId === hotelId)
+        || !config
+        || typeof config !== 'object'
+        || !Array.isArray(config.roomTypeCodes)
+      ) {
+        continue
+      }
+      const roomTypeCodes = [
+        ...new Set(
+          config.roomTypeCodes.filter(
+            (code) =>
+              typeof code === 'string'
+              && /^[A-Z0-9-]{3,80}$/.test(code),
+          ),
+        ),
+      ].slice(0, 30)
+      hotSellingRoomTypesByHotel.set(hotelId, {
+        roomTypeCodes,
+        updatedAt:
+          typeof config.updatedAt === 'string' ? config.updatedAt : null,
+      })
+    }
+  } catch {
+    process.stderr.write('REVIEW_HOT_ROOM_STORE_IGNORED\n')
+  }
+}
+
+const hotSellingRoomTypesFor = (hotelId) =>
+  hotSellingRoomTypesByHotel.get(hotelId) ?? {
+    roomTypeCodes: [],
+    updatedAt: null,
+  }
+
+const persistHotSellingRoomTypes = () => {
+  if (!hotSellingRoomTypePath) return
+  mkdirSync(dirname(hotSellingRoomTypePath), { recursive: true })
+  const temporaryPath = `${hotSellingRoomTypePath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      Object.fromEntries(hotSellingRoomTypesByHotel),
+      null,
+      2,
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, hotSellingRoomTypePath)
+}
+
 const safeEqual = (left, right) => {
   const leftBuffer = Buffer.from(left ?? '', 'utf8')
   const rightBuffer = Buffer.from(right ?? '', 'utf8')
@@ -375,7 +501,7 @@ const json = (response, status, body) => {
     'content-length': Buffer.byteLength(content),
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
-    'x-ota-review-mode': 'local-simulation-only',
+    'x-ota-review-mode': 'local-live-pilot',
   })
   response.end(content)
 }
@@ -384,7 +510,7 @@ const empty = (response, status = 204) => {
   response.writeHead(status, {
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
-    'x-ota-review-mode': 'local-simulation-only',
+    'x-ota-review-mode': 'local-live-pilot',
   })
   response.end()
 }
@@ -626,6 +752,119 @@ const monitorFor = (hotelId) => {
   }
 }
 
+const liveMonitorFor = (hotelId) => {
+  const hotel = selectedHotel(hotelId)
+  const snapshots = liveSnapshotStore[hotelId] ?? []
+  const snapshot = snapshots.at(-1) ?? null
+  return monitorFromSnapshot(
+    snapshot,
+    hotel,
+    null,
+    hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+  )
+}
+
+const collectLiveFor = async (hotelId) => {
+  const running = liveCollectionLocks.get(hotelId)
+  if (running) return running
+
+  const operation = (async () => {
+    const hotel = selectedHotel(hotelId)
+    const businessDayControl = businessDayControlFor(hotelId)
+    if (!businessDayControl.businessDate) {
+      throw new Error('BUSINESS_DAY_UNCONFIRMED')
+    }
+    if (!reportSourcesByHotel.has(hotelId)) {
+      reportSourcesByHotel.set(hotelId, defaultReportSources())
+    }
+    const sources = reportSourcesByHotel.get(hotelId)
+    const encryptedSecrets = secretsForHotel(hotelId)
+    const cookiesBySourceId = {}
+    for (const source of sources) {
+      const record = encryptedSecrets[source.sourceId]
+      if (!record) continue
+      cookiesBySourceId[source.sourceId] = decryptCookie(
+        record,
+        cookieSecretKey,
+        cookieScope(hotelId, source.sourceId),
+      )
+    }
+    const result = await collectLiveReports({
+      hotel,
+      sources,
+      cookiesBySourceId,
+      previousSnapshots: liveSnapshotStore[hotelId] ?? [],
+      secretKey: cookieSecretKey,
+      target: null,
+      hotSellingRoomTypeCodes:
+        hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+      reportDate: businessDayControl.businessDate,
+      businessDateBasis: 'PMS_CONFIRMED',
+    })
+    appendAndPersistSnapshot(
+      liveSnapshotStore,
+      liveSnapshotPath,
+      result.snapshot,
+    )
+    return result
+  })()
+  liveCollectionLocks.set(hotelId, operation)
+  try {
+    return await operation
+  } finally {
+    liveCollectionLocks.delete(hotelId)
+  }
+}
+
+const shanghaiHour = (date = new Date()) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  return {
+    hourKey:
+      `${parts.year}-${parts.month}-${parts.day}T${parts.hour}`,
+    minute: Number(parts.minute),
+  }
+}
+
+const scheduledCollectionTick = async () => {
+  if (!automaticHourlyCollectionEnabled) return
+  const { hourKey, minute } = shanghaiHour()
+  if (minute > 5) return
+  for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+    const latest = (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
+    if (latest?.observedAt?.startsWith(hourKey)) continue
+    try {
+      await collectLiveFor(hotel.hotelId)
+      process.stdout.write(
+        `${JSON.stringify({
+          event: 'SCHEDULED_COLLECTION_COMPLETED',
+          hotelId: hotel.hotelId,
+          hourKey,
+        })}\n`,
+      )
+    } catch {
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'SCHEDULED_COLLECTION_FAILED',
+          hotelId: hotel.hotelId,
+          hourKey,
+        })}\n`,
+      )
+    }
+  }
+}
+
 const briefFor = (hotelId) => {
   const hotel = selectedHotel(hotelId)
   return {
@@ -665,7 +904,12 @@ const server = createServer(async (request, response) => {
     const path = url.pathname
 
     if (request.method === 'GET' && path === '/health') {
-      json(response, 200, { status: 'UP', mode: 'LOCAL_REVIEW_ONLY' })
+      json(response, 200, {
+        status: 'UP',
+        mode: 'LOCAL_LIVE_PILOT',
+        automaticHourlyCollectionEnabled,
+        outboundDeliveryEnabled: false,
+      })
       return
     }
 
@@ -801,8 +1045,92 @@ const server = createServer(async (request, response) => {
         })
         return
       }
+      if (request.method === 'GET' && suffix === '/business-day-control') {
+        json(response, 200, {
+          data: businessDayControlFor(hotelId),
+        })
+        return
+      }
+      if (request.method === 'POST' && suffix === '/business-day-control') {
+        const body = await readBody(request)
+        if (
+          typeof body.businessDate !== 'string'
+          || !/^\d{4}-\d{2}-\d{2}$/.test(body.businessDate)
+          || typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+        ) {
+          throw new Error('BUSINESS_DAY_CONTROL_INVALID')
+        }
+        const control = {
+          businessDate: body.businessDate,
+          mode: 'PMS_CONFIRMED',
+          updatedAt: new Date().toISOString(),
+        }
+        businessDayControlsByHotel.set(hotelId, control)
+        persistBusinessDayControls()
+        json(response, 200, { data: control })
+        return
+      }
+      if (request.method === 'GET' && suffix === '/hot-selling-room-types') {
+        json(response, 200, {
+          data: hotSellingRoomTypesFor(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/hot-selling-room-types'
+      ) {
+        const body = await readBody(request)
+        if (
+          !Array.isArray(body.roomTypeCodes)
+          || body.roomTypeCodes.length > 30
+          || typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+        ) {
+          throw new Error('HOT_SELLING_ROOM_TYPES_INVALID')
+        }
+        const latestSnapshot =
+          (liveSnapshotStore[hotelId] ?? []).at(-1) ?? null
+        const knownCodes = new Set(
+          (latestSnapshot?.physicalInventory ?? [])
+            .map((room) => room.physicalRoomTypeCode),
+        )
+        const roomTypeCodes = [...new Set(body.roomTypeCodes)]
+        if (
+          roomTypeCodes.some(
+            (code) =>
+              typeof code !== 'string'
+              || !knownCodes.has(code),
+          )
+        ) {
+          throw new Error('HOT_SELLING_ROOM_TYPES_INVALID')
+        }
+        const config = {
+          roomTypeCodes,
+          updatedAt: new Date().toISOString(),
+        }
+        hotSellingRoomTypesByHotel.set(hotelId, config)
+        persistHotSellingRoomTypes()
+        json(response, 200, { data: config })
+        return
+      }
       if (request.method === 'GET' && suffix === '/monitor') {
-        json(response, 200, { data: monitorFor(hotelId) })
+        json(response, 200, { data: liveMonitorFor(hotelId) })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/live-collection-runs'
+      ) {
+        await readBody(request)
+        const result = await collectLiveFor(hotelId)
+        json(response, 200, {
+          data: {
+            ...result.run,
+            monitor: result.monitor,
+          },
+        })
         return
       }
       if (request.method === 'GET' && suffix === '/briefs') {
@@ -923,6 +1251,12 @@ const server = createServer(async (request, response) => {
         ? 'REVIEW_REQUEST_JSON_INVALID'
         : error?.message === 'REQUEST_TOO_LARGE'
           ? 'REVIEW_REQUEST_TOO_LARGE'
+          : error?.message === 'BUSINESS_DAY_UNCONFIRMED'
+            ? 'BUSINESS_DAY_UNCONFIRMED'
+            : error?.message === 'BUSINESS_DAY_CONTROL_INVALID'
+              ? 'BUSINESS_DAY_CONTROL_INVALID'
+              : error?.message === 'HOT_SELLING_ROOM_TYPES_INVALID'
+                ? 'HOT_SELLING_ROOM_TYPES_INVALID'
           : 'REVIEW_API_FAILED_CLOSED'
     json(response, 400, { code })
   }
@@ -932,8 +1266,16 @@ server.listen(port, host, () => {
   process.stdout.write(
     `${JSON.stringify({
       status: 'READY',
-      mode: 'LOCAL_REVIEW_ONLY',
+      mode: 'LOCAL_LIVE_PILOT',
       url: `http://${host}:${port}`,
     })}\n`,
   )
+  const scheduler = setInterval(() => {
+    void scheduledCollectionTick()
+  }, 30_000)
+  scheduler.unref()
+  const initialScheduler = setTimeout(() => {
+    void scheduledCollectionTick()
+  }, 2_000)
+  initialScheduler.unref()
 })

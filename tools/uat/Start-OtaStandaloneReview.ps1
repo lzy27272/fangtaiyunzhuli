@@ -151,6 +151,7 @@ $previousToken = $env:OTA_REVIEW_ACCESS_TOKEN
 $previousDataPath = $env:OTA_REVIEW_DATA_PATH
 $previousCookieSecretsPath = $env:OTA_REVIEW_COOKIE_SECRETS_PATH
 $previousSecretKey = $env:OTA_REVIEW_SECRET_KEY
+$previousAutoCollection = $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED
 $previousProxy = $env:OTA_API_PROXY_TARGET
 
 try {
@@ -161,6 +162,7 @@ try {
     $env:OTA_REVIEW_DATA_PATH = $dataPath
     $env:OTA_REVIEW_COOKIE_SECRETS_PATH = $cookieSecretsPath
     $env:OTA_REVIEW_SECRET_KEY = $reviewSecretKey
+    $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = 'true'
 
     $apiProcess = Start-Process `
         -FilePath $node `
@@ -180,6 +182,7 @@ try {
     $env:OTA_REVIEW_DATA_PATH = $previousDataPath
     $env:OTA_REVIEW_COOKIE_SECRETS_PATH = $previousCookieSecretsPath
     $env:OTA_REVIEW_SECRET_KEY = $previousSecretKey
+    $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = $previousAutoCollection
 
     $env:OTA_API_PROXY_TARGET = "http://127.0.0.1:$ApiPort"
     $webProcess = Start-Process `
@@ -203,7 +206,7 @@ try {
 
     $state = [ordered]@{
         status = 'RUNNING'
-        mode = 'LOCAL_REVIEW_ONLY'
+        mode = 'LOCAL_LIVE_PILOT'
         startedAt = [DateTimeOffset]::Now.ToString('o')
         expiresAt = [DateTimeOffset]::Now.AddHours(4).ToString('o')
         webUrl = "http://127.0.0.1:$WebPort"
@@ -211,7 +214,8 @@ try {
         apiPid = $apiProcess.Id
         webPid = $webProcess.Id
         username = $reviewUsername
-        realExternalConnections = $false
+        realExternalConnections = $true
+        automaticHourlyCollection = $true
         realWeComDelivery = $false
         cookieSecretStorage = 'WINDOWS_DPAPI_AES256_GCM'
     }
@@ -254,7 +258,7 @@ try {
 
     $result = [ordered]@{
         status = 'READY'
-        mode = 'LOCAL_REVIEW_ONLY'
+        mode = 'LOCAL_LIVE_PILOT'
         webUrl = $state.webUrl
         apiUrl = $state.apiUrl
         username = $reviewUsername
@@ -289,5 +293,6 @@ finally {
     $env:OTA_REVIEW_DATA_PATH = $previousDataPath
     $env:OTA_REVIEW_COOKIE_SECRETS_PATH = $previousCookieSecretsPath
     $env:OTA_REVIEW_SECRET_KEY = $previousSecretKey
+    $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = $previousAutoCollection
     $env:OTA_API_PROXY_TARGET = $previousProxy
 }

@@ -245,9 +245,6 @@ const createRoomWorkbenchContextHeaders = (cookie) => {
     ['hotelpms-token', 'hotelpms_token'],
     ['hotelpms-login-hotel-id', 'hotelpms_login_hotel_id'],
     ['hotelpms-login-org-id', 'hotelpms_login_org_id'],
-    ['hotelpms-login-org-type', 'hotelpms_login_org_type'],
-    ['hotelpms-shift', 'hotelpms_shift'],
-    ['hotelpms-client-id', '_lxsdk_cuid'],
   ]
   const headers = {}
   for (const [headerName, cookieName] of bindings) {
@@ -257,8 +254,6 @@ const createRoomWorkbenchContextHeaders = (cookie) => {
     }
     headers[headerName] = value
   }
-  headers['hotelpms-platform'] = 'pc'
-  headers['m-appkey'] = 'fe_com.sankuai.hotelpms.web.report'
   return headers
 }
 
@@ -697,7 +692,8 @@ const fetchSameOrigin = async (source, cookie) => {
               : requestProfile === 'ROOM_WORKBENCH_INVENTORY'
                 ? {
                     'Content-Type': 'application/json;charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache',
+                    Pragma: 'no-cache',
                   }
               : { 'Content-Type': 'application/json' }
       const browserHeaders =
@@ -706,10 +702,13 @@ const fetchSameOrigin = async (source, cookie) => {
           || requestProfile === 'JY09_FUTURE_INVENTORY'
           || requestProfile === 'ROOM_WORKBENCH_INVENTORY'
           ? {
-              Origin: target.origin,
+              Origin:
+                requestProfile === 'ROOM_WORKBENCH_INVENTORY'
+                  ? 'https://awp.meituan.com'
+                  : target.origin,
               Referer:
                 requestProfile === 'ROOM_WORKBENCH_INVENTORY'
-                  ? `${target.origin}/pms-report/home/report/`
+                  ? 'https://awp.meituan.com/'
                   : `${target.origin}/`,
             }
           : {}

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  loadBusinessDayControl,
+  loadHotSellingRoomTypes,
   loadMonitor,
-  triggerSimulationRun,
+  saveBusinessDayControl,
+  saveHotSellingRoomTypes,
+  triggerLiveCollection,
+  type BusinessDayControlView,
   type HotelContext,
+  type LiveCollectionRunView,
   type MonitorView,
-  type SimulationRunView,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
 
@@ -13,10 +18,10 @@ interface Props {
 }
 
 const METRIC_LABELS: Record<string, string> = {
-  totalRevenue: '总营业额',
+  totalRevenue: '房费收入（报表口径）',
   adr: '平均房价 ADR',
   revPar: '单房收益 RevPAR',
-  soldRooms: '今日已售',
+  soldRooms: '今日已售间夜',
   availableRooms: '今日可售',
   targetProgress: '目标完成进度',
   sellProgress: '售卖进度',
@@ -27,17 +32,29 @@ function displayMetric(value: string | number | null | undefined, unit: string, 
   if (state === 'NOT_CONFIGURED') return '暂未配置标准'
   if (state === 'NOT_APPLICABLE') return '不适用'
   if (value === null || value === undefined) return '无法判断'
-  return `${value}${unit === 'PERCENT' ? '%' : unit === 'ROOM' ? '间' : unit === 'CURRENCY' ? '元' : ''}`
+  return `${value}${unit === 'PERCENT'
+    ? '%'
+    : unit === 'ROOM'
+      ? '间'
+      : unit === 'ROOM_NIGHT'
+        ? '间夜'
+        : unit === 'CURRENCY'
+          ? '元'
+          : ''}`
 }
 
 export function MonitorPage({ context }: Props) {
   const [monitor, setMonitor] = useState<MonitorView | null>(null)
-  const [run, setRun] = useState<SimulationRunView | null>(null)
-  const [scenario, setScenario] = useState<
-    'BASELINE' | 'INVENTORY_MISMATCH' | 'SOURCE_UNAVAILABLE' | 'LATE_BRIEF_REPLAY'
-  >('BASELINE')
+  const [run, setRun] = useState<LiveCollectionRunView | null>(null)
+  const [businessDayControl, setBusinessDayControl] =
+    useState<BusinessDayControlView | null>(null)
+  const [businessDateDraft, setBusinessDateDraft] = useState('')
+  const [hotRoomTypeCodes, setHotRoomTypeCodes] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
+  const [savingBusinessDate, setSavingBusinessDate] = useState(false)
+  const [savingHotRooms, setSavingHotRooms] = useState(false)
+  const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
@@ -45,7 +62,15 @@ export function MonitorPage({ context }: Props) {
     setLoading(true)
     setError('')
     try {
-      setMonitor(await loadMonitor(context))
+      const [monitorView, control, hotRoomConfig] = await Promise.all([
+        loadMonitor(context),
+        loadBusinessDayControl(context),
+        loadHotSellingRoomTypes(context),
+      ])
+      setMonitor(monitorView)
+      setBusinessDayControl(control)
+      setBusinessDateDraft(control.businessDate ?? '')
+      setHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '读取监控失败')
     } finally {
@@ -57,18 +82,71 @@ export function MonitorPage({ context }: Props) {
     void refresh()
   }, [refresh])
 
-  async function runSimulation() {
+  async function collectNow() {
     if (!context) return
     setRunning(true)
     setError('')
     try {
-      const started = await triggerSimulationRun(context, scenario)
+      const started = await triggerLiveCollection(context)
       setRun(started)
-      await refresh()
+      setMonitor(started.monitor)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '模拟运行失败')
+      setError(cause instanceof Error ? cause.message : '真实采集失败')
     } finally {
       setRunning(false)
+    }
+  }
+
+  async function confirmBusinessDateAndCollect() {
+    if (!context || !/^\d{4}-\d{2}-\d{2}$/.test(businessDateDraft)) return
+    setSavingBusinessDate(true)
+    setError('')
+    try {
+      const control = await saveBusinessDayControl(
+        context,
+        businessDateDraft,
+      )
+      setBusinessDayControl(control)
+      const started = await triggerLiveCollection(context)
+      setRun(started)
+      setMonitor(started.monitor)
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : '确认PMS营业日并采集失败',
+      )
+    } finally {
+      setSavingBusinessDate(false)
+    }
+  }
+
+  function toggleHotRoomType(roomTypeCode: string) {
+    setHotRoomTypeCodes((current) =>
+      current.includes(roomTypeCode)
+        ? current.filter((code) => code !== roomTypeCode)
+        : [...current, roomTypeCode])
+  }
+
+  async function saveHotRooms() {
+    if (!context) return
+    setSavingHotRooms(true)
+    setError('')
+    setNotice('')
+    try {
+      const saved = await saveHotSellingRoomTypes(
+        context,
+        hotRoomTypeCodes,
+      )
+      setHotRoomTypeCodes(saved.roomTypeCodes)
+      setMonitor(await loadMonitor(context))
+      setNotice('热销房型配置已保存；可售为0时生成售罄简报告警。')
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : '保存热销房型失败',
+      )
+    } finally {
+      setSavingHotRooms(false)
     }
   }
 
@@ -78,43 +156,71 @@ export function MonitorPage({ context }: Props) {
         <div>
           <p className="eyebrow">02 · MONITOR</p>
           <h2>多报表融合经营监控</h2>
-          <p>数值由已配置的主报表融合计算；辅助来源只做校验。缺失和过期数据保持“无法判断”。</p>
+          <p>从已保存的报表接口只读采集并融合计算；原始响应、Cookie、订单号和客人信息均不落盘。</p>
         </div>
         <div className="heading-actions">
-          <select
-            aria-label="模拟场景"
-            disabled={running}
-            value={scenario}
-            onChange={(event) => setScenario(event.target.value as typeof scenario)}
+          <input
+            aria-label="PMS当前营业日"
+            disabled={!context || savingBusinessDate}
+            type="date"
+            value={businessDateDraft}
+            onChange={(event) => setBusinessDateDraft(event.target.value)}
+          />
+          <button
+            className="secondary"
+            disabled={
+              !context
+              || savingBusinessDate
+              || !/^\d{4}-\d{2}-\d{2}$/.test(businessDateDraft)
+            }
+            type="button"
+            onClick={confirmBusinessDateAndCollect}
           >
-            <option value="BASELINE">正常基线</option>
-            <option value="INVENTORY_MISMATCH">房态不匹配</option>
-            <option value="SOURCE_UNAVAILABLE">来源不可用</option>
-            <option value="LATE_BRIEF_REPLAY">迟到补记</option>
-          </select>
+            {savingBusinessDate ? '确认采集中…' : '确认营业日并采集'}
+          </button>
           <button className="secondary" disabled={!context || loading} type="button" onClick={refresh}>
             刷新
           </button>
-          <button disabled={!context || running} type="button" onClick={runSimulation}>
-            {running ? '运行中…' : '运行整点模拟'}
+          <button
+            disabled={
+              !context
+              || running
+              || businessDayControl?.mode !== 'PMS_CONFIRMED'
+            }
+            type="button"
+            onClick={collectNow}
+          >
+            {running ? '采集中…' : '立即采集三个报表'}
           </button>
         </div>
       </div>
 
+      <div className="run-strip">
+        <strong>PMS营业日</strong>
+        <span>{businessDayControl?.businessDate ?? '尚未确认'}</span>
+        <span>
+          {businessDayControl?.mode === 'PMS_CONFIRMED'
+            ? '以PMS夜审状态为准，零点不自动切日'
+            : '采集前必须人工确认'}
+        </span>
+      </div>
+
       {run ? (
         <div className="run-strip">
-          <strong>模拟运行 {run.status}</strong>
+          <strong>真实采集 {run.status}</strong>
           <span>{run.runId}</span>
-          <span>执行 {run.fixedClockAt}</span>
-          <span>截止 {run.scheduledFor}</span>
-          <b>企微禁发</b>
+          <span>来源 {run.successfulSourceCount}/{run.sourceCount}</span>
+          <span>营业日候选 {run.businessDate}</span>
+          <b>本次未触发企微</b>
         </div>
       ) : null}
+
+      {notice ? <div className="success" role="status">{notice}</div> : null}
 
       {!context ? (
         <div className="state-panel">请先在顶部载入租户和门店。</div>
       ) : (
-        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="该门店尚无模拟快照。">
+        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="尚无真实快照，请点击“立即采集三个报表”。">
           {monitor ? (
             <>
               <div className="monitor-summary">
@@ -125,9 +231,14 @@ export function MonitorPage({ context }: Props) {
                 <div>
                   <span>经营营业日</span>
                   <strong>{monitor.businessDate ?? '无法判断'}</strong>
+                  <small>
+                    {monitor.businessDateBasis === 'PMS_CONFIRMED'
+                      ? '已按PMS夜审状态确认'
+                      : '旧快照：日历日候选'}
+                  </small>
                 </div>
                 <div>
-                  <span>统计截止</span>
+                  <span>快照采集时间</span>
                   <strong>{monitor.cutoffAt ?? '尚未冻结'}</strong>
                 </div>
                 <div>
@@ -148,24 +259,118 @@ export function MonitorPage({ context }: Props) {
                 ))}
               </div>
 
+              <h3>小时快照差分</h3>
+              {monitor.hourlyDelta?.basis === 'HOURLY_SNAPSHOT_DIFF'
+                && monitor.hourlyDelta.totals ? (
+                  <>
+                    <div className="monitor-summary">
+                      <div>
+                        <span>对比区间</span>
+                        <strong>
+                          {monitor.hourlyDelta.intervalStartAt} → {monitor.hourlyDelta.intervalEndAt}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>新增间夜</span>
+                        <strong>{monitor.hourlyDelta.totals.newRoomNights}</strong>
+                      </div>
+                      <div>
+                        <span>当日 / 远期</span>
+                        <strong>
+                          {monitor.hourlyDelta.totals.todayRoomNights}
+                          {' / '}
+                          {monitor.hourlyDelta.totals.futureRoomNights}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>取消间夜</span>
+                        <strong>{monitor.hourlyDelta.totals.canceledRoomNights}</strong>
+                      </div>
+                    </div>
+                    <div className="source-row">
+                      {Object.entries(monitor.hourlyDelta.byChannel ?? {}).map(([channel, delta]) => (
+                        <article key={channel}>
+                          <strong>{channel}</strong>
+                          <span>新增 {delta.newRoomNights} 间夜</span>
+                          <small>
+                            当日 {delta.todayRoomNights}｜远期 {delta.futureRoomNights}
+                            ｜取消 {delta.canceledRoomNights}
+                          </small>
+                        </article>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="state-panel">
+                    基线已建立后，需再取得约一小时后的快照，才会计算小时进单与取消间夜。
+                  </div>
+                )}
+
               <h3>来源新鲜度</h3>
               <div className="source-row">
                 {monitor.sources.map((source) => (
                   <article key={source.sourceCode}>
                     <strong>{source.sourceCode}</strong>
                     <span className={`source-${source.completeness.toLowerCase()}`}>{source.completeness}</span>
-                    <small>{source.sourceObservedAt ?? '尚未观察'}</small>
+                    <small>
+                      {source.sourceObservedAt ?? '尚未观察'}
+                      {source.errorCode ? `｜${source.errorCode}` : ''}
+                    </small>
                   </article>
                 ))}
               </div>
 
-              <h3>实体库存池逐来源对账</h3>
+              <div className="page-heading">
+                <div>
+                  <h3>热销房型监测配置</h3>
+                  <p>
+                    勾选后持续监测实体可售量；等于0时生成售罄告警，
+                    数据缺失时不误报。
+                  </p>
+                </div>
+                <button
+                  className="secondary"
+                  disabled={savingHotRooms || monitor.inventory.length === 0}
+                  type="button"
+                  onClick={saveHotRooms}
+                >
+                  {savingHotRooms ? '保存中…' : '保存热销房型'}
+                </button>
+              </div>
+
+              {(monitor.hotSellingAlerts ?? []).map((alert) => (
+                <div
+                  className={
+                    alert.state === 'SOLD_OUT' ? 'shell-error' : 'state-panel'
+                  }
+                  key={alert.physicalRoomTypeCode}
+                  role={alert.state === 'SOLD_OUT' ? 'alert' : 'status'}
+                >
+                  {alert.message}
+                  {alert.state === 'SOLD_OUT'
+                    ? '｜已进入简报告警候选，企微当前禁发。'
+                    : ''}
+                </div>
+              ))}
+
+              <h3>实体房型库存与热销标记</h3>
               <div className="inventory-list">
                 {monitor.inventory.map((pool) => (
                   <article key={pool.inventoryPoolId}>
                     <header>
                       <strong>{pool.displayName}</strong>
                       <span>主库存报表可售 {pool.primaryAvailableRooms ?? '无法判断'}</span>
+                      <label>
+                        <input
+                          checked={hotRoomTypeCodes.includes(
+                            pool.physicalRoomTypeCode,
+                          )}
+                          type="checkbox"
+                          onChange={() =>
+                            toggleHotRoomType(pool.physicalRoomTypeCode)}
+                        />
+                        热销房型
+                      </label>
                     </header>
                     {Object.entries(pool.otaAvailableRooms).map(([productCode, available]) => (
                       <div key={productCode}>
@@ -174,7 +379,9 @@ export function MonitorPage({ context }: Props) {
                         <b className={`inventory-${pool.state.toLowerCase()}`}>{pool.state}</b>
                       </div>
                     ))}
-                    <small>多个售卖名称共享实体库存；辅助来源逐项比较，绝不累加。</small>
+                    <small>
+                      当前仅有实体房型报表时不做P1判断；接入OTA产品可售量后才逐项比较，绝不累加。
+                    </small>
                   </article>
                 ))}
               </div>

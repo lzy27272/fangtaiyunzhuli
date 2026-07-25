@@ -58,7 +58,7 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .sidebar-account { display: flex; align-items: flex-start; gap: .7rem; margin-top: auto; padding: 1rem .75rem 0; border-top: 1px solid rgba(255,255,255,.1); }
 .sidebar-account div { min-width: 0; }
 .sidebar-account strong, .sidebar-account small { display: block; }
-.sidebar-account small { overflow: hidden; margin-top: .2rem; color: #9fb1aa; font-size: .68rem; text-overflow: ellipsis; }
+.sidebar-account small { overflow: hidden; margin-top: .2rem; color: #9fb1aa; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
 
 .workspace { min-width: 0; padding: 2.2rem clamp(1.25rem, 4vw, 3.6rem) 5rem; }
 .workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; max-width: 90rem; margin: 0 auto 1.2rem; }

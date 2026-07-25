@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { hasRefreshContext, login, logout, refreshSession } from './api/auth'
 import type { HotelContext } from './api/business'
-import { clearSession, getSession, setSession, type AuthSession } from './auth/session'
+import { clearSession, getSession, setSession, type AuthSession, type OtaRole } from './auth/session'
 import { HotelContextBar } from './components/HotelContextBar'
 import { HistoryPage } from './pages/HistoryPage'
 import { MappingTargetPage } from './pages/MappingTargetPage'
@@ -85,6 +85,24 @@ const NAVIGATION: Array<{ code: PageCode; number: string; label: string }> = [
   { code: 'history', number: '04', label: '简报告警' },
 ]
 
+const ROLE_LABELS: Record<OtaRole, string> = {
+  PLATFORM_ADMIN: '平台管理员',
+  OTA_OPERATION_ASSISTANT: 'OTA运营助理',
+  OTA_OPERATION_MANAGER: 'OTA运营经理',
+  CEO: '总经理',
+  REGIONAL_MANAGER: '区域经理',
+  REVENUE_MANAGER: '收益经理',
+  HOTEL_P1_HANDLER: 'P1处理人',
+}
+
+function getRoleSummary(roles: OtaRole[]): string {
+  const [primaryRole] = roles
+  if (!primaryRole) return '未配置权限'
+
+  const primaryLabel = ROLE_LABELS[primaryRole]
+  return roles.length > 1 ? `${primaryLabel} · ${roles.length}项权限` : primaryLabel
+}
+
 function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout: () => void }) {
   const [working, setWorking] = useState(false)
   const [logoutError, setLogoutError] = useState('')
@@ -93,6 +111,8 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
   const canAdminConfigure = session.account.roles.includes('PLATFORM_ADMIN')
   const canRevenueConfigure = canAdminConfigure
     || session.account.roles.includes('REVENUE_MANAGER')
+  const roleSummary = getRoleSummary(session.account.roles)
+  const fullRoleList = session.account.roles.map((role) => ROLE_LABELS[role]).join(' · ')
 
   async function signOut() {
     setWorking(true)
@@ -133,7 +153,7 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
           <span className="status-dot" aria-hidden="true" />
           <div>
             <strong>{session.account.displayName}</strong>
-            <small>{session.account.roles.join(' · ')}</small>
+            <small aria-label={`权限：${fullRoleList}`} title={fullRoleList}>{roleSummary}</small>
           </div>
         </div>
       </aside>
@@ -150,8 +170,8 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
         </header>
 
         <div className="simulation-banner" role="status">
-          <strong>本机评审环境 · 外部抓取与企微推送均禁用</strong>
-          <span>当前只验证多个报表URL、计算规则和页面流程，不访问任何外部接口。</span>
+          <strong>本机试点环境 · 报表只读采集已启用 · 企微自动推送禁用</strong>
+          <span>系统每小时00分自动采集，也支持手动采集；原始响应和敏感字段不落盘，本阶段不会自动发群。</span>
         </div>
 
         {logoutError ? <div className="shell-error" role="alert">{logoutError}，当前会话仍保留。</div> : null}

@@ -213,7 +213,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
       setSources(await loadReportSources(context))
       setCookieDrafts({})
       setCookieClears({})
-      setNotice('报表URL及各自Cookie状态已保存；Cookie写入后不回显，评审模式不会发起外部抓取。')
+      setNotice('报表URL及各自Cookie状态已保存；Cookie写入后不回显，仅在“实时监控”页主动采集时使用。')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存报表URL失败')
     } finally {

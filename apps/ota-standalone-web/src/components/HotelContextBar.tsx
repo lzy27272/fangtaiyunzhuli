@@ -269,7 +269,7 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
               />
             </label>
             <button disabled={creating} type="button" onClick={createHotel}>
-              {creating ? '正在创建…' : '创建模拟门店'}
+              {creating ? '正在创建…' : '创建评审门店'}
             </button>
           </div>
         </details>

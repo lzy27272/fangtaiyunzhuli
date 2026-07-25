@@ -182,6 +182,7 @@ export interface SourceHealth {
   completeness: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE'
   sourceObservedAt?: string
   ingestedAt?: string
+  errorCode?: string | null
 }
 
 export interface MetricValue {
@@ -197,6 +198,8 @@ export interface InventoryLine {
   primaryAvailableRooms?: number | null
   otaAvailableRooms: Record<string, number>
   state: 'MATCHED' | 'P1_RISK' | 'UNAVAILABLE'
+  hotSelling?: boolean
+  hotSellingAlertState?: 'SOLD_OUT' | 'AVAILABLE' | 'UNAVAILABLE' | null
 }
 
 export interface MonitorView {
@@ -210,6 +213,63 @@ export interface MonitorView {
   sources: SourceHealth[]
   metrics: Record<string, MetricValue>
   inventory: InventoryLine[]
+  hotSellingAlerts?: Array<{
+    physicalRoomTypeCode: string
+    displayName: string
+    availableRooms: number | null
+    state: 'SOLD_OUT' | 'AVAILABLE' | 'UNAVAILABLE'
+    shouldNotify: boolean
+    message: string
+  }>
+  businessDateBasis?: 'PMS_CONFIRMED' | 'CALENDAR_FALLBACK'
+  revenueSemantics?: 'REPORT_ESTIMATED_ROOM_FEE'
+  collectionRunId?: string
+  hourlyDelta?: {
+    basis: 'HOURLY_SNAPSHOT_DIFF' | 'BASELINE_PENDING'
+    intervalStartAt: string | null
+    intervalEndAt: string | null
+    totals: {
+      newRoomNights: number
+      todayRoomNights: number
+      futureRoomNights: number
+      canceledRoomNights: number
+    } | null
+    byChannel: Record<string, {
+      newRoomNights: number
+      todayRoomNights: number
+      futureRoomNights: number
+      canceledRoomNights: number
+    }> | null
+    metricDelta: {
+      roomFee: number | null
+      adr: number | null
+      revPar: number | null
+      roomNights: number | null
+    } | null
+  }
+}
+
+export interface LiveCollectionRunView {
+  runId: string
+  status: 'SUCCEEDED' | 'PARTIAL' | 'FAILED'
+  requestedAt: string
+  completedAt: string
+  businessDate: string
+  sourceCount: number
+  successfulSourceCount: number
+  outboundDeliveryAttempted: false
+  monitor: MonitorView
+}
+
+export interface BusinessDayControlView {
+  businessDate: string | null
+  mode: 'PMS_CONFIRMED' | 'UNCONFIRMED'
+  updatedAt: string | null
+}
+
+export interface HotSellingRoomTypeConfigView {
+  roomTypeCodes: string[]
+  updatedAt: string | null
 }
 
 export interface BriefView {
@@ -796,6 +856,55 @@ export function initializeSimulationHotel(input: {
 
 export function loadMonitor(context: HotelContext): Promise<MonitorView> {
   return authenticatedRequest(scopedPath(context, '/monitor'))
+}
+
+export function loadBusinessDayControl(
+  context: HotelContext,
+): Promise<BusinessDayControlView> {
+  return authenticatedRequest(scopedPath(context, '/business-day-control'))
+}
+
+export function saveBusinessDayControl(
+  context: HotelContext,
+  businessDate: string,
+): Promise<BusinessDayControlView> {
+  return postCommand<BusinessDayControlView>(
+    scopedPath(context, '/business-day-control'),
+    {
+      businessDate,
+      reasonCode: 'CONFIRM_PMS_BUSINESS_DAY',
+    },
+  )
+}
+
+export function loadHotSellingRoomTypes(
+  context: HotelContext,
+): Promise<HotSellingRoomTypeConfigView> {
+  return authenticatedRequest(
+    scopedPath(context, '/hot-selling-room-types'),
+  )
+}
+
+export function saveHotSellingRoomTypes(
+  context: HotelContext,
+  roomTypeCodes: string[],
+): Promise<HotSellingRoomTypeConfigView> {
+  return postCommand<HotSellingRoomTypeConfigView>(
+    scopedPath(context, '/hot-selling-room-types'),
+    {
+      roomTypeCodes,
+      reasonCode: 'UPDATE_HOT_SELLING_ROOM_TYPES',
+    },
+  )
+}
+
+export function triggerLiveCollection(
+  context: HotelContext,
+): Promise<LiveCollectionRunView> {
+  return postCommand<LiveCollectionRunView>(
+    scopedPath(context, '/live-collection-runs'),
+    { reasonCode: 'MANUAL_LIVE_COLLECTION' },
+  )
 }
 
 export function loadBriefs(context: HotelContext): Promise<BriefView[]> {

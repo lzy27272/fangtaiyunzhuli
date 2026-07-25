@@ -21,14 +21,16 @@ test('Sprint 0 web does not persist access tokens in browser storage', () => {
   assert.equal(sessionSource.includes('sessionStorage'), false)
 })
 
-test('review shell exposes four report-fusion pages and blocks real delivery', () => {
+test('pilot shell exposes four report-fusion pages and blocks WeCom delivery', () => {
   assert.match(appSource, /ReportSourceConfigPage/)
   assert.match(appSource, /MonitorPage/)
   assert.match(appSource, /MappingTargetPage/)
   assert.match(appSource, /HistoryPage/)
   assert.match(appSource, /LOCAL REVIEW · REPORT FUSION/)
   assert.match(appSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canAdminConfigure\}/)
-  assert.match(appSource, /外部抓取与企微推送均禁用/)
+  assert.match(appSource, /报表只读采集已启用 · 企微自动推送禁用/)
+  assert.match(monitorSource, /triggerLiveCollection/)
+  assert.match(monitorSource, /本次未触发企微/)
 })
 
 test('cookie-authenticated logout forwards a double-submit CSRF token', () => {
