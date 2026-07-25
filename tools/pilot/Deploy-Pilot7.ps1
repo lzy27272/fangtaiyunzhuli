@@ -2,7 +2,9 @@
 param(
     [string]$RuntimeRoot = 'D:\SifangguanHotelAIOS',
     [string]$RepoRoot = '',
-    [string]$ResultPath = ''
+    [string]$ResultPath = '',
+    [string]$CandidateJar = '',
+    [string]$RollbackJar = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,5 +18,7 @@ if ([string]::IsNullOrWhiteSpace($ResultPath)) {
 & (Join-Path $scriptRoot 'Deploy-Pilot6.ps1') `
     -RuntimeRoot $RuntimeRoot `
     -RepoRoot $RepoRoot `
-    -ResultPath $ResultPath
+    -ResultPath $ResultPath `
+    -CandidateJar $CandidateJar `
+    -RollbackJar $RollbackJar
 exit $LASTEXITCODE

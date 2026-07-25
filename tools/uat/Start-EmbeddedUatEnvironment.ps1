@@ -7,6 +7,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Codex Desktop can expose both PATH and Path in the inherited Windows
+# environment block. Start-Process materializes a case-insensitive dictionary
+# and fails on that duplicate, so normalize the current process only.
+$inheritedProcessPath = $env:Path
+[Environment]::SetEnvironmentVariable('PATH', $null, [EnvironmentVariableTarget]::Process)
+[Environment]::SetEnvironmentVariable('Path', $inheritedProcessPath, [EnvironmentVariableTarget]::Process)
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $apiDir = Join-Path $repoRoot 'apps\core-api'
 $webDir = Join-Path $repoRoot 'apps\web'
@@ -111,8 +119,16 @@ function Wait-File([string]$path, [int]$seconds = 240) {
 
 if (Test-Path -LiteralPath $stateFile) {
     $previous = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    $previousCreatedAt = [DateTimeOffset]::MinValue
+    [void][DateTimeOffset]::TryParse([string]$previous.createdAt, [ref]$previousCreatedAt)
     $liveProcesses = @($previous.apiPid, $previous.webPid, $previous.oidcPid) | Where-Object {
-        $_ -and (Get-Process -Id $_ -ErrorAction SilentlyContinue)
+        if (-not $_) { return $false }
+        $candidate = Get-Process -Id $_ -ErrorAction SilentlyContinue
+        if (-not $candidate) { return $false }
+        # A stale state file can point at a PID that Windows has since reused.
+        # Only treat it as managed when its start time predates the state write.
+        return $previousCreatedAt -ne [DateTimeOffset]::MinValue `
+            -and [DateTimeOffset]$candidate.StartTime -le $previousCreatedAt.AddMinutes(2)
     }
     if ($liveProcesses.Count -gt 0) {
         throw 'A managed UAT environment is already running. Stop it before starting a new signed-JWT run.'

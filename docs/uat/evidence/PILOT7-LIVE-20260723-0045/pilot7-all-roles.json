@@ -1,0 +1,357 @@
+{
+  "generatedAt": "2026-07-22T16:49:09.031Z",
+  "version": "TECH-V0.2-PILOT.7",
+  "databaseTarget": "V21",
+  "profile": "V21_BROWSER_READ_ONLY",
+  "webBase": "https://www.sfgzt.cn",
+  "passed": false,
+  "summary": {
+    "passed": 1,
+    "total": 8,
+    "failed": 7,
+    "accountSwitchPassed": false
+  },
+  "results": [
+    {
+      "login": "front.demo",
+      "expectedRole": "FRONT_DESK",
+      "expectedCanCreate": false,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "/iam/me returned HTTP 401 for front.demo",
+      "passed": false
+    },
+    {
+      "login": "fo.supervisor",
+      "expectedRole": "FRONT_OFFICE_SUPERVISOR",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "/iam/me returned HTTP 401 for fo.supervisor",
+      "passed": false
+    },
+    {
+      "login": "hk.supervisor",
+      "expectedRole": "HOUSEKEEPING_SUPERVISOR",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "/iam/me returned HTTP 401 for hk.supervisor",
+      "passed": false
+    },
+    {
+      "login": "assistant.gm",
+      "expectedRole": "ASSISTANT_GENERAL_MANAGER",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "/iam/me returned HTTP 401 for assistant.gm",
+      "passed": false
+    },
+    {
+      "login": "gm.hz",
+      "expectedRole": "GENERAL_MANAGER",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "/iam/me returned HTTP 401 for gm.hz",
+      "passed": false
+    },
+    {
+      "login": "ota.assistant",
+      "expectedRole": "OTA_OPERATION_ASSISTANT",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "/iam/me returned HTTP 401 for ota.assistant",
+      "passed": false
+    },
+    {
+      "login": "ota.manager",
+      "expectedRole": "OTA_OPERATION_MANAGER",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "/iam/me returned HTTP 401 for ota.manager",
+      "passed": false
+    },
+    {
+      "login": "ceo.demo",
+      "home": "hotel-dashboard",
+      "homeTitle": "门店门店驾驶舱",
+      "identity": {
+        "expectedLoginName": "ceo.demo",
+        "actualLoginName": "ceo.demo",
+        "expectedPrimaryRole": "CEO",
+        "actualPrimaryRole": "CEO",
+        "roleListed": true,
+        "expectedAssignment": false,
+        "assignmentCount": 0,
+        "matchingAssignmentCount": 0,
+        "assignmentPositionCodes": [],
+        "tenantScope": true,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "ceo",
+        "permissionCount": 65,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "forbiddenSubset": [],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 0,
+        "expectedCompatibleAssignmentIds": [],
+        "visibleAssignmentIds": [],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "日运营快照",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": true,
+          "result": "SKIPPED",
+          "reason": "No seeded immutable snapshot id; authorized snapshot list access is validated separately."
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000003",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "团队日报",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "导出任务",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    }
+  ],
+  "accountSwitch": {
+    "contextReused": true,
+    "sequence": [
+      "front.demo",
+      "logout",
+      "ceo.demo"
+    ],
+    "error": "/iam/me returned HTTP 401 for front.demo",
+    "loginPostCount": 1,
+    "forbiddenWriteRequests": [],
+    "apiFailures": [
+      {
+        "status": 401,
+        "path": "/api/v1/notifications",
+        "search": "?page=0&size=100"
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/iam/me",
+        "search": ""
+      }
+    ],
+    "tokenValuesPersistedInEvidence": false,
+    "passed": false
+  },
+  "evidenceSafety": {
+    "businessWritesAllowed": false,
+    "onlyAllowedPostPath": "/api/v1/auth/login",
+    "credentialsPersistedInEvidence": false,
+    "tokensPersistedInEvidence": false,
+    "authorizationHeaderValuesPersistedInEvidence": false
+  }
+}

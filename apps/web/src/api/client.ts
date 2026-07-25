@@ -22,7 +22,12 @@ const API_BASE = (import.meta.env.VITE_API_BASE ?? '/api/v1').replace(/\/$/, '')
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE ?? (import.meta.env.DEV ? 'dev-header' : 'server')
 const BEARER_HEADER = import.meta.env.VITE_BEARER_HEADER ?? 'Authorization'
 const UAT_ACCESS_TOKEN_STORAGE_KEY = 'hotel-ai-os-access-token'
+const FEDERATED_SESSION_STORAGE_KEY = 'hotel-ai-os-federated-session'
 const TENANT_ID = import.meta.env.VITE_TENANT_ID ?? '10000000-0000-0000-0000-000000000001'
+
+// Federated entry tokens are intentionally scoped to the current page lifetime.
+// Unlike the internal Pilot login token, they must never be written to browser storage.
+let ephemeralAccessToken: string | undefined
 
 const allowDemoQuery = import.meta.env.VITE_ALLOW_DEMO_QUERY === 'true' ||
   (import.meta.env.VITE_ALLOW_DEMO_QUERY === undefined && import.meta.env.DEV)
@@ -46,11 +51,20 @@ export type LoginResponse = {
 }
 
 export function hasAccessToken(): boolean {
-  return Boolean(window.localStorage.getItem(UAT_ACCESS_TOKEN_STORAGE_KEY))
+  if (ephemeralAccessToken || window.localStorage.getItem(UAT_ACCESS_TOKEN_STORAGE_KEY)) return true
+  try { return window.sessionStorage.getItem(FEDERATED_SESSION_STORAGE_KEY) === 'wecom' } catch { return false }
 }
 
 export function clearAccessToken(): void {
+  ephemeralAccessToken = undefined
   window.localStorage.removeItem(UAT_ACCESS_TOKEN_STORAGE_KEY)
+  try { window.sessionStorage.removeItem(FEDERATED_SESSION_STORAGE_KEY) } catch { /* storage may be disabled */ }
+}
+
+export function establishFederatedSession(accessToken?: string): void {
+  ephemeralAccessToken = accessToken || undefined
+  window.localStorage.removeItem(UAT_ACCESS_TOKEN_STORAGE_KEY)
+  try { window.sessionStorage.setItem(FEDERATED_SESSION_STORAGE_KEY, 'wecom') } catch { /* HttpOnly cookie can still carry the session */ }
 }
 
 export async function login(loginName: string, password: string): Promise<LoginResponse> {
@@ -65,6 +79,8 @@ export async function login(loginName: string, password: string): Promise<LoginR
     throw new ApiError(response.status, String(problem.detail ?? problem.message ?? '登录失败'), problem)
   }
   const session = await response.json() as LoginResponse
+  ephemeralAccessToken = undefined
+  try { window.sessionStorage.removeItem(FEDERATED_SESSION_STORAGE_KEY) } catch { /* storage may be disabled */ }
   window.localStorage.setItem(UAT_ACCESS_TOKEN_STORAGE_KEY, session.accessToken)
   return session
 }
@@ -81,7 +97,7 @@ function authenticationHeaders(identity: ApiIdentity): HeadersInit {
     }
   }
   if (AUTH_MODE === 'bearer') {
-    const accessToken = window.localStorage.getItem(UAT_ACCESS_TOKEN_STORAGE_KEY)
+    const accessToken = ephemeralAccessToken ?? window.localStorage.getItem(UAT_ACCESS_TOKEN_STORAGE_KEY)
     return accessToken ? { [BEARER_HEADER]: `Bearer ${accessToken}` } : {}
   }
   return {}

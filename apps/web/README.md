@@ -45,6 +45,14 @@ Vite 将 `/api` 代理到 `http://localhost:8080`。
 - 生产构建默认使用 `VITE_AUTH_MODE=server`，由 Cookie 或 Bearer JWT 建立服务端会话；生产界面不会显示验收账号切换器。
 - 切换任职只改变工作业务上下文，不在客户端授予权限。
 
+### 企业微信任务入口 V1
+
+- 群卡片的任务按钮先访问 `GET /api/v1/integrations/wecom/oauth/start?returnTo=%23/tasks%3Fview%3Dmine%26taskId%3D<UUID>`，由后端完成企微 OAuth 和 state 校验。
+- 后端回调到 `/wecom-auth?exchange_code=<一次性码>`；前端在发起任何请求前从地址栏清除该码，再以 `POST /api/v1/integrations/wecom/oauth/exchange` 完成交换。
+- 交换响应中的 `returnTo` 必须是带有效任务 UUID 的站内 `/tasks` 路由；前端二次校验后才进入现有任务详情。
+- 企微 Secret 不进入前端。交换所得用户短期令牌只保存在当前页面内存，不写入 URL、`localStorage` 或 `sessionStorage`；`sessionStorage` 仅记录不含凭据的会话来源标记。
+- 普通 Pilot 账号密码登录保持原有流程，不经过企微入口。
+
 ## 演示回退
 
 正式构建默认不使用演示数据。仅在需要离线走查视觉时显式启用：

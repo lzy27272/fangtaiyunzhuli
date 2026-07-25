@@ -50,6 +50,12 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/integrations/wecom/bot/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/integrations/wecom/bot/callback").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/integrations/wecom/oauth/start",
+                                "/api/v1/integrations/wecom/oauth/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/integrations/wecom/oauth/exchange").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2

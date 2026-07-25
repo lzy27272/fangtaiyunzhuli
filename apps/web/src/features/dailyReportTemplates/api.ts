@@ -2,6 +2,8 @@ import type { ApiIdentity } from '../../api/client'
 import { featureApiMutation, featureApiRequest } from '../shared/featureApi'
 import { queryString, requireItems, type PageEnvelope } from '../shared/apiEnvelope'
 import type {
+  DailyReportDeliveryPolicy,
+  DailyReportDeliveryPolicyDraft,
   DailyReportTemplateDetail,
   DailyReportTemplateItem,
   DailyReportTemplateSection,
@@ -193,6 +195,40 @@ function uuidOrUndefined(value: string): string | undefined {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : undefined
 }
 
+function numberList(value: unknown, fallback: number[]): number[] {
+  const supplied = Array.isArray(value) || typeof value === 'string'
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : []
+  const normalized = source
+    .map((item) => typeof item === 'string' ? item.trim() : item)
+    .filter((item) => item !== '')
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item >= 0)
+  return supplied ? [...new Set(normalized)].sort((left, right) => left - right) : fallback
+}
+
+function normalizeDeliveryPolicy(value: unknown): DailyReportDeliveryPolicy {
+  const source = row(value)
+  return {
+    id: text(source.id) || undefined,
+    templateAssignmentId: text(source.templateAssignmentId) || undefined,
+    enabled: source.enabled === true,
+    openLocalTime: text(source.openLocalTime, '22:00').slice(0, 5),
+    dueLocalTime: text(source.dueLocalTime, '23:00').slice(0, 5),
+    graceMinutes: Math.max(0, number(source.graceMinutes, 30)),
+    preDueReminderMinutes: numberList(source.preDueReminderMinutes, [30]),
+    overdueReminderMinutes: numberList(source.overdueReminderMinutes, [0, 30]),
+    backfillDays: Math.max(0, number(source.backfillDays, 1)),
+    timeZone: text(source.timeZone) || undefined,
+    rowVersion: number(source.rowVersion),
+    updatedAt: text(source.updatedAt) || undefined,
+    configured: Boolean(source.id || source.templateAssignmentId || source.configured === true),
+  }
+}
+
 function versionUpdateBody(draft: TemplateVersionDraft) {
   return {
     title: draft.title,
@@ -273,6 +309,28 @@ export async function transitionDailyReportTemplateVersion(
   return normalizeVersion(await featureApiMutation<unknown>(`${base}/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version.id)}/actions/${action}`, identity, {
     body: { effectiveFrom: version.effectiveFrom, effectiveTo: version.effectiveTo },
     expectedVersion: version.rowVersion,
+    idempotencyKey,
+  }))
+}
+
+export async function loadDailyReportDeliveryPolicy(identity: ApiIdentity, templateId: string, versionId: string, signal?: AbortSignal) {
+  const endpoint = `${base}/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/delivery-policy`
+  return normalizeDeliveryPolicy(await featureApiRequest<unknown>(endpoint, identity, { signal }))
+}
+
+export async function saveDailyReportDeliveryPolicy(
+  identity: ApiIdentity,
+  templateId: string,
+  versionId: string,
+  policy: DailyReportDeliveryPolicy,
+  draft: DailyReportDeliveryPolicyDraft,
+  idempotencyKey: string,
+) {
+  const endpoint = `${base}/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/delivery-policy`
+  return normalizeDeliveryPolicy(await featureApiMutation<unknown>(endpoint, identity, {
+    method: 'PUT',
+    body: { ...draft, expectedVersion: policy.rowVersion },
+    expectedVersion: policy.rowVersion,
     idempotencyKey,
   }))
 }

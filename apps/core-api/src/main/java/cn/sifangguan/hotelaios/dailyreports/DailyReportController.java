@@ -30,9 +30,10 @@ public class DailyReportController {
     @GetMapping("/my")
     public List<Map<String, Object>> myReports(
             @RequestParam(required = false) LocalDate businessDate,
-            @RequestParam(required = false) String status
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) UUID positionAssignmentId
     ) {
-        return service.myReports(businessDate, status);
+        return service.myReports(businessDate, status, positionAssignmentId);
     }
 
     @GetMapping("/team")

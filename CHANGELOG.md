@@ -26,6 +26,221 @@
 
 ### Added
 
+#### CHG-20260725-045：完成Sprint 2D离线人工授权演练
+
+- 日期：2026-07-25。
+- 状态：Unreleased / `OTA-AUTOMATION-V0.1` / SPRINT 2D OFFLINE REHEARSAL COMPLETE / REAL PMS AUTHORIZATION BLOCKED / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 授权与范围：产品负责人要求进入下一步骤；本轮只实现程序内人工授权流程的离线可操作演练，不授权浏览器启动、PMS联网、SecretStore解析、真实抓取、经营分析、P1告警、企微发送、UAT或生产发布。
+- Helper：新增纯内存无I/O状态机，覆盖准备、等待、确认、取消、过期、失败和重新演练；精确绑定tenant、hotel、connector、connector version、config version、actor和attempt，所有状态的授权结果固定为`AUTH_REQUIRED`。
+- 数据库：新增Flyway V6的attempt、追加式command receipt和两个受控CAS函数；强制RLS、活动演练唯一性、15分钟过期、幂等键、请求哈希、操作人和配置/行版本校验。API对两张表只有`SELECT`，无直接DML，写入只能走`SECURITY DEFINER`函数。
+- API与后台：新增开始、最近状态恢复、指定查看、确认、取消和重新演练接口；写操作限`PLATFORM_ADMIN + CONNECTOR_AUTHORIZATION_MANAGE`并绑定当前操作人。后台只对已保存的`PMS + CONTROLLED_BROWSER`草稿显示演练面板，刷新后恢复状态并对响应安全标志再次Fail Closed。
+- 固定安全结果：响应始终为`mode=OFFLINE_REHEARSAL`、`authorizationState=AUTH_REQUIRED`、`runtimeBlocked=true`、`pmsConnected=false`、`browserStarted=false`、`credentialsRead=false`；`OFFLINE_REHEARSAL_COMPLETE`只表示演练流程完成，不表示真实授权。
+- 验证：Java Maven聚合按当前测试源码计`283`项，0失败/错误、2项条件式PostgreSQL跳过；PostgreSQL 14.22真实专项执行Flyway V1→V6、2项集成测试、ACL/catalog负控、结构校验及双连接前置版本CAS并发实测全部通过；Web`16/16`、TypeScript和Vite 42 modules通过；已知敏感会话标记命中`0`。初次独立复核发现的3项P1和1项P2均已修复，第二次独立复核为`P0=0 / P1=0`。
+- 保留门禁：未使用或保存用户此前提供的Cookie；没有浏览器驱动、网络访问、SecretStore实现、真实会话、PMS适配器、采集、企微投递、部署或生产变更。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2D-OFFLINE-AUTHORIZATION-REHEARSAL-IMPLEMENTATION-REPORT.md`并同步任务索引、根README和设计讨论。
+
+#### CHG-20260725-044：完成程序内PMS登录的离线安全骨架
+
+- 日期：2026-07-25。
+- 状态：Unreleased / `OTA-AUTOMATION-V0.1` / OFFLINE BROWSER SESSION SKELETON COMPLETE / REAL PMS LOGIN BLOCKED / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 授权与范围：产品负责人要求继续编写程序，把PMS链接登录留到后续在程序内实施；本轮只实现受控登录离线骨架，不授权真实登录、Cookie读取/重放、网络访问、自动抓取或企微发送。
+- 独立助手：新增`apps/ota-browser-session-helper`，实现会话生命周期与全范围绑定、HTTPS/显式端口/请求摘要精确白名单、逐跳公网地址复核、服务端固定非秘密配置Schema和脱敏错误码；模块无浏览器驱动、HTTP客户端、DNS查询、SecretStore实现、持久化、调度器或厂商适配器。
+- API与Worker：API使用无生产实现的服务端绑定Port按操作人和授权尝试隔离start/probe/revoke；Worker只有命中独立可信操作清单的操作人、授权尝试、全部范围、版本、数据流、操作和Secret Binding字段后才能生成助手调用令牌。Manifest直接构造已收紧，命令与条目字符串输出隐藏SecretStore定位符；当前客户端仍固定失败为`BROWSER_SESSION_HELPER_NOT_ENABLED`。
+- 后台配置：PMS模板和页面支持`CONTROLLED_BROWSER + BROWSER_SESSION`配置，只允许不透明SecretStore引用并明确禁止粘贴Cookie；模板保持`DRAFT_INTAKE_ONLY`和`executable=false`。
+- 安全验证：Java聚合`254`项测试0失败/错误、2项条件式PostgreSQL跳过；Web测试`12/12`、TypeScript和Vite生产构建通过；敏感Cookie字段标记扫描通过；最终独立复核在当前离线范围为`P0=0 / P1=0 / P2=0`。
+- 保留门禁：没有数据库迁移、真实连接器候选、SecretStore实现、网络出口、浏览器驱动、厂商Schema适配器或生产变更；现有真实Profile拒绝启动门禁未放宽。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-BROWSER-SESSION-SKELETON-IMPLEMENTATION-REPORT.md`并同步项目索引、设计讨论和Worker边界。
+
+#### CHG-20260725-043：评估Cookie自动采集并按厂商授权门禁阻断
+
+- 日期：2026-07-25。
+- 状态：Unreleased / Controlled Intake / COOKIE AUTOMATION BLOCKED / I1 VENDOR AUTHORIZATION REQUIRED / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 请求：产品负责人提出使用Cookie登录后自动抓取别样红PMS。
+- 官方依据：[酒店SaaS产品服务协议](https://pms.meituan.com/pms-min-web/productService.html)禁止未经授权获取接口数据，要求第三方技术对接接受厂商评估，未明示授权须另行书面取得；当前没有喷水池态六酒店、具体方法、字段、频率和环境的许可材料。
+- 首选路径：官方公开[签名鉴权安全规范](https://docs.beyondh.com/apidoc/security.html)、[公共参数](https://docs.beyondh.com/apidoc/pubparam.html)和[Hotel API](https://docs.beyondh.com/apidoc/HotelApi.html)；先申请OpenAPI门店和方法权限，公开文档本身不视为已经开通。
+- 当前处置：未重新打开或复用保留的临时Chrome Profile，未读取、提取、导出、保存或重放Cookie，未启动周期采集。
+- 获批后边界：如OpenAPI不能覆盖冻结字段且厂商书面批准网页登录自动化，新增独立浏览器会话代理托管会话；Cookie不得进入现有Worker、API、数据库业务字段、日志、Git或后台配置，会话失效后转人工重新认证。
+- 文档：新增Cookie/浏览器会话自动采集评估与授权后实施设计，并同步实例档案、受控登录清单、受控接入工作包、设计讨论和诊断工具边界。
+- 实现影响：没有运行时代码、数据库迁移、真实连接器候选、Secret解析、egress、企业微信发送或生产变更。
+
+#### CHG-20260725-042：完成别样红PMS有限受控登录观察并登记I1许可缺口
+
+- 日期：2026-07-25。
+- 状态：Unreleased / Controlled Intake / CONTROLLED LOGIN COMPLETE / OBSERVATION PARTIAL / I1 LICENSE EVIDENCE MISSING / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 执行：门店授权人员在全新独立Chrome Profile中现场输入凭据并选择喷水池态六酒店；Codex未获取、输出或保存账号、密码、Cookie、Token或验证码。
+- 只读证据：PMS主页自然调用`POST /hotelpms/api/v1/report/home/workbench/room`，无请求体、HTTP 200、JSON `data[]`为三字段对象结构（一个字符串、两个数字）；字段名和值未留存。另观察到营业日、房型和主页经营概览候选路径。
+- 候选纠正：用户提供的`GET /hotelpms/api/v1/report/lion/manager/workbench/room`仅返回通用JSON包络，不能据此证明正确业务方法、字段语义或连接器可用。
+- 隐私与安全：只留存路径、方法、状态码和匿名类型指纹；原始请求/响应、请求头、会话及业务值未进入聊天、Git、fixture或诊断文件。观察完成后已关闭隔离Chrome进程；临时Profile未删除、未提取会话。
+- 门禁缺口：厂商/合同允许自动化只读观察的证据仍未登记。本次不升级为I1、UAT、候选或连接器通过；许可、频率和责任人补齐前停止扩大真实页面观察。
+- 实现影响：仅新增受控诊断脚本和状态文档，没有数据库迁移、生产API、真实Worker连接器、Secret解析、周期抓取或企业微信发送。
+
+#### CHG-20260724-041：启动别样红PMS隔离登录并更正入口分类
+
+- 日期：2026-07-24。
+- 状态：Unreleased / Controlled Login / LOGIN ORIGIN OPENED / AUTHENTICATION PENDING / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 执行：按产品负责人“现在启动”指令，启动独立临时Profile的可见Chrome无痕窗口，禁用同步和扩展；凭据由门店授权人员现场输入。
+- 分类更正：`https://pms.meituan.com/`确认为登录入口；原`…/hotelpms/api/v1/report/lion/manager/workbench/room`确认为登录后业务接口。
+- 透明说明：第一次启动可能对原地址产生一次未认证导航；未读取响应、捕获业务数据、复用会话或执行写操作。
+- 当前边界：等待人工认证；Schema观察、自动抓取、适配器代码、Secret解析、企微发送和生产均未开始。
+
+#### CHG-20260724-040：确认别样红PMS测试账号的只读用途授权
+
+- 日期：2026-07-24。
+- 状态：Unreleased / Documentation & Intake / `OTA-AUTOMATION-V0.1` / READ-ONLY ACCOUNT USE AUTHORIZED / LOGIN LAUNCH PENDING / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 确认内容：门店/集团授权专用账号用于受控只读自动化测试，仅限喷水池态六酒店；禁止改价、改房态、改单及其他全部写操作。
+- 当前边界：该确认不等于立即登录指令；本机隔离浏览器尚未启动，候选地址仍为`NOT_CONTACTED`，未接收任何账号或秘密。
+- 下一门禁：产品负责人明确选择“现在启动”后，才可打开本机隔离浏览器，由门店授权人员现场输入凭据；浏览器辅助进程必须与OTA Worker隔离。
+- 实现影响：无运行时代码、数据库迁移、API或页面变更；真实连接器、`test/activate/run`、Secret解析、采集和企微发送继续阻断。
+- 文档：同步受控登录清单、实例档案、工作包、编码门禁、业务/技术记录和项目索引。
+
+#### CHG-20260724-039：确认别样红PMS专用测试账号与现场输入条件
+
+- 日期：2026-07-24。
+- 状态：Unreleased / Documentation & Intake / `OTA-AUTOMATION-V0.1` / ACCOUNT INPUT CONDITION CONFIRMED / LOGIN NOT AUTHORIZED / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 确认内容：产品负责人确认可以提供专用最小权限测试子账号，并由门店授权人员在隔离浏览器中现场输入账号、密码及必要验证码。
+- 秘密边界：当前没有接收账号别名、密码、Cookie、Token或验证码；未来凭据也不得进入聊天、代码、文档、日志、截图、fixture或原始HAR。
+- 本机能力核验：Chrome和Edge可用，项目存在Playwright测试依赖；现有OTA Worker安全测试禁止直接驱动浏览器，因此未来受控浏览器必须使用独立辅助进程，不得放宽Worker离线边界。
+- 剩余门禁：仍需门店/集团确认该账号只限喷水池态六酒店、可用于受控只读自动化测试且禁止全部写操作；厂商/合同自动化许可、隔离UAT、SecretStore和字段证据仍未完成。
+- 安全与实现影响：没有打开浏览器、访问或登录候选地址，没有新增运行时代码、数据库迁移、API或页面。
+- 文档：同步受控登录清单、实例档案、工作包、编码门禁、业务/技术记录和项目索引。
+
+#### CHG-20260724-038：确认别样红PMS无可见版本并形成受控登录清单
+
+- 日期：2026-07-24。
+- 状态：Unreleased / Documentation & Intake / `OTA-AUTOMATION-V0.1` / LOGIN PREPARATION ONLY / I0 PARTIAL / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 版本结论：产品负责人确认登录页/系统没有可见版本或Build，登记为`NO_VISIBLE_VERSION`；不得把URL中的`/api/v1/`作为产品版本。
+- 兼容策略：后续使用受信任构建生成的capability/schema指纹、脱敏字段合同和fixture回归识别变化。
+- 登录方案：针对“是否先尝试登录再对接”形成受控清单，顺序为专用最小权限账号与自动化许可 → 隔离浏览器中由授权人员现场输入凭据 → 只读观察 → 脱敏字段合同 → 离线适配器 → 另行审批影子联调。
+- 安全边界：不允许把账号、密码、Cookie、Token或验证码交给Codex/开发人员；不得使用日常管理员账号、原始HAR、路径扫描、写操作或跨店访问。本轮未访问、未登录、未开放egress。
+- 文档：新增`CONTROLLED-LOGIN-RUNBOOK.md`并同步实例档案、工作包、编码门禁、业务/技术记录和项目索引。
+- 版本影响：不改变TECH-V0.1、TECH-V0.2、AI中台Sprint 3或OTA独立后台`0.1.0-SNAPSHOT`的现有发布判断。
+
+#### CHG-20260724-037：确认别样红PMS候选地址为网络登录接口
+
+- 日期：2026-07-24。
+- 状态：Unreleased / Documentation & Intake / `OTA-AUTOMATION-V0.1` / I0 PARTIAL / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 确认内容：产品负责人确认候选地址是美团别样红PMS系统需要网络登录后使用的网页接口。
+- 分类更新：正式接入方式登记为`AUTHENTICATED_WEB_INTERFACE`，地址分类为`LOGIN_PROTECTED_PMS_WEB_INTERFACE`；不按厂商开放API登记，也不从路径推断HTTP方法、认证机制、字段或数据能力。
+- 后续门禁：登录型网页接入必须另行完成自动化许可、受控浏览器/会话隔离、SecretStore直接录入、会话失效与重新认证、安全日志脱敏和默认拒绝egress评审。
+- 安全与实现影响：没有访问、登录或探测候选地址，没有接收或复用Cookie/Token，没有新增运行时代码、数据库迁移、API或页面；I0仍为`PARTIAL`，下一项只确认版本/Build。
+- 文档：同步首个实例档案、受控接入工作包、编码门禁、业务/技术记录和项目索引。
+- 版本影响：不改变TECH-V0.1、TECH-V0.2、AI中台Sprint 3或OTA独立后台`0.1.0-SNAPSHOT`的现有发布判断。
+
+#### CHG-20260724-036：确认首个PMS接入实例的正式产品名称
+
+- 日期：2026-07-24。
+- 状态：Unreleased / Documentation & Intake / `OTA-AUTOMATION-V0.1` / I0 PARTIAL / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 确认内容：产品负责人按上一确认入口回复“确认”，将“美团别样红系统”由用户提供名称更新为产品负责人确认的正式产品名称；门店仍为喷水池态六酒店，来源仍为PMS。
+- 未确认内容：正式厂商法律名称、版本/Build，以及候选地址属于厂家正式开放API、登录后的网页后台内部接口、自动报表或其他方式。
+- 安全与实现影响：没有访问候选地址，没有新增运行时代码、数据库迁移、API或页面；I0继续为`PARTIAL`，真实连接器、egress、Secret、`test/activate/run`、采集和企微发送继续阻断。
+- 文档：同步首个实例档案、受控接入工作包、编码门禁、业务/技术记录和项目索引。
+- 版本影响：不改变TECH-V0.1、TECH-V0.2、AI中台Sprint 3或OTA独立后台`0.1.0-SNAPSHOT`的现有发布判断。
+
+#### CHG-20260723-035：锁定首个OTA自动化PMS接入实例并登记候选地址
+
+- 日期：2026-07-23。
+- 状态：Unreleased / Documentation & Intake / `OTA-AUTOMATION-V0.1` / FIRST ADAPTER SELECTED / I0 PARTIAL / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 范围选择：产品负责人选择“喷水池态六酒店＋PMS＋美团别样红系统”为首个受控接入实例；“美团别样红系统”按用户原文登记为待复核系统名称，不未经证据拆分正式厂商、产品或版本。
+- 地址登记：用户提供`https://pms.meituan.com/hotelpms/api/v1/report/lion/manager/workbench/room`。离线解析确认其为HTTPS、主机`pms.meituan.com`、默认端口443、无URI user-info、查询参数、片段或可见凭据；按`UNVERIFIED_WEB_BACKEND_ENDPOINT / USER_PROVIDED_UNVALIDATED / NOT_CONTACTED`登记。
+- 判断边界：路径中的`/api/v1/`不作为PMS产品版本或厂商正式开放API证明；单一`room`地址不证明营业日、订单间夜、房费、钟点房、退款冲销或实体库存字段能力。
+- 剩余I0输入：正式厂商/产品名称、版本/Build、部署方式、正式接入方式、资料责任人和门店复核人；I1至I3仍需合法访问许可、厂商合同、字段字典、脱敏样例、SHA-256和人工金标准。
+- 安全边界：本轮没有执行DNS、TLS、HTTP、浏览器、登录或目录探测，没有开放`pms.meituan.com:443` egress，没有接收凭据或响应数据，没有新增运行时代码、数据库迁移、API或页面。可信候选、`test/activate/run`、Secret解析、采集和企业微信发送继续阻断。
+- 文档：新增`docs/tasks/ota-controlled-external-intake/intakes/pilot-01-bieyanghong-pms/`实例目录并同步受控接入工作包、根索引、任务台账、设计状态与编码门禁。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2及AI中台Sprint 3现有判断；OTA独立后台仍为`0.1.0-SNAPSHOT`。
+
+#### CHG-20260723-034：打开独立OTA单一适配器受控外部接入前置
+
+- 日期：2026-07-23。
+- 状态：Unreleased / Documentation & Intake / `OTA-AUTOMATION-V0.1` / CONTROLLED EXTERNAL INTAKE OPEN / FIRST ADAPTER SELECTION PENDING / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 授权与范围：产品负责人要求“进入下一个步骤”；本轮只打开Sprint 2真实连接器的受控外部接入前置，不新设Sprint编号，不授权真实登录、联网、Secret解析、候选登记、抓取、企微发送、UAT或生产发布。
+- 工作包：新增首个“门店＋来源＋厂商产品版本＋接入方式”选择门禁，以及I0范围、I1合法接入、I2字段能力、I3业务金标准、I4离线适配器、I5受信任制品、I6隔离运行和I7影子联调的分阶段证据与放行条件。
+- 模板：新增单一来源资料、字段能力矩阵、OTA产品到PMS实体房型映射、脱敏金标准样例和制品准入检查表；明确多个套餐、含早/无早产品共享实体库存且不得相加，营业日切换不得写死为固定凌晨时间。
+- 安全边界：模板禁止记录密码、Cookie、Token、Webhook、验证码、数据库密码和住客个人信息；真实秘密仍须由授权人员直接录入外部SecretStore。Sprint 2C登记的加载前制品准入、运行时摘要证明、命令回执/服务端请求哈希、默认拒绝egress、真实蓝绿切换和15分钟墙钟长测已纳入后续准入表。
+- 代码与运行影响：无业务代码、数据库迁移、API或页面变更；未运行真实profile，可信候选清单仍为空，`test/activate/run`、外部网络和`message_enabled`继续硬阻断。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-CONTROLLED-EXTERNAL-INTAKE-WORK-PACKAGE.md`及`docs/tasks/ota-controlled-external-intake/`模板目录，并同步根索引、任务台账、业务/技术状态和编码门禁。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2及AI中台Sprint 3现有判断；OTA独立后台仍为`0.1.0-SNAPSHOT`。
+
+#### CHG-20260723-033：完成独立OTA自动化Sprint 2C离线准入治理
+
+- 日期：2026-07-23。
+- 状态：Unreleased / `OTA-AUTOMATION-V0.1` / `0.1.0-SNAPSHOT` / SPRINT 2C OFFLINE ADMISSION GOVERNANCE COMPLETE / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO。
+- 授权与范围：产品负责人要求继续实施下一步；本次只建设离线合同准入治理、Worker执行前持久化基线消费和数据库服务身份轮换门禁，不使用真实账号、不访问PMS/携程/美团、不解析外部Secret、不抓取真实数据、不向企业微信群发送消息。
+- 数据库V5：新增migration/deployment owner发布的不可变可信候选清单、候选绑定批准、追加式吊销、幂等命令回执和有效基线窄读函数；配置哈希变化、明确吊销或版本未激活均使批准失效。可信候选清单默认且当前保持为空，Intake占位模板不得登记为候选。
+- 准入控制面：新增只读`GET /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/connector-contract-admissions`及后台就绪度面板；响应固定`CANDIDATE_UNAVAILABLE`、候选/批准/吊销不可用和`runtimeBlocked=true`，不包含批准、吊销、测试、激活或运行写入口。
+- Worker：未来非本地连接器必须在`collect`前经数据库窄函数读取精确版本/stream批准基线并重新校验capability/schema指纹；缺少Reader、读取失败、无基线、已吊销、版本未激活或漂移均以固定原因码Fail Closed。仅三个内置simulation实现类和内置只读`FILE_FIXTURE`明确豁免。
+- 身份轮换：为`CONNECTOR_WORKER`建立`STAGED → ACTIVE → DRAINING → RETIRED`蓝绿绑定和追加事件；15分钟有界tenant SELECT可供DRAINING完成切换前已取得且未过期的lease，但dispatch、claim、renew和直接事实/Outbox DML均仅允许ACTIVE，DRAINING不能续租。此轮没有执行真实凭据或连接池轮换。
+- 验证：主代理最终复跑确认Maven聚合209项，失败0、错误0、条件式PostgreSQL跳过2；PostgreSQL 14.22 API 1/1、Worker 1/1专项补证通过。Web 11/11、TypeScript `tsc -b`和Vite 40 modules生产构建通过；数据库静态门禁确认17张control表、55张FORCE RLS租户表和27个append-only保护对象，部署one-shot V1→V5通过；迁移在`LOGIN/NOSUPERUSER/NOINHERIT/NOBYPASSRLS` owner下完成，post-grants、runtime grants、catalog和负向控制全部PASS。
+- 安全复核：文档收口后P0=0、P1=0。已登记P2为：`artifact_digest`仅作非运行时制品/签名证明存档；轮换函数没有完整command receipt/idempotency；批准`request_hash`由caller提供且receipt未覆盖全部规范字段；未做真实并发写事务切换演练和真实15分钟墙钟长测。
+- 已知边界：数据库轮换协议不替代撤销旧凭据、关闭旧连接池、以`pg_signal_backend`终止旧backend并确认`pg_stat_activity=0`的UAT编排；无真实适配器候选，无真实PMS/携程/美团连接器，无外部SecretStore/隔离网络，无真实企业微信投递；双店连续3个PMS营业日UAT及生产发布仍未开始。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2C-IMPLEMENTATION-REPORT.md`并同步根索引、任务台账、业务/技术设计状态和数据库/Worker/部署说明。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2及AI中台Sprint 3现有判断；OTA独立后台尚未形成生产发行版本。
+
+#### CHG-20260723-032：完成独立OTA自动化Sprint 2B真实接入准备层
+
+- 日期：2026-07-23。
+- 状态：Unreleased / `OTA-AUTOMATION-V0.1` / `0.1.0-SNAPSHOT` / Sprint 2 AUTHORIZED-IN PROGRESS / Sprint 2B OFFLINE PREPARATION COMPLETE / Real Connectors BLOCKED / Production NO-GO。
+- 授权与范围：产品负责人要求继续实施下一步；本次只建设真实接入资料配置控制面和Worker安全收口，不使用真实账号、不访问PMS/携程/美团、不解析外部Secret、不抓取真实数据、不向企业微信群发送消息。
+- 后台与API：新增按租户/门店的PMS、携程、美团接入准备页面和JDBC API，可登记厂商、产品版本、接入方式、外部酒店编码、账号别名、网络路由、轮询间隔及受控SecretStore引用；写入限`PLATFORM_ADMIN + CONNECTOR_CONFIG_MANAGE`，五类集团岗位保持跨租户只读；`test/activate/run`固定409阻断。
+- Secret安全：请求只接受受控协议且不含URI user-info或凭据分隔符的不透明引用；响应不返回引用、版本或确定性指纹。非秘密配置修改在服务端沿用新接入方式仍需要的既有绑定，浏览器无需回显或重传Secret。
+- 数据库V4：新增禁用、零能力、零允许主机的三个Intake模板与`CONFIGURATION_ONLY`模式；数据库硬拒绝其进入计划、作业、采集运行或checkpoint。合同批准基线强制RLS、追加写、审批账号与数据库会话账号一致，并撤销共享API角色直接INSERT权限。
+- Worker：增加执行与落库共用结果安全门、Envelope/证据/水位时间关系校验、虚拟线程硬超时、周期租约续期和最终租约栅栏；超时、取消或失去租约后的迟到结果不能落库。
+- 验证：Maven聚合193项，失败0、错误0、条件跳过2；两项跳过均在PostgreSQL 14.22专项执行通过。Web 10/10、TypeScript和Vite生产构建通过；数据库与部署静态门禁2/2 PASS；PostgreSQL完成Flyway V1→V4、API 1/1、Worker 1/1、RLS/ACL/catalog和配置态负向控制，审查发现的2项P1与3项P2均已修正。
+- 已知边界：真实厂商文档、账号与酒店ID、外部SecretStore、隔离网络/浏览器、首次人工认证、Worker持久化批准基线消费、service principal轮换、真实企微投递、双店连续3个PMS营业日UAT及生产发布仍未完成。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2B-IMPLEMENTATION-REPORT.md`并同步根索引、任务台账、业务/技术设计状态和编码门禁。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2及AI中台Sprint 3现有判断；OTA独立后台尚未形成生产发行版本。
+
+#### CHG-20260723-031：完成独立OTA自动化Sprint 2A离线安全底座
+
+- 日期：2026-07-23。
+- 状态：Unreleased / `OTA-AUTOMATION-V0.1` / `0.1.0-SNAPSHOT` / Sprint 2 AUTHORIZED-IN PROGRESS / Sprint 2A COMPLETE / Real Connectors BLOCKED / Production NO-GO。
+- 授权与范围：产品负责人授权实施Sprint 2下一步骤；本次仅建设真实连接器启用前的离线事实、安全和运行底座，不使用真实账号，不抓取真实门店数据，不连接携程/美团生产页面，不向企业微信群发送消息。
+- 事实与水位：普通采集运行、Raw证据、Standard记录、尝试和checkpoint纳入同一事务；仅`SUCCESS + COMPLETE + FRESH`、完整验证通过且候选水位不缺失/不倒退时推进checkpoint，失败、部分或不可用结果不伪造为0。
+- 连接器门禁：新增采集结果scope/source/evidence/idempotency/schema/可信时间校验、标准记录schema白名单、capability/schema指纹和执行链漂移检查；`sprint2-real`在SecretStore与隔离egress未实现时保持Fail Closed。
+- 数据库V3：新增数据库会话角色与ACTIVE service principal一对一绑定，收紧dispatch/claim/renew/complete权限；普通采集支持精确5/15/30分钟槽，小时简报和模拟小时任务继续保持整点；Compose迁移链已纳入V3。
+- 配置安全：后台只查询当前ACTIVE连接器版本的非撤销Secret状态，`FILE_FIXTURE`不展示历史Secret binding；不回显Secret值。
+- 验证：修复后Maven聚合172项，失败0、错误0、条件跳过2；两项跳过均在PostgreSQL 14.22专项执行通过。Web 9/9、TypeScript与Vite生产构建通过；数据库/部署静态门禁2/2 PASS；PostgreSQL完成Flyway V1→V3、API 1/1、Worker 1/1、catalog gate及`NORMAL 10:05`全链路验证；最终复核无未关闭P0/P1。
+- 已知边界：真实连接器仍需厂商资料、持久化批准基线、SecretStore/KMS、隔离网络、硬超时/心跳、身份轮换和受控联调；真实企微投递、两店连续3个PMS营业日UAT与生产发布均未实施。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2A-IMPLEMENTATION-REPORT.md`并同步根索引、任务台账、业务/技术设计状态和编码门禁。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2及AI中台Sprint 3现有判断；OTA独立后台尚未形成生产发行版本。
+
+#### CHG-20260723-030：完成独立OTA自动化Sprint 1模拟闭环实现
+
+- 日期：2026-07-23。
+- 状态：Unreleased / `OTA-AUTOMATION-V0.1` / `0.1.0-SNAPSHOT` / Sprint 0 COMPLETE / Sprint 1 simulation-only COMPLETE / Sprint 2 HOLD / Production NO-GO。
+- 授权与范围：产品负责人明确确认“进入 Sprint 1”；本次只实现TECH-DESIGN-1.0中的模拟闭环，不接入真实PMS、携程、美团或企业微信，不向运营群发送消息，不提前启动Sprint 2。
+- 控制面与页面：新增模拟租户/门店、来源连接器、实体库存池、OTA售卖产品、产品映射、目标和节奏配置；提供接入配置、实时经营监控、房型/目标/节奏、简报与告警历史四个独立页面，并保持跨租户只读及门店级配置权限边界。
+- 数据库与调度：新增Flyway V2模拟闭环结构、动态数据库作业目录、类型化领取/续租/完成、Worker workload principal种子和最小权限；当前静态基线为14张control表、52张FORCE RLS租户表和22个追加事实保护对象。
+- 模拟流水线使用`MOCK_PMS`、`MOCK_CTRIP`、`MOCK_MEITUAN`覆盖`BASELINE`、`INVENTORY_MISMATCH`、`SOURCE_UNAVAILABLE`和`LATE_BRIEF_REPLAY`；另实现`FILE_FIXTURE`普通采集边界。确定性模拟按PMS营业日、整点窗口、房费/钟点房及间夜口径生成指标、逐产品库存对账、P1、原始/调整后简报和禁发Outbox预览。
+- 房态规则：多个套餐、含早/无早产品映射到同一实体库存池，但逐个与PMS可售量比较且永不相加；任一产品高于或低于PMS均生成P1，来源失败或过期只显示“无法判断”，不以0或旧值代替。
+- 投递安全：所有模拟运行固定`simulation-only`和`deliveryMode=BLOCKED`；没有Webhook配置、网络调用、真实`@所有人`或企微重试/补发实投。
+- 专项验证：普通Maven聚合138项0失败/错误，Web 9/9、TypeScript和Vite生产构建通过；真实PostgreSQL 14.22执行12个普通采集作业，并通过API→Worker→API五次运行闭环、V1+V2、RLS、追加事实和最小权限专项。最终安全复核发现的2个P1已修复并补负向测试，当前无未关闭P0/P1。
+- 环境限制：当前环境无Docker CLI/psql客户端，完整Compose整栈未启动，不能记为容器级PASS。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-1-IMPLEMENTATION-REPORT.md`并同步根索引、任务台账、业务/技术设计状态和编码门禁。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2及AI中台Sprint 3现有判断；OTA独立后台尚未形成生产发行版本。
+
+#### CHG-20260723-029：完成独立OTA自动化Sprint 0安全底座
+
+- 日期：2026-07-23。
+- 状态：Unreleased / `OTA-AUTOMATION-V0.1` / `0.1.0-SNAPSHOT` / Sprint 0 GO / Sprint 1 HOLD / Production NO-GO。
+- 授权与范围：产品负责人明确下达“开始编码”；本次只实施TECH-DESIGN-1.0的Sprint 0，不提前实现Sprint 1至Sprint 4，不接入真实账号，不向正式运营群投递。
+- 独立工程：新增`packages/ota-contracts`、`apps/ota-standalone-api`、`apps/ota-connector-worker`、`apps/ota-standalone-web`、`database/ota-migrations`、`infra/ota`和根聚合构建`ota-platform-pom.xml`；运行时不依赖现有AI中台API、Web或数据库迁移。
+- 安全与认证：实现Argon2id本地账号、短期Access JWT、Refresh Token轮换与复用检测、CSRF/CORS/Cookie、安全响应头、追加审计、首位管理员受控引导、生产启动安全门禁和前端内存Token登录壳。
+- 数据库：Flyway V1建立11张control表、12张FORCE RLS租户表、4类追加事实保护和7个固定角色；分离bootstrap/migration/API/Worker/Audit身份，采用逐对象GRANT，并撤销`public` schema的公共及运行角色CREATE权限。
+- 部署：冻结PostgreSQL healthy → role bootstrap → Flyway → grants → verifier的一次性严格链路；API运行期默认关闭Flyway，镜像版本固定，不使用`latest`。
+- 验证：Maven聚合58项测试0失败、0错误；普通构建中的1条条件式数据库测试由真实PostgreSQL 14.22专项1/1 PASS补证；Web 6项测试和生产构建PASS；数据库结构、部署结构和敏感值扫描PASS；最终安全复核无未关闭P0/P1。
+- 保留限制：本机无Docker CLI，完整Compose链尚未容器级实跑；真实PMS/携程/美团连接器、小时计算、P1运行链路、企业微信投递、配置页面和双店UAT均未实现，不能宣称完整闭环可用。
+- 文档：新增`docs/tasks/OTA-AUTOMATION-V0.1-ADR-001-LOCAL-AUTH.md`和`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-0-IMPLEMENTATION-REPORT.md`，同步任务索引、设计状态与编码门禁。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2及AI中台Sprint 3现有判断；OTA独立后台尚未形成正式技术发行版本。
+
+#### CHG-20260723-028：冻结独立OTA自动化业务与技术设计
+
+- 日期：2026-07-23。
+- 状态：Unreleased / Planning / `DESIGN-1.5` / `TECH-DESIGN-1.0` / Not Coded / Awaiting Explicit Authorization。
+- 变更内容：完成`OTA-AUTOMATION-V0.1`业务设计及技术板块T0至T5确认，冻结独立Web、API、连接器Worker、独立PostgreSQL、统一实体房型库存、PMS营业日、房费收入与间夜口径、整点简报、即时P1、企微补发、本地账号/RLS及双店UAT边界。
+- 编码就绪：形成`docs/tasks/OTA-AUTOMATION-V0.1-CODING-READINESS.md`；获得产品负责人明确“开始编码”授权后，只进入Sprint 0安全底座与工程骨架，后续严格按Sprint 1模拟闭环、Sprint 2真实连接器、Sprint 3分析/P1/企微、Sprint 4双店UAT与发布推进。
+- 影响范围：仅文档、架构决策和实施门禁；无业务代码、无数据库迁移、无API或页面实现、无真实凭据、无正式群消息。
+- 版本影响：不改变当前TECH-V0.1正式发布基线，不改变TECH-V0.2与Sprint 3现有判断；OTA独立后台尚未形成技术发行版本。
+
 #### CHG-20260722-027：修复PILOT.7任务投递、驾驶舱深链与角色隔离
 
 - 日期：2026-07-22。

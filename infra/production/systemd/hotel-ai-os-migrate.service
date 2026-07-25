@@ -1,0 +1,40 @@
+[Unit]
+Description=Hotel AI OS one-time Flyway migration
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=hotelai
+Group=hotelai
+WorkingDirectory=/opt/hotel-ai-os/current
+EnvironmentFile=/etc/hotel-ai-os/migration.env
+ExecStart=/opt/hotel-ai-os/current/run-migration-once.sh
+TimeoutStartSec=180s
+TimeoutStopSec=45s
+UMask=0027
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/hotel-ai-os/attachments
+
+[Install]
+WantedBy=multi-user.target

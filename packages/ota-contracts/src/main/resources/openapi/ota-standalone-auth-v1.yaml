@@ -1,0 +1,336 @@
+openapi: 3.1.0
+info:
+  title: Sifangguan OTA Standalone Authentication API
+  version: 0.1.0-sprint0
+  description: >-
+    Authentication-only contract for the independent Sprint 0 OTA control plane. Access tokens
+    are returned in JSON and must remain in browser memory. Refresh credentials are accepted only
+    from the HttpOnly refresh cookie; cookie-authenticated mutations also require the readable
+    CSRF cookie value in the X-CSRF-TOKEN header.
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+tags:
+  - name: Authentication
+security: []
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Authenticate a local personnel account
+      description: >-
+        Issues a short-lived Access Token in the response body plus separate refresh and CSRF
+        cookies. The response is non-cacheable. No default account or password is provided.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/SessionIssued'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRejected'
+        '403':
+          $ref: '#/components/responses/RequestVerificationFailed'
+        '429':
+          $ref: '#/components/responses/LoginRateLimited'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshSession
+      summary: Rotate the Refresh Token and issue a new Access Token
+      description: >-
+        Requires all three cookie-request safeguards in the same security requirement. A successful
+        rotation replaces both cookies and returns a new memory-only Access Token.
+      security:
+        - refreshCookie: []
+          csrfCookie: []
+          csrfHeader: []
+      responses:
+        '200':
+          $ref: '#/components/responses/SessionIssued'
+        '401':
+          $ref: '#/components/responses/AuthenticationRejected'
+        '403':
+          $ref: '#/components/responses/RequestVerificationFailed'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Revoke the Refresh Token family and expire authentication cookies
+      description: >-
+        Authentication is based on the Refresh Cookie and double-submit CSRF values, not on the
+        Access Token. Therefore logout remains available after the Access Token expires.
+      security:
+        - refreshCookie: []
+          csrfCookie: []
+          csrfHeader: []
+      responses:
+        '204':
+          description: Refresh Token family revoked and both cookies expired.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/ClearedAuthenticationCookies'
+        '403':
+          $ref: '#/components/responses/RequestVerificationFailed'
+
+  /api/v1/auth/me:
+    get:
+      tags: [Authentication]
+      operationId: currentAccount
+      summary: Read the account bound to the current Access Token
+      security:
+        - bearerAccess: []
+      responses:
+        '200':
+          description: Current authenticated account and server-derived roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '401':
+          $ref: '#/components/responses/AccessTokenRejected'
+
+components:
+  securitySchemes:
+    bearerAccess:
+      type: http
+      scheme: bearer
+      bearerFormat: OTA-Access-Token
+      description: >-
+        Short-lived Access Token returned as accessToken. Browser clients must retain it only in
+        page memory and send it as Authorization: Bearer. It must not be written to localStorage,
+        sessionStorage, cookies, URLs, logs, or persistent application state.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: ota_refresh
+      description: >-
+        HttpOnly, Secure, SameSite=Strict Refresh Token cookie scoped to /api/v1/auth. JavaScript
+        cannot read this credential.
+    csrfCookie:
+      type: apiKey
+      in: cookie
+      name: ota_csrf
+      description: >-
+        Secure, SameSite=Strict, JavaScript-readable CSRF cookie scoped to /. Its value is not an
+        authentication credential and must be copied to X-CSRF-TOKEN for refresh and logout.
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-TOKEN
+      description: Must equal the ota_csrf cookie using constant-time comparison on the server.
+
+  headers:
+    NoStore:
+      description: Prevents storage of token-bearing authentication responses.
+      required: true
+      schema:
+        type: string
+        const: no-store
+    NoCachePragma:
+      description: Legacy cache prevention for token-bearing authentication responses.
+      required: true
+      schema:
+        type: string
+        const: no-cache
+    SessionCookies:
+      description: >-
+        Two distinct Set-Cookie header lines: ota_refresh is HttpOnly; ota_csrf is readable by the
+        web client. Both are Secure and SameSite=Strict, and neither has a Domain attribute.
+      required: true
+      schema:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+          type: string
+    ClearedAuthenticationCookies:
+      description: >-
+        Two distinct Set-Cookie header lines expiring ota_refresh at /api/v1/auth and ota_csrf at /.
+      required: true
+      schema:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+          type: string
+    RetryAfter:
+      description: Seconds until another login attempt may be made.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9]+$'
+
+  responses:
+    SessionIssued:
+      description: Access Token issued and Refresh/CSRF cookies set.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Pragma:
+          $ref: '#/components/headers/NoCachePragma'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookies'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AccessResponse'
+    InvalidRequest:
+      description: Login request validation failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            invalidRequest:
+              value:
+                title: Request validation failed
+                status: 400
+                detail: Request validation failed
+                code: INVALID_REQUEST
+    AuthenticationRejected:
+      description: Credentials or Refresh Token were rejected without revealing which check failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            rejected:
+              value:
+                title: Authentication failed
+                status: 401
+                detail: Authentication failed
+                code: AUTHENTICATION_REJECTED
+    AccessTokenRejected:
+      description: Access Token is missing, invalid, expired, revoked, or no longer authorized.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            required:
+              value:
+                title: Authentication required
+                status: 401
+                code: AUTHENTICATION_REQUIRED
+            invalid:
+              value:
+                title: Authentication required
+                status: 401
+                code: INVALID_ACCESS_TOKEN
+    RequestVerificationFailed:
+      description: Origin or double-submit CSRF verification failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            rejected:
+              value:
+                title: Request verification failed
+                status: 403
+                detail: Request verification failed
+                code: REQUEST_VERIFICATION_FAILED
+    LoginRateLimited:
+      description: Too many login attempts.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            limited:
+              value:
+                title: Too many login attempts
+                status: 429
+                detail: Too many login attempts
+                code: LOGIN_RATE_LIMITED
+
+  schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          writeOnly: true
+    AccessResponse:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresInSeconds, account]
+      properties:
+        accessToken:
+          type: string
+          minLength: 1
+          readOnly: true
+          description: Short-lived Access Token; browser clients retain it only in memory.
+        expiresInSeconds:
+          type: integer
+          format: int64
+          minimum: 1
+        account:
+          $ref: '#/components/schemas/AccountResponse'
+    AccountResponse:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, roles]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        roles:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/OtaRole'
+    OtaRole:
+      type: string
+      enum:
+        - PLATFORM_ADMIN
+        - OTA_OPERATION_ASSISTANT
+        - OTA_OPERATION_MANAGER
+        - CEO
+        - REGIONAL_MANAGER
+        - REVENUE_MANAGER
+        - HOTEL_P1_HANDLER
+    ProblemDetails:
+      type: object
+      required: [title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+      additionalProperties: true

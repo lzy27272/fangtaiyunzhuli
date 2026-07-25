@@ -1,0 +1,1568 @@
+{
+  "generatedAt": "2026-07-22T17:13:27.365Z",
+  "version": "TECH-V0.2-PILOT.7",
+  "databaseTarget": "V22",
+  "profile": "V21_BROWSER_READ_ONLY",
+  "webBase": "https://www.sfgzt.cn",
+  "passed": true,
+  "summary": {
+    "passed": 8,
+    "total": 8,
+    "failed": 0,
+    "accountSwitchPassed": true
+  },
+  "results": [
+    {
+      "login": "front.demo",
+      "home": "workbench",
+      "homeTitle": "前台员工工作台",
+      "identity": {
+        "expectedLoginName": "front.demo",
+        "actualLoginName": "front.demo",
+        "expectedPrimaryRole": "FRONT_DESK",
+        "actualPrimaryRole": "FRONT_DESK",
+        "roleListed": true,
+        "expectedAssignment": true,
+        "assignmentCount": 1,
+        "matchingAssignmentCount": 1,
+        "assignmentPositionCodes": [
+          "FRONT_DESK"
+        ],
+        "tenantScope": false,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "operator",
+        "permissionCount": 17,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report-template.read",
+          "daily-operation.read",
+          "task-candidate.read",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback"
+        ],
+        "forbiddenSubset": [
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 1,
+        "expectedCompatibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000002"
+        ],
+        "visibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000002"
+        ],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": false,
+      "createButtonVisible": false,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000005",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "我的工作",
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "fo.supervisor",
+      "home": "workbench",
+      "homeTitle": "前厅主管工作台",
+      "identity": {
+        "expectedLoginName": "fo.supervisor",
+        "actualLoginName": "fo.supervisor",
+        "expectedPrimaryRole": "FRONT_OFFICE_SUPERVISOR",
+        "actualPrimaryRole": "FRONT_OFFICE_SUPERVISOR",
+        "roleListed": true,
+        "expectedAssignment": true,
+        "assignmentCount": 2,
+        "matchingAssignmentCount": 1,
+        "assignmentPositionCodes": [
+          "FRONT_OFFICE_SUPERVISOR",
+          "FRONT_DESK"
+        ],
+        "tenantScope": false,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "manager",
+        "permissionCount": 45,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report-template.read",
+          "daily-operation.read",
+          "task-candidate.read",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.store-supplement",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "ai-recommendation.adopt"
+        ],
+        "forbiddenSubset": [
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-operation.cross-hotel-read",
+          "evidence.sensitive.read",
+          "operation-export.sensitive",
+          "audit.cross-org-read"
+        ],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 2,
+        "expectedCompatibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000004"
+        ],
+        "visibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000004"
+        ],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "日运营快照",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": true,
+          "result": "SKIPPED",
+          "reason": "No seeded immutable snapshot id; authorized snapshot list access is validated separately."
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000005",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "团队日报",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "导出任务",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "我的工作",
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "hk.supervisor",
+      "home": "workbench",
+      "homeTitle": "客房主管工作台",
+      "identity": {
+        "expectedLoginName": "hk.supervisor",
+        "actualLoginName": "hk.supervisor",
+        "expectedPrimaryRole": "HOUSEKEEPING_SUPERVISOR",
+        "actualPrimaryRole": "HOUSEKEEPING_SUPERVISOR",
+        "roleListed": true,
+        "expectedAssignment": true,
+        "assignmentCount": 1,
+        "matchingAssignmentCount": 1,
+        "assignmentPositionCodes": [
+          "HOUSEKEEPING_SUPERVISOR"
+        ],
+        "tenantScope": false,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "manager",
+        "permissionCount": 45,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report-template.read",
+          "daily-operation.read",
+          "task-candidate.read",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.store-supplement",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "ai-recommendation.adopt"
+        ],
+        "forbiddenSubset": [
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-operation.cross-hotel-read",
+          "evidence.sensitive.read",
+          "operation-export.sensitive",
+          "audit.cross-org-read"
+        ],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 1,
+        "expectedCompatibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000003"
+        ],
+        "visibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000003"
+        ],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "日运营快照",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": true,
+          "result": "SKIPPED",
+          "reason": "No seeded immutable snapshot id; authorized snapshot list access is validated separately."
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000006",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "团队日报",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "导出任务",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "我的工作",
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "assistant.gm",
+      "home": "hotel-dashboard",
+      "homeTitle": "门店门店驾驶舱",
+      "identity": {
+        "expectedLoginName": "assistant.gm",
+        "actualLoginName": "assistant.gm",
+        "expectedPrimaryRole": "ASSISTANT_GENERAL_MANAGER",
+        "actualPrimaryRole": "ASSISTANT_GENERAL_MANAGER",
+        "roleListed": true,
+        "expectedAssignment": true,
+        "assignmentCount": 1,
+        "matchingAssignmentCount": 1,
+        "assignmentPositionCodes": [
+          "ASSISTANT_GENERAL_MANAGER"
+        ],
+        "tenantScope": false,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "manager",
+        "permissionCount": 43,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report-template.read",
+          "daily-operation.read",
+          "task-candidate.read",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.store-supplement",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "ai-recommendation.adopt"
+        ],
+        "forbiddenSubset": [
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-operation.cross-hotel-read",
+          "evidence.sensitive.read",
+          "operation-export.sensitive",
+          "audit.cross-org-read"
+        ],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 1,
+        "expectedCompatibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000008"
+        ],
+        "visibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000008"
+        ],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "日运营快照",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": true,
+          "result": "SKIPPED",
+          "reason": "No seeded immutable snapshot id; authorized snapshot list access is validated separately."
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000003",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "团队日报",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "导出任务",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "我的工作",
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "gm.hz",
+      "home": "hotel-dashboard",
+      "homeTitle": "门店门店驾驶舱",
+      "identity": {
+        "expectedLoginName": "gm.hz",
+        "actualLoginName": "gm.hz",
+        "expectedPrimaryRole": "GENERAL_MANAGER",
+        "actualPrimaryRole": "GENERAL_MANAGER",
+        "roleListed": true,
+        "expectedAssignment": true,
+        "assignmentCount": 1,
+        "matchingAssignmentCount": 1,
+        "assignmentPositionCodes": [
+          "GENERAL_MANAGER"
+        ],
+        "tenantScope": false,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "manager",
+        "permissionCount": 45,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report-template.read",
+          "daily-operation.read",
+          "task-candidate.read",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.store-supplement",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "ai-recommendation.adopt"
+        ],
+        "forbiddenSubset": [
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-operation.cross-hotel-read",
+          "evidence.sensitive.read",
+          "operation-export.sensitive",
+          "audit.cross-org-read"
+        ],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 1,
+        "expectedCompatibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000001"
+        ],
+        "visibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000001"
+        ],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "日运营快照",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": true,
+          "result": "SKIPPED",
+          "reason": "No seeded immutable snapshot id; authorized snapshot list access is validated separately."
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000003",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "团队日报",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "导出任务",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "我的工作",
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "ota.assistant",
+      "home": "tasks?view=team",
+      "homeTitle": "任务中心",
+      "identity": {
+        "expectedLoginName": "ota.assistant",
+        "actualLoginName": "ota.assistant",
+        "expectedPrimaryRole": "OTA_OPERATION_ASSISTANT",
+        "actualPrimaryRole": "OTA_OPERATION_ASSISTANT",
+        "roleListed": true,
+        "expectedAssignment": true,
+        "assignmentCount": 1,
+        "matchingAssignmentCount": 1,
+        "assignmentPositionCodes": [
+          "OTA_OPERATION_ASSISTANT"
+        ],
+        "tenantScope": false,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "operator",
+        "permissionCount": 23,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report-template.read",
+          "daily-operation.read",
+          "task-candidate.read",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback"
+        ],
+        "forbiddenSubset": [
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 1,
+        "expectedCompatibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000006"
+        ],
+        "visibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000006"
+        ],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000002",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "我的工作",
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "ota.manager",
+      "home": "operations-dashboard",
+      "homeTitle": "区域多门店运营视图",
+      "identity": {
+        "expectedLoginName": "ota.manager",
+        "actualLoginName": "ota.manager",
+        "expectedPrimaryRole": "OTA_OPERATION_MANAGER",
+        "actualPrimaryRole": "OTA_OPERATION_MANAGER",
+        "roleListed": true,
+        "expectedAssignment": true,
+        "assignmentCount": 1,
+        "matchingAssignmentCount": 1,
+        "assignmentPositionCodes": [
+          "OTA_OPERATION_MANAGER"
+        ],
+        "tenantScope": false,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "manager",
+        "permissionCount": 45,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report-template.read",
+          "daily-operation.read",
+          "task-candidate.read",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.store-supplement",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "ai-recommendation.adopt"
+        ],
+        "forbiddenSubset": [
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-operation.cross-hotel-read",
+          "evidence.sensitive.read",
+          "operation-export.sensitive",
+          "audit.cross-org-read"
+        ],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 1,
+        "expectedCompatibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000007"
+        ],
+        "visibleAssignmentIds": [
+          "19200000-0000-0000-0000-000000000007"
+        ],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "日运营快照",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": true,
+          "result": "SKIPPED",
+          "reason": "No seeded immutable snapshot id; authorized snapshot list access is validated separately."
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000002",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "团队日报",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "导出任务",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "区域多门店运营视图",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "我的工作",
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    },
+    {
+      "login": "ceo.demo",
+      "home": "hotel-dashboard",
+      "homeTitle": "门店门店驾驶舱",
+      "identity": {
+        "expectedLoginName": "ceo.demo",
+        "actualLoginName": "ceo.demo",
+        "expectedPrimaryRole": "CEO",
+        "actualPrimaryRole": "CEO",
+        "roleListed": true,
+        "expectedAssignment": false,
+        "assignmentCount": 0,
+        "matchingAssignmentCount": 0,
+        "assignmentPositionCodes": [],
+        "tenantScope": true,
+        "passed": true
+      },
+      "permissionAudit": {
+        "profile": "ceo",
+        "permissionCount": 65,
+        "v18PermissionUniverse": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "expectedV18Permissions": [
+          "daily-report.read",
+          "daily-report.submit",
+          "daily-report.team-read",
+          "daily-report.review",
+          "daily-report.revision-review",
+          "daily-report-template.read",
+          "daily-report-template.manage",
+          "daily-report-template.review",
+          "daily-report-template.publish",
+          "daily-report-template.store-supplement",
+          "daily-operation.read",
+          "daily-operation.cross-hotel-read",
+          "issue.confirm",
+          "issue.assign",
+          "issue.close",
+          "issue.reopen",
+          "task-candidate.read",
+          "task-candidate.manage",
+          "task-candidate.confirm",
+          "task-candidate.reject",
+          "task-candidate.retry",
+          "evidence.sensitive.read",
+          "operation-snapshot.read",
+          "operation-snapshot.retry",
+          "operation-snapshot.compare",
+          "operation-export.create",
+          "operation-export.download",
+          "operation-export.sensitive",
+          "ai-recommendation.read",
+          "ai-recommendation.feedback",
+          "ai-recommendation.adopt",
+          "audit.cross-org-read"
+        ],
+        "forbiddenSubset": [],
+        "missingRequired": [],
+        "unexpectedForbidden": [],
+        "passed": true
+      },
+      "assignmentSelector": {
+        "rawAssignmentCount": 0,
+        "expectedCompatibleAssignmentIds": [],
+        "visibleAssignmentIds": [],
+        "incompatibleAssignmentsHidden": true
+      },
+      "expectedCanCreate": true,
+      "createButtonVisible": true,
+      "permissionMatch": true,
+      "customAuthorizationHeader": {
+        "name": "X-Hotel-AI-Authorization",
+        "presentForIamMe": true,
+        "bearerSchemeValidForIamMe": true,
+        "valuePersistedInEvidence": false
+      },
+      "routeAccess": [
+        {
+          "route": "daily-operations/snapshots",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "日运营快照",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations?mode=SNAPSHOT",
+          "expectedAllowed": true,
+          "result": "SKIPPED",
+          "reason": "No seeded immutable snapshot id; authorized snapshot list access is validated separately."
+        },
+        {
+          "route": "daily-reports/team?orgUnitId=12000000-0000-0000-0000-000000000003",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "团队日报",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "daily-operations/exports",
+          "expectedAllowed": true,
+          "localBoundaryVisible": false,
+          "businessRequestSent": true,
+          "businessRequestCount": 1,
+          "responseStatus": 200,
+          "responseOk": true,
+          "pageTitle": "导出任务",
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "operations-dashboard",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        },
+        {
+          "route": "my-work",
+          "expectedAllowed": false,
+          "localBoundaryVisible": true,
+          "businessRequestSent": false,
+          "businessRequestCount": 0,
+          "passed": true,
+          "result": "PASS"
+        }
+      ],
+      "readOnlyNetworkPolicy": {
+        "loginPostCount": 1,
+        "forbiddenWriteRequests": [],
+        "passed": true
+      },
+      "apiFailures": [],
+      "unexpectedApiFailures": [],
+      "passed": true
+    }
+  ],
+  "accountSwitch": {
+    "contextReused": true,
+    "sequence": [
+      "front.demo",
+      "logout",
+      "ceo.demo"
+    ],
+    "frontIdentity": {
+      "expectedLoginName": "front.demo",
+      "actualLoginName": "front.demo",
+      "expectedPrimaryRole": "FRONT_DESK",
+      "actualPrimaryRole": "FRONT_DESK",
+      "roleListed": true,
+      "expectedAssignment": true,
+      "assignmentCount": 1,
+      "matchingAssignmentCount": 1,
+      "assignmentPositionCodes": [
+        "FRONT_DESK"
+      ],
+      "tenantScope": false,
+      "passed": true
+    },
+    "ceoIdentity": {
+      "expectedLoginName": "ceo.demo",
+      "actualLoginName": "ceo.demo",
+      "expectedPrimaryRole": "CEO",
+      "actualPrimaryRole": "CEO",
+      "roleListed": true,
+      "expectedAssignment": false,
+      "assignmentCount": 0,
+      "matchingAssignmentCount": 0,
+      "assignmentPositionCodes": [],
+      "tenantScope": true,
+      "passed": true
+    },
+    "customAuthorizationHeader": {
+      "name": "X-Hotel-AI-Authorization",
+      "frontIamMePresentWithBearerScheme": true,
+      "ceoIamMePresentWithBearerScheme": true,
+      "valuesPersistedInEvidence": false
+    },
+    "tokenPresentBeforeLogout": true,
+    "tokenClearedAfterLogout": true,
+    "tokenChanged": true,
+    "tokenValuesPersistedInEvidence": false,
+    "loginPostCount": 2,
+    "forbiddenWriteRequests": [],
+    "apiFailures": [],
+    "unexpectedApiFailures": [],
+    "passed": true
+  },
+  "evidenceSafety": {
+    "businessWritesAllowed": false,
+    "onlyAllowedPostPath": "/api/v1/auth/login",
+    "credentialsPersistedInEvidence": false,
+    "tokensPersistedInEvidence": false,
+    "authorizationHeaderValuesPersistedInEvidence": false
+  }
+}

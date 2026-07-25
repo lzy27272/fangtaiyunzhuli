@@ -7,7 +7,7 @@ import { AsyncState } from '../../shared/AsyncState'
 import { useScopedResource } from '../../shared/useScopedResource'
 import { useStableCommand } from '../../shared/useStableCommand'
 import { AiRecommendationCard, FeatureHeader, StatusBadge, featureStyles as styles, formatLocalDateTime } from '../shared/FeatureUI'
-import { loadDailyReport, loadMyDailyReports, loadTeamDailyReports, requestDailyReportCorrection, reviewDailyReport, reviewDailyReportRevision, saveDailyReportDraft, submitDailyReport } from './api'
+import { loadCurrentBusinessDay, loadDailyReport, loadMyDailyReports, loadTeamDailyReports, requestDailyReportCorrection, reviewDailyReport, reviewDailyReportRevision, saveDailyReportDraft, submitDailyReport } from './api'
 import type { DailyReportDetail, DailyReportDraftInput, DailyReportSummary } from './types'
 
 export function DailyReportRoutes({ view, params, identity, grantedPermissions, go }: { view: DailyFeatureRouteId; params: RouteParams; identity: RoleContext; grantedPermissions: string[]; go: AppNavigate }) {
@@ -18,12 +18,30 @@ export function DailyReportRoutes({ view, params, identity, grantedPermissions, 
 }
 
 function ReportList({ mode, identity, params, go }: { mode: 'my' | 'team'; identity: RoleContext; params: RouteParams; go: AppNavigate }) {
-  const [businessDate, setBusinessDate] = useState(params.businessDate || new Date().toISOString().slice(0, 10))
+  const orgUnitId = params.orgUnitId || identity.assignmentOrgUnitId || identity.orgScopes[0] || ''
+  const currentDay = useScopedResource(
+    `${identity.key}:current-business-day:${orgUnitId}:${params.businessDate ?? ''}`,
+    (signal) => params.businessDate
+      ? Promise.resolve({ businessDate: params.businessDate })
+      : loadCurrentBusinessDay(identity, orgUnitId, signal),
+    undefined as { businessDate: string } | undefined,
+  )
+  if (currentDay.loading) {
+    return <section className={styles.page}><FeatureHeader eyebrow={mode === 'my' ? 'MY DAILY REPORTS' : 'TEAM DAILY REPORTS'} title={mode === 'my' ? '我的日报' : '团队日报'} description="正在按门店时区和营业日截止点解析当前营业日。" /><AsyncState loading /></section>
+  }
+  if (currentDay.error || !currentDay.data?.businessDate) {
+    return <section className={styles.page}><FeatureHeader eyebrow={mode === 'my' ? 'MY DAILY REPORTS' : 'TEAM DAILY REPORTS'} title={mode === 'my' ? '我的日报' : '团队日报'} description="营业日由服务端统一解析，避免凌晨跨日时查询错误日期。" /><AsyncState loading={false} error={currentDay.error || new Error('当前营业日不可用')} onRetry={currentDay.reload} /></section>
+  }
+  return <ResolvedReportList key={`${identity.key}:${mode}:${currentDay.data.businessDate}`} mode={mode} identity={identity} params={params} go={go} initialBusinessDate={currentDay.data.businessDate} orgUnitId={orgUnitId} />
+}
+
+function ResolvedReportList({ mode, identity, params, go, initialBusinessDate, orgUnitId }: { mode: 'my' | 'team'; identity: RoleContext; params: RouteParams; go: AppNavigate; initialBusinessDate: string; orgUnitId: string }) {
+  const [businessDate, setBusinessDate] = useState(initialBusinessDate)
   const [status, setStatus] = useState(params.status || '')
-  const key = `${identity.key}:daily-reports:${mode}:${businessDate}:${status}:${params.orgUnitId ?? ''}`
+  const key = `${identity.key}:daily-reports:${mode}:${businessDate}:${status}:${orgUnitId}:${identity.assignmentId ?? ''}`
   const resource = useScopedResource(key, (signal) => mode === 'my'
-    ? loadMyDailyReports(identity, signal, { businessDate, status })
-    : loadTeamDailyReports(identity, signal, { businessDate, status, orgUnitId: params.orgUnitId || identity.assignmentOrgUnitId || identity.orgScopes[0] }), [])
+    ? loadMyDailyReports(identity, signal, { businessDate, status, positionAssignmentId: identity.assignmentId })
+    : loadTeamDailyReports(identity, signal, { businessDate, status, orgUnitId }), [], 30_000)
   const updateFilters = (nextDate: string, nextStatus: string) => {
     setBusinessDate(nextDate); setStatus(nextStatus)
     go(mode === 'my' ? 'daily-reports-my' : 'daily-reports-team', { ...params, businessDate: nextDate, status: nextStatus || undefined })
@@ -37,7 +55,9 @@ function ReportList({ mode, identity, params, go }: { mode: 'my' | 'team'; ident
 }
 
 function ReportCard({ report, go }: { report: DailyReportSummary; go: AppNavigate }) {
-  return <article className={styles.card}><header><div className={styles.meta}><span>{report.businessDate}</span><span>{report.positionName}</span></div><StatusBadge value={report.status} /></header><h2>{report.employeeName || '我的日报'}</h2><p>{report.templateName} · {report.templateVersionNo ? `V${report.templateVersionNo}` : '版本待解析'}</p><div className={styles.progress}><i style={{ width: `${Math.max(0, Math.min(100, report.completionRate ?? 0))}%` }} /></div><div className={styles.meta}><span>完成 {report.completionRate ?? '—'}%</span><span>缺失 {report.missingRequiredCount ?? '—'}</span><span>异常 {report.exceptionCount ?? '—'}</span><span>证据 {report.evidenceCount ?? '—'}</span></div><footer><button className="primary" onClick={() => go('daily-report-detail', { reportId: report.id })}>{report.status === 'DRAFT' ? '继续填报' : '查看日报'}</button></footer></article>
+  const overdue = report.status === 'DRAFT' && Boolean(report.dueAt) && new Date(report.dueAt as string).getTime() < Date.now()
+  const displayStatus = report.status === 'DRAFT' ? (overdue ? '已逾期' : '待填报') : '已提交'
+  return <article className={styles.card}><header><div className={styles.meta}><span>{report.businessDate}</span><span>{report.positionName}</span></div><StatusBadge value={displayStatus} /></header><h2>{report.employeeName || '我的日报'}</h2><p>{report.templateName} · {report.templateVersionNo ? `V${report.templateVersionNo}` : '版本待解析'}</p><div className={styles.progress}><i style={{ width: `${Math.max(0, Math.min(100, report.completionRate ?? 0))}%` }} /></div><div className={styles.meta}><span>截止 {formatLocalDateTime(report.dueAt)}</span><span>完成 {report.completionRate ?? '—'}%</span><span>缺失 {report.missingRequiredCount ?? '—'}</span><span>异常 {report.exceptionCount ?? '—'}</span><span>证据 {report.evidenceCount ?? '—'}</span></div><footer><button className="primary" onClick={() => go('daily-report-detail', { reportId: report.id })}>{report.status === 'DRAFT' ? '立即填报' : '查看日报'}</button></footer></article>
 }
 
 function ReportDetailPage({ identity, grantedPermissions, reportId, correctionRevisionId, go }: { identity: RoleContext; grantedPermissions: string[]; reportId: string; correctionRevisionId?: string; go: AppNavigate }) {

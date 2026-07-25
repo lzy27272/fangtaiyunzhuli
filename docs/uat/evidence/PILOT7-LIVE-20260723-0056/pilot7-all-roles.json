@@ -1,0 +1,478 @@
+{
+  "generatedAt": "2026-07-22T17:00:25.119Z",
+  "version": "TECH-V0.2-PILOT.7",
+  "databaseTarget": "V22",
+  "profile": "V21_BROWSER_READ_ONLY",
+  "webBase": "https://www.sfgzt.cn",
+  "passed": false,
+  "summary": {
+    "passed": 0,
+    "total": 8,
+    "failed": 8,
+    "accountSwitchPassed": false
+  },
+  "results": [
+    {
+      "login": "front.demo",
+      "expectedRole": "FRONT_DESK",
+      "expectedCanCreate": false,
+      "apiFailures": [
+        {
+          "status": 502,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    },
+    {
+      "login": "fo.supervisor",
+      "expectedRole": "FRONT_OFFICE_SUPERVISOR",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    },
+    {
+      "login": "hk.supervisor",
+      "expectedRole": "HOUSEKEEPING_SUPERVISOR",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 502,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 502,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    },
+    {
+      "login": "assistant.gm",
+      "expectedRole": "ASSISTANT_GENERAL_MANAGER",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    },
+    {
+      "login": "gm.hz",
+      "expectedRole": "GENERAL_MANAGER",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    },
+    {
+      "login": "ota.assistant",
+      "expectedRole": "OTA_OPERATION_ASSISTANT",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    },
+    {
+      "login": "ota.manager",
+      "expectedRole": "OTA_OPERATION_MANAGER",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    },
+    {
+      "login": "ceo.demo",
+      "expectedRole": "CEO",
+      "expectedCanCreate": true,
+      "apiFailures": [
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/my/work-expectations",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/iam/me",
+          "search": ""
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/tasks",
+          "search": "?view=mine&page=0&size=100"
+        },
+        {
+          "status": 401,
+          "path": "/api/v1/notifications",
+          "search": "?page=0&size=100"
+        }
+      ],
+      "forbiddenWriteRequests": [],
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+      "passed": false
+    }
+  ],
+  "accountSwitch": {
+    "contextReused": true,
+    "sequence": [
+      "front.demo",
+      "logout",
+      "ceo.demo"
+    ],
+    "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.login-card') to be visible\u001b[22m\n",
+    "loginPostCount": 0,
+    "forbiddenWriteRequests": [],
+    "apiFailures": [
+      {
+        "status": 401,
+        "path": "/api/v1/notifications",
+        "search": "?page=0&size=100"
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/iam/me",
+        "search": ""
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/tasks",
+        "search": "?view=mine&page=0&size=100"
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/notifications",
+        "search": "?page=0&size=100"
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/my/work-expectations",
+        "search": "?page=0&size=100"
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/tasks",
+        "search": "?view=mine&page=0&size=100"
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/notifications",
+        "search": "?page=0&size=100"
+      },
+      {
+        "status": 401,
+        "path": "/api/v1/notifications",
+        "search": "?page=0&size=100"
+      }
+    ],
+    "tokenValuesPersistedInEvidence": false,
+    "passed": false
+  },
+  "evidenceSafety": {
+    "businessWritesAllowed": false,
+    "onlyAllowedPostPath": "/api/v1/auth/login",
+    "credentialsPersistedInEvidence": false,
+    "tokensPersistedInEvidence": false,
+    "authorizationHeaderValuesPersistedInEvidence": false
+  }
+}

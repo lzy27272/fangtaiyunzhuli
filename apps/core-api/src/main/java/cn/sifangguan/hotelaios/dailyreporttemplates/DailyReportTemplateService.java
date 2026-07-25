@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Collection;
@@ -891,14 +892,15 @@ public class DailyReportTemplateService {
             OffsetDateTime effectiveTo
     ) {
         boolean headquarters = "HQ".equals(template.get("templateOrigin"));
+        UUID assignmentId = UUID.randomUUID();
         jdbc.update("""
                 insert into daily_report_template_assignment
-                    (tenant_id, template_version_id, assignment_kind, scope_type,
+                    (id, tenant_id, template_version_id, assignment_kind, scope_type,
                      org_unit_id, position_id, priority, valid_from, valid_to, assigned_by)
                 values
-                    (:tenantId, :versionId, :assignmentKind, :scopeType,
+                    (:id, :tenantId, :versionId, :assignmentKind, :scopeType,
                      :orgUnitId, :positionId, :priority, :validFrom, :validTo, :actorId)
-                """, base(principal).addValue("versionId", versionId)
+                """, base(principal).addValue("id", assignmentId).addValue("versionId", versionId)
                 .addValue("assignmentKind", headquarters ? "BASE" : "SUPPLEMENT")
                 .addValue("scopeType", headquarters ? "POSITION" : "ORG_TREE")
                 .addValue("orgUnitId", headquarters ? null : template.get("ownerOrgUnitId"))
@@ -907,6 +909,38 @@ public class DailyReportTemplateService {
                 .addValue("validFrom", effectiveFrom.toLocalDate())
                 .addValue("validTo", effectiveTo == null ? null : effectiveTo.toLocalDate())
                 .addValue("actorId", principal.actorId()));
+        if (headquarters) {
+            Map<String, Object> schedule = jdbc.queryForMap("""
+                    select coalesce(min(item.due_local_time), cast('23:00' as time)) as due_local_time,
+                           coalesce(min(item.grace_minutes), 30) as grace_minutes
+                    from daily_report_template_version version
+                    left join work_package_item item
+                      on item.tenant_id = version.tenant_id
+                     and item.work_package_version_id = version.work_package_version_id
+                    where version.tenant_id = :tenantId and version.id = :versionId
+                    """, base(principal).addValue("versionId", versionId));
+            Object dueLocalTimeValue = schedule.get("due_local_time");
+            LocalTime dueLocalTime = dueLocalTimeValue instanceof LocalTime value
+                    ? value
+                    : ((java.sql.Time) dueLocalTimeValue).toLocalTime();
+            int graceMinutes = ((Number) schedule.get("grace_minutes")).intValue();
+            jdbc.update("""
+                    insert into daily_report_delivery_policy
+                        (tenant_id, template_assignment_id, enabled, open_local_time,
+                         due_local_time, grace_minutes, pre_due_reminder_minutes,
+                         overdue_reminder_minutes, backfill_days, created_by, updated_by)
+                    values
+                        (:tenantId, :assignmentId, true, :openLocalTime,
+                         :dueLocalTime, :graceMinutes, cast('{30}' as integer[]),
+                         cast('{0,30}' as integer[]), 1, :actorId, :actorId)
+                    on conflict (tenant_id, template_assignment_id) do nothing
+                    """, base(principal)
+                    .addValue("assignmentId", assignmentId)
+                    .addValue("openLocalTime", dueLocalTime.minusHours(1))
+                    .addValue("dueLocalTime", dueLocalTime)
+                    .addValue("graceMinutes", graceMinutes)
+                    .addValue("actorId", principal.actorId()));
+        }
     }
 
     private void requirePublishedWorkPackage(TenantPrincipal principal, UUID versionId, UUID templateId) {

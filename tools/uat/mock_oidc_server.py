@@ -43,6 +43,9 @@ ACCOUNTS = {
     "housekeeping-supervisor": "19000000-0000-0000-0000-000000000004",
     "assistant-gm": "19000000-0000-0000-0000-000000000008",
     "general-manager": "19000000-0000-0000-0000-000000000002",
+    "ota-assistant": "19000000-0000-0000-0000-000000000006",
+    "ota-manager": "19000000-0000-0000-0000-000000000007",
+    # Backward-compatible alias used by the original six-role UAT evidence.
     "regional-operations": "19000000-0000-0000-0000-000000000007",
 }
 

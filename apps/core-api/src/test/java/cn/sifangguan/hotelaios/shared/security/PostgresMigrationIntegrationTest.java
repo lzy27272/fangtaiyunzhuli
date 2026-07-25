@@ -38,7 +38,7 @@ class PostgresMigrationIntegrationTest {
                     .migrate()
                     .migrationsExecuted;
 
-            assertEquals(21, migrations);
+            assertEquals(23, migrations);
 
             try (Connection owner = ownerDataSource.getConnection();
                  Statement statement = owner.createStatement()) {
@@ -292,7 +292,10 @@ class PostgresMigrationIntegrationTest {
             "task_candidate", "issue_task_link", "sync_operation", "business_day_run",
             "daily_operation_snapshot", "daily_operation_snapshot_metric", "action_item",
             "notification_delivery", "ai_request", "ai_recommendation",
-            "ai_recommendation_source", "ai_decision", "operation_export_job"
+            "ai_recommendation_source", "ai_decision", "operation_export_job",
+            "wecom_user_binding", "wecom_chat_binding", "wecom_inbound_receipt",
+            "wecom_task_card_binding", "wecom_oauth_attempt",
+            "daily_report_delivery_policy"
     };
 
     private static final String[] TENANT_RLS_TABLES = {
@@ -314,7 +317,10 @@ class PostgresMigrationIntegrationTest {
             "task_candidate", "issue_task_link", "sync_operation", "business_day_run",
             "daily_operation_snapshot", "daily_operation_snapshot_metric", "action_item",
             "notification_delivery", "ai_request", "ai_recommendation",
-            "ai_recommendation_source", "ai_decision", "operation_export_job"
+            "ai_recommendation_source", "ai_decision", "operation_export_job",
+            "wecom_user_binding", "wecom_chat_binding", "wecom_inbound_receipt",
+            "wecom_task_card_binding", "wecom_oauth_attempt",
+            "daily_report_delivery_policy"
     };
 
     private static int scalarInt(Statement statement, String sql) throws Exception {

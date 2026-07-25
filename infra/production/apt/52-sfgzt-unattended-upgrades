@@ -1,0 +1,2 @@
+// Apply security updates automatically, but never reboot production unattended.
+Unattended-Upgrade::Automatic-Reboot "false";

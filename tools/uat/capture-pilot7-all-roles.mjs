@@ -17,7 +17,7 @@ const browserExecutable = process.env.UAT_BROWSER_EXECUTABLE
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'].find(existsSync)
 
 const productVersion = 'TECH-V0.2-PILOT.7'
-const databaseTarget = 'V21'
+const databaseTarget = 'V22'
 const authHeaderName = 'x-hotel-ai-authorization'
 const tokenStorageKey = 'hotel-ai-os-access-token'
 const allowedLoginPostPath = '/api/v1/auth/login'
@@ -271,8 +271,22 @@ function unexpectedApiFailures(state) {
   return state.apiFailures
 }
 
+async function gotoWithRetry(page, url, attempts = 3) {
+  let lastError
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    } catch (error) {
+      lastError = error
+      if (attempt === attempts) throw error
+      await page.waitForTimeout(attempt * 1_000)
+    }
+  }
+  throw lastError
+}
+
 async function openLogin(page) {
-  await page.goto(`${webBase}/#/workbench`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await gotoWithRetry(page, `${webBase}/#/workbench`)
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 30_000 })
 }
 
@@ -304,7 +318,7 @@ async function verifyGovernedRoute(page, state, role, route, expectedAllowed) {
     const responsePromise = expectedAllowed
       ? page.waitForResponse((response) => response.request().method() === 'GET' && requestPath(response.url()).endsWith(route.requestSuffix), { timeout: 30_000 })
       : undefined
-    await page.goto(`${webBase}/#/${route.hash}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    await gotoWithRetry(page, `${webBase}/#/${route.hash}`)
     const accessDenied = page.locator('.state-card.error-state[role="alert"]').filter({ hasText: '无权访问此页面' })
     if (expectedAllowed) {
       const response = await responsePromise
@@ -430,13 +444,13 @@ try {
       const meHeaderChecks = state.meAuthorizationChecks.slice(meHeaderStart)
       const customAuthorizationHeaderPassed = meHeaderChecks.some((check) => check.present && check.bearerSchemeValid)
 
-      await page.goto(`${webBase}/#/${role.home}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      await gotoWithRetry(page, `${webBase}/#/${role.home}`)
       await page.locator('main h1').first().waitFor({ state: 'visible', timeout: 30_000 })
       await page.waitForTimeout(800)
       const homeTitle = await page.locator('main h1').first().innerText()
       await page.screenshot({ path: path.join(outputRoot, `${role.slug}-home.png`), fullPage: true })
 
-      await page.goto(`${webBase}/#/tasks?view=${role.login === 'ceo.demo' ? 'team' : 'mine'}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      await gotoWithRetry(page, `${webBase}/#/tasks?view=${role.login === 'ceo.demo' ? 'team' : 'mine'}`)
       await page.locator('main h1').first().waitFor({ state: 'visible', timeout: 30_000 })
       await page.waitForTimeout(800)
       const createButtonVisible = await page.locator('.page-title button.primary').count() > 0
@@ -513,7 +527,7 @@ const report = {
   generatedAt: new Date().toISOString(),
   version: productVersion,
   databaseTarget,
-  profile: 'V21_BROWSER_READ_ONLY',
+  profile: 'V22_BROWSER_READ_ONLY',
   webBase,
   passed,
   summary: {

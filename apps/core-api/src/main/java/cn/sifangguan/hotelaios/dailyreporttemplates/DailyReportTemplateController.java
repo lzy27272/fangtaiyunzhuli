@@ -22,9 +22,14 @@ import java.util.UUID;
 @RequestMapping("/api/v1/daily-report-templates")
 public class DailyReportTemplateController {
     private final DailyReportTemplateService service;
+    private final DailyReportDeliveryPolicyService deliveryPolicyService;
 
-    public DailyReportTemplateController(DailyReportTemplateService service) {
+    public DailyReportTemplateController(
+            DailyReportTemplateService service,
+            DailyReportDeliveryPolicyService deliveryPolicyService
+    ) {
         this.service = service;
+        this.deliveryPolicyService = deliveryPolicyService;
     }
 
     @GetMapping
@@ -107,5 +112,22 @@ public class DailyReportTemplateController {
             @RequestParam(required = false) LocalDate businessDate
     ) {
         return service.resolve(orgUnitId, positionAssignmentId, businessDate);
+    }
+
+    @GetMapping("/{templateId}/versions/{versionId}/delivery-policy")
+    public DailyReportDeliveryPolicyModels.Policy deliveryPolicy(
+            @PathVariable UUID templateId,
+            @PathVariable UUID versionId
+    ) {
+        return deliveryPolicyService.get(templateId, versionId);
+    }
+
+    @PutMapping("/{templateId}/versions/{versionId}/delivery-policy")
+    public DailyReportDeliveryPolicyModels.Policy updateDeliveryPolicy(
+            @PathVariable UUID templateId,
+            @PathVariable UUID versionId,
+            @Valid @RequestBody DailyReportDeliveryPolicyModels.UpdatePolicy request
+    ) {
+        return deliveryPolicyService.update(templateId, versionId, request);
     }
 }

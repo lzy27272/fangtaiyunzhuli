@@ -85,7 +85,11 @@ public class DailyReportService {
     }
 
     @Transactional(readOnly = true)
-    public List<Map<String, Object>> myReports(LocalDate businessDate, String status) {
+    public List<Map<String, Object>> myReports(
+            LocalDate businessDate,
+            String status,
+            UUID positionAssignmentId
+    ) {
         accessPolicy.requirePermission("daily-report.read");
         TenantPrincipal principal = prepare();
         return jdbc.queryForList("""
@@ -95,6 +99,9 @@ public class DailyReportService {
                        report.position_assignment_id as "positionAssignmentId",
                        position.name as "positionName", report.business_date as "businessDate",
                        report.report_status as "reportStatus", report.review_status as "reviewStatus",
+                       report.report_deadline_at as "reportDeadlineAt",
+                       template.name as "templateName",
+                       template_version.version_no as "templateVersionNo",
                        report.current_revision_id as "currentRevisionId",
                        report.current_revision_no as "currentRevisionNo",
                        report.submitted_at as "submittedAt", report.row_version as "rowVersion",
@@ -105,12 +112,22 @@ public class DailyReportService {
                   on assignment.tenant_id = report.tenant_id and assignment.id = report.position_assignment_id
                 join position_definition position
                   on position.tenant_id = assignment.tenant_id and position.id = assignment.position_id
+                join daily_report_template_version template_version
+                  on template_version.tenant_id = report.tenant_id
+                 and template_version.id = report.template_version_id
+                join daily_report_template_definition template
+                  on template.tenant_id = template_version.tenant_id
+                 and template.id = template_version.template_id
                 where report.tenant_id = :tenantId and employee.account_id = :actorId
                   and (cast(:businessDate as date) is null or report.business_date = :businessDate)
                   and (cast(:status as varchar) is null or report.report_status = :status)
+                  and (cast(:positionAssignmentId as uuid) is null
+                       or report.position_assignment_id = :positionAssignmentId)
                 order by report.business_date desc, report.created_at desc
                 """, base(principal).addValue("actorId", principal.actorId())
-                .addValue("businessDate", businessDate).addValue("status", normalizeStatus(status)));
+                .addValue("businessDate", businessDate)
+                .addValue("status", normalizeStatus(status))
+                .addValue("positionAssignmentId", positionAssignmentId));
     }
 
     @Transactional(readOnly = true)
@@ -125,6 +142,9 @@ public class DailyReportService {
                        report.position_assignment_id as "positionAssignmentId",
                        position.name as "positionName", report.business_date as "businessDate",
                        report.report_status as "reportStatus", report.review_status as "reviewStatus",
+                       report.report_deadline_at as "reportDeadlineAt",
+                       template.name as "templateName",
+                       template_version.version_no as "templateVersionNo",
                        report.current_revision_id as "currentRevisionId",
                        report.current_revision_no as "currentRevisionNo",
                        report.submitted_at as "submittedAt", report.row_version as "rowVersion",
@@ -135,6 +155,12 @@ public class DailyReportService {
                   on assignment.tenant_id = report.tenant_id and assignment.id = report.position_assignment_id
                 join position_definition position
                   on position.tenant_id = assignment.tenant_id and position.id = assignment.position_id
+                join daily_report_template_version template_version
+                  on template_version.tenant_id = report.tenant_id
+                 and template_version.id = report.template_version_id
+                join daily_report_template_definition template
+                  on template.tenant_id = template_version.tenant_id
+                 and template.id = template_version.template_id
                 where report.tenant_id = :tenantId
                   and exists (
                     select 1 from org_unit_closure scope

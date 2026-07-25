@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.sifangguan.cn/ota/v1/standard-record-envelope.schema.json",
+  "title": "OTA Standard Record Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recordId", "schemaVersion", "sourceSystem", "tenantId", "hotelId",
+    "connectorId", "runId", "stream", "sourceEffectiveAt", "sourceDetectionInterval", "observedAt",
+    "idempotencyKey", "evidence", "record"
+  ],
+  "properties": {
+    "recordId": { "type": "string", "format": "uuid" },
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "sourceSystem": {
+      "enum": ["PMS", "CTRIP", "MEITUAN", "OFFICIAL_EXPORT", "OTA_STANDALONE"]
+    },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "hotelId": { "type": "string", "format": "uuid" },
+    "connectorId": { "type": "string", "format": "uuid" },
+    "runId": { "type": "string", "format": "uuid" },
+    "stream": { "type": "string", "minLength": 1 },
+    "sourceEffectiveAt": { "type": ["string", "null"], "format": "date-time" },
+    "sourceDetectionInterval": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["fromExclusive", "toInclusive"],
+      "properties": {
+        "fromExclusive": { "type": "string", "format": "date-time" },
+        "toInclusive": { "type": "string", "format": "date-time" }
+      }
+    },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "idempotencyKey": { "type": "string", "minLength": 1 },
+    "evidence": { "type": "object" },
+    "record": { "type": "object" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "sourceEffectiveAt": { "type": "string" },
+        "sourceDetectionInterval": { "type": "null" }
+      }
+    },
+    {
+      "properties": {
+        "sourceEffectiveAt": { "type": "null" },
+        "sourceDetectionInterval": { "type": "object" }
+      }
+    }
+  ]
+}

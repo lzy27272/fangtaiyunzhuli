@@ -48,6 +48,8 @@ class SignedJwtIdentityLifecycleIntegrationTest {
     private static final String FRONT_DESK = "19000000-0000-0000-0000-000000000003";
     private static final String HOUSEKEEPING_SUPERVISOR = "19000000-0000-0000-0000-000000000004";
     private static final String FRONT_OFFICE_SUPERVISOR = "19000000-0000-0000-0000-000000000005";
+    private static final String HANGZHOU_HOTEL = "12000000-0000-0000-0000-000000000003";
+    private static final String SHANGHAI_HOTEL = "12000000-0000-0000-0000-000000000004";
     private static final String HOUSEKEEPING_ASSIGNMENT = "19200000-0000-0000-0000-000000000003";
     private static final String FRONT_OFFICE_SECONDARY_ASSIGNMENT = "19200000-0000-0000-0000-000000000005";
     private static final String FRONT_OFFICE_PRIMARY_ASSIGNMENT = "19200000-0000-0000-0000-000000000004";
@@ -127,6 +129,23 @@ class SignedJwtIdentityLifecycleIntegrationTest {
         } finally {
             updateAssignmentStatus(FRONT_OFFICE_SECONDARY_ASSIGNMENT, "ACTIVE");
         }
+    }
+
+    @Test
+    void businessDayAllowsOwnSecondaryAssignmentOrgButRejectsUnrelatedHotel() throws Exception {
+        String token = OIDC.sign(FRONT_OFFICE_SUPERVISOR);
+
+        mockMvc.perform(get("/api/v1/business-days/current")
+                        .param("orgUnitId", HANGZHOU_HOTEL)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hotelOrgUnitId").value(HANGZHOU_HOTEL))
+                .andExpect(jsonPath("$.orgUnitId").value(HANGZHOU_HOTEL));
+
+        mockMvc.perform(get("/api/v1/business-days/current")
+                        .param("orgUnitId", SHANGHAI_HOTEL)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 
     @Test

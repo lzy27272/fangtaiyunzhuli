@@ -86,3 +86,24 @@ export type TemplateVersionDraft = {
   effectiveTo?: string
   sections: DailyReportTemplateSection[]
 }
+
+export type DailyReportDeliveryPolicy = {
+  id?: string
+  templateAssignmentId?: string
+  enabled: boolean
+  openLocalTime: string
+  dueLocalTime: string
+  graceMinutes: number
+  preDueReminderMinutes: number[]
+  overdueReminderMinutes: number[]
+  backfillDays: number
+  timeZone?: string
+  rowVersion: number
+  updatedAt?: string
+  configured: boolean
+}
+
+export type DailyReportDeliveryPolicyDraft = Pick<
+  DailyReportDeliveryPolicy,
+  'enabled' | 'openLocalTime' | 'dueLocalTime' | 'graceMinutes' | 'preDueReminderMinutes' | 'overdueReminderMinutes' | 'backfillDays'
+>

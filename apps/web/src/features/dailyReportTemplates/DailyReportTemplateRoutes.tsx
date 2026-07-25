@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { hasPermission, permissions } from '../../app/permissions'
 import type { DailyFeatureRouteId, AppNavigate } from '../../app/routeConfig'
@@ -7,8 +7,8 @@ import { AsyncState } from '../../shared/AsyncState'
 import { useScopedResource } from '../../shared/useScopedResource'
 import { useStableCommand } from '../../shared/useStableCommand'
 import { FeatureHeader, StatusBadge, featureStyles as styles, formatLocalDateTime } from '../shared/FeatureUI'
-import { loadDailyReportTemplate, loadDailyReportTemplates, saveDailyReportTemplateVersion, transitionDailyReportTemplateVersion } from './api'
-import type { DailyReportTemplateVersion, TemplateVersionDraft } from './types'
+import { loadDailyReportDeliveryPolicy, loadDailyReportTemplate, loadDailyReportTemplates, saveDailyReportDeliveryPolicy, saveDailyReportTemplateVersion, transitionDailyReportTemplateVersion } from './api'
+import type { DailyReportDeliveryPolicy, DailyReportDeliveryPolicyDraft, DailyReportTemplateVersion, TemplateVersionDraft } from './types'
 
 export function DailyReportTemplateRoutes({ view, params, identity, grantedPermissions, go }: {
   view: DailyFeatureRouteId
@@ -48,7 +48,130 @@ function TemplateVersionPage({ identity, grantedPermissions, templateId, version
   const resource = useScopedResource(`${identity.key}:daily-report-template-version:${templateId}:${versionId}`, (signal) => loadDailyReportTemplate(identity, templateId, signal), undefined as never)
   const version = useMemo(() => resource.data?.versions.find((candidate) => candidate.id === versionId), [resource.data, versionId])
   if (!resource.loading && resource.data && !version) return <AsyncState loading={false} error={new Error('模板版本不存在')} />
-  return <section className={styles.page}><FeatureHeader eyebrow="TEMPLATE VERSION" title={version ? `${resource.data.name} · V${version.versionNo}` : '模板版本'} description="版本发布后不可原地编辑；审批与发布由服务端校验禁止自审。" actions={<button className="secondary" onClick={() => go('daily-report-template-detail', { templateId })}>返回模板</button>} /><AsyncState loading={resource.loading} error={resource.error} onRetry={resource.reload} />{version && <TemplateVersionEditor identity={identity} grantedPermissions={grantedPermissions} templateId={templateId} version={version} onChanged={resource.reload} />}</section>
+  return <section className={styles.page}>
+    <FeatureHeader eyebrow="TEMPLATE VERSION" title={version ? `${resource.data.name} · V${version.versionNo}` : '模板版本'} description="版本发布后不可原地编辑；审批与发布由服务端校验禁止自审。" actions={<button className="secondary" onClick={() => go('daily-report-template-detail', { templateId })}>返回模板</button>} />
+    <AsyncState loading={resource.loading} error={resource.error} onRetry={resource.reload} />
+    {version && <>
+      <TemplateVersionEditor identity={identity} grantedPermissions={grantedPermissions} templateId={templateId} version={version} onChanged={resource.reload} />
+      {version.lifecycleStatus === 'PUBLISHED'
+        ? <DeliveryPolicyCard identity={identity} grantedPermissions={grantedPermissions} templateId={templateId} version={version} />
+        : <div className={styles.locked}>日报投递策略将在版本发布后开放配置，草稿与审核中版本不会自动生成日报。</div>}
+    </>}
+  </section>
+}
+
+type DeliveryPolicyForm = {
+  enabled: boolean
+  openLocalTime: string
+  dueLocalTime: string
+  graceMinutes: string
+  preDueReminderMinutes: string
+  overdueReminderMinutes: string
+  backfillDays: string
+}
+
+function deliveryPolicyForm(policy: DailyReportDeliveryPolicy): DeliveryPolicyForm {
+  return {
+    enabled: policy.enabled,
+    openLocalTime: policy.openLocalTime,
+    dueLocalTime: policy.dueLocalTime,
+    graceMinutes: String(policy.graceMinutes),
+    preDueReminderMinutes: policy.preDueReminderMinutes.join(','),
+    overdueReminderMinutes: policy.overdueReminderMinutes.join(','),
+    backfillDays: String(policy.backfillDays),
+  }
+}
+
+function parseMinuteList(value: string, minimum: number): number[] {
+  return [...new Set(value.split(/[，,\s]+/).map((item) => item.trim()).filter(Boolean).map(Number)
+    .filter((item) => Number.isInteger(item) && item >= minimum && item <= 10_080))]
+    .sort((left, right) => left - right)
+}
+
+function DeliveryPolicyCard({ identity, grantedPermissions, templateId, version }: {
+  identity: RoleContext
+  grantedPermissions: string[]
+  templateId: string
+  version: DailyReportTemplateVersion
+}) {
+  const resource = useScopedResource(
+    `${identity.key}:daily-report-delivery-policy:${templateId}:${version.id}`,
+    (signal) => loadDailyReportDeliveryPolicy(identity, templateId, version.id, signal),
+    undefined as never,
+  )
+  const canManage = hasPermission(grantedPermissions, permissions.dailyReportTemplate.edit)
+    || hasPermission(grantedPermissions, permissions.dailyReportTemplate.publish)
+  return <section className={styles.section}>
+    <header><div><h2>日报自动投递</h2><p className={styles.meta}>按门店时区和营业日，为适用岗位生成日报并发送中台通知；超时与升级仍由规则引擎处理。</p></div>{resource.data && <StatusBadge value={resource.data.enabled ? '已启用' : '已停用'} />}</header>
+    <AsyncState loading={resource.loading} error={resource.error} onRetry={resource.reload} />
+    {resource.data && <DeliveryPolicyEditor policy={resource.data} identity={identity} templateId={templateId} versionId={version.id} canManage={canManage} onChanged={resource.reload} />}
+  </section>
+}
+
+function DeliveryPolicyEditor({ policy, identity, templateId, versionId, canManage, onChanged }: {
+  policy: DailyReportDeliveryPolicy
+  identity: RoleContext
+  templateId: string
+  versionId: string
+  canManage: boolean
+  onChanged: () => Promise<void>
+}) {
+  const [form, setForm] = useState<DeliveryPolicyForm>(() => deliveryPolicyForm(policy))
+  const [message, setMessage] = useState<string>()
+  const [conflict, setConflict] = useState(false)
+  const command = useStableCommand(`daily-report-delivery-policy-${versionId}`)
+  useEffect(() => setForm(deliveryPolicyForm(policy)), [policy])
+
+  const save = async () => {
+    setMessage(undefined); setConflict(false)
+    const graceMinutes = Number(form.graceMinutes)
+    const backfillDays = Number(form.backfillDays)
+    const preDueReminderMinutes = parseMinuteList(form.preDueReminderMinutes, 1)
+    const overdueReminderMinutes = parseMinuteList(form.overdueReminderMinutes, 0)
+    if (!form.openLocalTime || !form.dueLocalTime
+      || !Number.isInteger(graceMinutes) || graceMinutes < 0 || graceMinutes > 1440
+      || !Number.isInteger(backfillDays) || backfillDays < 0 || backfillDays > 7
+      || preDueReminderMinutes.length > 8 || overdueReminderMinutes.length > 8) {
+      setMessage('请填写有效的开放时间、截止时间、宽限分钟和补发天数。')
+      return
+    }
+    const draft: DailyReportDeliveryPolicyDraft = {
+      enabled: form.enabled,
+      openLocalTime: form.openLocalTime,
+      dueLocalTime: form.dueLocalTime,
+      graceMinutes,
+      preDueReminderMinutes,
+      overdueReminderMinutes,
+      backfillDays,
+    }
+    try {
+      await command.run((key) => saveDailyReportDeliveryPolicy(identity, templateId, versionId, policy, draft, key))
+      setMessage('投递策略已保存。')
+      await onChanged()
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setConflict(true)
+        setMessage('服务端策略已有更新，请刷新后重新应用本次设置。')
+      } else setMessage(error instanceof Error ? error.message : '投递策略保存失败')
+    }
+  }
+
+  return <div className={styles.stack}>
+    {!canManage && <div className={styles.locked}>当前账号只有查看权限，不能修改日报投递时间。</div>}
+    <div className={styles.formGrid}>
+      <label><span>自动生成与通知</span><select disabled={!canManage} value={form.enabled ? 'true' : 'false'} onChange={(event) => setForm({ ...form, enabled: event.target.value === 'true' })}><option value="true">启用</option><option value="false">停用</option></select></label>
+      <label>门店时区<input disabled value={policy.timeZone || '继承门店时区'} /></label>
+      <label>开放填报时间<input type="time" disabled={!canManage} value={form.openLocalTime} onChange={(event) => setForm({ ...form, openLocalTime: event.target.value })} /></label>
+      <label>截止时间<input type="time" disabled={!canManage} value={form.dueLocalTime} onChange={(event) => setForm({ ...form, dueLocalTime: event.target.value })} /></label>
+      <label>宽限分钟<input type="number" min="0" max="1440" disabled={!canManage} value={form.graceMinutes} onChange={(event) => setForm({ ...form, graceMinutes: event.target.value })} /></label>
+      <label>补发营业日数<input type="number" min="0" max="7" disabled={!canManage} value={form.backfillDays} onChange={(event) => setForm({ ...form, backfillDays: event.target.value })} /></label>
+      <label>截止前提醒（分钟）<input disabled={!canManage} value={form.preDueReminderMinutes} onChange={(event) => setForm({ ...form, preDueReminderMinutes: event.target.value })} placeholder="例如 30,60" /></label>
+      <label>逾期提醒（分钟）<input disabled={!canManage} value={form.overdueReminderMinutes} onChange={(event) => setForm({ ...form, overdueReminderMinutes: event.target.value })} placeholder="例如 0,30" /></label>
+    </div>
+    <div className={styles.meta}><span>策略版本 {policy.rowVersion}</span><span>最近更新 {formatLocalDateTime(policy.updatedAt)}</span><span>{policy.configured ? '已绑定模板适用范围' : '尚未绑定模板适用范围'}</span></div>
+    {message && <div className={conflict ? styles.conflict : 'inline-error'}>{message}</div>}
+    {canManage && <footer className={styles.actions}><button className="primary" disabled={command.busy} onClick={() => void save()}>{command.busy ? '保存中…' : '保存投递策略'}</button></footer>}
+  </div>
 }
 
 function TemplateVersionEditor({ identity, grantedPermissions, templateId, version, onChanged }: { identity: RoleContext; grantedPermissions: string[]; templateId: string; version: DailyReportTemplateVersion; onChanged: () => Promise<void> }) {

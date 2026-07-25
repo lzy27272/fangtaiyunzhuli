@@ -57,7 +57,21 @@ public class TenantContextFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return request.getRequestURI().startsWith("/actuator/")
                 || request.getRequestURI().equals("/api/v1/auth/login")
+                || isAnonymousWeComEndpoint(request)
                 || HttpMethod.OPTIONS.matches(request.getMethod());
+    }
+
+    private boolean isAnonymousWeComEndpoint(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        if (path.equals("/api/v1/integrations/wecom/bot/callback")) {
+            return HttpMethod.GET.matches(request.getMethod()) || HttpMethod.POST.matches(request.getMethod());
+        }
+        if (HttpMethod.GET.matches(request.getMethod())) {
+            return path.equals("/api/v1/integrations/wecom/oauth/start")
+                    || path.equals("/api/v1/integrations/wecom/oauth/callback");
+        }
+        return HttpMethod.POST.matches(request.getMethod())
+                && path.equals("/api/v1/integrations/wecom/oauth/exchange");
     }
 
     @Override

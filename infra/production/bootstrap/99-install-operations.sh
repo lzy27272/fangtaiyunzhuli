@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+stage=/tmp/hotel-ai-os-release
+install -d -o root -g root -m 0755 /usr/local/lib/hotel-ai-os
+install -o root -g root -m 0750 \
+  "${stage}/backup-postgres.sh" \
+  /usr/local/lib/hotel-ai-os/backup-postgres.sh
+install -o root -g root -m 0750 \
+  "${stage}/health-check.sh" \
+  /usr/local/lib/hotel-ai-os/health-check.sh
+
+for unit_name in \
+  hotel-ai-os-postgres-backup.service \
+  hotel-ai-os-postgres-backup.timer \
+  hotel-ai-os-health-check.service \
+  hotel-ai-os-health-check.timer; do
+  install -o root -g root -m 0644 \
+    "${stage}/${unit_name}" \
+    "/etc/systemd/system/${unit_name}"
+done
+
+bash -n /usr/local/lib/hotel-ai-os/backup-postgres.sh
+bash -n /usr/local/lib/hotel-ai-os/health-check.sh
+systemd-analyze verify \
+  /etc/systemd/system/hotel-ai-os-postgres-backup.service \
+  /etc/systemd/system/hotel-ai-os-postgres-backup.timer \
+  /etc/systemd/system/hotel-ai-os-health-check.service \
+  /etc/systemd/system/hotel-ai-os-health-check.timer
+systemd-analyze calendar '*-*-* 03:10:00 Asia/Shanghai' >/dev/null
+systemd-analyze calendar '*-*-* 03:35:00 Asia/Shanghai' >/dev/null
+
+systemctl daemon-reload
+systemctl start hotel-ai-os-postgres-backup.service
+systemctl start hotel-ai-os-health-check.service
+systemctl enable --now \
+  hotel-ai-os-postgres-backup.timer \
+  hotel-ai-os-health-check.timer
+
+printf '%s\n' 'OPERATIONS_AUTOMATION_OK'
+systemctl show hotel-ai-os-postgres-backup.service \
+  -p Result -p ExecMainStatus
+systemctl show hotel-ai-os-health-check.service \
+  -p Result -p ExecMainStatus
+systemctl list-timers \
+  hotel-ai-os-postgres-backup.timer \
+  hotel-ai-os-health-check.timer \
+  --no-pager

@@ -489,11 +489,48 @@ public class RuleService {
 
     private UUID createNotificationAction(Map<String, Object> event, JsonNode action, String key) {
         UUID recipient = resolveAssignment(event, action.path("recipientResolver").asText("CURRENT_ASSIGNMENT"), action);
+        String sourceType = action.path("sourceType").asText("MANAGEMENT_EVENT")
+                .trim().toUpperCase(Locale.ROOT);
+        UUID sourceId = (UUID) event.get("id");
+        String sourceIdFact = action.path("sourceIdFact").asText().trim();
+        if (!sourceIdFact.isBlank()) {
+            sourceId = uuid(factValue(parse(event.get("payload_snapshot")), sourceIdFact));
+            if (sourceId == null) {
+                throw new IllegalArgumentException(
+                        "CREATE_NOTIFICATION sourceIdFact did not resolve to a UUID: " + sourceIdFact);
+            }
+        }
         return notificationService.createForAssignment(recipient,
                 action.path("notificationType").asText("RULE_MATCHED"),
                 action.path("title").asText("管理规则已触发"),
                 action.path("content").asText("请查看相关管理事件"),
-                "MANAGEMENT_EVENT", (UUID) event.get("id"), key);
+                sourceType, sourceId, key);
+    }
+
+    private JsonNode factValue(JsonNode source, String path) {
+        JsonNode current = source;
+        for (String segment : path.split("\\.")) {
+            if (current == null || !current.isObject() || !current.has(segment)) {
+                current = null;
+                break;
+            }
+            current = current.get(segment);
+        }
+        if (current != null) {
+            return current;
+        }
+        JsonNode payload = source == null ? null : source.get("payload");
+        if (payload == null || payload.isNull() || path.startsWith("payload.")) {
+            return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
+        current = payload;
+        for (String segment : path.split("\\.")) {
+            if (!current.isObject() || !current.has(segment)) {
+                return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+            }
+            current = current.get(segment);
+        }
+        return current;
     }
 
     private UUID createTaskCandidateAction(Map<String, Object> event, JsonNode action, UUID actionId, String key) {

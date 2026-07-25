@@ -2,6 +2,7 @@ package cn.sifangguan.hotelaios.shared.events;
 
 import cn.sifangguan.hotelaios.dailyoperations.OperationExportProcessor;
 import cn.sifangguan.hotelaios.dailyoperations.TaskCandidateRecoveryService;
+import cn.sifangguan.hotelaios.dailyreports.DailyReportDispatchService;
 import cn.sifangguan.hotelaios.tasks.TaskService;
 import cn.sifangguan.hotelaios.workpackage.WorkPackageModels;
 import cn.sifangguan.hotelaios.workpackage.WorkExpectationSlaService;
@@ -35,6 +36,7 @@ public class ManagementAutomationWorker {
     private static final Logger log = LoggerFactory.getLogger(ManagementAutomationWorker.class);
 
     private final WorkExpectationSlaService workExpectationSlaService;
+    private final DailyReportDispatchService dailyReportDispatchService;
     private final OutboxAutomationService outboxAutomationService;
     private final TaskCandidateRecoveryService taskCandidateRecoveryService;
     private final OperationExportProcessor operationExportProcessor;
@@ -46,6 +48,7 @@ public class ManagementAutomationWorker {
 
     public ManagementAutomationWorker(
             WorkExpectationSlaService workExpectationSlaService,
+            DailyReportDispatchService dailyReportDispatchService,
             OutboxAutomationService outboxAutomationService,
             TaskCandidateRecoveryService taskCandidateRecoveryService,
             OperationExportProcessor operationExportProcessor,
@@ -55,6 +58,7 @@ public class ManagementAutomationWorker {
             @Value("${app.automation.worker.batch-size:100}") int batchSize
     ) {
         this.workExpectationSlaService = workExpectationSlaService;
+        this.dailyReportDispatchService = dailyReportDispatchService;
         this.outboxAutomationService = outboxAutomationService;
         this.taskCandidateRecoveryService = taskCandidateRecoveryService;
         this.operationExportProcessor = operationExportProcessor;
@@ -79,10 +83,46 @@ public class ManagementAutomationWorker {
         for (UUID tenantId : tenantIds) {
             UUID correlationId = UUID.randomUUID();
             processWorkExpectations(tenantId, correlationId);
+            processDailyReports(tenantId, correlationId);
             processEventQueues(tenantId, correlationId);
             processTaskCandidateSync(tenantId, correlationId);
             processOperationExports(tenantId, correlationId);
             processTaskSla(tenantId, correlationId);
+        }
+    }
+
+    private void processDailyReports(UUID tenantId, UUID correlationId) {
+        String pipeline = "daily_report_dispatch";
+        Instant startedAt = Instant.now();
+        try {
+            DailyReportDispatchService.ProcessResult result =
+                    dailyReportDispatchService.processTenantAsSystem(tenantId, batchSize, correlationId);
+            int items = result.createdReports() + result.openedEvents()
+                    + result.dueSoonEvents() + result.overdueEvents();
+            metrics.success(pipeline, items, Duration.between(startedAt, Instant.now()));
+            if (result.failedItems() > 0) {
+                metrics.alert(pipeline, "ITEM_FAILURE");
+                log.atWarn()
+                        .addKeyValue("alert_code", "ITEM_FAILURE")
+                        .addKeyValue("pipeline", pipeline)
+                        .addKeyValue("tenant_id", tenantId)
+                        .addKeyValue("correlation_id", correlationId)
+                        .addKeyValue("scanned_candidates", result.scannedCandidates())
+                        .addKeyValue("created_reports", result.createdReports())
+                        .addKeyValue("failed_items", result.failedItems())
+                        .log("Daily report dispatch completed with isolated item failures");
+            } else if (items > 0) {
+                log.atInfo()
+                        .addKeyValue("pipeline", pipeline)
+                        .addKeyValue("tenant_id", tenantId)
+                        .addKeyValue("correlation_id", correlationId)
+                        .addKeyValue("created_reports", result.createdReports())
+                        .addKeyValue("due_soon_events", result.dueSoonEvents())
+                        .addKeyValue("overdue_events", result.overdueEvents())
+                        .log("Automation worker completed pipeline");
+            }
+        } catch (RuntimeException exception) {
+            pipelineFailure(pipeline, tenantId, correlationId, startedAt, exception);
         }
     }
 

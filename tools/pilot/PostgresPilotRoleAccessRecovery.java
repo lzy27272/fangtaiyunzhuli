@@ -6,8 +6,9 @@ import java.sql.Statement;
 
 /**
  * One-shot recovery for the fixed Pilot demo organization, position
- * assignments and role grants disabled by the audited 2026-07-22 EAST-REGION
- * incident. Any later lifecycle change fails closed instead of being revived.
+ * assignments and role grants disabled by the audited 2026-07-23 00:06:54
+ * EAST-REGION recurrence. Any later lifecycle change fails closed instead of
+ * being revived.
  */
 public final class PostgresPilotRoleAccessRecovery {
     private static final String TENANT_ID = "10000000-0000-0000-0000-000000000001";
@@ -164,7 +165,7 @@ public final class PostgresPilotRoleAccessRecovery {
                 """);
         expect(connection, "INCIDENT_INACTIVE_POSITION_ASSIGNMENTS", 8, """
                 select count(*) from employee_position_assignment
-                 where tenant_id = ?::uuid and status = 'INACTIVE' and valid_to = date '2026-07-22'
+                 where tenant_id = ?::uuid and status = 'INACTIVE' and valid_to = date '2026-07-23'
                    and id in ('19200000-0000-0000-0000-000000000001'::uuid,
                               '19200000-0000-0000-0000-000000000002'::uuid,
                               '19200000-0000-0000-0000-000000000003'::uuid,
@@ -177,8 +178,7 @@ public final class PostgresPilotRoleAccessRecovery {
         expect(connection, "INCIDENT_EXPIRED_ROLE_ASSIGNMENTS", 7, """
                 select count(*) from role_assignment
                  where tenant_id = ?::uuid
-                   and valid_to between timestamptz '2026-07-22 10:57:08+08'
-                                    and timestamptz '2026-07-22 10:57:11+08'
+                   and valid_to = timestamptz '2026-07-23 00:06:54.664186+08'
                    and id in ('19500000-0000-0000-0000-000000000002'::uuid,
                               '19500000-0000-0000-0000-000000000003'::uuid,
                               '19500000-0000-0000-0000-000000000004'::uuid,
@@ -195,8 +195,7 @@ public final class PostgresPilotRoleAccessRecovery {
                    and resource_type = 'ORG_UNIT'
                    and resource_id = '12000000-0000-0000-0000-000000000002'::uuid
                    and after_data ->> 'status' = 'INACTIVE'
-                   and created_at between timestamptz '2026-07-22 10:57:08+08'
-                                      and timestamptz '2026-07-22 10:57:11+08'
+                   and created_at = timestamptz '2026-07-23 00:06:54.664186+08'
                 """);
     }
 
@@ -252,7 +251,9 @@ public final class PostgresPilotRoleAccessRecovery {
                 values (?::uuid, '19000000-0000-0000-0000-000000000001'::uuid,
                         'PILOT_DEMO_ACCESS_RESTORED', 'MAINTENANCE',
                         '12000000-0000-0000-0000-000000000002'::uuid, gen_random_uuid(),
-                        jsonb_build_object('source', 'EAST-REGION deactivation cascade'),
+                        jsonb_build_object(
+                            'source', 'EAST-REGION deactivation cascade',
+                            'incidentAt', '2026-07-23T00:06:54.664186+08:00'),
                         jsonb_build_object('mode', ?, 'organizations', ?, 'positionAssignments', ?,
                                            'roleAssignments', ?))
                 """)) {

@@ -1,0 +1,178 @@
+services:
+  ota-postgres:
+    image: ${OTA_POSTGRES_IMAGE:-postgres:17-alpine}
+    container_name: sifangguan-ota-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${OTA_DB_NAME:?OTA_DB_NAME is required}
+      POSTGRES_USER: ${OTA_DB_BOOTSTRAP_USER:?OTA_DB_BOOTSTRAP_USER is required}
+      POSTGRES_PASSWORD: ${OTA_DB_BOOTSTRAP_PASSWORD:?OTA_DB_BOOTSTRAP_PASSWORD is required}
+    ports:
+      - "127.0.0.1:${OTA_DB_PORT:-55440}:5432"
+    volumes:
+      - ota-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - ota-sprint0
+
+  # One-shot deployment job. It is the only component that provisions or
+  # rotates database-role credentials; the database and application services
+  # do not receive the migration/runtime secrets in their environments.
+  ota-db-role-bootstrap:
+    image: ${OTA_POSTGRES_IMAGE:-postgres:17-alpine}
+    profiles: ["deployment"]
+    restart: "no"
+    depends_on:
+      ota-postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: ota-postgres
+      PGPORT: "5432"
+      PGDATABASE: ${OTA_DB_NAME:?OTA_DB_NAME is required}
+      PGUSER: ${OTA_DB_BOOTSTRAP_USER:?OTA_DB_BOOTSTRAP_USER is required}
+      PGPASSWORD: ${OTA_DB_BOOTSTRAP_PASSWORD:?OTA_DB_BOOTSTRAP_PASSWORD is required}
+      OTA_DB_MIGRATION_USER: ${OTA_DB_MIGRATION_USER:?OTA_DB_MIGRATION_USER is required}
+      OTA_DB_MIGRATION_PASSWORD: ${OTA_DB_MIGRATION_PASSWORD:?OTA_DB_MIGRATION_PASSWORD is required}
+      OTA_DB_API_USER: ${OTA_DB_API_USER:?OTA_DB_API_USER is required}
+      OTA_DB_API_PASSWORD: ${OTA_DB_API_PASSWORD:?OTA_DB_API_PASSWORD is required}
+      OTA_DB_WORKER_USER: ${OTA_DB_WORKER_USER:?OTA_DB_WORKER_USER is required}
+      OTA_DB_WORKER_PASSWORD: ${OTA_DB_WORKER_PASSWORD:?OTA_DB_WORKER_PASSWORD is required}
+      OTA_DB_AUDIT_USER: ${OTA_DB_AUDIT_USER:?OTA_DB_AUDIT_USER is required}
+      OTA_DB_AUDIT_PASSWORD: ${OTA_DB_AUDIT_PASSWORD:?OTA_DB_AUDIT_PASSWORD is required}
+    entrypoint: ["/bin/sh", "/deployment/00-create-runtime-roles.sh"]
+    volumes:
+      - ./postgres-init:/deployment:ro
+    networks:
+      - ota-sprint0
+
+  # One-shot Flyway job. Only this deployment boundary runs versioned schema
+  # migrations; API and Worker processes must set SPRING_FLYWAY_ENABLED=false.
+  ota-db-migrator:
+    image: ${OTA_FLYWAY_IMAGE:-flyway/flyway:12.11.0}
+    profiles: ["deployment"]
+    restart: "no"
+    depends_on:
+      ota-postgres:
+        condition: service_healthy
+      ota-db-role-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      FLYWAY_URL: jdbc:postgresql://ota-postgres:5432/${OTA_DB_NAME:?OTA_DB_NAME is required}
+      FLYWAY_USER: ${OTA_DB_MIGRATION_USER:?OTA_DB_MIGRATION_USER is required}
+      FLYWAY_PASSWORD: ${OTA_DB_MIGRATION_PASSWORD:?OTA_DB_MIGRATION_PASSWORD is required}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_DEFAULT_SCHEMA: flyway
+      FLYWAY_SCHEMAS: flyway
+      FLYWAY_CONNECT_RETRIES: "12"
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+      FLYWAY_CLEAN_DISABLED: "true"
+    command: ["migrate"]
+    volumes:
+      - ../../database/ota-migrations/V1__sprint0_security_foundation.sql:/flyway/sql/V1__sprint0_security_foundation.sql:ro
+      - ../../database/ota-migrations/V2__sprint1_simulation_closed_loop.sql:/flyway/sql/V2__sprint1_simulation_closed_loop.sql:ro
+      - ../../database/ota-migrations/V3__sprint2_offline_safety_foundation.sql:/flyway/sql/V3__sprint2_offline_safety_foundation.sql:ro
+      - ../../database/ota-migrations/V4__sprint2b_real_prep_control_plane.sql:/flyway/sql/V4__sprint2b_real_prep_control_plane.sql:ro
+      - ../../database/ota-migrations/V5__sprint2c_contract_governance_and_principal_rotation.sql:/flyway/sql/V5__sprint2c_contract_governance_and_principal_rotation.sql:ro
+    networks:
+      - ota-sprint0
+
+  # One-shot metadata seed. It runs as the migration owner after the schema is
+  # current and creates no credential material; the UUID is shared with the
+  # simulation Worker through its runtime environment.
+  ota-db-worker-principal-seed:
+    image: ${OTA_POSTGRES_IMAGE:-postgres:17-alpine}
+    profiles: ["deployment"]
+    restart: "no"
+    depends_on:
+      ota-postgres:
+        condition: service_healthy
+      ota-db-migrator:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: ota-postgres
+      PGPORT: "5432"
+      PGDATABASE: ${OTA_DB_NAME:?OTA_DB_NAME is required}
+      PGUSER: ${OTA_DB_MIGRATION_USER:?OTA_DB_MIGRATION_USER is required}
+      PGPASSWORD: ${OTA_DB_MIGRATION_PASSWORD:?OTA_DB_MIGRATION_PASSWORD is required}
+    entrypoint:
+      - psql
+      - --set=ON_ERROR_STOP=1
+      - --set=worker_service_principal_id=${OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_ID:?OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_ID is required}
+      - --set=worker_principal_code=${OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_CODE:?OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_CODE is required}
+      - --file=/deployment/seed-sprint1-simulation-worker-principal.sql
+    volumes:
+      - ../../database/ota-migrations/seed-sprint1-simulation-worker-principal.sql:/deployment/seed-sprint1-simulation-worker-principal.sql:ro
+    networks:
+      - ota-sprint0
+
+  # Post-migration grant convergence is intentionally separate from Flyway
+  # history because the three runtime role names are environment parameters.
+  ota-db-grants:
+    image: ${OTA_POSTGRES_IMAGE:-postgres:17-alpine}
+    profiles: ["deployment"]
+    restart: "no"
+    depends_on:
+      ota-postgres:
+        condition: service_healthy
+      ota-db-worker-principal-seed:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: ota-postgres
+      PGPORT: "5432"
+      PGDATABASE: ${OTA_DB_NAME:?OTA_DB_NAME is required}
+      PGUSER: ${OTA_DB_MIGRATION_USER:?OTA_DB_MIGRATION_USER is required}
+      PGPASSWORD: ${OTA_DB_MIGRATION_PASSWORD:?OTA_DB_MIGRATION_PASSWORD is required}
+    entrypoint:
+      - psql
+      - --set=ON_ERROR_STOP=1
+      - --set=api_role=${OTA_DB_API_USER:?OTA_DB_API_USER is required}
+      - --set=worker_role=${OTA_DB_WORKER_USER:?OTA_DB_WORKER_USER is required}
+      - --set=worker_service_principal_id=${OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_ID:?OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_ID is required}
+      - --set=worker_slot=${OTA_DB_WORKER_SLOT:?OTA_DB_WORKER_SLOT is required}
+      - --set=audit_role=${OTA_DB_AUDIT_USER:?OTA_DB_AUDIT_USER is required}
+      - --file=/deployment/post-migration-grants.sql
+    volumes:
+      - ../../database/ota-migrations:/deployment:ro
+    networks:
+      - ota-sprint0
+
+  ota-db-grant-verifier:
+    image: ${OTA_POSTGRES_IMAGE:-postgres:17-alpine}
+    profiles: ["deployment"]
+    restart: "no"
+    depends_on:
+      ota-postgres:
+        condition: service_healthy
+      ota-db-grants:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: ota-postgres
+      PGPORT: "5432"
+      PGDATABASE: ${OTA_DB_NAME:?OTA_DB_NAME is required}
+      PGUSER: ${OTA_DB_MIGRATION_USER:?OTA_DB_MIGRATION_USER is required}
+      PGPASSWORD: ${OTA_DB_MIGRATION_PASSWORD:?OTA_DB_MIGRATION_PASSWORD is required}
+    entrypoint:
+      - psql
+      - --set=ON_ERROR_STOP=1
+      - --set=api_role=${OTA_DB_API_USER:?OTA_DB_API_USER is required}
+      - --set=worker_role=${OTA_DB_WORKER_USER:?OTA_DB_WORKER_USER is required}
+      - --set=worker_service_principal_id=${OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_ID:?OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_ID is required}
+      - --set=worker_slot=${OTA_DB_WORKER_SLOT:?OTA_DB_WORKER_SLOT is required}
+      - --set=audit_role=${OTA_DB_AUDIT_USER:?OTA_DB_AUDIT_USER is required}
+      - --file=/deployment/verify-runtime-grants.sql
+    volumes:
+      - ../../database/ota-migrations:/deployment:ro
+    networks:
+      - ota-sprint0
+
+volumes:
+  ota-postgres-data:
+    name: sifangguan-ota-postgres-data
+
+networks:
+  ota-sprint0:
+    name: sifangguan-ota-sprint0

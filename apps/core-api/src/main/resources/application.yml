@@ -73,5 +73,32 @@ app:
       command-arguments: ${ATTACHMENT_SCAN_COMMAND_ARGUMENTS:}
       timeout-seconds: ${ATTACHMENT_SCAN_TIMEOUT_SECONDS:60}
       allow-sanitized-image-fallback: ${ATTACHMENT_SCAN_ALLOW_SANITIZED_IMAGE_FALLBACK:false}
+  wecom:
+    enabled: ${WECOM_ENABLED:false}
+    tenant-id: ${WECOM_TENANT_ID:}
+    corp-id: ${WECOM_CORP_ID:}
+    agent-id: ${WECOM_AGENT_ID:}
+    corp-secret: ${WECOM_CORP_SECRET:}
+    callback-token: ${WECOM_CALLBACK_TOKEN:}
+    callback-aes-key: ${WECOM_CALLBACK_AES_KEY:}
+    bot-id: ${WECOM_BOT_ID:}
+    bot-receive-id: ${WECOM_BOT_RECEIVE_ID:}
+    bot:
+      actions-enabled: ${WECOM_BOT_ACTIONS_ENABLED:false}
+    frontend-base-url: ${WECOM_FRONTEND_BASE_URL:http://localhost:5173}
+    oauth-callback-url: ${WECOM_OAUTH_CALLBACK_URL:}
+    http:
+      connect-timeout-ms: ${WECOM_HTTP_CONNECT_TIMEOUT_MS:3000}
+      read-timeout-ms: ${WECOM_HTTP_READ_TIMEOUT_MS:5000}
+    oauth:
+      state-ttl-minutes: ${WECOM_OAUTH_STATE_TTL_MINUTES:10}
+      exchange-ttl-minutes: ${WECOM_OAUTH_EXCHANGE_TTL_MINUTES:2}
+      session-ttl-minutes: ${WECOM_OAUTH_SESSION_TTL_MINUTES:30}
+      pending-limit: ${WECOM_OAUTH_PENDING_LIMIT:500}
+    worker:
+      enabled: ${WECOM_WORKER_ENABLED:false}
+      batch-size: ${WECOM_WORKER_BATCH_SIZE:50}
+      fixed-delay-ms: ${WECOM_WORKER_FIXED_DELAY_MS:30000}
+      initial-delay-ms: ${WECOM_WORKER_INITIAL_DELAY_MS:30000}
   web:
     allowed-origins: ${WEB_ALLOWED_ORIGINS:http://localhost:5173}

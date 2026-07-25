@@ -333,6 +333,11 @@ dd { margin: 5px 0 0; color: #334f64; font-size: 10px; }
 .login-card > small { color: #90a0aa; text-align: center; font-size: 9px; }
 .login-submit { min-height: 48px; justify-content: center; }
 .logout-button { padding: 7px 9px; border: 0; color: #718592; background: transparent; font-size: 9px; cursor: pointer; }
+.wecom-entry-card { min-height: 330px; align-content: center; }
+.wecom-entry-progress { min-height: 116px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #8194a0; text-align: center; }
+.wecom-entry-progress strong { color: #345b73; font-size: 13px; }
+.wecom-entry-progress span { font-size: 10px; }
+.wecom-entry-action { width: 100%; min-height: 44px; }
 .config-tabs { margin-bottom: 14px; display: flex; gap: 6px; }
 .config-tabs button { padding: 9px 17px; border: 1px solid #dce6eb; border-radius: 9px; color: #607887; background: #fff; font-size: 10px; font-weight: 700; cursor: pointer; }
 .config-tabs button.active { border-color: #6faee1; color: #246fa8; background: #eaf5fd; }

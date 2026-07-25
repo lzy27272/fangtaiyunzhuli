@@ -15,6 +15,17 @@ import type {
 const base = '/daily-reports'
 type Row = Record<string, unknown>
 
+export type CurrentBusinessDay = {
+  hotelOrgUnitId: string
+  orgUnitId: string
+  businessDate: string
+  timezone: string
+  cutoffLocalTime: string
+  closingGraceMinutes: number
+  resolvedAt: string
+  currentBusinessDay: boolean
+}
+
 const row = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(row) : []
 const text = (value: unknown, fallback = '') => value === undefined || value === null ? fallback : String(value)
@@ -277,10 +288,28 @@ function requiredAssignmentId(identity: ApiIdentity): string {
   return identity.assignmentId
 }
 
-export async function loadMyDailyReports(identity: ApiIdentity, signal: AbortSignal, filters: { businessDate?: string; status?: string } = {}) {
+export async function loadMyDailyReports(identity: ApiIdentity, signal: AbortSignal, filters: { businessDate?: string; status?: string; positionAssignmentId?: string } = {}) {
   const endpoint = `${base}/my${queryString(filters)}`
   const payload = await featureApiRequest<unknown[] | PageEnvelope<unknown>>(endpoint, identity, { signal })
   return requireItems(payload, endpoint).map(normalizeSummary)
+}
+
+export async function loadCurrentBusinessDay(identity: ApiIdentity, orgUnitId: string, signal: AbortSignal): Promise<CurrentBusinessDay> {
+  if (!orgUnitId) throw new Error('当前岗位缺少可解析营业日的组织范围')
+  const endpoint = `/business-days/current${queryString({ orgUnitId })}`
+  const source = row(await featureApiRequest<unknown>(endpoint, identity, { signal }))
+  const businessDate = text(source.businessDate)
+  if (!businessDate) throw new Error('服务端未返回当前营业日')
+  return {
+    hotelOrgUnitId: text(source.hotelOrgUnitId),
+    orgUnitId: text(source.orgUnitId, orgUnitId),
+    businessDate,
+    timezone: text(source.timezone),
+    cutoffLocalTime: text(source.cutoffLocalTime),
+    closingGraceMinutes: number(source.closingGraceMinutes),
+    resolvedAt: text(source.resolvedAt),
+    currentBusinessDay: source.currentBusinessDay !== false,
+  }
 }
 
 export async function loadTeamDailyReports(identity: ApiIdentity, signal: AbortSignal, filters: { businessDate?: string; status?: string; orgUnitId?: string } = {}) {

@@ -7,6 +7,7 @@
     "dev": "vite --configLoader runner",
     "build": "tsc -b && vite build --configLoader runner",
     "build:pilot": "tsc -b && vite build --mode pilot --configLoader runner",
+    "test:wecom": "node --test --experimental-strip-types tests/wecom-entry-route.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,0 +1,25 @@
+[ {
+  "management_event_id" : "32871d36-37f0-426e-b17b-fc1c2701f657",
+  "event_type" : "WORKEXPECTATIONMISSED",
+  "org_unit_id" : "12000000-0000-0000-0000-000000000006",
+  "position_assignment_id" : "19200000-0000-0000-0000-000000000003",
+  "processing_status" : "PROCESSED",
+  "payload_snapshot" : "{\"dueAt\": \"2026-07-22T15:56:31.894306Z\", \"status\": \"MISSED\", \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"businessDate\": \"2026-07-22\", \"workExpectationId\": \"2a500000-0000-0000-0000-000000000005\", \"workPackageItemId\": \"2a200000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+  "action_id" : "f642e2ad-8a82-4555-bb38-3463b1e04a2a",
+  "action_key" : "create-missed-remediation",
+  "action_type" : "CREATE_TASK",
+  "action_status" : "SUCCEEDED",
+  "target_id" : "f9e107cc-15c9-4946-90e7-fd70e934c466"
+}, {
+  "management_event_id" : "32871d36-37f0-426e-b17b-fc1c2701f657",
+  "event_type" : "WORKEXPECTATIONMISSED",
+  "org_unit_id" : "12000000-0000-0000-0000-000000000006",
+  "position_assignment_id" : "19200000-0000-0000-0000-000000000003",
+  "processing_status" : "PROCESSED",
+  "payload_snapshot" : "{\"dueAt\": \"2026-07-22T15:56:31.894306Z\", \"status\": \"MISSED\", \"orgUnitId\": \"12000000-0000-0000-0000-000000000006\", \"businessDate\": \"2026-07-22\", \"workExpectationId\": \"2a500000-0000-0000-0000-000000000005\", \"workPackageItemId\": \"2a200000-0000-0000-0000-000000000003\", \"positionAssignmentId\": \"19200000-0000-0000-0000-000000000003\"}",
+  "action_id" : "3ad726c6-9db9-4023-a47c-ac1f3e5c9d64",
+  "action_key" : "notify-missed-owner",
+  "action_type" : "CREATE_NOTIFICATION",
+  "action_status" : "SUCCEEDED",
+  "target_id" : "8793d2d7-0f3d-47b1-aa91-b4077ec39dc6"
+} ]

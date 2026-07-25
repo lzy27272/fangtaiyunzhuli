@@ -1,0 +1,17 @@
+[Unit]
+Description=Hotel AI OS encrypted PostgreSQL backup
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/lib/hotel-ai-os/backup-postgres.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true

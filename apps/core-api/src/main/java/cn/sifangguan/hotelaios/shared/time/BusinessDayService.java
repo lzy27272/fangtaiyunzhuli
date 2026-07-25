@@ -2,6 +2,7 @@ package cn.sifangguan.hotelaios.shared.time;
 
 import cn.sifangguan.hotelaios.shared.context.TenantPrincipal;
 import cn.sifangguan.hotelaios.shared.db.TenantDatabaseContext;
+import cn.sifangguan.hotelaios.shared.security.AccessDeniedException;
 import cn.sifangguan.hotelaios.shared.security.AccessPolicy;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -41,14 +42,20 @@ public class BusinessDayService {
     }
 
     @Transactional(readOnly = true)
+    public BusinessDayContext resolveCurrent(UUID orgUnitId, Instant now) {
+        return resolve(orgUnitId, null, now);
+    }
+
+    @Transactional(readOnly = true)
     public BusinessDayContext resolve(UUID orgUnitId, LocalDate requestedBusinessDate) {
         return resolve(orgUnitId, requestedBusinessDate, Instant.now());
     }
 
-    BusinessDayContext resolve(UUID orgUnitId, LocalDate requestedBusinessDate, Instant now) {
+    @Transactional(readOnly = true)
+    public BusinessDayContext resolve(UUID orgUnitId, LocalDate requestedBusinessDate, Instant now) {
         TenantPrincipal principal = accessPolicy.principal();
         databaseContext.apply(principal.tenantId());
-        accessPolicy.requireOrgScope(orgUnitId);
+        requireOrgScopeOrOwnAssignment(principal, orgUnitId);
         List<BusinessDayConfiguration> rows = jdbc.query("""
                 select hotel.id as hotel_org_unit_id,
                        coalesce(config.timezone, tenant.timezone) as timezone,
@@ -93,6 +100,39 @@ public class BusinessDayService {
         return new BusinessDayContext(
                 config.hotelOrgUnitId(), orgUnitId, businessDate, config.timezone(), cutoff,
                 config.closingGraceMinutes(), now, calculated.equals(businessDate));
+    }
+
+    private void requireOrgScopeOrOwnAssignment(TenantPrincipal principal, UUID orgUnitId) {
+        if (principal.hasTenantScope() || principal.orgScopes().contains(orgUnitId)) {
+            return;
+        }
+        if (principal.assignmentIds().isEmpty()) {
+            throw new AccessDeniedException("目标组织不在当前账号的有效数据范围内");
+        }
+        Boolean ownsActiveAssignment = jdbc.queryForObject("""
+                select exists (
+                  select 1
+                  from employee_position_assignment assignment
+                  join employee
+                    on employee.tenant_id = assignment.tenant_id
+                   and employee.id = assignment.employee_id
+                  where assignment.tenant_id = :tenantId
+                     and assignment.id in (:assignmentIds)
+                     and assignment.org_unit_id = :orgUnitId
+                     and assignment.status = 'ACTIVE'
+                     and assignment.valid_from <= current_date
+                     and (assignment.valid_to is null or assignment.valid_to >= current_date)
+                     and employee.account_id = :actorId
+                     and employee.employment_status = 'ACTIVE'
+                )
+                """, new MapSqlParameterSource()
+                .addValue("tenantId", principal.tenantId())
+                .addValue("assignmentIds", principal.assignmentIds())
+                .addValue("orgUnitId", orgUnitId)
+                .addValue("actorId", principal.actorId()), Boolean.class);
+        if (!Boolean.TRUE.equals(ownsActiveAssignment)) {
+            throw new AccessDeniedException("目标组织不在当前账号的有效数据范围内");
+        }
     }
 
     private record BusinessDayConfiguration(

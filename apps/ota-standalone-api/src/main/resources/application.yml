@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: ota-standalone-api
+  datasource:
+    url: ${OTA_DB_URL:}
+    username: ${OTA_DB_USERNAME:}
+    password: ${OTA_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${OTA_DB_POOL_MAX:10}
+      minimum-idle: ${OTA_DB_POOL_MIN:1}
+      auto-commit: false
+  flyway:
+    # Migrations run through a separate migration job/identity, never ota_api_app.
+    enabled: ${OTA_FLYWAY_ENABLED:false}
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    clean-disabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+server:
+  shutdown: graceful
+  # Fail closed: do not trust client-supplied X-Forwarded-* until a reviewed
+  # ingress and trusted-proxy boundary are configured for the deployment.
+  forward-headers-strategy: none
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,securityMaterial
+        liveness:
+          include: livenessState,ping
+
+ota:
+  sprint1:
+    # Explicit opt-in for local/UAT simulation only. Production startup and
+    # every simulation trigger fail closed when a production profile is active.
+    simulation-enabled: ${OTA_SIMULATION_ENABLED:false}
+    # Sprint 1 only writes/reads preview outbox rows; it never sends HTTP.
+    outbound-http-enabled: false
+  database:
+    flyway-history-table: ${OTA_FLYWAY_HISTORY_TABLE:flyway.flyway_schema_history}
+  security:
+    issuer: sifangguan-ota-standalone
+    access-ttl: 10m
+    refresh-ttl: 12h
+    current-signing-key-id: ${OTA_ACCESS_SIGNING_KEY_ID:ota-access-1}
+    current-signing-secret-ref: ${OTA_ACCESS_SIGNING_SECRET_REF:}
+    previous-signing-key-id: ${OTA_PREVIOUS_SIGNING_KEY_ID:}
+    previous-signing-secret-ref: ${OTA_PREVIOUS_SIGNING_SECRET_REF:}
+    previous-signing-key-valid-until: ${OTA_PREVIOUS_SIGNING_KEY_VALID_UNTIL:}
+    cookie:
+      refresh-name: ota_refresh
+      csrf-name: ota_csrf
+      secure: true
+      same-site: Strict
+      refresh-path: /api/v1/auth
+      csrf-path: /
+    login:
+      max-failures: 5
+      lock-duration: 15m
+    cors:
+      allowed-origins: ${OTA_ALLOWED_ORIGINS:}
+    bootstrap:
+      enabled: ${OTA_BOOTSTRAP_ENABLED:false}
+      confirmation: ${OTA_BOOTSTRAP_CONFIRMATION:}
+      username: ${OTA_BOOTSTRAP_USERNAME:}
+      display-name: ${OTA_BOOTSTRAP_DISPLAY_NAME:}
+      password-secret-ref: ${OTA_BOOTSTRAP_PASSWORD_SECRET_REF:}

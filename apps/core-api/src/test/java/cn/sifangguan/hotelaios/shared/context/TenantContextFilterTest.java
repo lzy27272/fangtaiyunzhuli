@@ -64,4 +64,26 @@ class TenantContextFilterTest {
 
         assertEquals(401, response.getStatus());
     }
+
+    @Test
+    void skipsOnlyTheSupportedAnonymousWeComMethods() throws Exception {
+        MockHttpServletRequest callback = new MockHttpServletRequest("POST",
+                "/api/v1/integrations/wecom/bot/callback");
+        MockHttpServletResponse callbackResponse = new MockHttpServletResponse();
+        AtomicReference<Boolean> callbackReached = new AtomicReference<>(false);
+        filter.doFilter(callback, callbackResponse, (req, res) -> callbackReached.set(true));
+        assertTrue(callbackReached.get());
+
+        MockHttpServletRequest exchange = new MockHttpServletRequest("POST",
+                "/api/v1/integrations/wecom/oauth/exchange");
+        AtomicReference<Boolean> exchangeReached = new AtomicReference<>(false);
+        filter.doFilter(exchange, new MockHttpServletResponse(), (req, res) -> exchangeReached.set(true));
+        assertTrue(exchangeReached.get());
+
+        MockHttpServletRequest unsupported = new MockHttpServletRequest("DELETE",
+                "/api/v1/integrations/wecom/oauth/exchange");
+        MockHttpServletResponse unsupportedResponse = new MockHttpServletResponse();
+        filter.doFilter(unsupported, unsupportedResponse, (req, res) -> fail("unsupported method must remain protected"));
+        assertEquals(400, unsupportedResponse.getStatus());
+    }
 }

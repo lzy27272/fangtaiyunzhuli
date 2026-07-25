@@ -1,0 +1,530 @@
+{
+  "schemaVersion": 1,
+  "version": "V21-ISOLATED-EIGHT-ROLE-CAPABILITY-MATRIX",
+  "runId": "CL-UAT-20260722-A1",
+  "generatedAt": "2026-07-22T16:02:16.084Z",
+  "target": {
+    "purpose": "ISOLATED_UAT",
+    "apiOrigin": "http://127.0.0.1:64295",
+    "apiBasePath": "/api/v1",
+    "databaseMarker": "embedded PostgreSQL (real non-superuser runtime role)",
+    "authenticationMode": "bearer-jwt",
+    "sharedPilotRejectedByPolicy": true
+  },
+  "mutationConfirmed": true,
+  "credentialsPersistedInEvidence": false,
+  "result": "FAIL",
+  "fullDailyOperationsClosedLoopResult": "NOT_TESTED",
+  "summary": {
+    "roleCount": 8,
+    "passedChecks": 10,
+    "skippedChecks": 3,
+    "blockedChecks": 6,
+    "failedChecks": 1,
+    "taskFlowsPassed": 0,
+    "taskFlowsRequired": 0,
+    "hotelReportFlowsPassed": 0,
+    "hotelReportFlowsRequired": 5
+  },
+  "roleMatrix": [
+    {
+      "roleKey": "front-desk",
+      "expectedRole": "FRONT_DESK",
+      "identity": "PASS",
+      "dailyReport": "BLOCKED",
+      "task": "NOT_RUN"
+    },
+    {
+      "roleKey": "front-supervisor",
+      "expectedRole": "FRONT_OFFICE_SUPERVISOR",
+      "identity": "PASS",
+      "dailyReport": "BLOCKED",
+      "task": "NOT_RUN"
+    },
+    {
+      "roleKey": "housekeeping-supervisor",
+      "expectedRole": "HOUSEKEEPING_SUPERVISOR",
+      "identity": "PASS",
+      "dailyReport": "BLOCKED",
+      "task": "NOT_RUN"
+    },
+    {
+      "roleKey": "assistant-gm",
+      "expectedRole": "ASSISTANT_GENERAL_MANAGER",
+      "identity": "PASS",
+      "dailyReport": "BLOCKED",
+      "task": "NOT_RUN"
+    },
+    {
+      "roleKey": "general-manager",
+      "expectedRole": "GENERAL_MANAGER",
+      "identity": "PASS",
+      "dailyReport": "BLOCKED",
+      "task": "NOT_RUN"
+    },
+    {
+      "roleKey": "ota-assistant",
+      "expectedRole": "OTA_OPERATION_ASSISTANT",
+      "identity": "PASS",
+      "dailyReport": "SKIPPED",
+      "task": "NOT_RUN"
+    },
+    {
+      "roleKey": "ota-manager",
+      "expectedRole": "OTA_OPERATION_MANAGER",
+      "identity": "PASS",
+      "dailyReport": "SKIPPED",
+      "task": "NOT_RUN"
+    },
+    {
+      "roleKey": "ceo",
+      "expectedRole": "CEO",
+      "identity": "PASS",
+      "dailyReport": "SKIPPED",
+      "task": "NOT_RUN"
+    }
+  ],
+  "blockers": [
+    {
+      "code": "DAILY_REPORT_TEMPLATE_MAKER_CHECKER_GAP",
+      "message": "A new template cannot be safely published: the isolated role set has fewer than two distinct actors with review and publish permission.",
+      "roles": [
+        "front-desk",
+        "front-supervisor",
+        "housekeeping-supervisor",
+        "assistant-gm",
+        "general-manager"
+      ]
+    },
+    {
+      "code": "MISSING_PUBLISHED_DAILY_REPORT_TEMPLATE",
+      "message": "A hotel role has no published daily-report template.",
+      "roles": [
+        "front-desk"
+      ]
+    }
+  ],
+  "capabilityCoverage": {
+    "templatePublicationMakerChecker": "BLOCKED",
+    "hotelRoleDailyReportSubmission": "BLOCKED",
+    "manualTaskLifecycle": "BLOCKED",
+    "dailyOperationAggregationAndSourceReferences": "NOT_TESTED",
+    "aiRecommendationAnalysis": "NOT_TESTED",
+    "supervisorConfirmationToTaskCandidate": "NOT_TESTED",
+    "slaOverdueEscalationNotifications": "NOT_TESTED",
+    "operationSnapshotAndExport": "NOT_TESTED",
+    "auditLogTableVerification": "NOT_TESTED_NO_API"
+  },
+  "evidenceLimitations": [
+    "This is a capability matrix, not a PASS claim for the full daily-operations main closed loop.",
+    "CEO-created manual tasks do not prove AI recommendation, supervisor confirmation, or task-candidate promotion.",
+    "Task timeline evidence is not direct audit_log table verification.",
+    "SLA overdue escalation, operation snapshot, and export are outside this run."
+  ],
+  "checks": [
+    {
+      "name": "anonymous_access_denied",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedStatus": 401,
+        "actualStatus": 401
+      }
+    },
+    {
+      "name": "identity_front-desk",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "FRONT_DESK",
+        "actualRole": "FRONT_DESK",
+        "assignmentCount": 1,
+        "tenantScope": false
+      }
+    },
+    {
+      "name": "identity_front-supervisor",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "FRONT_OFFICE_SUPERVISOR",
+        "actualRole": "FRONT_OFFICE_SUPERVISOR",
+        "assignmentCount": 2,
+        "tenantScope": false
+      }
+    },
+    {
+      "name": "identity_housekeeping-supervisor",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "HOUSEKEEPING_SUPERVISOR",
+        "actualRole": "HOUSEKEEPING_SUPERVISOR",
+        "assignmentCount": 1,
+        "tenantScope": false
+      }
+    },
+    {
+      "name": "identity_assistant-gm",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "ASSISTANT_GENERAL_MANAGER",
+        "actualRole": "ASSISTANT_GENERAL_MANAGER",
+        "assignmentCount": 1,
+        "tenantScope": false
+      }
+    },
+    {
+      "name": "identity_general-manager",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "GENERAL_MANAGER",
+        "actualRole": "GENERAL_MANAGER",
+        "assignmentCount": 1,
+        "tenantScope": false
+      }
+    },
+    {
+      "name": "identity_ota-assistant",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "OTA_OPERATION_ASSISTANT",
+        "actualRole": "OTA_OPERATION_ASSISTANT",
+        "assignmentCount": 1,
+        "tenantScope": false
+      }
+    },
+    {
+      "name": "identity_ota-manager",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "OTA_OPERATION_MANAGER",
+        "actualRole": "OTA_OPERATION_MANAGER",
+        "assignmentCount": 1,
+        "tenantScope": false
+      }
+    },
+    {
+      "name": "identity_ceo",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "expectedRole": "CEO",
+        "actualRole": "CEO",
+        "assignmentCount": 0,
+        "tenantScope": true
+      }
+    },
+    {
+      "name": "ceo_no_fabricated_assignment",
+      "result": "PASS",
+      "passed": true,
+      "details": {
+        "assignmentCount": 0
+      }
+    },
+    {
+      "name": "independent_template_publishers",
+      "result": "BLOCKED",
+      "passed": false,
+      "details": {
+        "distinctQualifiedActors": [
+          "ceo"
+        ],
+        "requiredDistinctActors": 2
+      }
+    },
+    {
+      "name": "daily_report_front-desk",
+      "result": "BLOCKED",
+      "passed": false,
+      "details": {
+        "reason": "No published daily-report template resolves for the position. Draft creation is deliberately skipped because independent publication is unavailable.",
+        "positionId": "14000000-0000-0000-0000-000000000001",
+        "workPackageVersionId": "42100000-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "name": "daily_report_front-supervisor",
+      "result": "BLOCKED",
+      "passed": false,
+      "details": {
+        "reason": "No published daily-report template resolves for the position. Draft creation is deliberately skipped because independent publication is unavailable.",
+        "positionId": "14000000-0000-0000-0000-000000000003",
+        "workPackageVersionId": "42100000-0000-0000-0000-000000000003"
+      }
+    },
+    {
+      "name": "daily_report_housekeeping-supervisor",
+      "result": "BLOCKED",
+      "passed": false,
+      "details": {
+        "reason": "No published daily-report template resolves for the position. Draft creation is deliberately skipped because independent publication is unavailable.",
+        "positionId": "14000000-0000-0000-0000-000000000002",
+        "workPackageVersionId": "42100000-0000-0000-0000-000000000002"
+      }
+    },
+    {
+      "name": "daily_report_assistant-gm",
+      "result": "BLOCKED",
+      "passed": false,
+      "details": {
+        "reason": "No published daily-report template resolves for the position. Draft creation is deliberately skipped because independent publication is unavailable.",
+        "positionId": "14000000-0000-0000-0000-000000000007",
+        "workPackageVersionId": "42100000-0000-0000-0000-000000000007"
+      }
+    },
+    {
+      "name": "daily_report_general-manager",
+      "result": "BLOCKED",
+      "passed": false,
+      "details": {
+        "reason": "No published daily-report template resolves for the position. Draft creation is deliberately skipped because independent publication is unavailable.",
+        "positionId": "14000000-0000-0000-0000-000000000004",
+        "workPackageVersionId": "42100000-0000-0000-0000-000000000004"
+      }
+    },
+    {
+      "name": "daily_report_ota-assistant",
+      "result": "SKIPPED",
+      "passed": null,
+      "details": {
+        "reason": "The OTA assignment belongs to the regional management organization, not a hotel position. A hotel daily report is not fabricated."
+      }
+    },
+    {
+      "name": "daily_report_ota-manager",
+      "result": "SKIPPED",
+      "passed": null,
+      "details": {
+        "reason": "The OTA assignment belongs to the regional management organization, not a hotel position. A hotel daily report is not fabricated."
+      }
+    },
+    {
+      "name": "daily_report_ceo",
+      "result": "SKIPPED",
+      "passed": null,
+      "details": {
+        "reason": "CEO has tenant governance scope and no position assignment; no employee daily report is fabricated."
+      }
+    },
+    {
+      "name": "fatal_error",
+      "result": "FAIL",
+      "passed": false,
+      "details": {
+        "message": "front-desk POST /tasks/3b913662-233b-4aef-8993-60d5a149a79a/evidence returned HTTP 500: {\"timestamp\":\"2026-07-22T16:02:16.078+00:00\",\"status\":500,\"error\":\"Internal Server Error\",\"path\":\"/api/v1/tasks/3b913662-233b-4aef-8993-60d5a149a79a/evidence\"}"
+      }
+    }
+  ],
+  "requestLog": [
+    {
+      "role": "front-desk",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "ce6ede78-089a-4ce0-a88e-1610830c17f9"
+    },
+    {
+      "role": "front-supervisor",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "114990e9-6a3d-4bf4-a228-da0c8469f285"
+    },
+    {
+      "role": "housekeeping-supervisor",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "a223042b-b2d1-4e94-a0be-cd9a0e0f5cc8"
+    },
+    {
+      "role": "assistant-gm",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "8d30b5d4-d06e-45f5-b5a6-5e09172d73f9"
+    },
+    {
+      "role": "general-manager",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "fb2fc1bf-e7f8-4411-8653-ee57798bebe9"
+    },
+    {
+      "role": "ota-assistant",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "9d084f1f-bf7d-40e5-94d8-ec1f9a024a07"
+    },
+    {
+      "role": "ota-manager",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "be66d429-0d3d-47a5-9ff7-8f6f580f5b5b"
+    },
+    {
+      "role": "ceo",
+      "method": "GET",
+      "path": "/iam/me",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "795aa409-c906-4550-8281-8d8bba5908cb"
+    },
+    {
+      "role": "ceo",
+      "method": "GET",
+      "path": "/work-packages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "611ff0b2-5d9a-4584-a20e-49b64b9fe1b7"
+    },
+    {
+      "role": "ceo",
+      "method": "GET",
+      "path": "/daily-report-templates",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "e54d800b-ce9c-475d-8c84-80a465f4c2e1"
+    },
+    {
+      "role": "ceo",
+      "method": "GET",
+      "path": "/tasks/targets",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "72816f5a-3c13-4896-969f-2d53ce342243"
+    },
+    {
+      "role": "ceo",
+      "method": "POST",
+      "path": "/tasks",
+      "status": 201,
+      "expected": [
+        201
+      ],
+      "passed": true,
+      "correlationId": "9f09a246-bd48-446f-b851-67280f1962ca"
+    },
+    {
+      "role": "ceo",
+      "method": "POST",
+      "path": "/tasks",
+      "status": 201,
+      "expected": [
+        201
+      ],
+      "passed": true,
+      "correlationId": "2999db14-02ce-4533-9469-3b989225775b"
+    },
+    {
+      "role": "front-desk",
+      "method": "GET",
+      "path": "/tasks?view=mine",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "f7bb0a5e-5187-4a06-8a2a-62f8e00a464e"
+    },
+    {
+      "role": "front-desk",
+      "method": "GET",
+      "path": "/notifications?unreadOnly=false",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "c677b128-16d4-419b-aa52-a4af142d6aed"
+    },
+    {
+      "role": "front-desk",
+      "method": "POST",
+      "path": "/tasks/3b913662-233b-4aef-8993-60d5a149a79a/actions/ACKNOWLEDGE",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "passed": true,
+      "correlationId": "9a8f4ffe-c69b-4228-83ca-bbde864d072d"
+    },
+    {
+      "role": "front-desk",
+      "method": "POST",
+      "path": "/tasks/3b913662-233b-4aef-8993-60d5a149a79a/actions/SUBMIT_RESULT",
+      "status": 409,
+      "expected": [
+        409
+      ],
+      "passed": true,
+      "correlationId": "e56500d9-1964-486f-a995-74f4ebf184b8"
+    },
+    {
+      "role": "front-desk",
+      "method": "POST",
+      "path": "/tasks/3b913662-233b-4aef-8993-60d5a149a79a/evidence",
+      "status": 500,
+      "expected": [
+        201
+      ],
+      "passed": false,
+      "correlationId": "8f1347aa-0c3b-4436-b0f0-6b1420c68d67"
+    }
+  ],
+  "artifacts": {
+    "tasks": [],
+    "dailyReports": [],
+    "cleanupPerformed": false,
+    "retentionNote": "Artifacts exist only in the disposable UAT database and are removed when that database is reset or destroyed."
+  }
+}

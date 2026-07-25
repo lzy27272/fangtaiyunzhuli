@@ -1,0 +1,173 @@
+{
+  "target": "https://www.sfgzt.cn",
+  "capturedAt": "2026-07-22T17:03:54.449Z",
+  "url": "https://www.sfgzt.cn/#/login",
+  "title": "贵州四方馆酒店管理有限公司中台 · 内部测试版",
+  "loginCardCount": 0,
+  "rootHtmlLength": 2497,
+  "rootText": "四\n贵州四方馆酒店管理有限公司中台\nPilot Test Version · 内部测试版\n⌂\n角色工作台\nTECH-V0.2-PILOT.7\n标准 → 工作 → 任务 → 执行 → 验收\n身份接口异常\nJWT/SSO 会话身份\n内部测试版\n当前任职\n前台员工 · 杭州中心店 · 前厅部（主岗）\n◉\n悦\n林悦\n前台员工\nSPRINT 2 · MANAGEMENT LOOP\n前台员工工作台\n\n当前班次工作、VIP、客诉与待整改事项\n\n当前有效任职\n前台员工\n杭州中心店 · 前厅部\n实时 API\n今\n今日待完成\n0\n当前任职工作 0 项\n执\n执行中任务\n0\n0 项已逾期\n未\n未读通知\n0\n任务、逾期与升级提醒\nTODAY'S WORK\n今日岗位工作\n查看全部\nNOTIFICATIONS\n管理提醒\n通知中心\nEXECUTION LOOP\n执行任务\n进入任务中心\n任务\n目标组织\n负责人 / 验收人\nSLA\n状态\n操作",
+  "events": [
+    {
+      "type": "response",
+      "resourceType": "document",
+      "status": 200,
+      "url": "https://www.sfgzt.cn/"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Loading the script 'https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496' violates the following Content Security Policy directive: \"script-src 'self'\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked."
+    },
+    {
+      "type": "requestfailed",
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496",
+      "failure": "csp"
+    },
+    {
+      "type": "response",
+      "resourceType": "stylesheet",
+      "status": 200,
+      "url": "https://www.sfgzt.cn/assets/index-BHjz939F.css"
+    },
+    {
+      "type": "response",
+      "resourceType": "script",
+      "status": 200,
+      "url": "https://www.sfgzt.cn/assets/index-BlAwy039.js"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/my/work-expectations"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/notifications"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/tasks"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/iam/me"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/notifications"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/tasks"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/notifications"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/notifications"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/notifications"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/tasks"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/my/work-expectations"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "response",
+      "resourceType": "fetch",
+      "status": 401,
+      "url": "https://www.sfgzt.cn/api/v1/notifications"
+    },
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    }
+  ]
+}

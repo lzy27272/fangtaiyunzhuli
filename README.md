@@ -93,12 +93,27 @@ TECH-V0.3技术冻结草案见`docs/TECH-V0.3-TECHNICAL-FREEZE-DRAFT.md`。草�
 5. 尚未开发的能力只能标记“规划中”，不得写成已完成。
 6. 已发布记录采用追加式维护，不覆盖历史结论。
 
-## 在研设计任务
+## 独立 OTA 自动化项目
 
 - OTA自动化房态对账与小时经营简报：`docs/tasks/OTA-AUTOMATION-V0.1-DESIGN-DISCUSSION.md`
+- OTA自动化技术设计：`docs/tasks/OTA-AUTOMATION-V0.1-TECH-DESIGN.md`
+- OTA自动化编码就绪报告：`docs/tasks/OTA-AUTOMATION-V0.1-CODING-READINESS.md`
+- OTA自动化Sprint 0实施报告：`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-0-IMPLEMENTATION-REPORT.md`
+- OTA自动化Sprint 1实施报告：`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-1-IMPLEMENTATION-REPORT.md`
+- OTA自动化Sprint 2A实施报告：`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2A-IMPLEMENTATION-REPORT.md`
+- OTA自动化Sprint 2B实施报告：`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2B-IMPLEMENTATION-REPORT.md`
+- OTA自动化Sprint 2C实施报告：`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2C-IMPLEMENTATION-REPORT.md`
+- OTA自动化Sprint 2D离线人工授权演练实施报告：`docs/tasks/OTA-AUTOMATION-V0.1-SPRINT-2D-OFFLINE-AUTHORIZATION-REHEARSAL-IMPLEMENTATION-REPORT.md`
+- OTA自动化程序内PMS登录离线骨架实施报告：`docs/tasks/OTA-AUTOMATION-V0.1-BROWSER-SESSION-SKELETON-IMPLEMENTATION-REPORT.md`
+- OTA自动化受控外部接入工作包：`docs/tasks/OTA-AUTOMATION-V0.1-CONTROLLED-EXTERNAL-INTAKE-WORK-PACKAGE.md`
+- OTA自动化接入资料模板：`docs/tasks/ota-controlled-external-intake/README.md`
+- OTA首个接入实例（喷水池态六酒店｜美团别样红系统｜PMS）：`docs/tasks/ota-controlled-external-intake/intakes/pilot-01-bieyanghong-pms/README.md`
+- OTA首个实例受控登录清单：`docs/tasks/ota-controlled-external-intake/intakes/pilot-01-bieyanghong-pms/CONTROLLED-LOGIN-RUNBOOK.md`
+- OTA首个实例Cookie/浏览器会话自动采集设计草案：`docs/tasks/ota-controlled-external-intake/intakes/pilot-01-bieyanghong-pms/COOKIE-SESSION-AUTOMATION-DESIGN-DRAFT.md`
+- OTA自动化本地账号安全ADR：`docs/tasks/OTA-AUTOMATION-V0.1-ADR-001-LOCAL-AUTH.md`
 - 在研任务总索引：`docs/tasks/README.md`
 
-当前OTA任务处于逐板块需求沟通阶段，尚未编码、未纳入正式技术版本，也不改变TECH-V0.2和Sprint 3的现有发布判断。
+当前OTA任务的业务设计`DESIGN-1.5`和技术设计`TECH-DESIGN-1.0`已全部确认并冻结。首个受控实例为“喷水池态六酒店＋PMS＋美团别样红系统”。2026-07-25已完成一次隔离浏览器人工认证、门店选择和有限只读结构观察：主页房态候选为无请求体`POST /hotelpms/api/v1/report/home/workbench/room`，但字段名、业务语义和许可仍未验证；用户提供的`lion/.../room`受控GET仅得到通用包络。同日先完成程序内PMS登录的离线安全骨架，再完成Sprint 2D离线人工授权演练：独立后台可持久化、刷新恢复、确认、取消和重新演练，但授权状态始终为`AUTH_REQUIRED`，运行态始终阻断。当前状态为`SPRINT 2D OFFLINE REHEARSAL COMPLETE / COOKIE AUTOMATION BLOCKED / I1 VENDOR AUTHORIZATION REQUIRED / REAL PMS AUTHORIZATION BLOCKED / REAL CONNECTORS BLOCKED / PRODUCTION NO-GO`。真实浏览器驱动、SecretStore实现、网络出口、PMS适配器、自动抓取、企微投递和生产仍未放行。
 
 ## Sprint 1 交付索引
 

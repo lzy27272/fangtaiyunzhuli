@@ -1,0 +1,14 @@
+package cn.sifangguan.ota.contracts.connector;
+
+public enum DataStreamType {
+    BUSINESS_DATE,
+    BOOKING_EVENT,
+    CANCELLATION_EVENT,
+    INVENTORY_ROOM_TYPE,
+    INVENTORY_SELL_PRODUCT,
+    ROOM_REVENUE_DETAIL,
+    ROOM_REVENUE_AGGREGATE,
+    HOURLY_ROOM_REVENUE,
+    OVERNIGHT_SOLD,
+    EFFECTIVE_SELLABLE_TOTAL
+}

@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: ota-connector-worker
+
+server:
+  port: ${OTA_CONNECTOR_WORKER_PORT:8092}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: ota-connector-worker
+    contract-version: 1
+
+ota:
+  sprint2:
+    real:
+      # Sprint 2A is offline-only. A real profile still refuses startup until
+      # external SecretStore and egress implementations are delivered.
+      enabled: ${OTA_SPRINT2_REAL_ENABLED:false}
+  sprint1:
+    simulation:
+      # Fail closed: the profile alone never enables simulation.
+      enabled: false
+      persistence-enabled: true
+      jdbc-url: ${OTA_SPRINT1_SIMULATION_JDBC_URL:}
+      database-username: ${OTA_SPRINT1_SIMULATION_DB_USERNAME:}
+      database-password: ${OTA_SPRINT1_SIMULATION_DB_PASSWORD:}
+      worker-service-principal-id: ${OTA_SPRINT1_SIMULATION_WORKER_PRINCIPAL_ID:}
+      dispatch-delay: ${OTA_SPRINT1_SIMULATION_DISPATCH_DELAY:5s}
+      dispatch-batch-size: ${OTA_SPRINT1_SIMULATION_DISPATCH_BATCH_SIZE:100}
+      poll-delay: ${OTA_SPRINT1_SIMULATION_POLL_DELAY:5s}
+      collection-poll-delay: ${OTA_SPRINT1_SIMULATION_COLLECTION_POLL_DELAY:5s}

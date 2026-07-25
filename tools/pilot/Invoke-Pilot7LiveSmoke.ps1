@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$RuntimeRoot = 'D:\SifangguanHotelAIOS',
-    [string]$ApiBase = 'http://127.0.0.1:18080/api/v1',
+    [string]$ApiBase = '',
+    [string]$StateFile = '',
     [string]$OutputPath = '',
     [string]$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss'),
     [switch]$ConfirmMutation,
@@ -15,15 +16,38 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $repoRoot '.uat-runtime\pilot\pilot7-live-smoke.json'
 }
+$stateFileRequiredMessage = 'Invoke-Pilot7LiveSmoke no longer accepts the shared/default Pilot target. Supply an active disposable ISOLATED_UAT StateFile, or use tools\uat\Invoke-IsolatedV21RoleClosedLoopUat.ps1.'
+if ([string]::IsNullOrWhiteSpace($StateFile) -or [string]::IsNullOrWhiteSpace($ApiBase)) {
+    throw $stateFileRequiredMessage
+}
+$resolvedStateFile = [IO.Path]::GetFullPath($StateFile)
+if (-not (Test-Path -LiteralPath $resolvedStateFile -PathType Leaf)) {
+    throw "Disposable UAT state is missing: $resolvedStateFile"
+}
+$uatState = Get-Content -LiteralPath $resolvedStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+if ([string]$uatState.purpose -cne 'ISOLATED_UAT') { throw $stateFileRequiredMessage }
+if ([DateTimeOffset]::Parse([string]$uatState.expiresAt) -le [DateTimeOffset]::Now) {
+    throw 'Disposable UAT state has expired.'
+}
+$databaseMarker = ([string]$uatState.database).ToLowerInvariant()
+$disposableDatabase = ($databaseMarker.Contains('hotel_ai_os_uat') -or $databaseMarker.Contains('embedded postgresql')) `
+    -and -not $databaseMarker.Contains('pilot') `
+    -and -not $databaseMarker.Contains('sifangguanhotelaios')
+if (-not $disposableDatabase) { throw $stateFileRequiredMessage }
+
 $ApiBase = $ApiBase.TrimEnd('/')
 $apiUri = [Uri]$ApiBase
 $isLoopback = $apiUri.Host -in @('127.0.0.1', 'localhost', '::1')
+$stateApiOrigin = ([string]$uatState.apiUrl).TrimEnd('/')
+if ($ApiBase -cne "$stateApiOrigin/api/v1") {
+    throw 'ApiBase does not match the active disposable UAT state.'
+}
 
 if (-not $ConfirmMutation) {
     throw 'This smoke creates and advances one clearly labelled live task. Re-run with -ConfirmMutation after reviewing the target API.'
 }
-if (-not $isLoopback -and -not $AllowPublicApi) {
-    throw 'A non-loopback API requires the explicit -AllowPublicApi switch.'
+if (-not $isLoopback -or $AllowPublicApi) {
+    throw 'Public/non-loopback mutation is disabled for this legacy smoke. Use an isolated loopback UAT API.'
 }
 if ($RunId -notmatch '^[A-Za-z0-9._-]{4,80}$') {
     throw 'RunId must be 4-80 characters and contain only letters, digits, dot, underscore or hyphen.'

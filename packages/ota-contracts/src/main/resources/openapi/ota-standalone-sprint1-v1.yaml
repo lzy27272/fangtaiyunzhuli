@@ -1,0 +1,1270 @@
+openapi: 3.1.0
+info:
+  title: Sifangguan OTA Standalone Sprint 1 API
+  version: 0.1.0-sprint1
+  description: >-
+    Simulation-only OTA control-plane contract. Every successful JSON response is wrapped in
+    {data: ...}. Mutations require Idempotency-Key, expectedRowVersion and reasonCode.
+    No endpoint exposes a raw credential, cookie, token, webhook URL or secret value.
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+security:
+  - bearerAccess: []
+tags:
+  - name: OTA Read
+  - name: OTA Configuration
+  - name: OTA Simulation
+  - name: Group Read
+paths:
+  /api/v1/ota/connector-adapters:
+    get:
+      tags: [OTA Read]
+      operationId: listConnectorAdapters
+      responses:
+        '200': {$ref: '#/components/responses/ConnectorAdapterListResponse'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration:
+    get:
+      tags: [OTA Read]
+      operationId: getHotelConfiguration
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+      responses:
+        '200': {$ref: '#/components/responses/ConfigurationResponse'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/monitor:
+    get:
+      tags: [OTA Read]
+      operationId: getHotelMonitor
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+      responses:
+        '200': {$ref: '#/components/responses/MonitorResponse'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/briefs:
+    get:
+      tags: [OTA Read]
+      operationId: listHotelBriefs
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200': {$ref: '#/components/responses/BriefListResponse'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/incidents:
+    get:
+      tags: [OTA Read]
+      operationId: listHotelIncidents
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200': {$ref: '#/components/responses/IncidentListResponse'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/outbox-preview:
+    get:
+      tags: [OTA Read]
+      operationId: listHotelOutboxPreview
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200': {$ref: '#/components/responses/OutboxPreviewListResponse'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/simulation-runs:
+    get:
+      tags: [OTA Simulation]
+      operationId: listSimulationRuns
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200': {$ref: '#/components/responses/SimulationRunListResponse'}
+    post:
+      tags: [OTA Simulation]
+      operationId: triggerSimulationRun
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SimulationRunRequest'}
+      responses:
+        '202': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/simulation-runs/{runId}:
+    get:
+      tags: [OTA Simulation]
+      operationId: getSimulationRun
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/RunId'}
+      responses:
+        '200': {$ref: '#/components/responses/SimulationRunResponse'}
+  /api/v1/group/ota/monitor:
+    get:
+      tags: [Group Read]
+      operationId: getGroupMonitor
+      responses:
+        '200': {$ref: '#/components/responses/GroupMonitorResponse'}
+  /api/v1/group/ota/briefs:
+    get:
+      tags: [Group Read]
+      operationId: listGroupBriefs
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200': {$ref: '#/components/responses/GroupBriefListResponse'}
+  /api/v1/group/ota/incidents:
+    get:
+      tags: [Group Read]
+      operationId: listGroupIncidents
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200': {$ref: '#/components/responses/GroupIncidentListResponse'}
+  /api/v1/ota/simulation/hotels:
+    get:
+      tags: [OTA Simulation]
+      operationId: listSimulationHotels
+      responses:
+        '200': {$ref: '#/components/responses/SimulationHotelDirectoryResponse'}
+    post:
+      tags: [OTA Simulation]
+      operationId: initializeSimulationHotel
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitializeSimulationHotelRequest'}
+      responses:
+        '202': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/configuration:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertTenant
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TenantRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration/hotel:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertHotel
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HotelRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration/connectors/{connectorId}:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertConnector
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/ConnectorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConnectorRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration/inventory-pools/{poolId}:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertInventoryPool
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/PoolId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InventoryPoolRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration/products/{productId}:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertProduct
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/ProductId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProductRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration/product-mappings/{mappingId}:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertProductMapping
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/MappingId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProductMappingRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration/targets/{targetId}:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertTarget
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/TargetId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+  /api/v1/ota/tenants/{tenantId}/hotels/{hotelId}/configuration/pace-curves/{curveId}:
+    post:
+      tags: [OTA Configuration]
+      operationId: upsertPaceCurve
+      parameters:
+        - {$ref: '#/components/parameters/TenantId'}
+        - {$ref: '#/components/parameters/HotelId'}
+        - {$ref: '#/components/parameters/CurveId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PaceCurveRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/CommandAccepted'}
+components:
+  securitySchemes:
+    bearerAccess:
+      type: http
+      scheme: bearer
+      bearerFormat: OTA-Access-Token
+  parameters:
+    TenantId: {name: tenantId, in: path, required: true, schema: {type: string, format: uuid}}
+    HotelId: {name: hotelId, in: path, required: true, schema: {type: string, format: uuid}}
+    RunId: {name: runId, in: path, required: true, schema: {type: string, format: uuid}}
+    ConnectorId: {name: connectorId, in: path, required: true, schema: {type: string, format: uuid}}
+    PoolId: {name: poolId, in: path, required: true, schema: {type: string, format: uuid}}
+    ProductId: {name: productId, in: path, required: true, schema: {type: string, format: uuid}}
+    MappingId: {name: mappingId, in: path, required: true, schema: {type: string, format: uuid}}
+    TargetId: {name: targetId, in: path, required: true, schema: {type: string, format: uuid}}
+    CurveId: {name: curveId, in: path, required: true, schema: {type: string, format: uuid}}
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$'}
+  responses:
+    ConnectorAdapterListResponse:
+      description: Code-owned connector adapter directory.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ConnectorAdapterListEnvelope'}
+    ConfigurationResponse:
+      description: Tenant-scoped hotel OTA configuration.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ConfigurationEnvelope'}
+    MonitorResponse:
+      description: Latest epoch-consistent hotel monitor.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MonitorEnvelope'}
+    IncidentListResponse:
+      description: Hotel incidents newest first.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/IncidentListEnvelope'}
+    OutboxPreviewListResponse:
+      description: Simulation-only notification outbox previews.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/OutboxPreviewListEnvelope'}
+    GroupMonitorResponse:
+      description: Per-tenant RLS monitor coverage and values.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/GroupMonitorEnvelope'}
+    GroupBriefListResponse:
+      description: Per-tenant RLS brief coverage and values.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/GroupBriefListEnvelope'}
+    GroupIncidentListResponse:
+      description: Per-tenant RLS incident coverage and values.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/GroupIncidentListEnvelope'}
+    SimulationHotelDirectoryResponse:
+      description: Configured simulation-only hotel directory.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SimulationHotelDirectoryEnvelope'}
+    CommandAccepted:
+      description: Idempotent command accepted or replayed.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/CommandReceiptEnvelope'}
+    SimulationRunResponse:
+      description: One simulation execution and its independently frozen cutoff.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SimulationRunEnvelope'}
+    SimulationRunListResponse:
+      description: Recent simulation executions and their independently frozen cutoffs.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SimulationRunListEnvelope'}
+    BriefListResponse:
+      description: Original and adjustment brief versions in newest-first order.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/BriefListEnvelope'}
+  schemas:
+    ConnectorAdapterListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/ConnectorAdapterView'}
+    ConfigurationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/ConfigurationView'}
+    MonitorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/MonitorView'}
+    IncidentListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/IncidentView'}
+    OutboxPreviewListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/OutboxPreview'}
+    GroupMonitorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/GroupMonitorResult'}
+    GroupBriefListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/GroupBriefListResult'}
+    GroupIncidentListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/GroupIncidentListResult'}
+    SimulationHotelDirectoryEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/SimulationHotelDirectoryView'}
+    ConnectorAdapterView:
+      type: object
+      additionalProperties: false
+      required: [code, displayName, sourceSystem, simulationOnly, streams]
+      properties:
+        code:
+          type: string
+          enum: [MOCK_PMS, MOCK_CTRIP, MOCK_MEITUAN, FILE_FIXTURE]
+        displayName: {type: string}
+        sourceSystem:
+          type: string
+          enum: [PMS, CTRIP, MEITUAN, OFFICIAL_EXPORT]
+        simulationOnly: {type: boolean, const: true}
+        streams:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [BUSINESS_DAY, ROOM_REVENUE, ORDER_ROOM_NIGHT, INVENTORY]
+    TenantView:
+      type: object
+      additionalProperties: false
+      required: [tenantId, tenantCode, displayName, timezone, status, rowVersion]
+      properties:
+        tenantId: {type: string, format: uuid}
+        tenantCode: {type: string}
+        displayName: {type: string}
+        timezone: {type: string}
+        status: {type: string, enum: [DRAFT, ACTIVE, SUSPENDED]}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    HotelView:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - hotelId
+        - hotelCode
+        - displayName
+        - timezone
+        - lifecycleStatus
+        - collectionEnabled
+        - messageEnabled
+        - rowVersion
+      properties:
+        tenantId: {type: string, format: uuid}
+        hotelId: {type: string, format: uuid}
+        hotelCode: {type: string}
+        displayName: {type: string}
+        timezone: {type: string}
+        lifecycleStatus:
+          type: string
+          enum: [DRAFT, READY_FOR_TEST, SHADOW, UAT, LIVE, PAUSED]
+        collectionEnabled: {type: boolean}
+        messageEnabled: {type: boolean}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    SecretReferenceStatus:
+      type: object
+      additionalProperties: false
+      required:
+        [referenceConfigured, referenceFingerprint, authorizationStatus, lastCheckedAt]
+      properties:
+        referenceConfigured: {type: boolean}
+        referenceFingerprint: {type: string, nullable: true}
+        authorizationStatus:
+          type: string
+          enum: [NOT_REQUIRED, UNCONFIGURED, VALID, AUTH_REQUIRED, REVOKED]
+        lastCheckedAt: {type: string, format: date-time, nullable: true}
+    ConnectorView:
+      type: object
+      additionalProperties: false
+      required:
+        - connectorId
+        - adapterCode
+        - sourceCode
+        - enabled
+        - fixtureScenarioCode
+        - pollIntervalMinutes
+        - rowVersion
+        - secret
+      properties:
+        connectorId: {type: string, format: uuid}
+        adapterCode:
+          type: string
+          enum: [MOCK_PMS, MOCK_CTRIP, MOCK_MEITUAN, FILE_FIXTURE]
+        sourceCode:
+          type: string
+          enum: [PMS, CTRIP, MEITUAN, OFFICIAL_EXPORT]
+        enabled: {type: boolean}
+        fixtureScenarioCode: {type: string}
+        pollIntervalMinutes: {type: integer, minimum: 5, maximum: 60}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+        secret: {$ref: '#/components/schemas/SecretReferenceStatus'}
+    InventoryPoolView:
+      type: object
+      additionalProperties: false
+      required:
+        [inventoryPoolId, physicalRoomTypeCode, displayName, physicalRoomCount, rowVersion]
+      properties:
+        inventoryPoolId: {type: string, format: uuid}
+        physicalRoomTypeCode: {type: string}
+        displayName: {type: string}
+        physicalRoomCount: {type: integer, minimum: 1, maximum: 10000}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    SellableProductView:
+      type: object
+      additionalProperties: false
+      required:
+        - productId
+        - connectorId
+        - sourceCode
+        - externalProductCode
+        - displayName
+        - mealPlanCode
+        - rowVersion
+      properties:
+        productId: {type: string, format: uuid}
+        connectorId: {type: string, format: uuid}
+        sourceCode:
+          type: string
+          enum: [PMS, CTRIP, MEITUAN, OFFICIAL_EXPORT]
+        externalProductCode: {type: string}
+        displayName: {type: string}
+        mealPlanCode:
+          type: string
+          enum: [ROOM_ONLY, BREAKFAST_INCLUDED]
+          nullable: true
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    ProductMappingView:
+      type: object
+      additionalProperties: false
+      required:
+        [mappingVersionId, productId, inventoryPoolId, validFrom, validUntil, rowVersion]
+      properties:
+        mappingVersionId: {type: string, format: uuid}
+        productId: {type: string, format: uuid}
+        inventoryPoolId: {type: string, format: uuid}
+        validFrom: {type: string, format: date-time}
+        validUntil: {type: string, format: date-time, nullable: true}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    RevenueTargetView:
+      type: object
+      additionalProperties: false
+      required:
+        [targetVersionId, businessDate, roomRevenueTarget, targetAdr, rowVersion]
+      properties:
+        targetVersionId: {type: string, format: uuid}
+        businessDate: {type: string, format: date}
+        roomRevenueTarget: {type: number}
+        targetAdr: {type: number}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    PacePoint:
+      type: object
+      additionalProperties: false
+      required: [cutoffLocalTime, revenueProgressPercent, soldProgressPercent]
+      properties:
+        cutoffLocalTime: {type: string, format: time}
+        revenueProgressPercent: {type: number, minimum: 0, maximum: 100}
+        soldProgressPercent: {type: number, minimum: 0, maximum: 100}
+    PaceCurveView:
+      type: object
+      additionalProperties: false
+      required:
+        [paceCurveVersionId, curveCode, validFrom, validUntil, points, rowVersion]
+      properties:
+        paceCurveVersionId: {type: string, format: uuid}
+        curveCode: {type: string}
+        validFrom: {type: string, format: date}
+        validUntil: {type: string, format: date, nullable: true}
+        points:
+          type: array
+          items: {$ref: '#/components/schemas/PacePoint'}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    ConfigurationView:
+      type: object
+      additionalProperties: false
+      required:
+        - tenant
+        - hotel
+        - connectors
+        - inventoryPools
+        - products
+        - productMappings
+        - targets
+        - paceCurves
+        - simulationMode
+        - outboundDeliveryBlocked
+      properties:
+        tenant: {$ref: '#/components/schemas/TenantView'}
+        hotel: {$ref: '#/components/schemas/HotelView'}
+        connectors:
+          type: array
+          items: {$ref: '#/components/schemas/ConnectorView'}
+        inventoryPools:
+          type: array
+          items: {$ref: '#/components/schemas/InventoryPoolView'}
+        products:
+          type: array
+          items: {$ref: '#/components/schemas/SellableProductView'}
+        productMappings:
+          type: array
+          items: {$ref: '#/components/schemas/ProductMappingView'}
+        targets:
+          type: array
+          items: {$ref: '#/components/schemas/RevenueTargetView'}
+        paceCurves:
+          type: array
+          items: {$ref: '#/components/schemas/PaceCurveView'}
+        simulationMode: {type: boolean}
+        outboundDeliveryBlocked: {type: boolean}
+    SourceFreshnessView:
+      type: object
+      additionalProperties: false
+      required: [sourceCode, completeness, sourceObservedAt, ingestedAt]
+      properties:
+        sourceCode: {type: string, enum: [PMS, CTRIP, MEITUAN, OFFICIAL_EXPORT]}
+        completeness: {type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE]}
+        sourceObservedAt: {type: string, format: date-time, nullable: true}
+        ingestedAt: {type: string, format: date-time, nullable: true}
+    MetricValue:
+      type: object
+      additionalProperties: false
+      required: [value, unit, state]
+      properties:
+        value: {type: number, nullable: true}
+        unit: {type: string}
+        state:
+          type: string
+          enum: [AVAILABLE, NOT_APPLICABLE, NOT_CONFIGURED, UNAVAILABLE]
+    InventoryView:
+      type: object
+      additionalProperties: false
+      required:
+        - inventoryPoolId
+        - physicalRoomTypeCode
+        - displayName
+        - pmsAvailableRooms
+        - otaAvailableRooms
+        - state
+      properties:
+        inventoryPoolId: {type: string, format: uuid}
+        physicalRoomTypeCode: {type: string}
+        displayName: {type: string, nullable: true}
+        pmsAvailableRooms: {type: integer, minimum: 0, nullable: true}
+        otaAvailableRooms:
+          type: object
+          additionalProperties: {type: integer, minimum: 0}
+        state: {type: string, enum: [MATCHED, P1_RISK, UNAVAILABLE]}
+    MonitorView:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - hotelId
+        - hotelName
+        - businessDate
+        - cutoffAt
+        - completeness
+        - simulationMode
+        - sources
+        - metrics
+        - inventory
+      properties:
+        tenantId: {type: string, format: uuid}
+        hotelId: {type: string, format: uuid}
+        hotelName: {type: string}
+        businessDate: {type: string, format: date}
+        cutoffAt: {type: string, format: date-time}
+        completeness: {type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE]}
+        simulationMode: {type: boolean}
+        sources:
+          type: array
+          items: {$ref: '#/components/schemas/SourceFreshnessView'}
+        metrics:
+          type: object
+          additionalProperties: {$ref: '#/components/schemas/MetricValue'}
+        inventory:
+          type: array
+          items: {$ref: '#/components/schemas/InventoryView'}
+    IncidentView:
+      type: object
+      additionalProperties: false
+      required:
+        - incidentId
+        - type
+        - status
+        - sourceCode
+        - directionCode
+        - openedAt
+        - lastObservedAt
+        - taskId
+        - rowVersion
+      properties:
+        incidentId: {type: string, format: uuid}
+        type:
+          type: string
+          enum: [INVENTORY_MISMATCH, SOURCE_UNAVAILABLE, DELIVERY_FAILURE]
+        status:
+          type: string
+          enum: [OPEN, ACKNOWLEDGED, RECOVERY_VERIFYING, RESOLVED, REPLACED]
+        sourceCode: {type: string, nullable: true}
+        directionCode: {type: string, nullable: true}
+        openedAt: {type: string, format: date-time}
+        lastObservedAt: {type: string, format: date-time}
+        taskId: {type: string, format: uuid, nullable: true}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    OutboxPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - messageKey
+        - messageType
+        - createdAt
+        - deliveryBlocked
+        - deliveryStatus
+        - bodyPreview
+      properties:
+        eventId: {type: string, format: uuid}
+        messageKey: {type: string}
+        messageType:
+          type: string
+          enum: [HOURLY_BRIEF, P1_ALERT, P1_RECOVERY, DELIVERY_FAILURE]
+        createdAt: {type: string, format: date-time}
+        deliveryBlocked: {type: boolean, const: true}
+        deliveryStatus:
+          type: string
+          enum: [PENDING, LEASED, SIMULATED, FAILED, AMBIGUOUS, SKIPPED_OBSOLETE]
+        bodyPreview: {type: string, maxLength: 1000}
+    TenantFailure:
+      type: object
+      additionalProperties: false
+      required: [tenantId, reasonCode]
+      properties:
+        tenantId: {type: string, format: uuid}
+        reasonCode: {type: string}
+    GroupMonitorResult:
+      type: object
+      additionalProperties: false
+      required: [coverage, values, failures]
+      properties:
+        coverage: {type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE]}
+        values:
+          type: object
+          propertyNames: {format: uuid}
+          additionalProperties:
+            type: array
+            items: {$ref: '#/components/schemas/MonitorView'}
+        failures:
+          type: array
+          items: {$ref: '#/components/schemas/TenantFailure'}
+    GroupBriefListResult:
+      type: object
+      additionalProperties: false
+      required: [coverage, values, failures]
+      properties:
+        coverage: {type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE]}
+        values:
+          type: object
+          propertyNames: {format: uuid}
+          additionalProperties:
+            type: array
+            items: {$ref: '#/components/schemas/BriefView'}
+        failures:
+          type: array
+          items: {$ref: '#/components/schemas/TenantFailure'}
+    GroupIncidentListResult:
+      type: object
+      additionalProperties: false
+      required: [coverage, values, failures]
+      properties:
+        coverage: {type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE]}
+        values:
+          type: object
+          propertyNames: {format: uuid}
+          additionalProperties:
+            type: array
+            items: {$ref: '#/components/schemas/IncidentView'}
+        failures:
+          type: array
+          items: {$ref: '#/components/schemas/TenantFailure'}
+    SimulationHotelView:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - hotelId
+        - tenantCode
+        - tenantName
+        - hotelCode
+        - hotelName
+        - timezone
+        - lifecycleStatus
+        - collectionEnabled
+        - messageEnabled
+        - configuredMockConnectors
+        - simulationOnly
+        - rowVersion
+      properties:
+        tenantId: {type: string, format: uuid}
+        hotelId: {type: string, format: uuid}
+        tenantCode: {type: string}
+        tenantName: {type: string}
+        hotelCode: {type: string}
+        hotelName: {type: string}
+        timezone: {type: string}
+        lifecycleStatus:
+          type: string
+          enum: [DRAFT, READY_FOR_TEST, SHADOW, UAT, LIVE, PAUSED]
+        collectionEnabled: {type: boolean}
+        messageEnabled: {type: boolean, const: false}
+        configuredMockConnectors: {type: integer, minimum: 0, maximum: 3}
+        simulationOnly: {type: boolean, const: true}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    SimulationHotelDirectoryView:
+      type: object
+      additionalProperties: false
+      required: [coverage, hotels, failedTenantIds]
+      properties:
+        coverage: {type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE]}
+        hotels:
+          type: array
+          items: {$ref: '#/components/schemas/SimulationHotelView'}
+        failedTenantIds:
+          type: array
+          items: {type: string, format: uuid}
+    CommandReceiptEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/CommandReceipt'}
+    CommandReceipt:
+      type: object
+      additionalProperties: false
+      required: [commandId, resourceId, resultingRowVersion, replayed]
+      properties:
+        commandId: {type: string, format: uuid}
+        resourceId: {type: string, format: uuid}
+        resultingRowVersion: {type: integer, format: int64, minimum: 0}
+        replayed: {type: boolean}
+      example:
+        commandId: 0d777b5e-a46f-37a5-824f-f16607e5be35
+        resourceId: b6ea0e0e-9a25-3b64-ab35-c96953be0f13
+        resultingRowVersion: 1
+        replayed: false
+    SimulationRunEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/SimulationRunView'}
+    SimulationRunListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/SimulationRunView'}
+    SimulationRunView:
+      type: object
+      additionalProperties: false
+      required:
+        - runId
+        - scenarioCode
+        - status
+        - fixedClockAt
+        - scheduledFor
+        - startedAt
+        - completedAt
+        - briefId
+        - incidentIds
+        - rowVersion
+      properties:
+        runId: {type: string, format: uuid}
+        scenarioCode:
+          type: string
+          enum: [BASELINE, INVENTORY_MISMATCH, SOURCE_UNAVAILABLE, LATE_BRIEF_REPLAY]
+        status:
+          type: string
+          enum: [REQUESTED, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+        fixedClockAt:
+          type: string
+          format: date-time
+          description: Frozen execution clock used by the deterministic simulation.
+        scheduledFor:
+          type: string
+          format: date-time
+          description: Hourly statistics cutoff and the scheduled_for value of the claimed job.
+        startedAt: {type: string, format: date-time, nullable: true}
+        completedAt: {type: string, format: date-time, nullable: true}
+        briefId: {type: string, format: uuid, nullable: true}
+        incidentIds:
+          type: array
+          items: {type: string, format: uuid}
+        rowVersion: {type: integer, format: int64, minimum: 0}
+    BriefListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/BriefView'}
+    BriefView:
+      type: object
+      additionalProperties: false
+      required:
+        - briefId
+        - businessDate
+        - cutoffAt
+        - revisionNo
+        - completenessCode
+        - content
+        - publishedAt
+        - simulationRunId
+        - deliveryStatus
+        - simulationMode
+      properties:
+        briefId:
+          type: string
+          format: uuid
+          description: hourly_brief_id for the original or adjustment_id for a later version.
+        businessDate: {type: string, format: date}
+        cutoffAt: {type: string, format: date-time}
+        revisionNo: {type: integer, minimum: 1}
+        completenessCode: {type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE]}
+        content: {type: string, maxLength: 12000}
+        publishedAt: {type: string, format: date-time}
+        simulationRunId: {type: string, format: uuid, nullable: true}
+        deliveryStatus:
+          type: string
+          enum: [NOT_QUEUED, PENDING, LEASED, SIMULATED, FAILED, AMBIGUOUS, SKIPPED_OBSOLETE]
+        simulationMode: {type: boolean}
+    CommandRequest:
+      type: object
+      required: [expectedRowVersion, reasonCode]
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+      additionalProperties: true
+    TenantRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [expectedRowVersion, reasonCode, tenantCode, displayName, timezone, status]
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        tenantCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+          pattern: '^[A-Z0-9][A-Z0-9_-]{1,63}$'
+        displayName: {type: string, minLength: 1, maxLength: 160}
+        timezone:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z_]+(?:/[A-Za-z_+-]+)+$'
+        status: {type: string, enum: [DRAFT, ACTIVE, SUSPENDED]}
+      example:
+        expectedRowVersion: 0
+        reasonCode: INITIAL_SETUP
+        tenantCode: SFG_HOTELS
+        displayName: 四方馆酒店集团
+        timezone: Asia/Shanghai
+        status: ACTIVE
+    HotelRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedRowVersion
+        - reasonCode
+        - hotelCode
+        - displayName
+        - timezone
+        - lifecycleStatus
+        - collectionEnabled
+        - messageEnabled
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        hotelCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+          pattern: '^[A-Z0-9][A-Z0-9_-]{1,63}$'
+        displayName: {type: string, minLength: 1, maxLength: 160}
+        timezone:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z_]+(?:/[A-Za-z_+-]+)+$'
+        lifecycleStatus:
+          type: string
+          enum: [DRAFT, READY_FOR_TEST, SHADOW, UAT, LIVE, PAUSED]
+        collectionEnabled: {type: boolean}
+        messageEnabled: {type: boolean, const: false}
+      example:
+        expectedRowVersion: 0
+        reasonCode: INITIAL_SETUP
+        hotelCode: MOOODSHIFT_JFL
+        displayName: 解放路MOOODSHIFT酒店
+        timezone: Asia/Shanghai
+        lifecycleStatus: READY_FOR_TEST
+        collectionEnabled: true
+        messageEnabled: false
+    InventoryPoolRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [expectedRowVersion, reasonCode, physicalRoomTypeCode, displayName, physicalRoomCount]
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        physicalRoomTypeCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+          pattern: '^[A-Z0-9][A-Z0-9_-]{1,63}$'
+        displayName: {type: string, minLength: 1, maxLength: 160}
+        physicalRoomCount: {type: integer, minimum: 1, maximum: 10000}
+      example:
+        expectedRowVersion: 0
+        reasonCode: ROOM_MAPPING_SETUP
+        physicalRoomTypeCode: VIEW_TWIN
+        displayName: 景观双床房
+        physicalRoomCount: 12
+    ProductRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedRowVersion
+        - reasonCode
+        - connectorId
+        - sourceCode
+        - externalProductCode
+        - displayName
+        - mealPlanCode
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        connectorId: {type: string, format: uuid}
+        sourceCode:
+          type: string
+          enum: [PMS, CTRIP, MEITUAN, OFFICIAL_EXPORT]
+        externalProductCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+          pattern: '^[A-Z0-9][A-Z0-9_-]{1,63}$'
+        displayName: {type: string, minLength: 1, maxLength: 160}
+        mealPlanCode:
+          type: string
+          enum: [ROOM_ONLY, BREAKFAST_INCLUDED]
+      example:
+        expectedRowVersion: 0
+        reasonCode: ROOM_MAPPING_SETUP
+        connectorId: 74a0756a-81b9-30bb-8985-06d8ca3fc7f8
+        sourceCode: CTRIP
+        externalProductCode: CT-VIEW-NO-BREAKFAST
+        displayName: 携程景观双床房无早
+        mealPlanCode: ROOM_ONLY
+    ProductMappingRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRowVersion, reasonCode, productId, inventoryPoolId]
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        productId: {type: string, format: uuid}
+        inventoryPoolId: {type: string, format: uuid}
+      example:
+        expectedRowVersion: 0
+        reasonCode: ROOM_MAPPING_SETUP
+        productId: 393251af-6f34-38fd-92b0-57603653f43a
+        inventoryPoolId: f4c7c4a2-3d82-3c70-a143-1c819f86fc4a
+    TargetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [expectedRowVersion, reasonCode, businessDate, roomRevenueTarget, targetAdr]
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        businessDate: {type: string, format: date}
+        roomRevenueTarget:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100000000
+          multipleOf: 0.01
+        targetAdr:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100000000
+          multipleOf: 0.01
+      example:
+        expectedRowVersion: 0
+        reasonCode: REVENUE_TARGET_SETUP
+        businessDate: '2026-07-19'
+        roomRevenueTarget: 10000.00
+        targetAdr: 200.00
+    PacePointRequest:
+      type: object
+      additionalProperties: false
+      required: [cutoffLocalTime, revenueProgressPercent, soldProgressPercent]
+      properties:
+        cutoffLocalTime: {type: string, format: time}
+        revenueProgressPercent:
+          {type: number, minimum: 0, maximum: 100, multipleOf: 0.0001}
+        soldProgressPercent:
+          {type: number, minimum: 0, maximum: 100, multipleOf: 0.0001}
+    PaceCurveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [expectedRowVersion, reasonCode, curveCode, validFrom, points]
+      properties:
+        expectedRowVersion: {type: integer, format: int64, minimum: 0}
+        reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        curveCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+          pattern: '^[A-Z0-9][A-Z0-9_-]{1,63}$'
+        validFrom: {type: string, format: date}
+        validUntil: {type: string, format: date, nullable: true}
+        points:
+          type: array
+          minItems: 2
+          maxItems: 24
+          items: {$ref: '#/components/schemas/PacePointRequest'}
+      example:
+        expectedRowVersion: 0
+        reasonCode: PACE_CURVE_SETUP
+        curveCode: PEAK_DEFAULT
+        validFrom: '2026-07-19'
+        validUntil: null
+        points:
+          - cutoffLocalTime: '17:00:00'
+            revenueProgressPercent: 80.0
+            soldProgressPercent: 80.0
+          - cutoffLocalTime: '18:00:00'
+            revenueProgressPercent: 88.2
+            soldProgressPercent: 88.2
+    ConnectorRequest:
+      allOf:
+        - {$ref: '#/components/schemas/CommandRequest'}
+        - type: object
+          required: [adapterCode, sourceCode, enabled, fixtureScenarioCode, pollIntervalMinutes]
+          properties:
+            adapterCode:
+              type: string
+              enum: [MOCK_PMS, MOCK_CTRIP, MOCK_MEITUAN, FILE_FIXTURE]
+            sourceCode:
+              type: string
+              enum: [PMS, CTRIP, MEITUAN, OFFICIAL_EXPORT]
+            enabled: {type: boolean}
+            fixtureScenarioCode: {type: string, maxLength: 64}
+            pollIntervalMinutes: {type: integer, minimum: 5, maximum: 60}
+            secretReference:
+              type: string
+              maxLength: 256
+              writeOnly: true
+          allOf:
+            - if:
+                properties: {adapterCode: {const: FILE_FIXTURE}}
+                required: [adapterCode]
+              then:
+                properties: {sourceCode: {const: OFFICIAL_EXPORT}}
+                not:
+                  required: [secretReference]
+      example:
+        expectedRowVersion: 0
+        reasonCode: SIMULATION_BOOTSTRAP
+        adapterCode: MOCK_PMS
+        sourceCode: PMS
+        enabled: true
+        fixtureScenarioCode: BASELINE
+        pollIntervalMinutes: 60
+    SimulationRunRequest:
+      allOf:
+        - {$ref: '#/components/schemas/CommandRequest'}
+        - type: object
+          additionalProperties: false
+          required: [expectedRowVersion, reasonCode, scenarioCode]
+          properties:
+            expectedRowVersion: {type: integer, const: 0}
+            reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+            scenarioCode:
+              type: string
+              enum: [BASELINE, INVENTORY_MISMATCH, SOURCE_UNAVAILABLE, LATE_BRIEF_REPLAY]
+    InitializeSimulationHotelRequest:
+      allOf:
+        - {$ref: '#/components/schemas/CommandRequest'}
+        - type: object
+          additionalProperties: false
+          required:
+            - expectedRowVersion
+            - reasonCode
+            - tenantCode
+            - tenantDisplayName
+            - hotelCode
+            - hotelDisplayName
+            - timezone
+          properties:
+            expectedRowVersion: {type: integer, minimum: 0}
+            reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+            tenantCode: {type: string, maxLength: 64}
+            tenantDisplayName: {type: string, maxLength: 160}
+            hotelCode: {type: string, maxLength: 64}
+            hotelDisplayName: {type: string, maxLength: 160}
+            timezone: {type: string, maxLength: 64}
+    SecretStatus:
+      type: object
+      additionalProperties: false
+      required: [configured, authorizationStatus]
+      properties:
+        configured: {type: boolean}
+        fingerprint: {type: string, nullable: true}
+        authorizationStatus: {type: string}
+        lastCheckedAt: {type: string, format: date-time, nullable: true}

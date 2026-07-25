@@ -1,0 +1,43 @@
+sfgzt.cn {
+	redir https://www.sfgzt.cn{uri} 308
+}
+
+www.sfgzt.cn {
+	encode zstd gzip
+
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	header {
+		-Server
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	# The Pilot browser sends the bearer token in this non-standard header.
+	# Convert it only when present, so normal Authorization clients still work.
+	@api_with_pilot_bearer {
+		path /api /api/*
+		header X-Hotel-AI-Authorization *
+	}
+	handle @api_with_pilot_bearer {
+		reverse_proxy 127.0.0.1:18080 {
+			header_up Authorization {http.request.header.X-Hotel-AI-Authorization}
+			header_up -X-Hotel-AI-Authorization
+		}
+	}
+
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:18080
+	}
+
+	handle {
+		root * /srv/www/hotel-ai-os/current
+		try_files {path} /index.html
+		file_server
+	}
+}

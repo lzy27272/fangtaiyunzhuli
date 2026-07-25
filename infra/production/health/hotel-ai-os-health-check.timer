@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Hotel AI OS daily health check
+
+[Timer]
+OnCalendar=*-*-* 03:35:00 Asia/Shanghai
+RandomizedDelaySec=10m
+Persistent=true
+Unit=hotel-ai-os-health-check.service
+
+[Install]
+WantedBy=timers.target

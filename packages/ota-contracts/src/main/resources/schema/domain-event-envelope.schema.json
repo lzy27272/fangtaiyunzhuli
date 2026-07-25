@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.sifangguan.cn/ota/v1/domain-event-envelope.schema.json",
+  "title": "OTA Domain Event Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId", "eventType", "schemaVersion", "sourceSystem", "occurredAt",
+    "tenantRef", "hotelRef", "aggregateId", "aggregateVersion",
+    "correlationId", "causationId", "idempotencyKey", "payload"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": { "type": "string", "minLength": 1 },
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "sourceSystem": {
+      "enum": ["PMS", "CTRIP", "MEITUAN", "OFFICIAL_EXPORT", "OTA_STANDALONE"]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "tenantRef": { "type": "string", "format": "uuid" },
+    "hotelRef": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 1 },
+    "correlationId": { "type": "string", "minLength": 1 },
+    "causationId": { "type": ["string", "null"] },
+    "idempotencyKey": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" }
+  }
+}

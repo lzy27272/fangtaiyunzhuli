@@ -1,0 +1,9 @@
+[ {
+  "postgres_version" : "PostgreSQL 14.22, compiled by Visual C++ build 1944, 64-bit",
+  "flyway_version" : "22",
+  "successful_migrations" : 22,
+  "runtime_role" : "hotel_ai_os_app",
+  "runtime_role_superuser" : false,
+  "runtime_role_bypass_rls" : false,
+  "forced_rls_tables" : 89
+} ]

@@ -1,0 +1,2 @@
+"mapping_id","hotel_name","ota_source","external_hotel_id_or_alias","ota_product_id","ota_product_name","meal_or_package","pms_physical_room_type_id","pms_physical_room_type_name","inventory_pool_id","inventory_rule","valid_from","valid_to","source_evidence_reference","hotel_reviewer","reviewed_at","status","reviewer_note"
+"DELETE_THIS_GUIDANCE_ROW","","","","","","","","","","SHARED_PHYSICAL_INVENTORY_NO_SUM","","","","","","PENDING","每个OTA产品单独一行；多个套餐、含早/无早可以映射同一实体房型，但库存永不相加"
