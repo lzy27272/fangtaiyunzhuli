@@ -152,6 +152,7 @@ export interface ReportSourceView {
   calculationRole: CalculationRole
   pollIntervalMinutes: number
   credentialAlias: string
+  requestPayloadJson: string
   cookieConfigured: boolean
   cookieUpdatedAt: string | null
   enabled: boolean
@@ -172,6 +173,7 @@ export interface ReportSourceInput {
   calculationRole: CalculationRole
   pollIntervalMinutes: number
   credentialAlias: string
+  requestPayloadJson: string
   cookieUpdate: ReportSourceCookieUpdate
   enabled: boolean
   rowVersion: number
@@ -305,6 +307,49 @@ export interface OutboxPreview {
   deliveryStatus: string
   bodyPreview: string
 }
+
+export interface WeComDeliveryView {
+  deliveryId: string
+  messageKey: string
+  hotelId: string
+  businessDate: string
+  cutoffAt: string
+  attemptedAt: string
+  completedAt: string | null
+  deliveryStatus: 'SENDING' | 'DELIVERED' | 'REJECTED' | 'AMBIGUOUS'
+  reasonCode: string
+  endpointSha256: string
+  messageSha256: string
+  httpStatus: number | null
+  weComCode: number | null
+  automaticRetryAttempted: false
+  partCount?: number
+  deliveredPartCount?: number
+  parts?: Array<{
+    partNo: number
+    messageSha256: string
+    deliveryStatus: 'DELIVERED' | 'REJECTED' | 'AMBIGUOUS'
+    reasonCode: string
+    httpStatus: number | null
+    weComCode: number | null
+  }>
+  bodyPreview: string
+}
+
+export interface WeComConfigView {
+  enabled: boolean
+  sendMinute: 6
+  deliveryMode: 'UAT_SANITIZED_AT_ALL'
+  webhookConfigured: boolean
+  endpointSha256: string | null
+  updatedAt: string | null
+  lastDelivery: WeComDeliveryView | null
+}
+
+export type WeComWebhookUpdate =
+  | { action: 'KEEP' }
+  | { action: 'CLEAR' }
+  | { action: 'REPLACE'; value: string }
 
 export interface TenantView {
   tenantId: string
@@ -917,6 +962,36 @@ export function loadIncidents(context: HotelContext): Promise<IncidentView[]> {
 
 export function loadOutboxPreview(context: HotelContext): Promise<OutboxPreview[]> {
   return authenticatedRequest(scopedPath(context, '/outbox-preview'))
+}
+
+export function loadWeComConfig(
+  context: HotelContext,
+): Promise<WeComConfigView> {
+  return authenticatedRequest(scopedPath(context, '/wecom-config'))
+}
+
+export function saveWeComConfig(
+  context: HotelContext,
+  enabled: boolean,
+  webhookUpdate: WeComWebhookUpdate,
+): Promise<WeComConfigView> {
+  return postCommand<WeComConfigView>(
+    scopedPath(context, '/wecom-config'),
+    {
+      enabled,
+      webhookUpdate,
+      reasonCode: 'UPDATE_WECOM_UAT_AUTOMATION',
+    },
+  )
+}
+
+export function sendWeComTestDelivery(
+  context: HotelContext,
+): Promise<WeComDeliveryView> {
+  return postCommand<WeComDeliveryView>(
+    scopedPath(context, '/wecom-test-deliveries'),
+    { reasonCode: 'SEND_WECOM_UAT_TEST' },
+  )
 }
 
 export function triggerSimulationRun(

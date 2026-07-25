@@ -18,6 +18,10 @@ const SUPPORTED_REPORT_PATHS = new Map([
     '/hotelpms/api/v1/report/lion/manager/workbench/room',
     'PHYSICAL_INVENTORY',
   ],
+  [
+    '/hotelpms/api/v2/report/roomState/batchSearchBaseRoomForcasting',
+    'ROOM_FORECAST',
+  ],
 ])
 
 const finiteNumber = (value) => {
@@ -148,6 +152,78 @@ const requestContract = (source, cookie, reportDate) => {
       },
     }
   }
+  if (contract === 'ROOM_FORECAST') {
+    let configuredPayload
+    try {
+      configuredPayload = JSON.parse(source.requestPayloadJson ?? '')
+    } catch {
+      throw new Error('REQUEST_PAYLOAD_INVALID')
+    }
+    if (
+      !configuredPayload
+      || typeof configuredPayload !== 'object'
+      || Array.isArray(configuredPayload)
+      || !Array.isArray(configuredPayload.roomTypes)
+      || configuredPayload.roomTypes.length < 1
+      || configuredPayload.roomTypes.length > 100
+    ) {
+      throw new Error('REQUEST_PAYLOAD_INVALID')
+    }
+    const roomTypes = configuredPayload.roomTypes.map((roomType) => {
+      if (
+        !roomType
+        || typeof roomType !== 'object'
+        || typeof roomType.id !== 'string'
+        || !/^[A-Za-z0-9_-]{1,40}$/.test(roomType.id)
+        || typeof roomType.roomTypeName !== 'string'
+        || roomType.roomTypeName.trim().length < 1
+        || roomType.roomTypeName.trim().length > 80
+      ) {
+        throw new Error('REQUEST_PAYLOAD_INVALID')
+      }
+      return {
+        id: roomType.id,
+        roomTypeName: roomType.roomTypeName.trim(),
+        description: null,
+      }
+    })
+    const beginHour =
+      typeof configuredPayload.beginHour === 'string'
+      && /^\d{2}:\d{2}$/.test(configuredPayload.beginHour)
+        ? configuredPayload.beginHour
+        : '18:00'
+    const channelKey =
+      typeof configuredPayload.channelKey === 'string'
+      && /^[A-Za-z0-9_-]{1,40}$/.test(configuredPayload.channelKey)
+        ? configuredPayload.channelKey
+        : 'Hotel'
+    return {
+      contract,
+      endpoint,
+      headers: {
+        ...commonHeaders,
+        'Cache-Control': 'no-cache',
+        'Content-Type': 'application/json;charset=UTF-8',
+        Origin: endpoint.origin,
+        Pragma: 'no-cache',
+        Referer: `${endpoint.origin}/`,
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+          + 'AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36',
+        'hotelpms-client-id':
+          requiredCookieValue(cookie, '_lxsdk_cuid'),
+        'hotelpms-platform': 'pc',
+        'm-appkey': 'fe_com.sankuai.hotelpms.fe.web',
+      },
+      body: {
+        roomTypes,
+        beginHour,
+        channelKey,
+        beginDate: `${reportDate} 00:00:00`,
+        endDate: `${addDays(reportDate, 29)} 00:00:00`,
+      },
+    }
+  }
   return {
     contract,
     endpoint,
@@ -216,6 +292,7 @@ const safeErrorCode = (error) => {
     'PMS_CONTEXT_MISSING',
     'REPORT_CODE_REJECTED',
     'REPORT_DATA_INVALID',
+    'REQUEST_PAYLOAD_INVALID',
     'RESPONSE_JSON_INVALID',
     'RESPONSE_TOO_LARGE',
     'TIMEOUT',
@@ -283,6 +360,7 @@ const detectChannel = (row) => {
   if (/(?:携程|ctrip|trip\.com)/i.test(text)) return 'CTRIP'
   if (/(?:美团|meituan)/i.test(text)) return 'MEITUAN'
   if (/(?:飞猪|fliggy|alitrip)/i.test(text)) return 'FEIZHU'
+  if (/(?:抖音|douyin)/i.test(text)) return 'DOUYIN'
   return 'UNKNOWN'
 }
 
@@ -394,12 +472,77 @@ const physicalInventoryState = (root, secretKey) => {
     })
 }
 
+const roomForecastState = (root, reportDate, secretKey) => {
+  const rows = root?.data
+  if (!Array.isArray(rows)) throw new Error('REPORT_DATA_INVALID')
+  return rows
+    .filter(
+      (row) =>
+        row
+        && typeof row === 'object'
+        && !Array.isArray(row)
+        && row.isAggregation !== true
+        && typeof row.roomTypeName === 'string'
+        && Array.isArray(row.details),
+    )
+    .map((row) => {
+      const displayName = row.roomTypeName.trim().slice(0, 80)
+      const detail = row.details.find(
+        (item) =>
+          typeof item?.date === 'string'
+          && item.date.startsWith(reportDate),
+      )
+      if (!detail) return null
+      const code = hmac(secretKey, `room-type:${displayName}`, 16)
+      return {
+        inventoryPoolId: `PMS-${code}`,
+        physicalRoomTypeCode: `PMS-${code}`,
+        displayName,
+        physicalRoomCount: finiteNumber(row.totalCount),
+        primaryAvailableRooms: finiteNumber(detail.availableCount),
+        estimatedRoomNights: finiteNumber(detail.occupationCount),
+        estimatedRoomFee: finiteNumber(detail.roomRent),
+        estimatedAdr: finiteNumber(detail.adr),
+        forecastRevPar: finiteNumber(detail.revPar),
+        forecastOverbookingCount: finiteNumber(detail.overbookingCount),
+        forecastCheckinCount: finiteNumber(detail.checkinCount),
+        forecastOrderCount: finiteNumber(detail.orderCount),
+        forecastMaintainingCount: finiteNumber(detail.maintainingCount),
+      }
+    })
+    .filter(Boolean)
+}
+
+const mergePhysicalInventory = (physicalRows, forecastRows) => {
+  const merged = new Map(
+    physicalRows.map((room) => [room.physicalRoomTypeCode, room]),
+  )
+  for (const forecast of forecastRows) {
+    const current = merged.get(forecast.physicalRoomTypeCode)
+    merged.set(
+      forecast.physicalRoomTypeCode,
+      current
+        ? {
+            ...current,
+            ...forecast,
+            physicalRoomCount:
+              forecast.physicalRoomCount ?? current.physicalRoomCount,
+            primaryAvailableRooms: forecast.primaryAvailableRooms,
+          }
+        : forecast,
+    )
+  }
+  return [...merged.values()]
+}
+
 const sourceCodeFor = (contract, sourceId) => {
   const prefix =
     contract === 'ORDER_DETAIL'
       ? 'REPORT_ORDER'
       : contract === 'FUTURE_OVERVIEW'
         ? 'REPORT_REVENUE'
+        : contract === 'ROOM_FORECAST'
+          ? 'REPORT_ROOM_FORECAST'
         : contract === 'PHYSICAL_INVENTORY'
           ? 'REPORT_INVENTORY'
           : 'REPORT_UNKNOWN'
@@ -443,7 +586,7 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
   }
 
   const byChannel = Object.fromEntries(
-    ['CTRIP', 'MEITUAN', 'FEIZHU', 'UNKNOWN']
+    ['CTRIP', 'MEITUAN', 'FEIZHU', 'DOUYIN', 'UNKNOWN']
       .map((channel) => [channel, emptyChannelDelta()]),
   )
   const previousOrders = new Map(
@@ -709,7 +852,9 @@ export const collectLiveReports = async ({
             ? orderState(root, reportDate, secretKey)
             : contract === 'FUTURE_OVERVIEW'
               ? overviewState(root, reportDate)
-              : physicalInventoryState(root, secretKey)
+              : contract === 'PHYSICAL_INVENTORY'
+                ? physicalInventoryState(root, secretKey)
+                : roomForecastState(root, reportDate, secretKey)
         return {
           source,
           sourceCode: sourceCodeFor(contract, source.sourceId),
@@ -746,6 +891,9 @@ export const collectLiveReports = async ({
   const physicalReport = successful.find(
     (source) => source.contract === 'PHYSICAL_INVENTORY',
   )
+  const forecastReport = successful.find(
+    (source) => source.contract === 'ROOM_FORECAST',
+  )
   const hasCore =
     Boolean(orderReport) && Boolean(overviewReport) && Boolean(physicalReport)
   const snapshot = {
@@ -773,7 +921,11 @@ export const collectLiveReports = async ({
     })),
     orders: orderReport?.parsed ?? [],
     overview: overviewReport?.parsed ?? null,
-    physicalInventory: physicalReport?.parsed ?? [],
+    physicalInventory: mergePhysicalInventory(
+      physicalReport?.parsed ?? [],
+      forecastReport?.parsed ?? [],
+    ),
+    roomForecast: forecastReport?.parsed ?? [],
   }
   snapshot.hourlyDelta = hourlyDeltaFor(
     snapshot,

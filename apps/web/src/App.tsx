@@ -58,6 +58,7 @@ import { useHashRoute } from './app/useHashRoute'
 import { PageAccessBoundary } from './shared/PageAccessBoundary'
 import { WecomTaskEntryPage } from './features/wecom/WecomTaskEntry'
 import { buildAppHashLocation, consumeWecomTaskEntry } from './features/wecom/entryRoute'
+import { WecomStoreWebhookConfiguration } from './features/wecom/WecomStoreWebhookConfiguration'
 
 const DailyReportFeature = lazy(() => import('./features/dailyReports/DailyReportRoutes').then((module) => ({ default: module.DailyReportRoutes })))
 const DailyReportTemplateFeature = lazy(() => import('./features/dailyReportTemplates/DailyReportTemplateRoutes').then((module) => ({ default: module.DailyReportTemplateRoutes })))
@@ -80,6 +81,7 @@ const navigation: Array<{ id: AppRouteId; sectionId?: string; label: string; ico
   { id: 'templates', label: '集团模板配置', icon: '▧', group: '系统配置', permissions: ['template.manage'] },
   { id: 'daily-report-templates', label: '日报模板中心', icon: '▤', permissions: [permissionCodes.dailyReportTemplate.read, permissionCodes.dailyReportTemplate.edit, permissionCodes.dailyReportTemplate.publish] },
   { id: 'organization', label: '组织与权限', icon: '⚙', group: '系统配置', permissions: ['org.read'] },
+  { id: 'wecom-webhooks', label: '企业微信 Webhook', icon: '◉', group: '系统配置', permissions: ['org.manage'] },
 ]
 
 const roleStorageKey = 'hotel-ai-os-role:v1'
@@ -764,6 +766,7 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
       case 'notifications': legacyPage = <Notifications identity={activeIdentity} routeParams={routeParams} go={navigate} />; break
       case 'templates': legacyPage = <EnterpriseTemplateCenter identity={activeIdentity} permissions={me.data.permissions} />; break
       case 'organization': legacyPage = <OrganizationCenter identity={activeIdentity} permissions={me.data.permissions} />; break
+      case 'wecom-webhooks': legacyPage = <WecomStoreWebhookConfiguration identity={activeIdentity} permissions={me.data.permissions} />; break
     }
     const routeAccess = navigation.find((item) => item.id === view)
     const contextAllowed = (view !== 'my-work' || Boolean(activeIdentity.assignmentId)) &&

@@ -7,6 +7,7 @@ const sessionSource = await readFile(new URL('../src/auth/session.ts', import.me
 const authApiSource = await readFile(new URL('../src/api/auth.ts', import.meta.url), 'utf8')
 const businessApiSource = await readFile(new URL('../src/api/business.ts', import.meta.url), 'utf8')
 const monitorSource = await readFile(new URL('../src/pages/MonitorPage.tsx', import.meta.url), 'utf8')
+const historySource = await readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8')
 const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx', import.meta.url), 'utf8')
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
 const connectionSource = await readFile(new URL('../src/pages/ConnectionConfigPage.tsx', import.meta.url), 'utf8')
@@ -21,16 +22,30 @@ test('Sprint 0 web does not persist access tokens in browser storage', () => {
   assert.equal(sessionSource.includes('sessionStorage'), false)
 })
 
-test('pilot shell exposes four report-fusion pages and blocks WeCom delivery', () => {
+test('pilot shell exposes four report-fusion pages and controlled WeCom UAT delivery', () => {
   assert.match(appSource, /ReportSourceConfigPage/)
   assert.match(appSource, /MonitorPage/)
   assert.match(appSource, /MappingTargetPage/)
   assert.match(appSource, /HistoryPage/)
   assert.match(appSource, /LOCAL REVIEW · REPORT FUSION/)
   assert.match(appSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canAdminConfigure\}/)
-  assert.match(appSource, /报表只读采集已启用 · 企微自动推送禁用/)
+  assert.match(appSource, /报表只读采集已启用 · 企微UAT推送可配置/)
+  assert.match(appSource, /HistoryPage[\s\S]*canConfigure=\{canAdminConfigure\}/)
   assert.match(monitorSource, /triggerLiveCollection/)
-  assert.match(monitorSource, /本次未触发企微/)
+  assert.doesNotMatch(monitorSource, /confirmBusinessDateAndCollect/)
+  assert.doesNotMatch(monitorSource, /loadBusinessDayControl|saveBusinessDayControl/)
+  assert.doesNotMatch(monitorSource, /type="date"/)
+  assert.match(monitorSource, /collectNow\('automatic'\)/)
+  assert.match(monitorSource, /重新采集已配置报表/)
+  assert.match(monitorSource, /本次仅采集；企微由06分调度处理/)
+  assert.match(historySource, /type="password"/)
+  assert.match(historySource, /saveWeComConfig/)
+  assert.match(historySource, /sendWeComTestDelivery/)
+  assert.match(historySource, /@所有人/)
+  assert.doesNotMatch(
+    historySource,
+    /qyapi\.weixin\.qq\.com[^<]*key=[A-Za-z0-9-]{20}/,
+  )
 })
 
 test('cookie-authenticated logout forwards a double-submit CSRF token', () => {

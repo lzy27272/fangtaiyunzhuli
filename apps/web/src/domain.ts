@@ -13,6 +13,7 @@ export type ViewId =
   | 'notifications'
   | 'templates'
   | 'organization'
+  | 'wecom-webhooks'
 
 export type RouteParams = Record<string, string>
 export type NavigationParams = Record<string, string | undefined>

@@ -75,6 +75,10 @@ app:
       allow-sanitized-image-fallback: ${ATTACHMENT_SCAN_ALLOW_SANITIZED_IMAGE_FALLBACK:false}
   wecom:
     enabled: ${WECOM_ENABLED:false}
+    # Independent of WECOM_ENABLED: this protects store robot addresses at rest.
+    # It must be a Base64-encoded 32-byte value and is never packaged in source.
+    group-robot:
+      encryption-key: ${WECOM_GROUP_ROBOT_ENCRYPTION_KEY:}
     tenant-id: ${WECOM_TENANT_ID:}
     corp-id: ${WECOM_CORP_ID:}
     agent-id: ${WECOM_AGENT_ID:}

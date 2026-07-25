@@ -20,6 +20,12 @@ import {
   loadSnapshotStore,
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
+import { createReportMonitorWeComPayloads } from './wecom/src/report-monitor-brief.mjs'
+import {
+  fingerprintWeComWebhook,
+  sendWeComGroupRobotMessage,
+  sha256,
+} from './wecom/src/wecom-group-robot.mjs'
 
 const host = '127.0.0.1'
 const port = Number.parseInt(process.env.OTA_REVIEW_API_PORT ?? '8091', 10)
@@ -40,6 +46,15 @@ const businessDayControlPath = dataPath
   : null
 const hotSellingRoomTypePath = dataPath
   ? join(dirname(dataPath), 'hot-selling-room-types.json')
+  : null
+const weComConfigPath = dataPath
+  ? join(dirname(dataPath), 'wecom-configs.json')
+  : null
+const weComSecretPath = dataPath
+  ? join(dirname(dataPath), 'wecom-webhook-secrets.json')
+  : null
+const weComDeliveryPath = dataPath
+  ? join(dirname(dataPath), 'wecom-deliveries.json')
   : null
 
 if (
@@ -137,6 +152,10 @@ const liveCollectionLocks = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
 const businessDayControlsByHotel = new Map()
 const hotSellingRoomTypesByHotel = new Map()
+const weComConfigsByHotel = new Map()
+const weComSecretsByHotel = new Map()
+const weComDeliveriesByKey = new Map()
+const weComDeliveryLocks = new Map()
 
 const defaultReportSources = () => [
   {
@@ -147,6 +166,7 @@ const defaultReportSources = () => [
     calculationRole: 'PRIMARY_CALCULATION',
     pollIntervalMinutes: 5,
     credentialAlias: 'REPORT_READER_ORDERS',
+    requestPayloadJson: '',
     cookieConfigured: false,
     cookieUpdatedAt: null,
     enabled: true,
@@ -162,6 +182,7 @@ const defaultReportSources = () => [
     calculationRole: 'PRIMARY_CALCULATION',
     pollIntervalMinutes: 5,
     credentialAlias: 'REPORT_READER_INVENTORY',
+    requestPayloadJson: '',
     cookieConfigured: false,
     cookieUpdatedAt: null,
     enabled: true,
@@ -185,6 +206,18 @@ const allowedCalculationRoles = new Set([
 const allowedPollIntervals = new Set([5, 10, 15, 30, 60])
 const sensitiveQueryKey =
   /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
+const requestPayloadContainsSensitiveKey = (value, depth = 0) => {
+  if (depth > 12 || value === null || typeof value !== 'object') return false
+  if (Array.isArray(value)) {
+    return value.some((item) =>
+      requestPayloadContainsSensitiveKey(item, depth + 1))
+  }
+  return Object.entries(value).some(
+    ([key, child]) =>
+      sensitiveQueryKey.test(key)
+      || requestPayloadContainsSensitiveKey(child, depth + 1),
+  )
+}
 
 const normalizeReportSources = (input) => {
   if (!Array.isArray(input) || input.length > 20) {
@@ -192,6 +225,29 @@ const normalizeReportSources = (input) => {
   }
   const normalized = input.map((source) => {
     const cookieUpdate = source?.cookieUpdate ?? { action: 'KEEP' }
+    const requestPayloadJson =
+      typeof source?.requestPayloadJson === 'string'
+        ? source.requestPayloadJson.trim()
+        : ''
+    let requestPayload = null
+    if (requestPayloadJson) {
+      if (requestPayloadJson.length > 20_000) {
+        throw new Error('REPORT_SOURCE_REQUEST_PAYLOAD_INVALID')
+      }
+      try {
+        requestPayload = JSON.parse(requestPayloadJson)
+      } catch {
+        throw new Error('REPORT_SOURCE_REQUEST_PAYLOAD_INVALID')
+      }
+      if (
+        requestPayload === null
+        || typeof requestPayload !== 'object'
+        || Array.isArray(requestPayload)
+        || requestPayloadContainsSensitiveKey(requestPayload)
+      ) {
+        throw new Error('REPORT_SOURCE_REQUEST_PAYLOAD_INVALID')
+      }
+    }
     if (
       source === null
       || typeof source !== 'object'
@@ -247,6 +303,8 @@ const normalizeReportSources = (input) => {
       pollIntervalMinutes: source.pollIntervalMinutes,
       credentialAlias: source.credentialAlias,
       enabled: source.enabled,
+      requestPayloadJson:
+        requestPayload === null ? '' : JSON.stringify(requestPayload),
       validationStatus: 'FORMAT_VALID',
       rowVersion: source.rowVersion + 1,
     }
@@ -448,7 +506,7 @@ if (hotSellingRoomTypePath && existsSync(hotSellingRoomTypePath)) {
           config.roomTypeCodes.filter(
             (code) =>
               typeof code === 'string'
-              && /^[A-Z0-9-]{3,80}$/.test(code),
+              && /^[A-Za-z0-9-]{3,80}$/.test(code),
           ),
         ),
       ].slice(0, 30)
@@ -483,6 +541,150 @@ const persistHotSellingRoomTypes = () => {
     { encoding: 'utf8', mode: 0o600 },
   )
   renameSync(temporaryPath, hotSellingRoomTypePath)
+}
+
+const weComSecretScope = (hotelId) => `wecom-webhook:${hotelId}`
+
+const weComConfigFor = (hotelId) => {
+  const config = weComConfigsByHotel.get(hotelId) ?? {
+    enabled: false,
+    sendMinute: 6,
+    endpointSha256: null,
+    updatedAt: null,
+  }
+  const secret = weComSecretsByHotel.get(hotelId)
+  const deliveries = [...weComDeliveriesByKey.values()]
+    .filter((delivery) => delivery.hotelId === hotelId)
+    .sort((left, right) =>
+      String(right.attemptedAt).localeCompare(String(left.attemptedAt)))
+  return {
+    enabled: config.enabled === true,
+    sendMinute: 6,
+    deliveryMode: 'UAT_SANITIZED_AT_ALL',
+    webhookConfigured: Boolean(secret),
+    endpointSha256:
+      secret ? config.endpointSha256 ?? null : null,
+    updatedAt: config.updatedAt ?? null,
+    lastDelivery: deliveries[0] ?? null,
+  }
+}
+
+const persistWeComConfigs = () => {
+  if (!weComConfigPath) return
+  mkdirSync(dirname(weComConfigPath), { recursive: true })
+  const temporaryPath = `${weComConfigPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(Object.fromEntries(weComConfigsByHotel), null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, weComConfigPath)
+}
+
+const persistWeComSecrets = () => {
+  if (!weComSecretPath) return
+  mkdirSync(dirname(weComSecretPath), { recursive: true })
+  const temporaryPath = `${weComSecretPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(Object.fromEntries(weComSecretsByHotel), null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, weComSecretPath)
+}
+
+const persistWeComDeliveries = () => {
+  if (!weComDeliveryPath) return
+  mkdirSync(dirname(weComDeliveryPath), { recursive: true })
+  const deliveries = [...weComDeliveriesByKey.values()]
+    .sort((left, right) =>
+      String(left.attemptedAt).localeCompare(String(right.attemptedAt)))
+    .slice(-200)
+  const temporaryPath = `${weComDeliveryPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(deliveries, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, weComDeliveryPath)
+}
+
+if (weComConfigPath && existsSync(weComConfigPath)) {
+  try {
+    const persisted = JSON.parse(readFileSync(weComConfigPath, 'utf8'))
+    for (const [hotelId, config] of Object.entries(persisted)) {
+      if (
+        !hotels.some((hotel) => hotel.hotelId === hotelId)
+        || !config
+        || typeof config !== 'object'
+      ) {
+        continue
+      }
+      weComConfigsByHotel.set(hotelId, {
+        enabled: config.enabled === true,
+        sendMinute: 6,
+        endpointSha256:
+          typeof config.endpointSha256 === 'string'
+          && /^[a-f0-9]{64}$/i.test(config.endpointSha256)
+            ? config.endpointSha256.toLowerCase()
+            : null,
+        updatedAt:
+          typeof config.updatedAt === 'string' ? config.updatedAt : null,
+      })
+    }
+  } catch {
+    process.stderr.write('REVIEW_WECOM_CONFIG_STORE_IGNORED\n')
+  }
+}
+
+if (weComSecretPath && existsSync(weComSecretPath)) {
+  try {
+    const persisted = JSON.parse(readFileSync(weComSecretPath, 'utf8'))
+    for (const [hotelId, record] of Object.entries(persisted)) {
+      if (!hotels.some((hotel) => hotel.hotelId === hotelId)) continue
+      const webhook = decryptCookie(
+        record,
+        cookieSecretKey,
+        weComSecretScope(hotelId),
+      )
+      const fingerprint = fingerprintWeComWebhook(webhook)
+      const config = weComConfigsByHotel.get(hotelId)
+      if (config?.endpointSha256 && config.endpointSha256 !== fingerprint) {
+        continue
+      }
+      weComSecretsByHotel.set(hotelId, record)
+      weComConfigsByHotel.set(hotelId, {
+        ...(config ?? {
+          enabled: false,
+          sendMinute: 6,
+          updatedAt: null,
+        }),
+        endpointSha256: fingerprint,
+      })
+    }
+  } catch {
+    process.stderr.write('REVIEW_WECOM_SECRET_STORE_IGNORED\n')
+  }
+}
+
+if (weComDeliveryPath && existsSync(weComDeliveryPath)) {
+  try {
+    const persisted = JSON.parse(readFileSync(weComDeliveryPath, 'utf8'))
+    if (Array.isArray(persisted)) {
+      for (const delivery of persisted.slice(-200)) {
+        if (
+          delivery
+          && typeof delivery === 'object'
+          && typeof delivery.messageKey === 'string'
+          && typeof delivery.hotelId === 'string'
+        ) {
+          weComDeliveriesByKey.set(delivery.messageKey, delivery)
+        }
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_WECOM_DELIVERY_STORE_IGNORED\n')
+  }
 }
 
 const safeEqual = (left, right) => {
@@ -842,8 +1044,19 @@ const scheduledCollectionTick = async () => {
   const { hourKey, minute } = shanghaiHour()
   if (minute > 5) return
   for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+    if (
+      !businessDayControlFor(hotel.hotelId).businessDate
+      || Object.keys(secretsForHotel(hotel.hotelId)).length === 0
+    ) {
+      continue
+    }
     const latest = (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
-    if (latest?.observedAt?.startsWith(hourKey)) continue
+    if (
+      latest?.observedAt?.startsWith(hourKey)
+      && latest.completeness === 'COMPLETE'
+    ) {
+      continue
+    }
     try {
       await collectLiveFor(hotel.hotelId)
       process.stdout.write(
@@ -865,28 +1078,243 @@ const scheduledCollectionTick = async () => {
   }
 }
 
+const snapshotHourKey = (snapshot) => {
+  const match = String(snapshot?.observedAt ?? '').match(
+    /^(\d{4}-\d{2}-\d{2}T\d{2}):(\d{2})/,
+  )
+  if (!match) return null
+  const minute = Number(match[2])
+  if (!Number.isInteger(minute) || minute > 5) return null
+  return match[1]
+}
+
+const deliverWeComSnapshot = async ({
+  hotelId,
+  snapshot,
+  messageKey,
+  messagePrefix,
+  allowDisabled = false,
+}) => {
+  const existing = weComDeliveriesByKey.get(messageKey)
+  if (existing) return existing
+  const running = weComDeliveryLocks.get(messageKey)
+  if (running) return running
+
+  const operation = (async () => {
+    const config = weComConfigFor(hotelId)
+    const encryptedSecret = weComSecretsByHotel.get(hotelId)
+    if (
+      (!config.enabled && !allowDisabled)
+      || !encryptedSecret
+      || !config.endpointSha256
+    ) {
+      throw new Error('WECOM_DELIVERY_NOT_CONFIGURED')
+    }
+    const webhook = decryptCookie(
+      encryptedSecret,
+      cookieSecretKey,
+      weComSecretScope(hotelId),
+    )
+    const monitor = monitorFromSnapshot(
+      snapshot,
+      selectedHotel(hotelId),
+      null,
+      hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+    )
+    const payloads = createReportMonitorWeComPayloads(monitor, {
+      messagePrefix,
+      snapshot,
+      briefId: snapshot.collectionRunId,
+    })
+    const messageSha256 = sha256(
+      payloads.map((payload) => payload.text.content).join('\n---\n'),
+    )
+    const attemptedAt = new Date().toISOString()
+    const delivery = {
+      deliveryId: randomUUID(),
+      messageKey,
+      hotelId,
+      businessDate: snapshot.businessDate,
+      cutoffAt: snapshot.observedAt,
+      attemptedAt,
+      completedAt: null,
+      deliveryStatus: 'SENDING',
+      reasonCode: 'WECOM_BUNDLE_SENDING',
+      endpointSha256: config.endpointSha256,
+      messageSha256,
+      httpStatus: null,
+      weComCode: null,
+      automaticRetryAttempted: false,
+      partCount: payloads.length,
+      deliveredPartCount: 0,
+      parts: [],
+      bodyPreview:
+        payloads.map((payload) => payload.text.content).join('\n\n——\n\n'),
+    }
+    weComDeliveriesByKey.set(messageKey, delivery)
+    persistWeComDeliveries()
+    for (let index = 0; index < payloads.length; index += 1) {
+      let result
+      try {
+        result = await sendWeComGroupRobotMessage({
+          rawWebhook: webhook,
+          payload: payloads[index],
+          expectedEndpointSha256: config.endpointSha256,
+          fetchImpl: globalThis.fetch,
+          networkAuthorized: true,
+        })
+      } catch (error) {
+        result = {
+          deliveryStatus: 'REJECTED',
+          reasonCode:
+            typeof error?.reasonCode === 'string'
+              ? error.reasonCode
+              : 'WECOM_SEND_FAILED_CLOSED',
+          endpointSha256: config.endpointSha256,
+          httpStatus: null,
+          weComCode: null,
+        }
+      }
+      delivery.parts.push({
+        partNo: index + 1,
+        messageSha256: sha256(payloads[index].text.content),
+        deliveryStatus: result.deliveryStatus,
+        reasonCode: result.reasonCode,
+        httpStatus: result.httpStatus,
+        weComCode: result.weComCode,
+      })
+      if (result.deliveryStatus === 'DELIVERED') {
+        delivery.deliveredPartCount += 1
+      }
+      delivery.httpStatus = result.httpStatus
+      delivery.weComCode = result.weComCode
+      delivery.reasonCode = result.reasonCode
+      persistWeComDeliveries()
+      if (result.deliveryStatus !== 'DELIVERED') break
+    }
+    const hasAmbiguous = delivery.parts.some(
+      (part) => part.deliveryStatus === 'AMBIGUOUS',
+    )
+    const allDelivered =
+      delivery.parts.length === payloads.length
+      && delivery.parts.every(
+        (part) => part.deliveryStatus === 'DELIVERED',
+      )
+    delivery.deliveryStatus =
+      allDelivered ? 'DELIVERED' : hasAmbiguous ? 'AMBIGUOUS' : 'REJECTED'
+    delivery.reasonCode =
+      allDelivered
+        ? 'WECOM_BUNDLE_DELIVERED'
+        : hasAmbiguous
+          ? 'WECOM_BUNDLE_RESULT_UNKNOWN'
+          : 'WECOM_BUNDLE_REJECTED'
+    delivery.completedAt = new Date().toISOString()
+    persistWeComDeliveries()
+    process.stdout.write(
+      `${JSON.stringify({
+        event: 'WECOM_DELIVERY_COMPLETED',
+        hotelId,
+        messageKey,
+        deliveryStatus: delivery.deliveryStatus,
+        reasonCode: delivery.reasonCode,
+      })}\n`,
+    )
+    return delivery
+  })()
+  weComDeliveryLocks.set(messageKey, operation)
+  try {
+    return await operation
+  } finally {
+    weComDeliveryLocks.delete(messageKey)
+  }
+}
+
+const scheduledWeComDeliveryTick = async () => {
+  const { hourKey, minute } = shanghaiHour()
+  if (minute < 6) return
+  for (const hotel of hotels) {
+    const config = weComConfigFor(hotel.hotelId)
+    if (!config.enabled || !config.webhookConfigured) continue
+    const candidates = (liveSnapshotStore[hotel.hotelId] ?? [])
+      .map((snapshot) => ({
+        snapshot,
+        snapshotHour: snapshotHourKey(snapshot),
+      }))
+      .filter((item) => item.snapshotHour)
+      .sort((left, right) =>
+        left.snapshot.observedAt.localeCompare(right.snapshot.observedAt))
+      .filter((item) => {
+        const messageKey =
+          `${hotel.hotelId}:${item.snapshot.businessDate}:`
+          + `${item.snapshotHour}:HOURLY_UAT_V1`
+        return !weComDeliveriesByKey.has(messageKey)
+      })
+      .slice(0, 4)
+    for (const candidate of candidates) {
+      const messageKey =
+        `${hotel.hotelId}:${candidate.snapshot.businessDate}:`
+        + `${candidate.snapshotHour}:HOURLY_UAT_V1`
+      const messagePrefix =
+        candidate.snapshotHour === hourKey ? null : '补发小时简报'
+      try {
+        await deliverWeComSnapshot({
+          hotelId: hotel.hotelId,
+          snapshot: candidate.snapshot,
+          messageKey,
+          messagePrefix,
+        })
+      } catch (error) {
+        process.stderr.write(
+          `${JSON.stringify({
+            event: 'WECOM_DELIVERY_FAILED_CLOSED',
+            hotelId: hotel.hotelId,
+            messageKey,
+            reasonCode: error?.message ?? 'WECOM_DELIVERY_FAILED_CLOSED',
+          })}\n`,
+        )
+      }
+    }
+  }
+}
+
 const briefFor = (hotelId) => {
   const hotel = selectedHotel(hotelId)
+  const snapshot = (liveSnapshotStore[hotelId] ?? []).at(-1)
+  if (!snapshot) return null
+  const monitor = monitorFromSnapshot(
+    snapshot,
+    hotel,
+    null,
+    hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+  )
+  const payloads = createReportMonitorWeComPayloads(monitor, {
+    snapshot,
+    briefId: snapshot.collectionRunId,
+  })
+  const delivery = [...weComDeliveriesByKey.values()]
+    .filter(
+      (item) =>
+        item.hotelId === hotelId
+        && item.cutoffAt === snapshot.observedAt,
+    )
+    .sort((left, right) =>
+      String(right.attemptedAt).localeCompare(String(left.attemptedAt)))[0]
   return {
-    briefId: '80000000-0000-4000-8000-000000000001',
-    businessDate: '2026-07-25',
-    cutoffAt: '2026-07-25T18:00:00+08:00',
+    briefId: snapshot.collectionRunId,
+    businessDate: snapshot.businessDate,
+    cutoffAt: snapshot.observedAt,
     revisionNo: 1,
-    completenessCode: 'COMPLETE',
-    content: [
-      `【评审模拟】${hotel.hotelName}｜今日收益管理`,
-      '⏰ 统计时间｜2026-07-25 18:00',
-      '今日可售｜11间',
-      '目标任务｜¥10000',
-      '完成指标｜78.5%',
-      '今日已售｜39间夜',
-      'P1提示｜美团景观双床房可售1，低于主库存报表实体库存2',
-      '说明｜仅供界面评审，不是实时经营数据',
-    ].join('\n'),
-    publishedAt: '2026-07-25T18:00:06+08:00',
-    simulationRunId: 'review-run-1800',
-    deliveryStatus: 'BLOCKED_REVIEW_ONLY',
-    simulationMode: true,
+    completenessCode: snapshot.completeness,
+    content:
+      payloads.map((payload) => payload.text.content).join('\n\n——\n\n'),
+    publishedAt: snapshot.observedAt,
+    simulationRunId: snapshot.collectionRunId,
+    deliveryStatus:
+      delivery?.deliveryStatus
+      ?? (weComConfigFor(hotelId).enabled
+        ? 'WAITING_FOR_SCHEDULE'
+        : 'DELIVERY_DISABLED'),
+    simulationMode: false,
   }
 }
 
@@ -908,7 +1336,9 @@ const server = createServer(async (request, response) => {
         status: 'UP',
         mode: 'LOCAL_LIVE_PILOT',
         automaticHourlyCollectionEnabled,
-        outboundDeliveryEnabled: false,
+        outboundDeliveryEnabled:
+          [...weComConfigsByHotel.values()]
+            .some((config) => config.enabled === true),
       })
       return
     }
@@ -1115,6 +1545,79 @@ const server = createServer(async (request, response) => {
         json(response, 200, { data: config })
         return
       }
+      if (request.method === 'GET' && suffix === '/wecom-config') {
+        json(response, 200, { data: weComConfigFor(hotelId) })
+        return
+      }
+      if (request.method === 'POST' && suffix === '/wecom-config') {
+        const body = await readBody(request)
+        const webhookUpdate =
+          body.webhookUpdate ?? { action: 'KEEP' }
+        if (
+          typeof body.enabled !== 'boolean'
+          || typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+          || !webhookUpdate
+          || typeof webhookUpdate !== 'object'
+          || !['KEEP', 'CLEAR', 'REPLACE'].includes(webhookUpdate.action)
+        ) {
+          throw new Error('WECOM_CONFIG_INVALID')
+        }
+        let endpointSha256 =
+          weComConfigsByHotel.get(hotelId)?.endpointSha256 ?? null
+        if (webhookUpdate.action === 'REPLACE') {
+          endpointSha256 = fingerprintWeComWebhook(webhookUpdate.value)
+          weComSecretsByHotel.set(
+            hotelId,
+            encryptCookie(
+              webhookUpdate.value,
+              cookieSecretKey,
+              weComSecretScope(hotelId),
+            ),
+          )
+        } else if (webhookUpdate.action === 'CLEAR') {
+          weComSecretsByHotel.delete(hotelId)
+          endpointSha256 = null
+        }
+        const enabled =
+          webhookUpdate.action === 'CLEAR' ? false : body.enabled
+        if (enabled && !weComSecretsByHotel.has(hotelId)) {
+          throw new Error('WECOM_WEBHOOK_REQUIRED')
+        }
+        weComConfigsByHotel.set(hotelId, {
+          enabled,
+          sendMinute: 6,
+          endpointSha256,
+          updatedAt: new Date().toISOString(),
+        })
+        persistWeComSecrets()
+        persistWeComConfigs()
+        json(response, 200, { data: weComConfigFor(hotelId) })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/wecom-test-deliveries'
+      ) {
+        const body = await readBody(request)
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+        ) {
+          throw new Error('REASON_CODE_INVALID')
+        }
+        const snapshot = (liveSnapshotStore[hotelId] ?? []).at(-1)
+        if (!snapshot) throw new Error('LIVE_SNAPSHOT_REQUIRED')
+        const delivery = await deliverWeComSnapshot({
+          hotelId,
+          snapshot,
+          messageKey: `${hotelId}:TEST:${randomUUID()}`,
+          messagePrefix: '手动通道测试',
+          allowDisabled: true,
+        })
+        json(response, 200, { data: delivery })
+        return
+      }
       if (request.method === 'GET' && suffix === '/monitor') {
         json(response, 200, { data: liveMonitorFor(hotelId) })
         return
@@ -1134,39 +1637,34 @@ const server = createServer(async (request, response) => {
         return
       }
       if (request.method === 'GET' && suffix === '/briefs') {
-        json(response, 200, { data: [briefFor(hotelId)] })
+        const brief = briefFor(hotelId)
+        json(response, 200, { data: brief ? [brief] : [] })
         return
       }
       if (request.method === 'GET' && suffix === '/incidents') {
-        json(response, 200, {
-          data: [
-            {
-              incidentId: '81000000-0000-4000-8000-000000000001',
-              type: 'P1_INVENTORY_MISMATCH',
-              status: 'OPEN',
-              sourceCode: 'MEITUAN',
-              directionCode: 'AUXILIARY_LT_PRIMARY',
-              openedAt: '2026-07-25T17:58:10+08:00',
-              lastObservedAt: '2026-07-25T18:00:05+08:00',
-              taskId: '82000000-0000-4000-8000-000000000001',
-            },
-          ],
-        })
+        json(response, 200, { data: [] })
         return
       }
       if (request.method === 'GET' && suffix === '/outbox-preview') {
+        const deliveries = [...weComDeliveriesByKey.values()]
+          .filter((delivery) => delivery.hotelId === hotelId)
+          .sort((left, right) =>
+            String(right.attemptedAt)
+              .localeCompare(String(left.attemptedAt)))
+          .slice(0, 20)
         json(response, 200, {
-          data: [
-            {
-              eventId: '83000000-0000-4000-8000-000000000001',
-              messageKey: `${hotelId}:2026-07-25T18:00:00+08:00:v1`,
-              messageType: 'HOURLY_REVENUE_BRIEF',
-              createdAt: '2026-07-25T18:00:06+08:00',
-              deliveryBlocked: true,
-              deliveryStatus: 'BLOCKED_REVIEW_ONLY',
-              bodyPreview: briefFor(hotelId).content,
-            },
-          ],
+          data: deliveries.map((delivery) => ({
+            eventId: delivery.deliveryId,
+            messageKey: delivery.messageKey,
+            messageType:
+              delivery.messageKey.includes(':TEST:')
+                ? 'WECOM_CHANNEL_TEST'
+                : 'HOURLY_REVENUE_BRIEF',
+            createdAt: delivery.attemptedAt,
+            deliveryBlocked: false,
+            deliveryStatus: delivery.deliveryStatus,
+            bodyPreview: delivery.bodyPreview,
+          })),
         })
         return
       }
@@ -1272,10 +1770,12 @@ server.listen(port, host, () => {
   )
   const scheduler = setInterval(() => {
     void scheduledCollectionTick()
+    void scheduledWeComDeliveryTick()
   }, 30_000)
   scheduler.unref()
   const initialScheduler = setTimeout(() => {
     void scheduledCollectionTick()
+    void scheduledWeComDeliveryTick()
   }, 2_000)
   initialScheduler.unref()
 })

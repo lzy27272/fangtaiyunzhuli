@@ -67,6 +67,7 @@ const createEmptySource = (): ReportSourceView => ({
   calculationRole: 'AUXILIARY_CALCULATION',
   pollIntervalMinutes: 5,
   credentialAlias: '',
+  requestPayloadJson: '',
   cookieConfigured: false,
   cookieUpdatedAt: null,
   enabled: false,
@@ -158,6 +159,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
       displayName: source.displayName.trim(),
       endpointUrl: source.endpointUrl.trim(),
       credentialAlias: source.credentialAlias.trim().toUpperCase(),
+      requestPayloadJson: source.requestPayloadJson.trim(),
     }))
     if (
       normalized.some((source) =>
@@ -166,6 +168,20 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
         || validateEndpoint(source.endpointUrl))
     ) {
       setError('请修正所有报表名称和接口地址后再保存。')
+      return
+    }
+    if (
+      normalized.some((source) => {
+        if (!source.requestPayloadJson) return false
+        try {
+          const value = JSON.parse(source.requestPayloadJson)
+          return value === null || typeof value !== 'object' || Array.isArray(value)
+        } catch {
+          return true
+        }
+      })
+    ) {
+      setError('请求载荷必须是有效的JSON对象。')
       return
     }
     if (
@@ -199,6 +215,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
       calculationRole: source.calculationRole,
       pollIntervalMinutes: source.pollIntervalMinutes,
       credentialAlias: source.credentialAlias,
+      requestPayloadJson: source.requestPayloadJson,
       cookieUpdate: cookieDrafts[source.sourceId]
         ? { action: 'REPLACE', value: cookieDrafts[source.sourceId] }
         : cookieClears[source.sourceId]
@@ -404,6 +421,23 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                             credentialAlias: event.target.value,
                           })}
                       />
+                    </label>
+                    <label className="wide-field">
+                      POST请求载荷（JSON，可空）
+                      <textarea
+                        disabled={!canConfigure}
+                        maxLength={20_000}
+                        placeholder='例如：{"roomTypes":[],"channelKey":"Hotel"}'
+                        rows={6}
+                        value={source.requestPayloadJson}
+                        onChange={(event) =>
+                          updateSource(source.sourceId, {
+                            requestPayloadJson: event.target.value,
+                          })}
+                      />
+                      <small>
+                        不得填写Token、Cookie或密码。房态预测接口的日期会按本次采集返回的PMS营业日自动更新。
+                      </small>
                     </label>
                     <label className="wide-field cookie-field">
                       该网址专用Cookie（可空）

@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [int]$ApiPort = 8091,
-    [int]$WebPort = 5180
+    [int]$WebPort = 5180,
+    [ValidateRange(1, 168)]
+    [int]$RuntimeHours = 24
 )
 
 Set-StrictMode -Version Latest
@@ -134,7 +136,7 @@ function Wait-Http([string]$Url, [int]$Seconds = 60) {
 }
 
 $reviewUsername = 'review-admin'
-$reviewPassword = 'Review-' + (New-RandomUrlToken 9)
+$reviewPassword = '111111'
 $reviewToken = New-RandomUrlToken 32
 $reviewSecretKey = Get-OrCreateReviewSecretKey $secretKeyPath
 $apiOut = Join-Path $runtimeRoot 'api.stdout.log'
@@ -208,7 +210,7 @@ try {
         status = 'RUNNING'
         mode = 'LOCAL_LIVE_PILOT'
         startedAt = [DateTimeOffset]::Now.ToString('o')
-        expiresAt = [DateTimeOffset]::Now.AddHours(4).ToString('o')
+        expiresAt = [DateTimeOffset]::Now.AddHours($RuntimeHours).ToString('o')
         webUrl = "http://127.0.0.1:$WebPort"
         apiUrl = "http://127.0.0.1:$ApiPort"
         apiPid = $apiProcess.Id
@@ -216,7 +218,7 @@ try {
         username = $reviewUsername
         realExternalConnections = $true
         automaticHourlyCollection = $true
-        realWeComDelivery = $false
+        realWeComDelivery = 'CONFIGURABLE_UAT'
         cookieSecretStorage = 'WINDOWS_DPAPI_AES256_GCM'
     }
     [IO.File]::WriteAllText(
@@ -233,7 +235,7 @@ try {
             '-File',
             $stopScript,
             '-DelaySeconds',
-            '14400'
+            [string]($RuntimeHours * 3600)
         ) `
         -WorkingDirectory $repoRoot `
         -WindowStyle Hidden `

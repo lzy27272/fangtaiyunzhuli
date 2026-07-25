@@ -181,6 +181,49 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .save-row { display: grid; grid-template-columns: minmax(14rem, 1fr) auto; align-items: end; gap: .8rem; margin-top: 1.2rem; padding-top: 1.2rem; border-top: 1px solid #e6e2da; }
 
 .history-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.wecom-automation-card {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #b8cdc5;
+  border-radius: .95rem;
+  background: #f5faf8;
+}
+.wecom-automation-card .page-heading { margin-bottom: 0; }
+.wecom-automation-card .page-heading h3 { margin: .25rem 0 .35rem; }
+.wecom-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+}
+.wecom-config-grid label {
+  display: grid;
+  gap: .35rem;
+  color: #4c625a;
+  font-size: .74rem;
+  font-weight: 800;
+}
+.wecom-config-grid input[type="password"] {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #b9c9c3;
+  border-radius: .65rem;
+  padding: .68rem .75rem;
+  background: #fff;
+}
+.wecom-config-grid small { color: #68736f; }
+.wecom-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+  padding: .75rem;
+  border-radius: .7rem;
+  color: #456258;
+  background: #e8f3ef;
+  font-size: .72rem;
+  font-weight: 800;
+}
 .history-card, .outbox-card { display: grid; gap: .5rem; margin-bottom: .65rem; padding: .9rem; border: 1px solid #e0ddd6; border-radius: .8rem; background: #fcfbf8; }
 details.history-card { display: block; }
 .history-card summary, .history-card header, .outbox-card header { display: flex; align-items: center; justify-content: space-between; gap: .8rem; cursor: pointer; }
@@ -281,6 +324,7 @@ details.history-card { display: block; }
 }
 .report-source-form input,
 .report-source-form select,
+.report-source-form textarea,
 .report-source-actions input {
   width: 100%;
   min-width: 0;
@@ -293,6 +337,7 @@ details.history-card { display: block; }
 }
 .report-source-form input:focus,
 .report-source-form select:focus,
+.report-source-form textarea:focus,
 .report-source-actions input:focus {
   border-color: #346d5e;
   box-shadow: 0 0 0 3px rgba(52,109,94,.1);
@@ -346,7 +391,7 @@ details.history-card { display: block; }
   .simulation-banner { align-items: flex-start; flex-direction: column; gap: .35rem; }
   .context-bar { grid-template-columns: 1fr; }
   .simulation-hotel-creator > div { grid-template-columns: 1fr; }
-  .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row { grid-template-columns: 1fr; }
+  .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row, .wecom-config-grid { grid-template-columns: 1fr; }
   .real-prep-heading, .rehearsal-heading { flex-direction: column; }
   .rehearsal-boundary-grid { grid-template-columns: 1fr; }
   .monitor-summary { grid-template-columns: repeat(2, 1fr); }

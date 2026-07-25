@@ -82,7 +82,7 @@ const NAVIGATION: Array<{ code: PageCode; number: string; label: string }> = [
   { code: 'connections', number: '01', label: '报表接口' },
   { code: 'monitor', number: '02', label: '实时监控' },
   { code: 'mapping', number: '03', label: '指标规则' },
-  { code: 'history', number: '04', label: '简报告警' },
+  { code: 'history', number: '04', label: '简报推送' },
 ]
 
 const ROLE_LABELS: Record<OtaRole, string> = {
@@ -133,8 +133,7 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
       <aside className="sidebar">
         <div className="sidebar-brand">
           <p className="eyebrow">REPORT-FUSION-V0.1</p>
-          <strong>四方馆报表中枢</strong>
-          <span>独立运营后台</span>
+          <strong>四方馆酒店房态运营助手</strong>
         </div>
         <nav aria-label="业务页面">
           {NAVIGATION.map((item) => (
@@ -170,8 +169,8 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
         </header>
 
         <div className="simulation-banner" role="status">
-          <strong>本机试点环境 · 报表只读采集已启用 · 企微自动推送禁用</strong>
-          <span>系统每小时00分自动采集，也支持手动采集；原始响应和敏感字段不落盘，本阶段不会自动发群。</span>
+          <strong>本机试点环境 · 报表只读采集已启用 · 企微UAT推送可配置</strong>
+          <span>系统每小时00–05分自动采集、06分发送；Webhook在本机加密保存，推送结果可追踪。</span>
         </div>
 
         {logoutError ? <div className="shell-error" role="alert">{logoutError}，当前会话仍保留。</div> : null}
@@ -189,7 +188,12 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
         ) : null}
         {page === 'monitor' ? <MonitorPage context={context} /> : null}
         {page === 'mapping' ? <MappingTargetPage context={context} canConfigure={canRevenueConfigure} /> : null}
-        {page === 'history' ? <HistoryPage context={context} /> : null}
+        {page === 'history' ? (
+          <HistoryPage
+            context={context}
+            canConfigure={canAdminConfigure}
+          />
+        ) : null}
       </main>
     </div>
   )

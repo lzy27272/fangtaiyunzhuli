@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  loadBusinessDayControl,
   loadHotSellingRoomTypes,
   loadMonitor,
-  saveBusinessDayControl,
   saveHotSellingRoomTypes,
   triggerLiveCollection,
-  type BusinessDayControlView,
   type HotelContext,
   type LiveCollectionRunView,
   type MonitorView,
@@ -43,34 +40,40 @@ function displayMetric(value: string | number | null | undefined, unit: string, 
           : ''}`
 }
 
+function sameRoomTypeCodes(left: string[], right: string[]) {
+  if (left.length !== right.length) return false
+  const leftCodes = new Set(left)
+  const rightCodes = new Set(right)
+  return (
+    leftCodes.size === rightCodes.size
+    && [...leftCodes].every((code) => rightCodes.has(code))
+  )
+}
+
 export function MonitorPage({ context }: Props) {
   const [monitor, setMonitor] = useState<MonitorView | null>(null)
   const [run, setRun] = useState<LiveCollectionRunView | null>(null)
-  const [businessDayControl, setBusinessDayControl] =
-    useState<BusinessDayControlView | null>(null)
-  const [businessDateDraft, setBusinessDateDraft] = useState('')
   const [hotRoomTypeCodes, setHotRoomTypeCodes] = useState<string[]>([])
+  const [savedHotRoomTypeCodes, setSavedHotRoomTypeCodes] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
-  const [savingBusinessDate, setSavingBusinessDate] = useState(false)
   const [savingHotRooms, setSavingHotRooms] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const lastAutoCollectionContext = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (!context) return
     setLoading(true)
     setError('')
     try {
-      const [monitorView, control, hotRoomConfig] = await Promise.all([
+      const [monitorView, hotRoomConfig] = await Promise.all([
         loadMonitor(context),
-        loadBusinessDayControl(context),
         loadHotSellingRoomTypes(context),
       ])
       setMonitor(monitorView)
-      setBusinessDayControl(control)
-      setBusinessDateDraft(control.businessDate ?? '')
       setHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
+      setSavedHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '读取监控失败')
     } finally {
@@ -78,48 +81,46 @@ export function MonitorPage({ context }: Props) {
     }
   }, [context])
 
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  async function collectNow() {
+  const collectNow = useCallback(async (origin: 'automatic' | 'manual' = 'manual') => {
     if (!context) return
     setRunning(true)
     setError('')
+    setNotice('')
     try {
       const started = await triggerLiveCollection(context)
       setRun(started)
       setMonitor(started.monitor)
+      setNotice(
+        origin === 'automatic'
+          ? `门店加载后已自动采集 ${started.successfulSourceCount}/${started.sourceCount} 个已配置报表。`
+          : `已重新采集 ${started.successfulSourceCount}/${started.sourceCount} 个已配置报表。`,
+      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '真实采集失败')
     } finally {
       setRunning(false)
     }
-  }
+  }, [context])
 
-  async function confirmBusinessDateAndCollect() {
-    if (!context || !/^\d{4}-\d{2}-\d{2}$/.test(businessDateDraft)) return
-    setSavingBusinessDate(true)
-    setError('')
-    try {
-      const control = await saveBusinessDayControl(
-        context,
-        businessDateDraft,
-      )
-      setBusinessDayControl(control)
-      const started = await triggerLiveCollection(context)
-      setRun(started)
-      setMonitor(started.monitor)
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : '确认PMS营业日并采集失败',
-      )
-    } finally {
-      setSavingBusinessDate(false)
+  useEffect(() => {
+    if (!context) {
+      lastAutoCollectionContext.current = null
+      setHotRoomTypeCodes([])
+      setSavedHotRoomTypeCodes([])
+      return
     }
-  }
+    const contextKey = `${context.tenantId}:${context.hotelId}`
+    if (lastAutoCollectionContext.current === contextKey) return
+    lastAutoCollectionContext.current = contextKey
+    let cancelled = false
+    void (async () => {
+      await refresh()
+      if (!cancelled) await collectNow('automatic')
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [collectNow, context, refresh])
 
   function toggleHotRoomType(roomTypeCode: string) {
     setHotRoomTypeCodes((current) =>
@@ -129,7 +130,7 @@ export function MonitorPage({ context }: Props) {
   }
 
   async function saveHotRooms() {
-    if (!context) return
+    if (!context || sameRoomTypeCodes(hotRoomTypeCodes, savedHotRoomTypeCodes)) return
     setSavingHotRooms(true)
     setError('')
     setNotice('')
@@ -139,6 +140,7 @@ export function MonitorPage({ context }: Props) {
         hotRoomTypeCodes,
       )
       setHotRoomTypeCodes(saved.roomTypeCodes)
+      setSavedHotRoomTypeCodes(saved.roomTypeCodes)
       setMonitor(await loadMonitor(context))
       setNotice('热销房型配置已保存；可售为0时生成售罄简报告警。')
     } catch (cause) {
@@ -150,6 +152,18 @@ export function MonitorPage({ context }: Props) {
     }
   }
 
+  const hotRoomTypesChanged = !sameRoomTypeCodes(
+    hotRoomTypeCodes,
+    savedHotRoomTypeCodes,
+  )
+  const saveHotRoomsLabel = savingHotRooms
+    ? '保存中…'
+    : hotRoomTypesChanged
+      ? '保存更改'
+      : hotRoomTypeCodes.length > 0
+        ? '已保存'
+        : '选择后保存'
+
   return (
     <section className="page-card">
       <div className="page-heading">
@@ -159,50 +173,25 @@ export function MonitorPage({ context }: Props) {
           <p>从已保存的报表接口只读采集并融合计算；原始响应、Cookie、订单号和客人信息均不落盘。</p>
         </div>
         <div className="heading-actions">
-          <input
-            aria-label="PMS当前营业日"
-            disabled={!context || savingBusinessDate}
-            type="date"
-            value={businessDateDraft}
-            onChange={(event) => setBusinessDateDraft(event.target.value)}
-          />
-          <button
-            className="secondary"
-            disabled={
-              !context
-              || savingBusinessDate
-              || !/^\d{4}-\d{2}-\d{2}$/.test(businessDateDraft)
-            }
-            type="button"
-            onClick={confirmBusinessDateAndCollect}
-          >
-            {savingBusinessDate ? '确认采集中…' : '确认营业日并采集'}
-          </button>
           <button className="secondary" disabled={!context || loading} type="button" onClick={refresh}>
             刷新
           </button>
           <button
-            disabled={
-              !context
-              || running
-              || businessDayControl?.mode !== 'PMS_CONFIRMED'
-            }
+            disabled={!context || running}
             type="button"
-            onClick={collectNow}
+            onClick={() => {
+              void collectNow()
+            }}
           >
-            {running ? '采集中…' : '立即采集三个报表'}
+            {running ? '采集中…' : '重新采集已配置报表'}
           </button>
         </div>
       </div>
 
       <div className="run-strip">
         <strong>PMS营业日</strong>
-        <span>{businessDayControl?.businessDate ?? '尚未确认'}</span>
-        <span>
-          {businessDayControl?.mode === 'PMS_CONFIRMED'
-            ? '以PMS夜审状态为准，零点不自动切日'
-            : '采集前必须人工确认'}
-        </span>
+        <span>{run?.businessDate ?? monitor?.businessDate ?? '等待PMS采集返回'}</span>
+        <span>以每次采集返回的PMS营业日为准，零点不自动切日</span>
       </div>
 
       {run ? (
@@ -211,7 +200,7 @@ export function MonitorPage({ context }: Props) {
           <span>{run.runId}</span>
           <span>来源 {run.successfulSourceCount}/{run.sourceCount}</span>
           <span>营业日候选 {run.businessDate}</span>
-          <b>本次未触发企微</b>
+          <b>本次仅采集；企微由06分调度处理</b>
         </div>
       ) : null}
 
@@ -220,7 +209,7 @@ export function MonitorPage({ context }: Props) {
       {!context ? (
         <div className="state-panel">请先在顶部载入租户和门店。</div>
       ) : (
-        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="尚无真实快照，请点击“立即采集三个报表”。">
+        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="门店加载后会自动采集所有已配置报表。">
           {monitor ? (
             <>
               <div className="monitor-summary">
@@ -330,11 +319,15 @@ export function MonitorPage({ context }: Props) {
                 </div>
                 <button
                   className="secondary"
-                  disabled={savingHotRooms || monitor.inventory.length === 0}
+                  disabled={
+                    savingHotRooms
+                    || monitor.inventory.length === 0
+                    || !hotRoomTypesChanged
+                  }
                   type="button"
                   onClick={saveHotRooms}
                 >
-                  {savingHotRooms ? '保存中…' : '保存热销房型'}
+                  {saveHotRoomsLabel}
                 </button>
               </div>
 
@@ -348,7 +341,7 @@ export function MonitorPage({ context }: Props) {
                 >
                   {alert.message}
                   {alert.state === 'SOLD_OUT'
-                    ? '｜已进入简报告警候选，企微当前禁发。'
+                    ? '｜已进入简报告警候选，将随下一小时简报处理。'
                     : ''}
                 </div>
               ))}

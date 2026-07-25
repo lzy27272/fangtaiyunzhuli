@@ -23,10 +23,12 @@ $expected = @(
     @{
         Pid = [int]$state.apiPid
         Pattern = 'ota-standalone-review-api\.mjs'
+        ProcessName = 'node'
     },
     @{
         Pid = [int]$state.webPid
         Pattern = 'vite\.js.+--port\s+\d+'
+        ProcessName = 'node'
     }
 )
 
@@ -35,16 +37,48 @@ foreach ($entry in $expected) {
     if (-not $process) {
         continue
     }
-    $details = Get-CimInstance `
-        -ClassName Win32_Process `
-        -Filter ("ProcessId={0}" -f $entry.Pid)
-    if (
-        -not $details -or
-        [string]$details.CommandLine -notmatch $entry.Pattern
-    ) {
+    $matchesExpectedProcess = $false
+    try {
+        $details = Get-CimInstance `
+            -ClassName Win32_Process `
+            -Filter ("ProcessId={0}" -f $entry.Pid)
+        $matchesExpectedProcess = (
+            $details -and
+            [string]$details.CommandLine -match $entry.Pattern
+        )
+    }
+    catch [Microsoft.Management.Infrastructure.CimException] {
+        $expectedStart = [DateTimeOffset]::Parse([string]$state.startedAt)
+        $actualStart = [DateTimeOffset]$process.StartTime
+        $startDifference = [Math]::Abs(
+            ($actualStart - $expectedStart).TotalMinutes
+        )
+        $matchesExpectedProcess = (
+            $process.ProcessName -eq $entry.ProcessName -and
+            $startDifference -le 2
+        )
+    }
+    if (-not $matchesExpectedProcess) {
         continue
     }
     Stop-Process -Id $entry.Pid -Force
+}
+
+if ($DelaySeconds -eq 0 -and $state.watchdogPid) {
+    $watchdog = Get-Process `
+        -Id ([int]$state.watchdogPid) `
+        -ErrorAction SilentlyContinue
+    if ($watchdog -and $watchdog.ProcessName -eq 'powershell') {
+        $expectedStart = [DateTimeOffset]::Parse([string]$state.startedAt)
+        $actualStart = [DateTimeOffset]$watchdog.StartTime
+        if (
+            [Math]::Abs(
+                ($actualStart - $expectedStart).TotalMinutes
+            ) -le 2
+        ) {
+            Stop-Process -Id $watchdog.Id -Force
+        }
+    }
 }
 
 $updated = [ordered]@{}

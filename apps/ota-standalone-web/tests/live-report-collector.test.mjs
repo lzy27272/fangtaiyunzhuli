@@ -79,6 +79,11 @@ const responseSet = (version) => ({
                 depart: '2026-07-29',
                 rooms: 2,
               }),
+              order({
+                orderNo: 'D',
+                source: '抖音预付',
+                arrive: '2026-07-27',
+              }),
             ]
           : [
               order({ orderNo: 'A', status: '已取消' }),
@@ -88,6 +93,11 @@ const responseSet = (version) => ({
                 arrive: '2026-07-27',
                 depart: '2026-07-29',
                 rooms: 2,
+              }),
+              order({
+                orderNo: 'D',
+                source: '抖音预付',
+                arrive: '2026-07-27',
               }),
               order({ orderNo: 'C' }),
             ],
@@ -169,6 +179,10 @@ test('collector creates a safe real baseline from all three PMS reports', async 
   assert.equal(result.monitor.hourlyDelta.basis, 'BASELINE_PENDING')
   assert.equal(result.monitor.inventory.length, 2)
   assert.ok(result.monitor.inventory.every((room) => room.state === 'UNAVAILABLE'))
+  assert.equal(
+    result.snapshot.orders.some((item) => item.channel === 'DOUYIN'),
+    true,
+  )
   assert.equal(JSON.stringify(result.snapshot).includes('"A"'), false)
   assert.equal(JSON.stringify(result.snapshot).includes('"B"'), false)
 
@@ -282,4 +296,138 @@ test('configured hot-selling rooms alert only on a reliable zero', () => {
   assert.equal(soldOut.shouldNotify, true)
   assert.equal(unavailable.state, 'UNAVAILABLE')
   assert.equal(unavailable.shouldNotify, false)
+})
+
+test('room forecast payload follows the PMS business day and fills room availability', async () => {
+  const forecastSource = {
+    sourceId: 'forecast-source',
+    endpointUrl:
+      'https://pms.meituan.com/hotelpms/api/v2/report/roomState/batchSearchBaseRoomForcasting',
+    reportType: 'PHYSICAL_INVENTORY',
+    enabled: true,
+    requestPayloadJson: JSON.stringify({
+      roomTypes: [
+        { id: 'KING', roomTypeName: '测试大床房', description: null },
+        { id: 'TWIN', roomTypeName: '测试双床房', description: null },
+      ],
+      beginHour: '18:00',
+      channelKey: 'Hotel',
+      beginDate: '2000-01-01 00:00:00',
+      endDate: '2000-01-30 00:00:00',
+    }),
+  }
+  const allSources = [...sources, forecastSource]
+  const allCookies = {
+    ...cookiesBySourceId,
+    [forecastSource.sourceId]: `${cookie}; _lxsdk_cuid=test-client-id`,
+  }
+  const requests = []
+  const fetchImpl = async (url, init) => {
+    const target = new URL(url)
+    requests.push({ path: target.pathname, body: JSON.parse(init.body) })
+    const body =
+      target.pathname.endsWith('/batchSearchBaseRoomForcasting')
+        ? {
+            code: 10000,
+            data: [
+              {
+                roomTypeName: '测试大床房',
+                totalCount: '6',
+                isAggregation: false,
+                details: [
+                  {
+                    date: '2026-07-25 00:00:00',
+                    occupationCount: '6',
+                    availableCount: '0',
+                    roomRent: 1200,
+                    adr: 200,
+                    revPar: 200,
+                    overbookingCount: '0',
+                    checkinCount: '6',
+                    orderCount: '0',
+                    maintainingCount: '0',
+                  },
+                ],
+              },
+              {
+                roomTypeName: '测试双床房',
+                totalCount: '4',
+                isAggregation: false,
+                details: [
+                  {
+                    date: '2026-07-25 00:00:00',
+                    occupationCount: '2',
+                    availableCount: '2',
+                    roomRent: 300,
+                    adr: 150,
+                    revPar: 75,
+                    overbookingCount: '0',
+                    checkinCount: '2',
+                    orderCount: '0',
+                    maintainingCount: '0',
+                  },
+                ],
+              },
+              {
+                roomTypeName: '汇总',
+                totalCount: '10',
+                isAggregation: true,
+                details: [],
+              },
+            ],
+          }
+        : target.pathname.endsWith('/report/jy09')
+          ? {
+              code: 10000,
+              data: {
+                dataList: [
+                  {
+                    estimatedDate: '2026-07-25',
+                    roomCount: 10,
+                    availableRoom: 2,
+                    saleRoom: 8,
+                    estimatedRoomFee: 1500,
+                    estimatedRoomNights: 8,
+                    estimatedRentRate: 0.8,
+                    estimatedAvgRoomPrice: 187.5,
+                    estimatedRevpar: 150,
+                  },
+                ],
+              },
+            }
+        : responseSet(1)[target.pathname]
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  const result = await collectLiveReports({
+    hotel,
+    sources: allSources,
+    cookiesBySourceId: allCookies,
+    previousSnapshots: [],
+    secretKey: 'unit-test-hmac-key',
+    reportDate: '2026-07-25',
+    businessDateBasis: 'PMS_CONFIRMED',
+    now: new Date('2026-07-26T01:00:00Z'),
+    fetchImpl,
+  })
+  const king = result.snapshot.physicalInventory.find(
+    (room) => room.displayName === '测试大床房',
+  )
+  const monitor = monitorFromSnapshot(
+    result.snapshot,
+    hotel,
+    null,
+    [king.physicalRoomTypeCode],
+  )
+  const forecastRequest = requests.find((request) =>
+    request.path.endsWith('/batchSearchBaseRoomForcasting'))
+
+  assert.equal(result.run.status, 'SUCCEEDED')
+  assert.equal(king.primaryAvailableRooms, 0)
+  assert.equal(monitor.hotSellingAlerts[0].state, 'SOLD_OUT')
+  assert.equal(monitor.hotSellingAlerts[0].shouldNotify, true)
+  assert.equal(forecastRequest.body.beginDate, '2026-07-25 00:00:00')
+  assert.equal(forecastRequest.body.endDate, '2026-08-23 00:00:00')
 })

@@ -49,6 +49,7 @@ const legacyViews: readonly ViewId[] = [
   'notifications',
   'templates',
   'organization',
+  'wecom-webhooks',
 ]
 
 const legacyViewSet = new Set<string>(legacyViews)
