@@ -266,6 +266,8 @@ export interface LiveCollectionRunView {
 export interface BusinessDayControlView {
   businessDate: string | null
   mode: 'PMS_CONFIRMED' | 'UNCONFIRMED'
+  source?: 'PMS_NIGHT_AUDIT_API' | 'MANUAL_SEED' | null
+  businessDateStartedAt?: string | null
   updatedAt: string | null
 }
 

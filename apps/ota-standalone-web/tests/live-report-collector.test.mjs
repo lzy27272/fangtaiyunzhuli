@@ -118,6 +118,28 @@ const responseSet = (version) => ({
           estimatedAvgRoomPrice: version === 1 ? 166.67 : 157.14,
           estimatedRevpar: version === 1 ? 100 : 110,
         },
+        {
+          estimatedDate: '2026-07-27',
+          roomCount: 10,
+          availableRoom: version === 1 ? 8 : 5,
+          saleRoom: version === 1 ? 2 : 5,
+          estimatedRoomFee: version === 1 ? 400 : 1150,
+          estimatedRoomNights: version === 1 ? 2 : 5,
+          estimatedRentRate: version === 1 ? 0.2 : 0.5,
+          estimatedAvgRoomPrice: version === 1 ? 200 : 230,
+          estimatedRevpar: version === 1 ? 40 : 115,
+        },
+        {
+          estimatedDate: '2026-07-28',
+          roomCount: 10,
+          availableRoom: version === 1 ? 9 : 8,
+          saleRoom: version === 1 ? 1 : 2,
+          estimatedRoomFee: version === 1 ? 220 : 460,
+          estimatedRoomNights: version === 1 ? 1 : 2,
+          estimatedRentRate: version === 1 ? 0.1 : 0.2,
+          estimatedAvgRoomPrice: version === 1 ? 220 : 230,
+          estimatedRevpar: version === 1 ? 22 : 46,
+        },
       ],
     },
   },
@@ -148,10 +170,20 @@ const fetchFor = (version, requests) => async (url, init) => {
   const target = new URL(url)
   requests.push({
     path: target.pathname,
-    body: JSON.parse(init.body),
+    body: init.body ? JSON.parse(init.body) : null,
     headers: new Headers(init.headers),
   })
-  return new Response(JSON.stringify(responseSet(version)[target.pathname]), {
+  const body =
+    target.pathname.includes('/night/audit/businessDate')
+      ? {
+          code: 10000,
+          data: {
+            businessDate: 20260726,
+            businessBeginTime: 1785007210000,
+          },
+        }
+      : responseSet(version)[target.pathname]
+  return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   })
@@ -185,6 +217,12 @@ test('collector creates a safe real baseline from all three PMS reports', async 
   )
   assert.equal(JSON.stringify(result.snapshot).includes('"A"'), false)
   assert.equal(JSON.stringify(result.snapshot).includes('"B"'), false)
+  assert.equal(result.snapshot.futureDaily.length, 2)
+  assert.equal(result.snapshot.futureDaily[0].stayDate, '2026-07-27')
+  assert.equal(
+    result.snapshot.futureBookingChanges.basis,
+    'BASELINE_PENDING',
+  )
 
   const roomRequest = requests.find((item) =>
     item.path.endsWith('/lion/manager/workbench/room'))
@@ -199,6 +237,48 @@ test('collector creates a safe real baseline from all three PMS reports', async 
     startDate: '2026-07-26',
     endDate: '2026-07-26',
   })
+  const futureRequest = requests.find((item) =>
+    item.path.endsWith('/report/jy09'))
+  assert.deepEqual(futureRequest.body, {
+    hotelId: '602758915',
+    startDate: '2026-07-26',
+    endDate: '2026-10-24',
+    dimension: 'Hotel',
+  })
+})
+
+test('night audit business date replaces the stale configured report date', async () => {
+  const requests = []
+  const result = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [],
+    secretKey: 'unit-test-hmac-key',
+    reportDate: '2026-07-25',
+    now: new Date('2026-07-26T04:00:00Z'),
+    fetchImpl: fetchFor(1, requests),
+  })
+
+  assert.equal(result.snapshot.businessDate, '2026-07-26')
+  assert.equal(result.snapshot.previousBusinessDate, '2026-07-25')
+  assert.equal(result.snapshot.businessDateChanged, true)
+  assert.equal(result.snapshot.businessDateBasis, 'PMS_CONFIRMED')
+  assert.equal(
+    result.snapshot.businessDateSource,
+    'PMS_NIGHT_AUDIT_API',
+  )
+  assert.equal(
+    result.snapshot.businessDateStartedAt,
+    '2026-07-26T03:20:10+08:00',
+  )
+  assert.equal(result.run.businessDateChanged, true)
+  const datedRequests = requests.filter((request) => request.body)
+  assert.ok(datedRequests.length >= 3)
+  assert.ok(
+    datedRequests.every((request) =>
+      request.body.startDate === '2026-07-26'),
+  )
 })
 
 test('second hourly snapshot reports room-night additions and cancellation transitions', async () => {
@@ -238,6 +318,49 @@ test('second hourly snapshot reports room-night additions and cancellation trans
   )
   assert.equal(second.monitor.hourlyDelta.metricDelta.roomFee, 100)
   assert.equal(second.monitor.hourlyDelta.metricDelta.roomNights, 1)
+})
+
+test('future booking changes compare both the previous hour and yesterday end', async () => {
+  const previousDay = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-07-25T15:41:00Z'),
+    fetchImpl: fetchFor(1, []),
+  })
+  const hourlyBaseline = {
+    ...previousDay.snapshot,
+    collectionRunId: 'hourly-future-baseline',
+    observedAt: '2026-07-26T10:00:00+08:00',
+  }
+  const current = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [previousDay.snapshot, hourlyBaseline],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-07-26T03:00:00Z'),
+    fetchImpl: fetchFor(2, []),
+  })
+
+  assert.equal(
+    current.snapshot.futureBookingChanges.hourlyBaselineAt,
+    '2026-07-26T10:00:00+08:00',
+  )
+  assert.equal(
+    current.snapshot.futureBookingChanges.previousDayEndAt,
+    '2026-07-25T23:41:00+08:00',
+  )
+  const july27 = current.snapshot.futureBookingChanges.daily.find(
+    (row) => row.stayDate === '2026-07-27',
+  )
+  assert.equal(july27.bookedRoomNights, 5)
+  assert.equal(july27.occupancyPercent, 50)
+  assert.equal(july27.hourlyNetRoomNights, 3)
+  assert.equal(july27.previousDayNetRoomNights, 3)
+  assert.equal(july27.inferredHourlyAdr, 250)
 })
 
 test('empty monitor does not expose simulation data or a false zero', () => {
@@ -324,9 +447,20 @@ test('room forecast payload follows the PMS business day and fills room availabi
   const requests = []
   const fetchImpl = async (url, init) => {
     const target = new URL(url)
-    requests.push({ path: target.pathname, body: JSON.parse(init.body) })
+    requests.push({
+      path: target.pathname,
+      body: init.body ? JSON.parse(init.body) : null,
+    })
     const body =
-      target.pathname.endsWith('/batchSearchBaseRoomForcasting')
+      target.pathname.includes('/night/audit/businessDate')
+        ? {
+            code: 10000,
+            data: {
+              businessDate: 20260725,
+              businessBeginTime: 1784920810000,
+            },
+          }
+        : target.pathname.endsWith('/batchSearchBaseRoomForcasting')
         ? {
             code: 10000,
             data: [
@@ -430,4 +564,37 @@ test('room forecast payload follows the PMS business day and fills room availabi
   assert.equal(monitor.hotSellingAlerts[0].shouldNotify, true)
   assert.equal(forecastRequest.body.beginDate, '2026-07-25 00:00:00')
   assert.equal(forecastRequest.body.endDate, '2026-08-23 00:00:00')
+})
+
+test('collector fails closed when PMS cannot confirm a valid business date', async () => {
+  const fetchImpl = async (url, init) => {
+    const target = new URL(url)
+    const body =
+      target.pathname.includes('/night/audit/businessDate')
+        ? {
+            code: 10000,
+            data: {
+              businessDate: '2026-02-30',
+              businessBeginTime: 1784920810000,
+            },
+          }
+        : responseSet(1)[target.pathname]
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  await assert.rejects(
+    collectLiveReports({
+      hotel,
+      sources,
+      cookiesBySourceId,
+      previousSnapshots: [],
+      secretKey: 'unit-test-hmac-key',
+      reportDate: '2026-07-25',
+      fetchImpl,
+    }),
+    /PMS_BUSINESS_DATE_UNAVAILABLE/,
+  )
 })

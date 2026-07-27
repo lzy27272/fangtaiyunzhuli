@@ -20,6 +20,14 @@ import {
   loadSnapshotStore,
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
+import { selectHourlyDeliveryCandidates } from './wecom/src/hourly-delivery-candidates.mjs'
+import { createFutureBookingWeComPayloads } from './wecom/src/future-booking-brief.mjs'
+import {
+  createFutureDemandP1WeComPayloads,
+  futureDemandRiskStateAfterDelivery,
+  reconcileFutureDemandRiskStates,
+  selectFutureDemandRiskCandidates,
+} from './wecom/src/future-demand-risk.mjs'
 import { createReportMonitorWeComPayloads } from './wecom/src/report-monitor-brief.mjs'
 import {
   fingerprintWeComWebhook,
@@ -38,6 +46,10 @@ const cookieSecretsPath =
 const cookieSecretKey = process.env.OTA_REVIEW_SECRET_KEY?.trim()
 const automaticHourlyCollectionEnabled =
   process.env.OTA_REVIEW_AUTO_COLLECTION_ENABLED === 'true'
+const runtimeMode =
+  process.env.OTA_REVIEW_RUNTIME_MODE === 'LOCAL_LIVE_LONG_RUNNING'
+    ? 'LOCAL_LIVE_LONG_RUNNING'
+    : 'LOCAL_LIVE_PILOT'
 const liveSnapshotPath = dataPath
   ? join(dirname(dataPath), 'live-report-snapshots.json')
   : null
@@ -55,6 +67,9 @@ const weComSecretPath = dataPath
   : null
 const weComDeliveryPath = dataPath
   ? join(dirname(dataPath), 'wecom-deliveries.json')
+  : null
+const futureDemandRiskStatePath = dataPath
+  ? join(dirname(dataPath), 'future-demand-risk-states.json')
   : null
 
 if (
@@ -156,6 +171,7 @@ const weComConfigsByHotel = new Map()
 const weComSecretsByHotel = new Map()
 const weComDeliveriesByKey = new Map()
 const weComDeliveryLocks = new Map()
+const futureDemandRiskStates = {}
 
 const defaultReportSources = () => [
   {
@@ -455,6 +471,15 @@ if (businessDayControlPath && existsSync(businessDayControlPath)) {
       businessDayControlsByHotel.set(hotelId, {
         businessDate: control.businessDate,
         mode: 'PMS_CONFIRMED',
+        source:
+          typeof control.source === 'string' ? control.source : null,
+        businessDateStartedAt:
+          typeof control.businessDateStartedAt === 'string'
+            && Number.isFinite(
+              new Date(control.businessDateStartedAt).getTime(),
+            )
+            ? control.businessDateStartedAt
+            : null,
         updatedAt:
           typeof control.updatedAt === 'string' ? control.updatedAt : null,
       })
@@ -468,6 +493,8 @@ const businessDayControlFor = (hotelId) =>
   businessDayControlsByHotel.get(hotelId) ?? {
     businessDate: null,
     mode: 'UNCONFIRMED',
+    source: null,
+    businessDateStartedAt: null,
     updatedAt: null,
   }
 
@@ -560,6 +587,8 @@ const weComConfigFor = (hotelId) => {
   return {
     enabled: config.enabled === true,
     sendMinute: 6,
+    futureBriefSendMinute: 8,
+    futureDemandP1Immediate: true,
     deliveryMode: 'UAT_SANITIZED_AT_ALL',
     webhookConfigured: Boolean(secret),
     endpointSha256:
@@ -685,6 +714,41 @@ if (weComDeliveryPath && existsSync(weComDeliveryPath)) {
   } catch {
     process.stderr.write('REVIEW_WECOM_DELIVERY_STORE_IGNORED\n')
   }
+}
+
+if (futureDemandRiskStatePath && existsSync(futureDemandRiskStatePath)) {
+  try {
+    const persisted = JSON.parse(
+      readFileSync(futureDemandRiskStatePath, 'utf8'),
+    )
+    if (persisted && typeof persisted === 'object' && !Array.isArray(persisted)) {
+      for (const [key, state] of Object.entries(persisted)) {
+        if (
+          typeof key === 'string'
+          && state
+          && typeof state === 'object'
+          && typeof state.stayDate === 'string'
+        ) {
+          futureDemandRiskStates[key] = state
+        }
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_FUTURE_DEMAND_RISK_STORE_IGNORED\n')
+  }
+}
+
+const persistFutureDemandRiskStates = () => {
+  if (!futureDemandRiskStatePath) return
+  mkdirSync(dirname(futureDemandRiskStatePath), { recursive: true })
+  const temporaryPath =
+    `${futureDemandRiskStatePath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(futureDemandRiskStates, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, futureDemandRiskStatePath)
 }
 
 const safeEqual = (left, right) => {
@@ -973,9 +1037,6 @@ const collectLiveFor = async (hotelId) => {
   const operation = (async () => {
     const hotel = selectedHotel(hotelId)
     const businessDayControl = businessDayControlFor(hotelId)
-    if (!businessDayControl.businessDate) {
-      throw new Error('BUSINESS_DAY_UNCONFIRMED')
-    }
     if (!reportSourcesByHotel.has(hotelId)) {
       reportSourcesByHotel.set(hotelId, defaultReportSources())
     }
@@ -1001,13 +1062,49 @@ const collectLiveFor = async (hotelId) => {
       hotSellingRoomTypeCodes:
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
       reportDate: businessDayControl.businessDate,
-      businessDateBasis: 'PMS_CONFIRMED',
     })
+    if (
+      businessDayControl.businessDate !== result.snapshot.businessDate
+      || businessDayControl.mode !== 'PMS_CONFIRMED'
+      || businessDayControl.businessDateStartedAt
+        !== result.snapshot.businessDateStartedAt
+    ) {
+      const previousBusinessDate = businessDayControl.businessDate
+      businessDayControlsByHotel.set(hotelId, {
+        businessDate: result.snapshot.businessDate,
+        mode: 'PMS_CONFIRMED',
+        source: 'PMS_NIGHT_AUDIT_API',
+        businessDateStartedAt: result.snapshot.businessDateStartedAt,
+        updatedAt: new Date().toISOString(),
+      })
+      persistBusinessDayControls()
+      process.stdout.write(
+        `${JSON.stringify({
+          event: 'PMS_BUSINESS_DAY_CONFIRMED',
+          hotelId,
+          previousBusinessDate,
+          businessDate: result.snapshot.businessDate,
+        })}\n`,
+      )
+    }
     appendAndPersistSnapshot(
       liveSnapshotStore,
       liveSnapshotPath,
       result.snapshot,
     )
+    try {
+      await deliverFutureDemandRisks(hotelId, result.snapshot)
+    } catch (error) {
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+          hotelId,
+          collectionRunId: result.snapshot.collectionRunId,
+          reasonCode:
+            error?.message ?? 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+        })}\n`,
+      )
+    }
     return result
   })()
   liveCollectionLocks.set(hotelId, operation)
@@ -1045,8 +1142,7 @@ const scheduledCollectionTick = async () => {
   if (minute > 5) return
   for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
     if (
-      !businessDayControlFor(hotel.hotelId).businessDate
-      || Object.keys(secretsForHotel(hotel.hotelId)).length === 0
+      Object.keys(secretsForHotel(hotel.hotelId)).length === 0
     ) {
       continue
     }
@@ -1078,21 +1174,13 @@ const scheduledCollectionTick = async () => {
   }
 }
 
-const snapshotHourKey = (snapshot) => {
-  const match = String(snapshot?.observedAt ?? '').match(
-    /^(\d{4}-\d{2}-\d{2}T\d{2}):(\d{2})/,
-  )
-  if (!match) return null
-  const minute = Number(match[2])
-  if (!Number.isInteger(minute) || minute > 5) return null
-  return match[1]
-}
-
 const deliverWeComSnapshot = async ({
   hotelId,
   snapshot,
   messageKey,
   messagePrefix,
+  payloadFactory = null,
+  deliveryType = 'TODAY_REVENUE',
   allowDisabled = false,
 }) => {
   const existing = weComDeliveriesByKey.get(messageKey)
@@ -1115,17 +1203,23 @@ const deliverWeComSnapshot = async ({
       cookieSecretKey,
       weComSecretScope(hotelId),
     )
-    const monitor = monitorFromSnapshot(
-      snapshot,
-      selectedHotel(hotelId),
-      null,
-      hotSellingRoomTypesFor(hotelId).roomTypeCodes,
-    )
-    const payloads = createReportMonitorWeComPayloads(monitor, {
-      messagePrefix,
-      snapshot,
-      briefId: snapshot.collectionRunId,
-    })
+    const hotel = selectedHotel(hotelId)
+    const payloads =
+      typeof payloadFactory === 'function'
+        ? payloadFactory({ hotel, snapshot, messagePrefix })
+        : createReportMonitorWeComPayloads(
+            monitorFromSnapshot(
+              snapshot,
+              hotel,
+              null,
+              hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+            ),
+            {
+              messagePrefix,
+              snapshot,
+              briefId: snapshot.collectionRunId,
+            },
+          )
     const messageSha256 = sha256(
       payloads.map((payload) => payload.text.content).join('\n---\n'),
     )
@@ -1133,6 +1227,7 @@ const deliverWeComSnapshot = async ({
     const delivery = {
       deliveryId: randomUUID(),
       messageKey,
+      deliveryType,
       hotelId,
       businessDate: snapshot.businessDate,
       cutoffAt: snapshot.observedAt,
@@ -1229,38 +1324,62 @@ const deliverWeComSnapshot = async ({
   }
 }
 
+const deliverFutureDemandRisks = async (hotelId, snapshot) => {
+  const stateChanged = reconcileFutureDemandRiskStates({
+    hotelId,
+    snapshot,
+    riskStates: futureDemandRiskStates,
+  })
+  if (stateChanged) persistFutureDemandRiskStates()
+  const config = weComConfigFor(hotelId)
+  if (!config.enabled || !config.webhookConfigured) return []
+
+  const candidates = selectFutureDemandRiskCandidates({
+    hotelId,
+    snapshot,
+    riskStates: futureDemandRiskStates,
+  })
+  if (candidates.length === 0) return []
+  const delivery = await deliverWeComSnapshot({
+    hotelId,
+    snapshot,
+    messageKey:
+      `${hotelId}:P1_FUTURE_DEMAND:${snapshot.collectionRunId}`,
+    deliveryType: 'P1_FUTURE_DEMAND',
+    payloadFactory: ({ hotel: selected, snapshot: current }) =>
+      createFutureDemandP1WeComPayloads(selected, current, candidates),
+  })
+  if (delivery.deliveryStatus === 'DELIVERED') {
+    for (const candidate of candidates) {
+      futureDemandRiskStates[candidate.stateKey] =
+        futureDemandRiskStateAfterDelivery(candidate, snapshot)
+    }
+    persistFutureDemandRiskStates()
+  }
+  return [delivery]
+}
+
 const scheduledWeComDeliveryTick = async () => {
   const { hourKey, minute } = shanghaiHour()
   if (minute < 6) return
   for (const hotel of hotels) {
     const config = weComConfigFor(hotel.hotelId)
     if (!config.enabled || !config.webhookConfigured) continue
-    const candidates = (liveSnapshotStore[hotel.hotelId] ?? [])
-      .map((snapshot) => ({
-        snapshot,
-        snapshotHour: snapshotHourKey(snapshot),
-      }))
-      .filter((item) => item.snapshotHour)
-      .sort((left, right) =>
-        left.snapshot.observedAt.localeCompare(right.snapshot.observedAt))
-      .filter((item) => {
-        const messageKey =
-          `${hotel.hotelId}:${item.snapshot.businessDate}:`
-          + `${item.snapshotHour}:HOURLY_UAT_V1`
-        return !weComDeliveriesByKey.has(messageKey)
-      })
-      .slice(0, 4)
+    const candidates = selectHourlyDeliveryCandidates({
+      hotelId: hotel.hotelId,
+      snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
+      deliveredMessageKeys: new Set(weComDeliveriesByKey.keys()),
+      businessDayControl: businessDayControlFor(hotel.hotelId),
+      limit: 4,
+    })
     for (const candidate of candidates) {
-      const messageKey =
-        `${hotel.hotelId}:${candidate.snapshot.businessDate}:`
-        + `${candidate.snapshotHour}:HOURLY_UAT_V1`
       const messagePrefix =
         candidate.snapshotHour === hourKey ? null : '补发小时简报'
       try {
         await deliverWeComSnapshot({
           hotelId: hotel.hotelId,
           snapshot: candidate.snapshot,
-          messageKey,
+          messageKey: candidate.messageKey,
           messagePrefix,
         })
       } catch (error) {
@@ -1268,8 +1387,56 @@ const scheduledWeComDeliveryTick = async () => {
           `${JSON.stringify({
             event: 'WECOM_DELIVERY_FAILED_CLOSED',
             hotelId: hotel.hotelId,
-            messageKey,
+            messageKey: candidate.messageKey,
             reasonCode: error?.message ?? 'WECOM_DELIVERY_FAILED_CLOSED',
+          })}\n`,
+        )
+      }
+    }
+  }
+}
+
+const scheduledFutureBookingDeliveryTick = async () => {
+  const { hourKey, minute } = shanghaiHour()
+  if (minute < 8) return
+  for (const hotel of hotels) {
+    const config = weComConfigFor(hotel.hotelId)
+    if (!config.enabled || !config.webhookConfigured) continue
+    const candidates = selectHourlyDeliveryCandidates({
+      hotelId: hotel.hotelId,
+      snapshots: (liveSnapshotStore[hotel.hotelId] ?? []).filter(
+        (snapshot) =>
+          Array.isArray(snapshot?.futureBookingChanges?.daily)
+          && snapshot.futureBookingChanges.daily.length > 0,
+      ),
+      deliveredMessageKeys: new Set(weComDeliveriesByKey.keys()),
+      businessDayControl: businessDayControlFor(hotel.hotelId),
+      messageKeySuffix: 'FUTURE_14D_V1',
+      limit: 4,
+    })
+    for (const candidate of candidates) {
+      const messagePrefix =
+        candidate.snapshotHour === hourKey ? null : '补发远期房态'
+      try {
+        await deliverWeComSnapshot({
+          hotelId: hotel.hotelId,
+          snapshot: candidate.snapshot,
+          messageKey: candidate.messageKey,
+          messagePrefix,
+          deliveryType: 'FUTURE_14D',
+          payloadFactory: ({ hotel: selected, snapshot: current }) =>
+            createFutureBookingWeComPayloads(selected, current, {
+              messagePrefix,
+            }),
+        })
+      } catch (error) {
+        process.stderr.write(
+          `${JSON.stringify({
+            event: 'FUTURE_BOOKING_WECOM_DELIVERY_FAILED_CLOSED',
+            hotelId: hotel.hotelId,
+            messageKey: candidate.messageKey,
+            reasonCode:
+              error?.message ?? 'FUTURE_BOOKING_WECOM_DELIVERY_FAILED_CLOSED',
           })}\n`,
         )
       }
@@ -1334,7 +1501,7 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET' && path === '/health') {
       json(response, 200, {
         status: 'UP',
-        mode: 'LOCAL_LIVE_PILOT',
+        mode: runtimeMode,
         automaticHourlyCollectionEnabled,
         outboundDeliveryEnabled:
           [...weComConfigsByHotel.values()]
@@ -1494,6 +1661,8 @@ const server = createServer(async (request, response) => {
         const control = {
           businessDate: body.businessDate,
           mode: 'PMS_CONFIRMED',
+          source: 'MANUAL_SEED',
+          businessDateStartedAt: null,
           updatedAt: new Date().toISOString(),
         }
         businessDayControlsByHotel.set(hotelId, control)
@@ -1614,6 +1783,38 @@ const server = createServer(async (request, response) => {
           messageKey: `${hotelId}:TEST:${randomUUID()}`,
           messagePrefix: '手动通道测试',
           allowDisabled: true,
+        })
+        json(response, 200, { data: delivery })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/wecom-future-test-deliveries'
+      ) {
+        const body = await readBody(request)
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+        ) {
+          throw new Error('REASON_CODE_INVALID')
+        }
+        const snapshot = (liveSnapshotStore[hotelId] ?? []).at(-1)
+        if (
+          !snapshot
+          || !Array.isArray(snapshot.futureBookingChanges?.daily)
+        ) {
+          throw new Error('FUTURE_BOOKING_SNAPSHOT_REQUIRED')
+        }
+        const delivery = await deliverWeComSnapshot({
+          hotelId,
+          snapshot,
+          messageKey: `${hotelId}:FUTURE_TEST:${randomUUID()}`,
+          deliveryType: 'FUTURE_14D_TEST',
+          allowDisabled: true,
+          payloadFactory: ({ hotel: selected, snapshot: current }) =>
+            createFutureBookingWeComPayloads(selected, current, {
+              messagePrefix: '手动通道测试',
+            }),
         })
         json(response, 200, { data: delivery })
         return
@@ -1764,18 +1965,20 @@ server.listen(port, host, () => {
   process.stdout.write(
     `${JSON.stringify({
       status: 'READY',
-      mode: 'LOCAL_LIVE_PILOT',
+      mode: runtimeMode,
       url: `http://${host}:${port}`,
     })}\n`,
   )
   const scheduler = setInterval(() => {
     void scheduledCollectionTick()
     void scheduledWeComDeliveryTick()
+    void scheduledFutureBookingDeliveryTick()
   }, 30_000)
   scheduler.unref()
   const initialScheduler = setTimeout(() => {
     void scheduledCollectionTick()
     void scheduledWeComDeliveryTick()
+    void scheduledFutureBookingDeliveryTick()
   }, 2_000)
   initialScheduler.unref()
 })

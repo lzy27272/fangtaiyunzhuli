@@ -3,6 +3,7 @@ param(
     [string]$RcEvidencePath,
     [string]$ReleaseArtifactPath1,
     [string]$ReleaseArtifactPath2,
+    [string[]]$InputFile = @(),
     [string]$OutputFormat = 'Json',
     [long]$MaxTextBytes = 67108864,
     [long]$MaxArchiveEntryBytes = 67108864,
@@ -547,6 +548,88 @@ function Resolve-InputRoot {
     }
 }
 
+function Resolve-InputFile {
+    param(
+        [string]$Path,
+        [int]$Index
+    )
+
+    $label = 'input-file-' + $Index
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        Add-ScanError 'INPUT_FILE_PATH_MISSING' $label $null
+        return $null
+    }
+
+    try {
+        $resolved = Resolve-Path -LiteralPath $Path -ErrorAction Stop
+        if ($resolved.Provider.Name -ne 'FileSystem') {
+            Add-ScanError 'INPUT_FILE_NOT_FILESYSTEM' $label $null
+            return $null
+        }
+        $item = Get-Item -LiteralPath $resolved.Path -Force -ErrorAction Stop
+        if ($item.PSIsContainer) {
+            Add-ScanError 'INPUT_FILE_NOT_LEAF' $label $null
+            return $null
+        }
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Add-ScanError 'INPUT_FILE_REPARSE_POINT_NOT_ALLOWED' $label $null
+            return $null
+        }
+
+        $providedPath = $Path.Trim().Replace('\', '/')
+        $displayPath = if ([System.IO.Path]::IsPathRooted($Path)) {
+            $label + '/' + $item.Name
+        } else {
+            'input-file/' + $providedPath.TrimStart('.', '/')
+        }
+        return [pscustomobject][ordered]@{
+            FullPath = [System.IO.Path]::GetFullPath($item.FullName)
+            DisplayPath = $displayPath
+        }
+    } catch {
+        Add-ScanError 'INPUT_FILE_PATH_UNAVAILABLE' $label $null
+        return $null
+    }
+}
+
+function Scan-SingleFile {
+    param(
+        [string]$FullPath,
+        [string]$DisplayPath
+    )
+
+    $script:Stats.filesScanned = [int]$script:Stats.filesScanned + 1
+    Scan-TextValue $DisplayPath $DisplayPath $null $true
+
+    try {
+        $before = Get-Item -LiteralPath $FullPath -Force -ErrorAction Stop
+        $beforeLength = [long]$before.Length
+        $beforeTicks = [long]$before.LastWriteTimeUtc.Ticks
+    } catch {
+        Add-ScanError 'FILE_METADATA_READ_FAILED' $DisplayPath $null
+        return
+    }
+
+    if (Test-ArchiveName $FullPath) {
+        Scan-ArchiveFile $FullPath $DisplayPath
+    } else {
+        Scan-PlainFile $FullPath $DisplayPath $beforeLength
+    }
+
+    try {
+        $fileSha256 = Get-FileSha256 $FullPath
+        $after = Get-Item -LiteralPath $FullPath -Force -ErrorAction Stop
+        if ([long]$after.Length -ne $beforeLength -or [long]$after.LastWriteTimeUtc.Ticks -ne $beforeTicks) {
+            Add-ScanError 'INPUT_CHANGED_DURING_SCAN' $DisplayPath $null
+            return
+        }
+        $encodedRelative = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($DisplayPath))
+        [void]$script:FingerprintLines.Add($encodedRelative + '|' + $beforeLength + '|' + $fileSha256)
+    } catch {
+        Add-ScanError 'FILE_HASH_FAILED' $DisplayPath $null
+    }
+}
+
 function Scan-InputRoot {
     param(
         [string]$Label,
@@ -581,37 +664,7 @@ function Scan-InputRoot {
             continue
         }
 
-        $displayPath = $Label + '/' + $relative
-        $script:Stats.filesScanned = [int]$script:Stats.filesScanned + 1
-        Scan-TextValue $displayPath $displayPath $null $true
-
-        try {
-            $before = Get-Item -LiteralPath $fullPath -Force -ErrorAction Stop
-            $beforeLength = [long]$before.Length
-            $beforeTicks = [long]$before.LastWriteTimeUtc.Ticks
-        } catch {
-            Add-ScanError 'FILE_METADATA_READ_FAILED' $displayPath $null
-            continue
-        }
-
-        if (Test-ArchiveName $fullPath) {
-            Scan-ArchiveFile $fullPath $displayPath
-        } else {
-            Scan-PlainFile $fullPath $displayPath $beforeLength
-        }
-
-        try {
-            $fileSha256 = Get-FileSha256 $fullPath
-            $after = Get-Item -LiteralPath $fullPath -Force -ErrorAction Stop
-            if ([long]$after.Length -ne $beforeLength -or [long]$after.LastWriteTimeUtc.Ticks -ne $beforeTicks) {
-                Add-ScanError 'INPUT_CHANGED_DURING_SCAN' $displayPath $null
-                continue
-            }
-            $encodedRelative = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($displayPath))
-            [void]$script:FingerprintLines.Add($encodedRelative + '|' + $beforeLength + '|' + $fileSha256)
-        } catch {
-            Add-ScanError 'FILE_HASH_FAILED' $displayPath $null
-        }
+        Scan-SingleFile $fullPath ($Label + '/' + $relative)
     }
 }
 
@@ -720,7 +773,7 @@ try {
         New-DetectionRule 'STRIPE_LIVE_KEY' '(?<![A-Za-z0-9_])(?:sk|rk)_live_[A-Za-z0-9]{16,}(?![A-Za-z0-9_])'
         New-DetectionRule 'GOOGLE_API_KEY' '(?<![A-Za-z0-9_-])AIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])'
         New-DetectionRule 'NPM_TOKEN' '(?<![A-Za-z0-9_])npm_[A-Za-z0-9]{36}(?![A-Za-z0-9_])'
-        New-DetectionRule 'PASSWORD_ASSIGNMENT' '(?:^|[\s,;{])["'']?(?:password|passwd|pwd|db_password|database_password)["'']?\s*(?:=|:)\s*(?!(?:["'']|\s)*(?:null|none|pending|redacted|masked|changeme|example|\*{3,}|\$\{|\{\{))(?:(?:"[^"\r\n]{4,}")|(?:''[^''\r\n]{4,}'')|(?:[^\s,;}\]]{4,}))' $true
+        New-DetectionRule 'PASSWORD_ASSIGNMENT' '(?<![A-Za-z0-9_])\$?["'']?(?:password|passwd|pwd|db_password|database_password)["'']?\s*(?:=|:)\s*(?!(?:["'']|\s)*(?:null|none|pending|redacted|masked|changeme|example|\*{3,}|\$\{|\{\{))(?:(?:"[^"\r\n]{4,}")|(?:''[^''\r\n]{4,}'')|(?:`[^`\r\n]{4,}`))' $true
     )
 
     $script:KnownTextExtensions = @{}
@@ -740,16 +793,29 @@ try {
     Initialize-ScannerState
 
     $script:Phase = 'RESOLVE_INPUT_ROOTS'
-    $rootInputs = @(
+    $rootInputs = @(@(
         [pscustomobject][ordered]@{ Label = 'rc-evidence'; Path = $RcEvidencePath },
         [pscustomobject][ordered]@{ Label = 'release-artifact-1'; Path = $ReleaseArtifactPath1 },
         [pscustomobject][ordered]@{ Label = 'release-artifact-2'; Path = $ReleaseArtifactPath2 }
-    )
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Path) })
+    $providedFiles = @($InputFile | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($rootInputs.Count -eq 0 -and $providedFiles.Count -eq 0) {
+        $fatal = New-FatalResult 'INPUT_PATH_MISSING'
+        Write-ScannerResult $fatal $OutputFormat
+        exit 3
+    }
     $resolvedRoots = New-Object 'System.Collections.Generic.List[object]'
     foreach ($rootInput in $rootInputs) {
         $resolvedPath = Resolve-InputRoot $rootInput.Label $rootInput.Path
         if ($null -ne $resolvedPath) {
             [void]$resolvedRoots.Add([pscustomobject][ordered]@{ Label = $rootInput.Label; Path = $resolvedPath })
+        }
+    }
+    $resolvedFiles = New-Object 'System.Collections.Generic.List[object]'
+    for ($inputFileIndex = 0; $inputFileIndex -lt $providedFiles.Count; $inputFileIndex++) {
+        $resolvedFile = Resolve-InputFile $providedFiles[$inputFileIndex] ($inputFileIndex + 1)
+        if ($null -ne $resolvedFile) {
+            [void]$resolvedFiles.Add($resolvedFile)
         }
     }
 
@@ -763,6 +829,17 @@ try {
         }
         $seenRoots[$rootKey] = $true
         Scan-InputRoot $root.Label $root.Path
+    }
+    $seenFiles = @{}
+    foreach ($resolvedInputFile in $resolvedFiles) {
+        $fileKey = $resolvedInputFile.FullPath.ToLowerInvariant()
+        if ($seenFiles.ContainsKey($fileKey)) {
+            Add-ScanError 'DUPLICATE_INPUT_FILE' $resolvedInputFile.DisplayPath $null
+            continue
+        }
+        $seenFiles[$fileKey] = $true
+        $script:Stats.inputRootsAccepted = [int]$script:Stats.inputRootsAccepted + 1
+        Scan-SingleFile $resolvedInputFile.FullPath $resolvedInputFile.DisplayPath
     }
 
     $script:Phase = 'BUILD_FINDINGS'

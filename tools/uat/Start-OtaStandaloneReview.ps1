@@ -3,7 +3,8 @@ param(
     [int]$ApiPort = 8091,
     [int]$WebPort = 5180,
     [ValidateRange(1, 168)]
-    [int]$RuntimeHours = 24
+    [int]$RuntimeHours = 24,
+    [switch]$LongRunning
 )
 
 Set-StrictMode -Version Latest
@@ -154,6 +155,7 @@ $previousDataPath = $env:OTA_REVIEW_DATA_PATH
 $previousCookieSecretsPath = $env:OTA_REVIEW_COOKIE_SECRETS_PATH
 $previousSecretKey = $env:OTA_REVIEW_SECRET_KEY
 $previousAutoCollection = $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED
+$previousRuntimeMode = $env:OTA_REVIEW_RUNTIME_MODE
 $previousProxy = $env:OTA_API_PROXY_TARGET
 
 try {
@@ -165,6 +167,12 @@ try {
     $env:OTA_REVIEW_COOKIE_SECRETS_PATH = $cookieSecretsPath
     $env:OTA_REVIEW_SECRET_KEY = $reviewSecretKey
     $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = 'true'
+    $env:OTA_REVIEW_RUNTIME_MODE = if ($LongRunning) {
+        'LOCAL_LIVE_LONG_RUNNING'
+    }
+    else {
+        'LOCAL_LIVE_PILOT'
+    }
 
     $apiProcess = Start-Process `
         -FilePath $node `
@@ -185,6 +193,7 @@ try {
     $env:OTA_REVIEW_COOKIE_SECRETS_PATH = $previousCookieSecretsPath
     $env:OTA_REVIEW_SECRET_KEY = $previousSecretKey
     $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = $previousAutoCollection
+    $env:OTA_REVIEW_RUNTIME_MODE = $previousRuntimeMode
 
     $env:OTA_API_PROXY_TARGET = "http://127.0.0.1:$ApiPort"
     $webProcess = Start-Process `
@@ -206,11 +215,22 @@ try {
         -PassThru
     Wait-Http "http://127.0.0.1:$WebPort" 60
 
+    $expiresAt = if ($LongRunning) {
+        $null
+    }
+    else {
+        [DateTimeOffset]::Now.AddHours($RuntimeHours).ToString('o')
+    }
     $state = [ordered]@{
         status = 'RUNNING'
-        mode = 'LOCAL_LIVE_PILOT'
+        mode = if ($LongRunning) {
+            'LOCAL_LIVE_LONG_RUNNING'
+        }
+        else {
+            'LOCAL_LIVE_PILOT'
+        }
         startedAt = [DateTimeOffset]::Now.ToString('o')
-        expiresAt = [DateTimeOffset]::Now.AddHours($RuntimeHours).ToString('o')
+        expiresAt = $expiresAt
         webUrl = "http://127.0.0.1:$WebPort"
         apiUrl = "http://127.0.0.1:$ApiPort"
         apiPid = $apiProcess.Id
@@ -220,32 +240,42 @@ try {
         automaticHourlyCollection = $true
         realWeComDelivery = 'CONFIGURABLE_UAT'
         cookieSecretStorage = 'WINDOWS_DPAPI_AES256_GCM'
+        longRunning = [bool]$LongRunning
+        restartPolicy = if ($LongRunning) {
+            'WINDOWS_SCHEDULED_TASK_SUPERVISOR'
+        }
+        else {
+            'TIMED_STOP'
+        }
+        watchdogPid = $null
     }
     [IO.File]::WriteAllText(
         $statePath,
         ($state | ConvertTo-Json) + [Environment]::NewLine,
         [Text.UTF8Encoding]::new($false)
     )
-    $watchdog = Start-Process `
-        -FilePath (Join-Path $PSHOME 'powershell.exe') `
-        -ArgumentList @(
-            '-NoProfile',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-File',
-            $stopScript,
-            '-DelaySeconds',
-            [string]($RuntimeHours * 3600)
-        ) `
-        -WorkingDirectory $repoRoot `
-        -WindowStyle Hidden `
-        -PassThru
-    $state['watchdogPid'] = $watchdog.Id
-    [IO.File]::WriteAllText(
-        $statePath,
-        ($state | ConvertTo-Json) + [Environment]::NewLine,
-        [Text.UTF8Encoding]::new($false)
-    )
+    if (-not $LongRunning) {
+        $watchdog = Start-Process `
+            -FilePath (Join-Path $PSHOME 'powershell.exe') `
+            -ArgumentList @(
+                '-NoProfile',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-File',
+                $stopScript,
+                '-DelaySeconds',
+                [string]($RuntimeHours * 3600)
+            ) `
+            -WorkingDirectory $repoRoot `
+            -WindowStyle Hidden `
+            -PassThru
+        $state['watchdogPid'] = $watchdog.Id
+        [IO.File]::WriteAllText(
+            $statePath,
+            ($state | ConvertTo-Json) + [Environment]::NewLine,
+            [Text.UTF8Encoding]::new($false)
+        )
+    }
 
     $credentials = [ordered]@{
         username = $reviewUsername
@@ -260,14 +290,14 @@ try {
 
     $result = [ordered]@{
         status = 'READY'
-        mode = 'LOCAL_LIVE_PILOT'
+        mode = $state.mode
         webUrl = $state.webUrl
         apiUrl = $state.apiUrl
         username = $reviewUsername
         password = $reviewPassword
         apiPid = $apiProcess.Id
         webPid = $webProcess.Id
-        watchdogPid = $watchdog.Id
+        watchdogPid = $state.watchdogPid
         expiresAt = $state.expiresAt
     } | ConvertTo-Json
     Write-Output $result
@@ -296,5 +326,6 @@ finally {
     $env:OTA_REVIEW_COOKIE_SECRETS_PATH = $previousCookieSecretsPath
     $env:OTA_REVIEW_SECRET_KEY = $previousSecretKey
     $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = $previousAutoCollection
+    $env:OTA_REVIEW_RUNTIME_MODE = $previousRuntimeMode
     $env:OTA_API_PROXY_TARGET = $previousProxy
 }

@@ -11,6 +11,9 @@ import { dirname } from 'node:path'
 const MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 const SNAPSHOT_RETENTION = 50
 const SHANGHAI_OFFSET = '+08:00'
+const PMS_BUSINESS_DAY_ENDPOINT =
+  'https://pms.meituan.com'
+  + '/hotelpms/api/v1/night/audit/businessDate/detail?moduleKey=RoomStatus'
 const SUPPORTED_REPORT_PATHS = new Map([
   ['/hotelpms/api/v1/report/jd01', 'ORDER_DETAIL'],
   ['/hotelpms/api/v2/report/jy09', 'FUTURE_OVERVIEW'],
@@ -53,11 +56,6 @@ const localParts = (date) => {
   )
 }
 
-const localDate = (date) => {
-  const parts = localParts(date)
-  return `${parts.year}-${parts.month}-${parts.day}`
-}
-
 const localIso = (date) => {
   const parts = localParts(date)
   return `${parts.year}-${parts.month}-${parts.day}`
@@ -68,6 +66,20 @@ const addDays = (dateText, days) => {
   const date = new Date(`${dateText}T00:00:00Z`)
   date.setUTCDate(date.getUTCDate() + days)
   return date.toISOString().slice(0, 10)
+}
+
+const canonicalBusinessDate = (value) => {
+  const text = String(value ?? '').trim()
+  const normalized =
+    /^\d{8}$/.test(text)
+      ? `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`
+      : text
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null
+  const parsed = new Date(`${normalized}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10) === normalized
+    ? normalized
+    : null
 }
 
 const readCookieValue = (cookie, name) => {
@@ -147,7 +159,7 @@ const requestContract = (source, cookie, reportDate) => {
       body: {
         hotelId,
         startDate: reportDate,
-        endDate: addDays(reportDate, 13),
+        endDate: addDays(reportDate, 90),
         dimension: 'Hotel',
       },
     }
@@ -277,6 +289,80 @@ const readLimitedJson = async (response) => {
   } catch {
     throw new Error('RESPONSE_JSON_INVALID')
   }
+}
+
+const fetchPmsBusinessDay = async (cookie, fetchImpl) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  const clientId = readCookieValue(cookie, '_lxsdk_cuid')
+  let response
+  try {
+    response = await fetchImpl(PMS_BUSINESS_DAY_ENDPOINT, {
+      method: 'GET',
+      redirect: 'error',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        Cookie: cookie,
+        Referer: 'https://pms.meituan.com/',
+        'User-Agent': 'Sifangguan-ReadOnly-Report-Collector/0.1',
+        ...(clientId
+          ? {
+              'hotelpms-client-id': clientId,
+              'hotelpms-platform': 'pc',
+            }
+          : {}),
+      },
+    })
+  } catch {
+    throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
+  } finally {
+    clearTimeout(timer)
+  }
+  if (!response.ok) throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
+  let root
+  try {
+    root = await readLimitedJson(response)
+  } catch {
+    throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
+  }
+  if (![0, 10000].includes(Number(root?.code))) {
+    throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
+  }
+  const businessDate = canonicalBusinessDate(
+    root?.data?.businessDate ?? root?.data,
+  )
+  if (!businessDate) throw new Error('PMS_BUSINESS_DATE_INVALID')
+  const beginTime = finiteNumber(root?.data?.businessBeginTime)
+  const businessDateStartedAt =
+    beginTime !== null && beginTime > 0
+      ? localIso(new Date(beginTime))
+      : null
+  return { businessDate, businessDateStartedAt }
+}
+
+const resolvePmsBusinessDay = async ({
+  enabledSources,
+  cookiesBySourceId,
+  fetchImpl,
+}) => {
+  const candidateCookies = [
+    ...new Set(
+      enabledSources
+        .map((source) => cookiesBySourceId[source.sourceId])
+        .filter((cookie) => typeof cookie === 'string' && cookie.length > 0),
+    ),
+  ]
+  for (const cookie of candidateCookies) {
+    try {
+      return await fetchPmsBusinessDay(cookie, fetchImpl)
+    } catch {
+      // A store can temporarily contain one expired source Cookie and another
+      // current one. Only fail after every configured PMS session was tried.
+    }
+  }
+  throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
 }
 
 const safeErrorCode = (error) => {
@@ -426,23 +512,37 @@ const orderState = (root, reportDate, secretKey) => {
     .sort((left, right) => left.key.localeCompare(right.key))
 }
 
+const overviewRowState = (row) => ({
+  stayDate: canonicalBusinessDate(row?.estimatedDate),
+  roomCount: finiteNumber(row?.roomCount),
+  availableRooms: finiteNumber(row?.availableRoom),
+  soldRooms: finiteNumber(row?.saleRoom),
+  orderRooms: finiteNumber(row?.orderRoom),
+  checkinRooms: finiteNumber(row?.checkinRoom),
+  roomFee: finiteNumber(row?.estimatedRoomFee),
+  revenue: finiteNumber(row?.estimatedRevenue),
+  roomNights: finiteNumber(row?.estimatedRoomNights),
+  occupancyRate: finiteNumber(row?.estimatedRentRate),
+  adr: finiteNumber(row?.estimatedAvgRoomPrice),
+  revPar: finiteNumber(row?.estimatedRevpar),
+})
+
 const overviewState = (root, reportDate) => {
   const rows = root?.data?.dataList
   if (!Array.isArray(rows)) throw new Error('REPORT_DATA_INVALID')
-  const row = rows.find((item) => item?.estimatedDate === reportDate)
-  if (!row) throw new Error('REPORT_DATA_INVALID')
+  const daily = rows
+    .map(overviewRowState)
+    .filter((row) => row.stayDate)
+    .sort((left, right) => left.stayDate.localeCompare(right.stayDate))
+  const current = daily.find((row) => row.stayDate === reportDate)
+  if (!current) throw new Error('REPORT_DATA_INVALID')
   return {
-    roomCount: finiteNumber(row.roomCount),
-    availableRooms: finiteNumber(row.availableRoom),
-    soldRooms: finiteNumber(row.saleRoom),
-    orderRooms: finiteNumber(row.orderRoom),
-    checkinRooms: finiteNumber(row.checkinRoom),
-    roomFee: finiteNumber(row.estimatedRoomFee),
-    revenue: finiteNumber(row.estimatedRevenue),
-    roomNights: finiteNumber(row.estimatedRoomNights),
-    occupancyRate: finiteNumber(row.estimatedRentRate),
-    adr: finiteNumber(row.estimatedAvgRoomPrice),
-    revPar: finiteNumber(row.estimatedRevpar),
+    current,
+    futureDaily: daily.filter(
+      (row) =>
+        row.stayDate > reportDate
+        && row.stayDate <= addDays(reportDate, 90),
+    ),
   }
 }
 
@@ -662,6 +762,128 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
   }
 }
 
+const futureBookedRoomNights = (row) =>
+  finiteNumber(row?.roomNights) ?? finiteNumber(row?.soldRooms)
+
+const occupancyPercentFor = (row) => {
+  const reported = finiteNumber(row?.occupancyRate)
+  if (reported !== null) return rounded(reported <= 2 ? reported * 100 : reported)
+  const booked = futureBookedRoomNights(row)
+  const roomCount = finiteNumber(row?.roomCount)
+  return booked === null || roomCount === null || roomCount <= 0
+    ? null
+    : rounded(booked / roomCount * 100)
+}
+
+const closestHourlyFutureBaseline = (
+  previousSnapshots,
+  observedAtMs,
+) =>
+  previousSnapshots
+    .filter(
+      (candidate) =>
+        Array.isArray(candidate?.futureDaily)
+        && Number.isFinite(new Date(candidate.observedAt).getTime()),
+    )
+    .map((candidate) => ({
+      candidate,
+      distance: Math.abs(
+        new Date(candidate.observedAt).getTime()
+        - (observedAtMs - 60 * 60 * 1000),
+      ),
+    }))
+    .filter((item) => item.distance <= 15 * 60 * 1000)
+    .sort((left, right) => left.distance - right.distance)[0]?.candidate ?? null
+
+const previousCalendarDayEndBaseline = (
+  snapshot,
+  previousSnapshots,
+) => {
+  const observedDate = String(snapshot.observedAt ?? '').slice(0, 10)
+  const previousDate = canonicalBusinessDate(observedDate)
+    ? addDays(observedDate, -1)
+    : null
+  if (!previousDate) return null
+  return previousSnapshots
+    .filter(
+      (candidate) =>
+        Array.isArray(candidate?.futureDaily)
+        && ['COMPLETE', 'PARTIAL'].includes(candidate?.completeness)
+        && String(candidate.observedAt ?? '').startsWith(`${previousDate}T`),
+    )
+    .sort((left, right) =>
+      String(right.observedAt).localeCompare(String(left.observedAt)))[0] ?? null
+}
+
+const futureBookingChangesFor = (
+  snapshot,
+  previousSnapshots,
+  observedAtMs,
+) => {
+  const hourlyBaseline = closestHourlyFutureBaseline(
+    previousSnapshots,
+    observedAtMs,
+  )
+  const previousDayEnd = previousCalendarDayEndBaseline(
+    snapshot,
+    previousSnapshots,
+  )
+  const hourlyRows = new Map(
+    (hourlyBaseline?.futureDaily ?? [])
+      .map((row) => [row.stayDate, row]),
+  )
+  const previousDayRows = new Map(
+    (previousDayEnd?.futureDaily ?? [])
+      .map((row) => [row.stayDate, row]),
+  )
+  const daily = (snapshot.futureDaily ?? []).map((row) => {
+    const bookedRoomNights = futureBookedRoomNights(row)
+    const hourly = hourlyRows.get(row.stayDate)
+    const yesterday = previousDayRows.get(row.stayDate)
+    const hourlyBooked = futureBookedRoomNights(hourly)
+    const yesterdayBooked = futureBookedRoomNights(yesterday)
+    const hourlyNetRoomNights =
+      bookedRoomNights === null || hourlyBooked === null
+        ? null
+        : rounded(bookedRoomNights - hourlyBooked)
+    const previousDayNetRoomNights =
+      bookedRoomNights === null || yesterdayBooked === null
+        ? null
+        : rounded(bookedRoomNights - yesterdayBooked)
+    const hourlyRoomFeeDelta =
+      finiteNumber(row.roomFee) === null || finiteNumber(hourly?.roomFee) === null
+        ? null
+        : rounded(finiteNumber(row.roomFee) - finiteNumber(hourly.roomFee))
+    const inferredHourlyAdr =
+      hourlyNetRoomNights !== null
+      && hourlyNetRoomNights > 0
+      && hourlyRoomFeeDelta !== null
+        ? rounded(hourlyRoomFeeDelta / hourlyNetRoomNights)
+        : null
+    return {
+      ...row,
+      bookedRoomNights,
+      occupancyPercent: occupancyPercentFor(row),
+      hourlyNetRoomNights,
+      previousDayNetRoomNights,
+      hourlyAdrDelta:
+        finiteNumber(row.adr) === null || finiteNumber(hourly?.adr) === null
+          ? null
+          : rounded(finiteNumber(row.adr) - finiteNumber(hourly.adr)),
+      inferredHourlyAdr,
+    }
+  })
+  return {
+    basis:
+      hourlyBaseline || previousDayEnd
+        ? 'FUTURE_SNAPSHOT_DIFF'
+        : 'BASELINE_PENDING',
+    hourlyBaselineAt: hourlyBaseline?.observedAt ?? null,
+    previousDayEndAt: previousDayEnd?.observedAt ?? null,
+    daily,
+  }
+}
+
 const metric = (value, unit) => ({
   value: value === null || value === undefined ? null : rounded(value),
   unit,
@@ -811,17 +1033,28 @@ export const collectLiveReports = async ({
   target = null,
   hotSellingRoomTypeCodes = [],
   reportDate: configuredReportDate = null,
-  businessDateBasis = 'CALENDAR_FALLBACK',
   now = new Date(),
   fetchImpl = fetch,
 }) => {
-  const reportDate = configuredReportDate ?? localDate(now)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
+  const previousBusinessDate =
+    configuredReportDate === null
+      ? null
+      : canonicalBusinessDate(configuredReportDate)
+  if (configuredReportDate !== null && !previousBusinessDate) {
     throw new Error('BUSINESS_DATE_INVALID')
   }
   const observedAt = localIso(now)
   const collectionRunId = randomUUID()
   const enabledSources = sources.filter((source) => source.enabled)
+  const businessDay = await resolvePmsBusinessDay({
+    enabledSources,
+    cookiesBySourceId,
+    fetchImpl,
+  })
+  const reportDate = businessDay.businessDate
+  const businessDateChanged =
+    previousBusinessDate !== null
+    && previousBusinessDate !== reportDate
   const collected = await Promise.all(
     enabledSources.map(async (source) => {
       const cookie = cookiesBySourceId[source.sourceId]
@@ -902,7 +1135,11 @@ export const collectLiveReports = async ({
     tenantId: hotel.tenantId,
     hotelId: hotel.hotelId,
     businessDate: reportDate,
-    businessDateBasis,
+    businessDateBasis: 'PMS_CONFIRMED',
+    businessDateSource: 'PMS_NIGHT_AUDIT_API',
+    businessDateStartedAt: businessDay.businessDateStartedAt,
+    previousBusinessDate,
+    businessDateChanged,
     observedAt,
     completeness:
       successful.length === 0
@@ -920,7 +1157,8 @@ export const collectLiveReports = async ({
       errorCode: source.errorCode,
     })),
     orders: orderReport?.parsed ?? [],
-    overview: overviewReport?.parsed ?? null,
+    overview: overviewReport?.parsed?.current ?? null,
+    futureDaily: overviewReport?.parsed?.futureDaily ?? [],
     physicalInventory: mergePhysicalInventory(
       physicalReport?.parsed ?? [],
       forecastReport?.parsed ?? [],
@@ -928,6 +1166,11 @@ export const collectLiveReports = async ({
     roomForecast: forecastReport?.parsed ?? [],
   }
   snapshot.hourlyDelta = hourlyDeltaFor(
+    snapshot,
+    previousSnapshots,
+    now.getTime(),
+  )
+  snapshot.futureBookingChanges = futureBookingChangesFor(
     snapshot,
     previousSnapshots,
     now.getTime(),
@@ -944,6 +1187,10 @@ export const collectLiveReports = async ({
       requestedAt: observedAt,
       completedAt: localIso(new Date()),
       businessDate: reportDate,
+      previousBusinessDate,
+      businessDateChanged,
+      businessDateSource: 'PMS_NIGHT_AUDIT_API',
+      businessDateStartedAt: businessDay.businessDateStartedAt,
       sourceCount: enabledSources.length,
       successfulSourceCount: successful.length,
       outboundDeliveryAttempted: false,
