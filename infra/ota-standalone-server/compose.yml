@@ -1,0 +1,71 @@
+name: sifangguan-ota
+
+services:
+  api:
+    image: sifangguan-ota-api:${SFG_OTA_RELEASE_TAG:?SFG_OTA_RELEASE_TAG is required}
+    build:
+      context: ../..
+      dockerfile: infra/ota-standalone-server/Dockerfile
+      target: api
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    env_file:
+      - /etc/sifangguan-ota/runtime.env
+    volumes:
+      - /var/lib/sifangguan-ota:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: local
+      options:
+        max-size: 20m
+        max-file: "5"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:8091/health >/dev/null
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  web:
+    image: sifangguan-ota-web:${SFG_OTA_RELEASE_TAG:?SFG_OTA_RELEASE_TAG is required}
+    build:
+      context: ../..
+      dockerfile: infra/ota-standalone-server/Dockerfile
+      target: web
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /config:rw,noexec,nosuid,nodev,size=16m
+      - /data:rw,noexec,nosuid,nodev,size=16m
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: local
+      options:
+        max-size: 20m
+        max-file: "5"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:5180/ >/dev/null
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s

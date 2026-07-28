@@ -1,0 +1,14 @@
+.git
+.agents
+.codex
+.tooling
+.uat-runtime
+.pnpm-store
+tmp
+**/node_modules
+**/dist
+**/target
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
