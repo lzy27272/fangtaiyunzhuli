@@ -13,14 +13,30 @@ const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
 const otaSourceConfigSource = await readFile(new URL('../src/pages/OtaSourceConfigPanel.tsx', import.meta.url), 'utf8')
 const otaSourceGuidanceSource = await readFile(new URL('../src/pages/otaSourceGuidance.ts', import.meta.url), 'utf8')
+const luopanBrowserConfigSource = await readFile(new URL('../src/pages/LuopanBrowserConfigPanel.tsx', import.meta.url), 'utf8')
+const dataAccessOverviewSource = await readFile(
+  new URL('../src/pages/DataAccessOverviewPanel.tsx', import.meta.url),
+  'utf8',
+)
 const connectionSource = await readFile(new URL('../src/pages/ConnectionConfigPage.tsx', import.meta.url), 'utf8')
 const realPrepSource = await readFile(new URL('../src/pages/RealConnectorPrepPanel.tsx', import.meta.url), 'utf8')
 const browserRehearsalSource = await readFile(new URL('../src/pages/BrowserAuthorizationRehearsalPanel.tsx', import.meta.url), 'utf8')
 const browserRehearsalStateSource = await readFile(new URL('../src/pages/browserAuthorizationRehearsalState.ts', import.meta.url), 'utf8')
 const admissionSource = await readFile(new URL('../src/pages/ConnectorAdmissionReadinessPanel.tsx', import.meta.url), 'utf8')
 const stylesSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
+const hotelContextSource = await readFile(
+  new URL('../src/components/HotelContextBar.tsx', import.meta.url),
+  'utf8',
+)
 const reviewApiSource = await readFile(
   new URL('../../../tools/uat/ota-standalone-review-api.mjs', import.meta.url),
+  'utf8',
+)
+const luopanCollectorSource = await readFile(
+  new URL(
+    '../../../tools/uat/luopan-controlled-browser-collector.mjs',
+    import.meta.url,
+  ),
   'utf8',
 )
 
@@ -137,6 +153,23 @@ test('business calls use the memory access token and idempotency keys', () => {
   assert.doesNotMatch(businessApiSource, /qyapi\.weixin\.qq\.com/)
 })
 
+test('new hotels use an explicit PMS template without copying store secrets or OTA configuration', () => {
+  assert.match(hotelContextSource, /美团别样红/)
+  assert.match(hotelContextSource, /罗盘PMS/)
+  assert.match(hotelContextSource, /pmsUsername/)
+  assert.match(hotelContextSource, /type="password"/)
+  assert.match(hotelContextSource, /Cookie与POST请求载荷保持为空/)
+  assert.match(hotelContextSource, /两种PMS均不复制OTA配置/)
+  assert.match(reviewApiSource, /MEITUAN_BIEYANGHONG/)
+  assert.match(reviewApiSource, /LUOPAN_CLOUD/)
+  assert.match(
+    reviewApiSource,
+    /requestPayloadsBySourceId\.has\(source\.sourceId\)[\s\S]*: ''/,
+  )
+  assert.match(reviewApiSource, /otaSourcesByHotel\.set\(created\.hotelId, \[\]\)/)
+  assert.match(reviewApiSource, /pmsLoginScope\(created\.hotelId\)/)
+})
+
 test('report source administration and scoped revenue configuration stay separate', () => {
   assert.match(appSource, /const canAdminConfigure = session\.account\.roles\.includes\('PLATFORM_ADMIN'\)/)
   assert.match(appSource, /canRevenueConfigure = canAdminConfigure[\s\S]*REVENUE_MANAGER/)
@@ -190,7 +223,8 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(otaSourceConfigSource, /type="password"/)
   assert.match(otaSourceConfigSource, /saveOtaSources/)
   assert.match(otaSourceConfigSource, /refreshOtaSource/)
-  assert.match(otaSourceConfigSource, /保存并立即刷新已启用OTA/)
+  assert.match(otaSourceConfigSource, /保存并自动采集一次/)
+  assert.match(otaSourceConfigSource, /triggerLiveCollection/)
   assert.match(otaSourceConfigSource, /打开OTA后台/)
   assert.match(otaSourceGuidanceSource, /OTA_RESPONSE_NOT_JSON/)
   assert.match(monitorSource, /OTA多维度对比来源/)
@@ -208,6 +242,70 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.doesNotMatch(
     otaViewContract,
     /cookieValue|password: string|account: string|ciphertext|authTag/,
+  )
+})
+
+test('Luopan controlled browser collection is single-hotel locked and produces an explicitly partial brief', () => {
+  assert.match(reportSourceSource, /LuopanBrowserConfigPanel/)
+  assert.match(luopanBrowserConfigSource, /验证单门店会话/)
+  assert.match(luopanBrowserConfigSource, /立即采集并生成简报/)
+  assert.match(luopanBrowserConfigSource, /保存并自动采集一次/)
+  assert.match(luopanBrowserConfigSource, /订单渠道明细尚未接入/)
+  assert.match(businessApiSource, /\/luopan-browser-config/)
+  assert.match(
+    businessApiSource,
+    /\/luopan-browser-session-validations/,
+  )
+  assert.match(luopanCollectorSource, /LUOPAN_HOTEL_SCOPE_AMBIGUOUS/)
+  assert.match(reviewApiSource, /collectLuopanControlledBrowser/)
+  const viewContract = businessApiSource.slice(
+    businessApiSource.indexOf('export interface LuopanBrowserConfigView'),
+    businessApiSource.indexOf('export type OtaPlatformCode'),
+  )
+  assert.doesNotMatch(
+    viewContract,
+    /expectedHotelFingerprint|password|cookie|jsessionid/i,
+  )
+})
+
+test('each saved data-source configuration triggers one collection while manual collection remains available', () => {
+  assert.match(reportSourceSource, /saveReportSources[\s\S]*triggerLiveCollection/)
+  assert.match(
+    reportSourceSource,
+    /保存当前门店配置并自动采集一次|保存同步接口并自动采集一次/,
+  )
+  assert.match(otaSourceConfigSource, /saveOtaSources[\s\S]*triggerLiveCollection/)
+  assert.match(
+    luopanBrowserConfigSource,
+    /saveLuopanBrowserConfig[\s\S]*triggerLiveCollection/,
+  )
+  const collectNowSource = monitorSource.slice(
+    monitorSource.indexOf('const collectNow'),
+    monitorSource.indexOf('useEffect', monitorSource.indexOf('const collectNow')),
+  )
+  assert.match(collectNowSource, /triggerLiveCollection/)
+  assert.doesNotMatch(
+    collectNowSource,
+    /REPORT_SOURCE_COOKIE_REQUIRED|cookieConfigured/,
+  )
+  assert.match(monitorSource, /罗盘云单门店主采集已启用/)
+  assert.match(monitorSource, /重新采集已配置报表/)
+})
+
+test('report-source administration shows configuration, data formation, brief and OTA status together', () => {
+  assert.match(reportSourceSource, /DataAccessOverviewPanel/)
+  assert.match(dataAccessOverviewSource, /当前门店数据接入总览/)
+  assert.match(dataAccessOverviewSource, /经营数据形成/)
+  assert.match(dataAccessOverviewSource, /经营简报/)
+  assert.match(dataAccessOverviewSource, /OTA平台数据/)
+  assert.match(dataAccessOverviewSource, /loadMonitor/)
+  assert.match(dataAccessOverviewSource, /loadBriefs/)
+  assert.match(dataAccessOverviewSource, /loadOtaSources/)
+  assert.match(dataAccessOverviewSource, /配置OTA平台数据/)
+  assert.match(dataAccessOverviewSource, /collectionRunId/)
+  assert.doesNotMatch(
+    dataAccessOverviewSource,
+    /cookieValue|password|expectedHotelFingerprint|jsessionid/i,
   )
 })
 

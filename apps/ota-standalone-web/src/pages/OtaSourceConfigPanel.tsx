@@ -3,6 +3,7 @@ import {
   loadOtaSources,
   refreshOtaSource,
   saveOtaSources,
+  triggerLiveCollection,
   type HotelContext,
   type OtaCredentialUpdate,
   type OtaCookieUpdate,
@@ -16,6 +17,7 @@ interface Props {
   context: HotelContext
   canConfigure: boolean
   attentionSourceId: string | null
+  onStatusChanged?: () => void
 }
 
 const PLATFORM_LABELS: Record<OtaPlatformCode, string> = {
@@ -88,6 +90,7 @@ export function OtaSourceConfigPanel({
   context,
   canConfigure,
   attentionSourceId,
+  onStatusChanged,
 }: Props) {
   const [sources, setSources] = useState<OtaSourceView[]>([])
   const [cookieDrafts, setCookieDrafts] =
@@ -240,7 +243,7 @@ export function OtaSourceConfigPanel({
     }
   }
 
-  async function save(refreshAfter: boolean) {
+  async function save() {
     if (!canConfigure) return
     setError('')
     setNotice('')
@@ -261,26 +264,51 @@ export function OtaSourceConfigPanel({
       setPasswordDrafts({})
       setClearCookies({})
       setClearCredentials({})
-      if (!refreshAfter) {
-        setNotice('OTA网址、Cookie及账号密码配置已安全保存。')
+      const enabledSources = saved.filter((source) => source.enabled)
+      if (enabledSources.length === 0) {
+        setNotice('OTA配置已安全保存；当前没有启用的OTA来源，因此未执行自动采集。')
+        onStatusChanged?.()
         return
       }
-      let completed = 0
-      let failed = 0
-      for (const source of saved.filter((item) => item.enabled)) {
-        setRefreshingId(source.sourceId)
-        try {
-          await refreshOtaSource(context, source.sourceId)
-          completed += 1
-        } catch {
-          failed += 1
+      try {
+        const run = await triggerLiveCollection(context)
+        const refreshed = run.otaRefreshes ?? await reload()
+        setSources(refreshed)
+        const otaCompleted = refreshed.filter(
+          (source) =>
+            source.enabled && source.lastRefreshStatus === 'COMPLETE',
+        ).length
+        setNotice(
+          `OTA配置已保存并自动执行一次融合采集：`
+          + `${run.successfulSourceCount}/${run.sourceCount}个主报表来源可用，`
+          + `${otaCompleted}/${enabledSources.length}个OTA来源已形成数据。`,
+        )
+      } catch (collectionCause) {
+        let completed = 0
+        let failed = 0
+        for (const source of enabledSources) {
+          setRefreshingId(source.sourceId)
+          try {
+            await refreshOtaSource(context, source.sourceId)
+            completed += 1
+          } catch {
+            failed += 1
+          }
+        }
+        await reload()
+        const code =
+          collectionCause instanceof Error
+            ? collectionCause.message
+            : 'COLLECTION_FAILED'
+        setNotice(
+          `OTA配置已保存；融合采集未完成（${code}），`
+          + `已自动单独刷新一次OTA来源：${completed}个完成，${failed}个需核对。`,
+        )
+        if (failed > 0) {
+          setError('部分OTA来源刷新失败，请根据来源卡片中的错误原因修改后再次保存或手动刷新。')
         }
       }
-      await reload()
-      setNotice(
-        `已保存并刷新 ${completed + failed} 个启用OTA来源：`
-        + `${completed} 个完成，${failed} 个需要核对。`,
-      )
+      onStatusChanged?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存OTA配置失败')
     } finally {
@@ -303,6 +331,7 @@ export function OtaSourceConfigPanel({
       setError(cause instanceof Error ? cause.message : 'OTA刷新失败')
     } finally {
       setRefreshingId(null)
+      onStatusChanged?.()
     }
   }
 
@@ -668,19 +697,11 @@ export function OtaSourceConfigPanel({
             新增OTA数据源
           </button>
           <button
-            className="secondary"
-            disabled={saving}
-            type="button"
-            onClick={() => void save(false)}
-          >
-            {saving ? '保存中…' : '保存OTA配置'}
-          </button>
-          <button
             disabled={saving || sources.length === 0}
             type="button"
-            onClick={() => void save(true)}
+            onClick={() => void save()}
           >
-            {saving ? '保存并刷新中…' : '保存并立即刷新已启用OTA'}
+            {saving ? '保存并采集中…' : '保存并自动采集一次'}
           </button>
         </div>
       ) : null}

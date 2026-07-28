@@ -3,6 +3,7 @@ import {
   initializeSimulationHotel,
   listSimulationHotels,
   type HotelContext,
+  type PmsSystemCode,
   type SimulationHotelView,
 } from '../api/business'
 
@@ -13,6 +14,8 @@ interface Props {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const pmsSystemLabel = (code: PmsSystemCode) =>
+  code === 'LUOPAN_CLOUD' ? '罗盘PMS' : '美团别样红'
 
 function tenantDisplayCode(
   hotels: SimulationHotelView[],
@@ -82,6 +85,9 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
     tenantDisplayName: '',
     hotelCode: '',
     hotelDisplayName: '',
+    pmsSystemCode: 'MEITUAN_BIEYANGHONG' as PmsSystemCode,
+    pmsUsername: '',
+    pmsPassword: '',
     timezone: 'Asia/Shanghai',
     reasonCode: 'CREATE_SPRINT1_SIMULATION_HOTEL',
   })
@@ -147,16 +153,42 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
 
   async function createHotel() {
     if (!canCreate) return
-    const fields = Object.values(draft)
-    if (fields.some((value) => !value.trim())) {
-      setError('新增模拟门店的所有字段均为必填。')
+    const requiredFields = [
+      draft.tenantCode,
+      draft.tenantDisplayName,
+      draft.hotelCode,
+      draft.hotelDisplayName,
+      draft.timezone,
+      draft.reasonCode,
+    ]
+    if (requiredFields.some((value) => !value.trim())) {
+      setError('请完整填写租户、门店和时区信息。')
+      return
+    }
+    if (
+      draft.pmsSystemCode === 'LUOPAN_CLOUD'
+      && (!draft.pmsUsername.trim() || !draft.pmsPassword)
+    ) {
+      setError('选择罗盘PMS时，必须填写该门店的PMS账号和密码。')
       return
     }
     setCreating(true)
     setError('')
     try {
       const receipt = await initializeSimulationHotel({
-        ...draft,
+        tenantCode: draft.tenantCode,
+        tenantDisplayName: draft.tenantDisplayName,
+        hotelCode: draft.hotelCode,
+        hotelDisplayName: draft.hotelDisplayName,
+        pmsSystemCode: draft.pmsSystemCode,
+        timezone: draft.timezone,
+        reasonCode: draft.reasonCode,
+        ...(draft.pmsSystemCode === 'LUOPAN_CLOUD'
+          ? {
+              pmsUsername: draft.pmsUsername,
+              pmsPassword: draft.pmsPassword,
+            }
+          : {}),
       })
       const directory = await listSimulationHotels()
       setHotels(directory.hotels)
@@ -171,6 +203,8 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
         ...draft,
         hotelCode: '',
         hotelDisplayName: '',
+        pmsUsername: '',
+        pmsPassword: '',
       })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '新增模拟门店失败')
@@ -192,7 +226,7 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
             <option value="">{directoryState}</option>
             {hotels.map((hotel) => (
               <option key={`${hotel.tenantId}-${hotel.hotelId}`} value={`${hotel.tenantId}|${hotel.hotelId}`}>
-                {tenantDisplayCode(hotels, hotel)}/{hotelDisplayCode(hotels, hotel)} · {hotel.tenantName} / {hotel.hotelName}（{hotel.configuredMockConnectors}个示例接口）
+                {tenantDisplayCode(hotels, hotel)}/{hotelDisplayCode(hotels, hotel)} · {hotel.tenantName} / {hotel.hotelName}（{pmsSystemLabel(hotel.pmsSystemCode)}）
               </option>
             ))}
           </select>
@@ -257,6 +291,42 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
               />
             </label>
             <label>
+              PMS系统
+              <select
+                value={draft.pmsSystemCode}
+                onChange={(event) => setDraft({
+                  ...draft,
+                  pmsSystemCode: event.target.value as PmsSystemCode,
+                  pmsUsername: '',
+                  pmsPassword: '',
+                })}
+              >
+                <option value="MEITUAN_BIEYANGHONG">美团别样红</option>
+                <option value="LUOPAN_CLOUD">罗盘PMS</option>
+              </select>
+            </label>
+            {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? (
+              <>
+                <label>
+                  罗盘PMS账号
+                  <input
+                    autoComplete="off"
+                    value={draft.pmsUsername}
+                    onChange={(event) => setDraft({ ...draft, pmsUsername: event.target.value })}
+                  />
+                </label>
+                <label>
+                  罗盘PMS密码
+                  <input
+                    autoComplete="new-password"
+                    type="password"
+                    value={draft.pmsPassword}
+                    onChange={(event) => setDraft({ ...draft, pmsPassword: event.target.value })}
+                  />
+                </label>
+              </>
+            ) : null}
+            <label>
               时区
               <input
                 value={draft.timezone}
@@ -274,8 +344,10 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
               {creating ? '正在创建…' : '创建评审门店'}
             </button>
             <p className="hotel-copy-note">
-              创建后自动复制001/001门店的全部报表接口；
-              Cookie和登录账号密码不会复制。
+              {draft.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+                ? '美团别样红：按01/03门店的4个报表模板自动生成接口地址；Cookie与POST请求载荷保持为空，建店后逐项填写。'
+                : '罗盘PMS：初始化与02门店相同的罗盘入口和采集路径，账号密码按新门店加密保存；首次采集前仍需验证一次该门店的受控浏览器会话。'}
+              {' '}两种PMS均不复制OTA配置，建店后请单独配置该门店的OTA平台。
             </p>
           </div>
         </details>

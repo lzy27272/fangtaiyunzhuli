@@ -4,6 +4,7 @@ import {
   loadReportSources,
   savePmsLoginConfig,
   saveReportSources,
+  triggerLiveCollection,
   type CalculationRole,
   type HotelContext,
   type PmsLoginConfigView,
@@ -12,11 +13,13 @@ import {
   type ReportType,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
+import { LuopanBrowserConfigPanel } from './LuopanBrowserConfigPanel'
 import { OtaSourceConfigPanel } from './OtaSourceConfigPanel'
 import {
   reportSourceGuidance,
   type ReportSourceAttention,
 } from './reportSourceAttention'
+import { DataAccessOverviewPanel } from './DataAccessOverviewPanel'
 
 interface Props {
   context: HotelContext | null
@@ -112,6 +115,7 @@ export function ReportSourceConfigPage({
   const [savingPmsLogin, setSavingPmsLogin] = useState(false)
   const [pmsLoginError, setPmsLoginError] = useState('')
   const [pmsLoginNotice, setPmsLoginNotice] = useState('')
+  const [overviewVersion, setOverviewVersion] = useState(0)
 
   useEffect(() => {
     if (!context) {
@@ -315,13 +319,28 @@ export function ReportSourceConfigPage({
     setSaving(true)
     try {
       await saveReportSources(context, payload, reasonCode)
-      setSources(await loadReportSources(context))
+      const savedSources = await loadReportSources(context)
+      setSources(savedSources)
       setCookieDrafts({})
       setCookieClears({})
+      let collectionNotice = ''
+      try {
+        const run = await triggerLiveCollection(context)
+        collectionNotice =
+          ` 已自动采集一次：${run.successfulSourceCount}/${run.sourceCount}`
+          + ` 个来源可用，结果为${run.status === 'PARTIAL' ? '部分形成' : '完整'}。`
+      } catch (cause) {
+        const code = cause instanceof Error ? cause.message : 'COLLECTION_FAILED'
+        collectionNotice =
+          ` 配置已保存，但自动采集未完成（${code}）；`
+          + '可修正配置后再次保存，或到监控页手动采集。'
+      }
+      setOverviewVersion((current) => current + 1)
       setNotice(
-        definitionsLocked
+        (definitionsLocked
           ? `当前门店Cookie及POST载荷已保存；其他接口定义继续由${definitionTemplateHotelCode}门店统一同步。`
-          : '报表URL及当前门店Cookie状态已保存；接口定义已同步到全部评审门店，Cookie不会被复制或覆盖。',
+          : '报表URL及当前门店Cookie状态已保存；接口定义已同步到全部评审门店，Cookie不会被复制或覆盖。')
+        + collectionNotice,
       )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存报表URL失败')
@@ -359,6 +378,7 @@ export function ReportSourceConfigPage({
       setPmsUsername('')
       setPmsPassword('')
       setClearPmsLogin(false)
+      setOverviewVersion((current) => current + 1)
       setPmsLoginNotice(
         saved.configured
           ? 'PMS账号密码已加密保存，页面输入已清空且不会回显。'
@@ -426,10 +446,26 @@ export function ReportSourceConfigPage({
         <div className="state-panel">请先在顶部选择门店。</div>
       ) : (
         <StatePanel loading={loading} error={error}>
+          <DataAccessOverviewPanel
+            context={context}
+            pmsLoginConfigured={pmsLoginConfig?.configured ?? false}
+            refreshVersion={overviewVersion}
+            reportSources={sources}
+          />
+
           <OtaSourceConfigPanel
             attentionSourceId={otaAttentionSourceId}
             canConfigure={canConfigure}
             context={context}
+            onStatusChanged={() =>
+              setOverviewVersion((current) => current + 1)}
+          />
+
+          <LuopanBrowserConfigPanel
+            canConfigure={canConfigure}
+            context={context}
+            onStatusChanged={() =>
+              setOverviewVersion((current) => current + 1)}
           />
 
           <article className="report-source-card pms-login-card">
@@ -625,7 +661,7 @@ export function ReportSourceConfigPage({
             ))}
           </div>
 
-          <div className="report-source-list">
+          <div className="report-source-list" id="report-source-list">
             {sources.map((source, index) => {
               const endpointError = source.endpointUrl
                 ? validateEndpoint(source.endpointUrl)
@@ -886,10 +922,10 @@ export function ReportSourceConfigPage({
               ) : null}
               <button disabled={saving} type="button" onClick={save}>
                 {saving
-                  ? '正在保存…'
+                  ? '正在保存并采集…'
                   : definitionsLocked
-                    ? '保存当前门店Cookie及POST载荷'
-                    : '保存并同步全部接口'}
+                    ? '保存当前门店配置并自动采集一次'
+                    : '保存同步接口并自动采集一次'}
               </button>
             </div>
           ) : null}

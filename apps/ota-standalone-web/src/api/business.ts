@@ -193,6 +193,24 @@ export type PmsLoginCredentialUpdate =
   | { action: 'CLEAR' }
   | { action: 'REPLACE'; username: string; password: string }
 
+export interface LuopanBrowserConfigView {
+  providerCode: 'LUOPAN_CLOUD'
+  portalUrl: string
+  enabled: boolean
+  profileRef: string
+  hotelFingerprintConfigured: boolean
+  scopeStatus: 'NOT_VALIDATED' | 'SINGLE_HOTEL_CONFIRMED'
+  pollIntervalMinutes: 30
+  lastValidatedAt: string | null
+  lastBusinessDate: string | null
+  lastCollectionStatus: 'NEVER' | 'COMPLETE' | 'PARTIAL' | 'FAILED'
+  lastCollectionAt: string | null
+  lastErrorCode: string | null
+  loginMode: 'CONTROLLED_BROWSER_MANUAL_SESSION'
+  automaticCredentialLoginEnabled: false
+  rowVersion: number
+}
+
 export type OtaPlatformCode =
   | 'CTRIP'
   | 'MEITUAN'
@@ -351,7 +369,7 @@ export interface LiveCollectionRunView {
 export interface BusinessDayControlView {
   businessDate: string | null
   mode: 'PMS_CONFIRMED' | 'UNCONFIRMED'
-  source?: 'PMS_NIGHT_AUDIT_API' | 'MANUAL_SEED' | null
+  source?: 'PMS_NIGHT_AUDIT_API' | 'LUOPAN_CLOUD' | 'MANUAL_SEED' | null
   businessDateStartedAt?: string | null
   updatedAt: string | null
 }
@@ -570,6 +588,7 @@ export interface SimulationHotelView {
   tenantName: string
   hotelCode: string
   hotelName: string
+  pmsSystemCode: PmsSystemCode
   timezone: string
   lifecycleStatus: string
   collectionEnabled: boolean
@@ -578,6 +597,10 @@ export interface SimulationHotelView {
   simulationOnly: boolean
   rowVersion: number
 }
+
+export type PmsSystemCode =
+  | 'MEITUAN_BIEYANGHONG'
+  | 'LUOPAN_CLOUD'
 
 export interface SimulationHotelDirectory {
   coverage: string
@@ -882,6 +905,42 @@ export function savePmsLoginConfig(
   })
 }
 
+export function loadLuopanBrowserConfig(
+  context: HotelContext,
+): Promise<LuopanBrowserConfigView> {
+  return authenticatedRequest(
+    scopedPath(context, '/luopan-browser-config'),
+  )
+}
+
+export function saveLuopanBrowserConfig(
+  context: HotelContext,
+  input: {
+    enabled: boolean
+    profileRef: string
+    rowVersion: number
+  },
+): Promise<LuopanBrowserConfigView> {
+  return postCommand(
+    scopedPath(context, '/luopan-browser-config'),
+    {
+      ...input,
+      reasonCode: 'UPDATE_LUOPAN_BROWSER_CONFIG',
+    },
+  )
+}
+
+export function validateLuopanBrowserConfig(
+  context: HotelContext,
+): Promise<LuopanBrowserConfigView> {
+  return postCommand(
+    scopedPath(context, '/luopan-browser-session-validations'),
+    {
+      reasonCode: 'VALIDATE_LUOPAN_BROWSER_SESSION',
+    },
+  )
+}
+
 export function loadOtaSources(
   context: HotelContext,
 ): Promise<OtaSourceView[]> {
@@ -1039,9 +1098,11 @@ export function initializeSimulationHotel(input: {
   tenantDisplayName: string
   hotelCode: string
   hotelDisplayName: string
+  pmsSystemCode: PmsSystemCode
+  pmsUsername?: string
+  pmsPassword?: string
   timezone: string
   reasonCode: string
-  templateHotelId?: string
 }): Promise<CommandReceipt> {
   return postCommand('/ota/simulation/hotels', {
     ...input,

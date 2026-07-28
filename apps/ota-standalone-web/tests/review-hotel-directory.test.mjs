@@ -92,9 +92,37 @@ test('created review hotels are returned by the directory and survive restart', 
     const templateHotel = initialBody.data.hotels.find(
       (hotel) => hotel.tenantCode === '001' && hotel.hotelCode === '001',
     )
-    const existingManagedHotel = initialBody.data.hotels.find(
-      (hotel) => hotel.hotelId !== templateHotel.hotelId,
+    const luopanTemplateHotel = initialBody.data.hotels.find(
+      (hotel) => hotel.tenantCode === '001' && hotel.hotelCode === '002',
     )
+    assert.equal(templateHotel.pmsSystemCode, 'MEITUAN_BIEYANGHONG')
+    assert.equal(luopanTemplateHotel.pmsSystemCode, 'LUOPAN_CLOUD')
+    const createManaged = await fetch(
+      `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'review-managed-template-hotel-001',
+        },
+        body: JSON.stringify({
+          tenantCode: '001',
+          tenantDisplayName: templateHotel.tenantName,
+          hotelCode: '090',
+          hotelDisplayName: 'Managed Template Test Hotel',
+          pmsSystemCode: 'MEITUAN_BIEYANGHONG',
+          timezone: 'Asia/Shanghai',
+          reasonCode: 'CREATE_SPRINT1_SIMULATION_HOTEL',
+        }),
+      },
+    )
+    assert.equal(createManaged.status, 201)
+    const managedReceipt = await createManaged.json()
+    const existingManagedHotel = {
+      tenantId: templateHotel.tenantId,
+      hotelId: managedReceipt.data.resourceId,
+    }
     const templatePath =
       `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
       + `${templateHotel.tenantId}/hotels/${templateHotel.hotelId}`
@@ -117,17 +145,11 @@ test('created review hotels are returned by the directory and survive restart', 
       ),
       true,
     )
-    let templateSources = [
-      ...templateReportBody.data,
-      {
-        ...templateReportBody.data[0],
-        sourceId: '34000000-0000-4000-8000-000000000099',
-        displayName: 'Cloned Revenue Report',
-        reportType: 'ROOM_REVENUE',
-        calculationRole: 'PRIMARY_CALCULATION',
-        rowVersion: 0,
-      },
-    ]
+    const updatedTemplateSourceId = templateReportBody.data[2].sourceId
+    let templateSources = templateReportBody.data.map((source, index) =>
+      index === 2
+        ? { ...source, displayName: 'Canonical Revenue Report' }
+        : source)
     const saveTemplateReports = await fetch(
       `${templatePath}/report-sources`,
       {
@@ -229,7 +251,7 @@ test('created review hotels are returned by the directory and survive restart', 
     )
 
     templateSources = templateSources.map((source) =>
-      source.sourceId === '34000000-0000-4000-8000-000000000099'
+      source.sourceId === updatedTemplateSourceId
         ? { ...source, displayName: 'Canonical Revenue Report V2' }
         : source)
     const updateTemplateReports = await fetch(
@@ -307,9 +329,9 @@ test('created review hotels are returned by the directory and survive restart', 
           tenantDisplayName: 'Directory Test Tenant',
           hotelCode: '003',
           hotelDisplayName: 'Directory Test Hotel',
+          pmsSystemCode: 'MEITUAN_BIEYANGHONG',
           timezone: 'Asia/Shanghai',
           reasonCode: 'CREATE_SPRINT1_SIMULATION_HOTEL',
-          templateHotelId: existingManagedHotel.hotelId,
         }),
       },
     )
@@ -330,6 +352,9 @@ test('created review hotels are returned by the directory and survive restart', 
           tenantDisplayName: 'Directory Test Tenant',
           hotelCode: '004',
           hotelDisplayName: 'Directory Test Hotel Two',
+          pmsSystemCode: 'LUOPAN_CLOUD',
+          pmsUsername: 'synthetic-luopan-user',
+          pmsPassword: 'example-luopan-password',
           timezone: 'Asia/Shanghai',
           reasonCode: 'CREATE_SPRINT1_SIMULATION_HOTEL',
         }),
@@ -353,6 +378,7 @@ test('created review hotels are returned by the directory and survive restart', 
       tenantName: 'Directory Test Tenant',
       hotelCode: '003',
       hotelName: 'Directory Test Hotel',
+      pmsSystemCode: 'MEITUAN_BIEYANGHONG',
       timezone: 'Asia/Shanghai',
       lifecycleStatus: 'PILOT',
       collectionEnabled: true,
@@ -361,6 +387,42 @@ test('created review hotels are returned by the directory and survive restart', 
       simulationOnly: true,
       rowVersion: 1,
     })
+    const createdLuopan = firstBody.data.hotels.find(
+      (hotel) => hotel.hotelId === secondReceipt.data.resourceId,
+    )
+    assert.equal(createdLuopan.pmsSystemCode, 'LUOPAN_CLOUD')
+    const createdLuopanPath =
+      `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
+      + `${createdLuopan.tenantId}/hotels/${createdLuopan.hotelId}`
+    const [
+      luopanReportsResponse,
+      luopanLoginResponse,
+      luopanConfigResponse,
+      luopanOtaResponse,
+    ] = await Promise.all([
+      fetch(`${createdLuopanPath}/report-sources`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch(`${createdLuopanPath}/pms-login-config`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch(`${createdLuopanPath}/luopan-browser-config`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch(`${createdLuopanPath}/ota-sources`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    ])
+    assert.deepEqual((await luopanReportsResponse.json()).data, [])
+    assert.equal((await luopanLoginResponse.json()).data.configured, true)
+    const luopanConfig = (await luopanConfigResponse.json()).data
+    assert.equal(
+      luopanConfig.portalUrl,
+      'http://bj.chinapms.com:8880/pms-web/login/login.do',
+    )
+    assert.equal(luopanConfig.scopeStatus, 'NOT_VALIDATED')
+    assert.equal(luopanConfig.enabled, false)
+    assert.deepEqual((await luopanOtaResponse.json()).data, [])
     const createdPath =
       `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
       + `${created.tenantId}/hotels/${created.hotelId}`
@@ -379,6 +441,7 @@ test('created review hotels are returned by the directory and survive restart', 
           source.cookieConfigured === false
           && source.cookieUpdatedAt === null
           && source.pollIntervalMinutes === 30
+          && source.requestPayloadJson === ''
           && source.definitionLocked === true
           && source.definitionTemplateHotelCode === '001/001',
       ),
@@ -463,7 +526,7 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.match(encryptedPmsLoginStore, /"ciphertext"/)
     assert.doesNotMatch(
       encryptedPmsLoginStore,
-      /synthetic-(?:template|created)-(?:user|password)/,
+      /synthetic-(?:template|created|luopan)-(?:user|password)|example-luopan-password/,
     )
 
     await stopReviewApi(first.child)

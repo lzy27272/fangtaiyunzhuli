@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   loadHotSellingRoomTypes,
+  loadLuopanBrowserConfig,
   loadMonitor,
   loadOtaSources,
   loadReportSources,
@@ -8,6 +9,7 @@ import {
   triggerLiveCollection,
   type HotelContext,
   type LiveCollectionRunView,
+  type LuopanBrowserConfigView,
   type MonitorView,
   type OtaSourceView,
   type ReportSourceView,
@@ -99,6 +101,8 @@ export function MonitorPage({
   const [savedHotRoomTypeCodes, setSavedHotRoomTypeCodes] = useState<string[]>([])
   const [reportSources, setReportSources] = useState<ReportSourceView[]>([])
   const [otaSources, setOtaSources] = useState<OtaSourceView[]>([])
+  const [luopanConfig, setLuopanConfig] =
+    useState<LuopanBrowserConfigView | null>(null)
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [savingHotRooms, setSavingHotRooms] = useState(false)
@@ -115,17 +119,20 @@ export function MonitorPage({
         hotRoomConfig,
         sourceConfig,
         otaSourceConfig,
+        luopanConfigView,
       ] = await Promise.all([
         loadMonitor(context),
         loadHotSellingRoomTypes(context),
         loadReportSources(context),
         loadOtaSources(context),
+        loadLuopanBrowserConfig(context),
       ])
       setMonitor(monitorView)
       setHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
       setSavedHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
       setReportSources(sourceConfig)
       setOtaSources(otaSourceConfig)
+      setLuopanConfig(luopanConfigView)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '读取监控失败')
     } finally {
@@ -139,19 +146,12 @@ export function MonitorPage({
     setError('')
     setNotice('')
     try {
-      const sourceConfig = await loadReportSources(context)
-      setReportSources(sourceConfig)
-      const enabledSources = sourceConfig.filter((source) => source.enabled)
-      if (enabledSources.length === 0) {
-        throw new Error('REPORT_SOURCE_ENABLED_REQUIRED')
-      }
-      if (!enabledSources.some((source) => source.cookieConfigured)) {
-        throw new Error('REPORT_SOURCE_COOKIE_REQUIRED')
-      }
       const started = await triggerLiveCollection(context)
       setRun(started)
       setMonitor(started.monitor)
       setOtaSources(started.otaRefreshes ?? await loadOtaSources(context))
+      setReportSources(await loadReportSources(context))
+      setLuopanConfig(await loadLuopanBrowserConfig(context))
       setNotice(
         `已重新采集 ${started.successfulSourceCount}/${started.sourceCount} 个已配置报表。`,
       )
@@ -168,6 +168,7 @@ export function MonitorPage({
       setSavedHotRoomTypeCodes([])
       setReportSources([])
       setOtaSources([])
+      setLuopanConfig(null)
       return
     }
     void refresh()
@@ -215,6 +216,9 @@ export function MonitorPage({
         ? '已保存'
         : '选择后保存'
   const enabledReportSources = reportSources.filter((source) => source.enabled)
+  const luopanPrimaryEnabled =
+    luopanConfig?.enabled === true
+    && luopanConfig.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
   const cookieReadySourceCount = enabledReportSources.filter(
     (source) => source.cookieConfigured,
   ).length
@@ -267,7 +271,17 @@ export function MonitorPage({
         <span>以每次采集返回的PMS营业日为准，零点不自动切日</span>
       </div>
 
-      {context && enabledReportSources.length > 0 ? (
+      {context && luopanPrimaryEnabled ? (
+        <div className="monitor-readiness ready" role="status">
+          罗盘云单门店主采集已启用；传统报表Cookie
+          {' '}
+          {cookieReadySourceCount}/{enabledReportSources.length}
+          {' '}
+          不会阻止罗盘采集。配置保存后自动采集一次，也可点击右上角手动采集。
+        </div>
+      ) : null}
+
+      {context && !luopanPrimaryEnabled && enabledReportSources.length > 0 ? (
         <div
           className={`monitor-readiness ${
             cookieReadySourceCount === enabledReportSources.length

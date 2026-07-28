@@ -17,6 +17,10 @@ import {
 import { createReviewAuthStore } from './review-auth-store.mjs'
 import { collectOtaSource } from './ota-source-collector.mjs'
 import {
+  collectLuopanControlledBrowser,
+  validateLuopanBrowserSession,
+} from './luopan-controlled-browser-collector.mjs'
+import {
   appendAndPersistSnapshot,
   collectLiveReports,
   loadSnapshotStore,
@@ -81,6 +85,9 @@ const otaSourceConfigPath = dataPath
 const otaSourceSecretPath = dataPath
   ? join(dirname(dataPath), 'ota-source-secrets.json')
   : null
+const luopanBrowserConfigPath = dataPath
+  ? join(dirname(dataPath), 'luopan-browser-configs.json')
+  : null
 const weComConfigPath = dataPath
   ? join(dirname(dataPath), 'wecom-configs.json')
   : null
@@ -135,6 +142,7 @@ const hotels = [
     tenantName: '四方馆酒店管理',
     hotelCode: '001',
     hotelName: '喷水池态六酒店',
+    pmsSystemCode: 'MEITUAN_BIEYANGHONG',
     timezone: 'Asia/Shanghai',
     lifecycleStatus: 'PILOT',
     collectionEnabled: true,
@@ -150,6 +158,7 @@ const hotels = [
     tenantName: '四方馆酒店管理',
     hotelCode: '002',
     hotelName: '解放路MOOODSHIFT酒店',
+    pmsSystemCode: 'LUOPAN_CLOUD',
     timezone: 'Asia/Shanghai',
     lifecycleStatus: 'PILOT',
     collectionEnabled: true,
@@ -207,6 +216,7 @@ const pmsLoginSecretsByHotel = new Map()
 const otaSourcesByHotel = new Map()
 const otaSourceSecretsByHotel = new Map()
 const otaSourceRefreshLocks = new Map()
+const luopanBrowserConfigsByHotel = new Map()
 const liveCollectionLocks = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
 const businessDayControlsByHotel = new Map()
@@ -221,6 +231,15 @@ const REPORT_POLL_INTERVAL_MINUTES = 30
 
 const SIMULATION_HOTEL_CODE = /^[A-Z0-9][A-Z0-9_-]{0,15}$/
 const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PMS_SYSTEM_CODES = new Set([
+  'MEITUAN_BIEYANGHONG',
+  'LUOPAN_CLOUD',
+])
+
+const inferredPmsSystemCode = ({ tenantCode, hotelCode }) =>
+  tenantCode === '001' && hotelCode === '002'
+    ? 'LUOPAN_CLOUD'
+    : 'MEITUAN_BIEYANGHONG'
 
 const normalizeSimulationHotel = (candidate) => {
   if (!candidate || typeof candidate !== 'object') return null
@@ -239,6 +258,9 @@ const normalizeSimulationHotel = (candidate) => {
   const timezone = typeof candidate.timezone === 'string'
     ? candidate.timezone.trim()
     : ''
+  const pmsSystemCode = PMS_SYSTEM_CODES.has(candidate.pmsSystemCode)
+    ? candidate.pmsSystemCode
+    : inferredPmsSystemCode({ tenantCode, hotelCode })
   if (
     !SIMULATION_HOTEL_ID.test(candidate.tenantId)
     || !SIMULATION_HOTEL_ID.test(candidate.hotelId)
@@ -264,6 +286,7 @@ const normalizeSimulationHotel = (candidate) => {
     tenantName,
     hotelCode,
     hotelName,
+    pmsSystemCode,
     timezone,
     lifecycleStatus:
       typeof candidate.lifecycleStatus === 'string'
@@ -299,11 +322,9 @@ const normalizeSimulationHotelInput = (body) => {
   const timezone = typeof body.timezone === 'string'
     ? body.timezone.trim()
     : ''
-  const templateHotelId = body.templateHotelId === undefined
-    || body.templateHotelId === null
-    || body.templateHotelId === ''
-      ? null
-      : body.templateHotelId
+  const pmsSystemCode = PMS_SYSTEM_CODES.has(body.pmsSystemCode)
+    ? body.pmsSystemCode
+    : null
   if (
     !SIMULATION_HOTEL_CODE.test(tenantCode)
     || !SIMULATION_HOTEL_CODE.test(hotelCode)
@@ -313,10 +334,7 @@ const normalizeSimulationHotelInput = (body) => {
     || hotelName.length > 80
     || typeof body.reasonCode !== 'string'
     || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
-    || (
-      templateHotelId !== null
-      && !SIMULATION_HOTEL_ID.test(templateHotelId)
-    )
+    || !pmsSystemCode
   ) {
     return null
   }
@@ -325,13 +343,25 @@ const normalizeSimulationHotelInput = (body) => {
   } catch {
     return null
   }
+  let pmsCredentials = null
+  if (pmsSystemCode === 'LUOPAN_CLOUD') {
+    try {
+      pmsCredentials = normalizePmsLoginCredentials({
+        username: body.pmsUsername,
+        password: body.pmsPassword,
+      })
+    } catch {
+      return null
+    }
+  }
   return {
     tenantCode,
     tenantName,
     hotelCode,
     hotelName,
+    pmsSystemCode,
+    pmsCredentials,
     timezone,
-    templateHotelId,
   }
 }
 
@@ -396,6 +426,37 @@ const defaultReportSources = () => [
     validationStatus: 'FORMAT_VALID',
     rowVersion: 1,
   },
+  {
+    sourceId: '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0',
+    displayName: '房费收入/ADR报表 jy09',
+    endpointUrl: 'https://pms.meituan.com/hotelpms/api/v2/report/jy09',
+    reportType: 'CUSTOM_REPORT',
+    calculationRole: 'AUXILIARY_CALCULATION',
+    pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
+    credentialAlias: '',
+    requestPayloadJson: '',
+    cookieConfigured: false,
+    cookieUpdatedAt: null,
+    enabled: true,
+    validationStatus: 'FORMAT_VALID',
+    rowVersion: 1,
+  },
+  {
+    sourceId: '94c0b6ee-2ee4-421f-a9e8-d1fa38a352a9',
+    displayName: '房态预测表（分房型可售）',
+    endpointUrl:
+      'https://pms.meituan.com/hotelpms/api/v2/report/roomState/batchSearchBaseRoomForcasting',
+    reportType: 'PHYSICAL_INVENTORY',
+    calculationRole: 'PRIMARY_CALCULATION',
+    pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
+    credentialAlias: '',
+    requestPayloadJson: '',
+    cookieConfigured: false,
+    cookieUpdatedAt: null,
+    enabled: true,
+    validationStatus: 'FORMAT_VALID',
+    rowVersion: 1,
+  },
 ]
 
 const primaryReportSourceHotel = () =>
@@ -420,7 +481,7 @@ const cloneReportSourceDefinitions = (sources, hotelSources = []) => {
     credentialAlias: source.credentialAlias,
     requestPayloadJson: requestPayloadsBySourceId.has(source.sourceId)
       ? requestPayloadsBySourceId.get(source.sourceId)
-      : source.requestPayloadJson,
+      : '',
     enabled: source.enabled,
     validationStatus: source.validationStatus,
     rowVersion: source.rowVersion,
@@ -457,6 +518,12 @@ const synchronizeReportSourcesFromPrimary = () => {
   const { primary, sources } = ensurePrimaryReportSourceTemplate()
   for (const hotel of hotels) {
     if (hotel.hotelId === primary.hotelId) continue
+    if (
+      hotel.pmsSystemCode === 'LUOPAN_CLOUD'
+      && !reportSourcesByHotel.has(hotel.hotelId)
+    ) {
+      continue
+    }
     reportSourcesByHotel.set(
       hotel.hotelId,
       cloneReportSourceDefinitions(
@@ -707,6 +774,126 @@ const persistPmsLoginSecrets = () => {
     { encoding: 'utf8', mode: 0o600 },
   )
   renameSync(temporaryPath, pmsLoginSecretPath)
+}
+
+const LUOPAN_PROFILE_REF = /^[a-z0-9][a-z0-9_-]{0,39}$/
+const LUOPAN_FINGERPRINT = /^[a-f0-9]{16}$/
+
+const defaultLuopanBrowserConfig = () => ({
+  providerCode: 'LUOPAN_CLOUD',
+  portalUrl: 'http://bj.chinapms.com:8880/pms-web/login/login.do',
+  enabled: false,
+  profileRef: '',
+  expectedHotelFingerprint: null,
+  scopeStatus: 'NOT_VALIDATED',
+  pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
+  lastValidatedAt: null,
+  lastBusinessDate: null,
+  lastCollectionStatus: 'NEVER',
+  lastCollectionAt: null,
+  lastErrorCode: null,
+  rowVersion: 0,
+})
+
+const normalizeLuopanBrowserConfig = (value) => {
+  const fallback = defaultLuopanBrowserConfig()
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return fallback
+  }
+  const profileRef =
+    typeof value.profileRef === 'string'
+    && LUOPAN_PROFILE_REF.test(value.profileRef)
+      ? value.profileRef
+      : ''
+  const expectedHotelFingerprint =
+    typeof value.expectedHotelFingerprint === 'string'
+    && LUOPAN_FINGERPRINT.test(value.expectedHotelFingerprint)
+      ? value.expectedHotelFingerprint
+      : null
+  const scopeStatus =
+    expectedHotelFingerprint
+    && value.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
+      ? 'SINGLE_HOTEL_CONFIRMED'
+      : 'NOT_VALIDATED'
+  return {
+    ...fallback,
+    enabled:
+      value.enabled === true
+      && Boolean(profileRef)
+      && scopeStatus === 'SINGLE_HOTEL_CONFIRMED',
+    profileRef,
+    expectedHotelFingerprint,
+    scopeStatus,
+    lastValidatedAt:
+      typeof value.lastValidatedAt === 'string'
+        ? value.lastValidatedAt
+        : null,
+    lastBusinessDate:
+      typeof value.lastBusinessDate === 'string'
+      && /^\d{4}-\d{2}-\d{2}$/.test(value.lastBusinessDate)
+        ? value.lastBusinessDate
+        : null,
+    lastCollectionStatus:
+      ['NEVER', 'COMPLETE', 'PARTIAL', 'FAILED'].includes(
+        value.lastCollectionStatus,
+      )
+        ? value.lastCollectionStatus
+        : 'NEVER',
+    lastCollectionAt:
+      typeof value.lastCollectionAt === 'string'
+        ? value.lastCollectionAt
+        : null,
+    lastErrorCode:
+      typeof value.lastErrorCode === 'string'
+        ? value.lastErrorCode
+        : null,
+    rowVersion:
+      Number.isInteger(value.rowVersion) && value.rowVersion >= 0
+        ? value.rowVersion
+        : 0,
+  }
+}
+
+const luopanBrowserConfigRecordFor = (hotelId) =>
+  luopanBrowserConfigsByHotel.get(hotelId)
+  ?? defaultLuopanBrowserConfig()
+
+const luopanBrowserConfigFor = (hotelId) => {
+  const config = luopanBrowserConfigRecordFor(hotelId)
+  return {
+    providerCode: config.providerCode,
+    portalUrl: config.portalUrl,
+    enabled: config.enabled,
+    profileRef: config.profileRef,
+    hotelFingerprintConfigured:
+      Boolean(config.expectedHotelFingerprint),
+    scopeStatus: config.scopeStatus,
+    pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
+    lastValidatedAt: config.lastValidatedAt,
+    lastBusinessDate: config.lastBusinessDate,
+    lastCollectionStatus: config.lastCollectionStatus,
+    lastCollectionAt: config.lastCollectionAt,
+    lastErrorCode: config.lastErrorCode,
+    loginMode: 'CONTROLLED_BROWSER_MANUAL_SESSION',
+    automaticCredentialLoginEnabled: false,
+    rowVersion: config.rowVersion,
+  }
+}
+
+const persistLuopanBrowserConfigs = () => {
+  if (!luopanBrowserConfigPath) return
+  mkdirSync(dirname(luopanBrowserConfigPath), { recursive: true })
+  const temporaryPath = `${luopanBrowserConfigPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      Object.fromEntries(luopanBrowserConfigsByHotel),
+      null,
+      2,
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, luopanBrowserConfigPath)
 }
 
 const allowedOtaPlatforms = new Set([
@@ -1073,6 +1260,29 @@ if (pmsLoginSecretPath && existsSync(pmsLoginSecretPath)) {
     }
   } catch {
     process.stderr.write('REVIEW_PMS_LOGIN_SECRET_STORE_IGNORED\n')
+  }
+}
+
+if (luopanBrowserConfigPath && existsSync(luopanBrowserConfigPath)) {
+  try {
+    const persistedConfigs = JSON.parse(
+      readFileSync(luopanBrowserConfigPath, 'utf8'),
+    )
+    if (
+      persistedConfigs
+      && typeof persistedConfigs === 'object'
+      && !Array.isArray(persistedConfigs)
+    ) {
+      for (const [hotelId, config] of Object.entries(persistedConfigs)) {
+        if (!hotels.some((hotel) => hotel.hotelId === hotelId)) continue
+        luopanBrowserConfigsByHotel.set(
+          hotelId,
+          normalizeLuopanBrowserConfig(config),
+        )
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_LUOPAN_BROWSER_CONFIG_STORE_IGNORED\n')
   }
 }
 
@@ -1779,11 +1989,74 @@ const refreshEnabledOtaSourcesFor = async (hotelId) => {
   return results
 }
 
+const collectLuopanLiveFor = async (hotelId, config) => {
+  const hotel = selectedHotel(hotelId)
+  try {
+    const result = await collectLuopanControlledBrowser({
+      hotel,
+      profileRef: config.profileRef,
+      expectedHotelFingerprint: config.expectedHotelFingerprint,
+      previousSnapshots: liveSnapshotStore[hotelId] ?? [],
+      secretKey: cookieSecretKey,
+      target: null,
+      hotSellingRoomTypeCodes:
+        hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+    })
+    appendAndPersistSnapshot(
+      liveSnapshotStore,
+      liveSnapshotPath,
+      result.snapshot,
+    )
+    const updatedAt = new Date().toISOString()
+    luopanBrowserConfigsByHotel.set(hotelId, {
+      ...config,
+      lastBusinessDate: result.snapshot.businessDate,
+      lastCollectionStatus: result.snapshot.completeness,
+      lastCollectionAt: result.snapshot.observedAt,
+      lastErrorCode: null,
+      rowVersion: config.rowVersion + 1,
+    })
+    persistLuopanBrowserConfigs()
+    businessDayControlsByHotel.set(hotelId, {
+      businessDate: result.snapshot.businessDate,
+      mode: 'PMS_CONFIRMED',
+      source: 'LUOPAN_CLOUD',
+      businessDateStartedAt: null,
+      updatedAt,
+    })
+    persistBusinessDayControls()
+    const otaRefreshes = await refreshEnabledOtaSourcesFor(hotelId)
+    return {
+      ...result,
+      otaRefreshes,
+    }
+  } catch (error) {
+    const errorCode =
+      typeof error?.message === 'string'
+      && error.message.startsWith('LUOPAN_')
+        ? error.message
+        : 'LUOPAN_COLLECTION_FAILED'
+    luopanBrowserConfigsByHotel.set(hotelId, {
+      ...config,
+      lastCollectionStatus: 'FAILED',
+      lastCollectionAt: new Date().toISOString(),
+      lastErrorCode: errorCode,
+      rowVersion: config.rowVersion + 1,
+    })
+    persistLuopanBrowserConfigs()
+    throw new Error(errorCode)
+  }
+}
+
 const collectLiveFor = async (hotelId) => {
   const running = liveCollectionLocks.get(hotelId)
   if (running) return running
 
   const operation = (async () => {
+    const luopanConfig = luopanBrowserConfigRecordFor(hotelId)
+    if (luopanConfig.enabled) {
+      return collectLuopanLiveFor(hotelId, luopanConfig)
+    }
     const hotel = selectedHotel(hotelId)
     const businessDayControl = businessDayControlFor(hotelId)
     if (!reportSourcesByHotel.has(hotelId)) {
@@ -1870,8 +2143,10 @@ const scheduledCollectionTick = async () => {
   const slot = collectionSlotFor()
   if (!slot) return
   for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+    const luopanConfig = luopanBrowserConfigRecordFor(hotel.hotelId)
     if (
       Object.keys(secretsForHotel(hotel.hotelId)).length === 0
+      && !luopanConfig.enabled
     ) {
       continue
     }
@@ -2396,6 +2671,7 @@ const server = createServer(async (request, response) => {
         if (
           existing.hotelName !== input.hotelName
           || existing.timezone !== input.timezone
+          || existing.pmsSystemCode !== input.pmsSystemCode
         ) {
           throw new Error('SIMULATION_HOTEL_CODE_CONFLICT')
         }
@@ -2419,6 +2695,7 @@ const server = createServer(async (request, response) => {
         tenantName: input.tenantName,
         hotelCode: input.hotelCode,
         hotelName: input.hotelName,
+        pmsSystemCode: input.pmsSystemCode,
         timezone: input.timezone,
         lifecycleStatus: 'PILOT',
         collectionEnabled: true,
@@ -2427,12 +2704,35 @@ const server = createServer(async (request, response) => {
         simulationOnly: true,
         rowVersion: 1,
       }
-      const { sources: templateSources } = ensurePrimaryReportSourceTemplate()
-      const clonedSources = cloneReportSourceDefinitions(templateSources)
+      let clonedSources = []
+      if (input.pmsSystemCode === 'MEITUAN_BIEYANGHONG') {
+        const { sources: templateSources } = ensurePrimaryReportSourceTemplate()
+        clonedSources = cloneReportSourceDefinitions(templateSources)
+      }
       hotels.push(created)
       reportSourcesByHotel.set(created.hotelId, clonedSources)
+      otaSourcesByHotel.set(created.hotelId, [])
+      otaSourceSecretsByHotel.set(created.hotelId, {})
+      if (input.pmsSystemCode === 'LUOPAN_CLOUD') {
+        pmsLoginSecretsByHotel.set(
+          created.hotelId,
+          encryptCookie(
+            JSON.stringify(input.pmsCredentials),
+            cookieSecretKey,
+            pmsLoginScope(created.hotelId),
+          ),
+        )
+        luopanBrowserConfigsByHotel.set(
+          created.hotelId,
+          defaultLuopanBrowserConfig(),
+        )
+      }
       persistSimulationHotels()
       persistReportSources()
+      persistPmsLoginSecrets()
+      persistLuopanBrowserConfigs()
+      persistOtaSources()
+      persistOtaSecrets()
       json(response, 201, {
         data: {
           commandId: randomUUID(),
@@ -2440,6 +2740,10 @@ const server = createServer(async (request, response) => {
           resultingRowVersion: 1,
           replayed: false,
           copiedReportSourceCount: clonedSources.length,
+          pmsSystemCode: input.pmsSystemCode,
+          pmsCredentialsConfigured:
+            input.pmsSystemCode === 'LUOPAN_CLOUD',
+          otaConfigurationRequired: true,
         },
       })
       return
@@ -2467,7 +2771,11 @@ const server = createServer(async (request, response) => {
       }
       if (request.method === 'GET' && suffix === '/report-sources') {
         if (!reportSourcesByHotel.has(hotelId)) {
-          synchronizeReportSourcesFromPrimary()
+          if (selected.pmsSystemCode === 'LUOPAN_CLOUD') {
+            reportSourcesByHotel.set(hotelId, [])
+          } else {
+            synchronizeReportSourcesFromPrimary()
+          }
         }
         json(response, 200, {
           data: decorateReportSources(
@@ -2478,6 +2786,9 @@ const server = createServer(async (request, response) => {
         return
       }
       if (request.method === 'POST' && suffix === '/report-sources') {
+        if (selected.pmsSystemCode === 'LUOPAN_CLOUD') {
+          throw new Error('REPORT_SOURCE_NOT_APPLICABLE_FOR_LUOPAN')
+        }
         const body = await readBody(request)
         if (
           typeof body.reasonCode !== 'string'
@@ -2568,6 +2879,124 @@ const server = createServer(async (request, response) => {
         )
         json(response, 200, { data: refreshed })
         return
+      }
+      if (
+        request.method === 'GET'
+        && suffix === '/luopan-browser-config'
+      ) {
+        json(response, 200, {
+          data: luopanBrowserConfigFor(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/luopan-browser-config'
+      ) {
+        const body = await readBody(request)
+        const existing = luopanBrowserConfigRecordFor(hotelId)
+        const profileRef =
+          typeof body.profileRef === 'string'
+            ? body.profileRef.trim().toLowerCase()
+            : ''
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+          || typeof body.enabled !== 'boolean'
+          || !LUOPAN_PROFILE_REF.test(profileRef)
+          || !Number.isInteger(body.rowVersion)
+          || body.rowVersion !== existing.rowVersion
+        ) {
+          throw new Error('LUOPAN_CONFIG_INVALID')
+        }
+        const profileChanged = profileRef !== existing.profileRef
+        const expectedHotelFingerprint = profileChanged
+          ? null
+          : existing.expectedHotelFingerprint
+        const scopeStatus = profileChanged
+          ? 'NOT_VALIDATED'
+          : existing.scopeStatus
+        if (
+          body.enabled
+          && (
+            scopeStatus !== 'SINGLE_HOTEL_CONFIRMED'
+            || !expectedHotelFingerprint
+          )
+        ) {
+          throw new Error('LUOPAN_SESSION_VALIDATION_REQUIRED')
+        }
+        luopanBrowserConfigsByHotel.set(hotelId, {
+          ...existing,
+          enabled: body.enabled,
+          profileRef,
+          expectedHotelFingerprint,
+          scopeStatus,
+          lastValidatedAt:
+            profileChanged ? null : existing.lastValidatedAt,
+          lastBusinessDate:
+            profileChanged ? null : existing.lastBusinessDate,
+          lastCollectionStatus:
+            profileChanged ? 'NEVER' : existing.lastCollectionStatus,
+          lastCollectionAt:
+            profileChanged ? null : existing.lastCollectionAt,
+          lastErrorCode: null,
+          rowVersion: existing.rowVersion + 1,
+        })
+        persistLuopanBrowserConfigs()
+        json(response, 200, {
+          data: luopanBrowserConfigFor(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/luopan-browser-session-validations'
+      ) {
+        const body = await readBody(request)
+        const existing = luopanBrowserConfigRecordFor(hotelId)
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+          || !existing.profileRef
+        ) {
+          throw new Error('LUOPAN_VALIDATION_REQUEST_INVALID')
+        }
+        try {
+          const validation = await validateLuopanBrowserSession({
+            profileRef: existing.profileRef,
+            expectedHotelFingerprint:
+              existing.expectedHotelFingerprint,
+          })
+          luopanBrowserConfigsByHotel.set(hotelId, {
+            ...existing,
+            expectedHotelFingerprint: validation.hotelFingerprint,
+            scopeStatus: validation.scopeStatus,
+            lastValidatedAt: validation.validatedAt,
+            lastBusinessDate: validation.businessDate,
+            lastErrorCode: null,
+            rowVersion: existing.rowVersion + 1,
+          })
+          persistLuopanBrowserConfigs()
+          json(response, 200, {
+            data: luopanBrowserConfigFor(hotelId),
+          })
+          return
+        } catch (error) {
+          const errorCode =
+            typeof error?.message === 'string'
+            && error.message.startsWith('LUOPAN_')
+              ? error.message
+              : 'LUOPAN_SESSION_VALIDATION_FAILED'
+          luopanBrowserConfigsByHotel.set(hotelId, {
+            ...existing,
+            enabled: false,
+            scopeStatus: 'NOT_VALIDATED',
+            lastErrorCode: errorCode,
+            rowVersion: existing.rowVersion + 1,
+          })
+          persistLuopanBrowserConfigs()
+          throw new Error(errorCode)
+        }
       }
       if (request.method === 'GET' && suffix === '/pms-login-config') {
         json(response, 200, { data: pmsLoginConfigFor(hotelId) })
@@ -2995,6 +3424,7 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('LIVE_')
                     || error.message.startsWith('FUTURE_')
                     || error.message.startsWith('OTA_')
+                    || error.message.startsWith('LUOPAN_')
                   )
                     ? error.message
            : 'REVIEW_API_FAILED_CLOSED'

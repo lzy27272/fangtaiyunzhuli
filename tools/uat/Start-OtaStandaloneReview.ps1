@@ -4,7 +4,8 @@ param(
     [int]$WebPort = 5180,
     [ValidateRange(1, 168)]
     [int]$RuntimeHours = 24,
-    [switch]$LongRunning
+    [switch]$LongRunning,
+    [switch]$ConfigurationOnly
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +25,10 @@ $node = Join-Path $env:USERPROFILE (
     '.cache\codex-runtimes\codex-primary-runtime\' +
     'dependencies\node\bin\node.exe'
 )
+$playwrightModule = Join-Path $env:USERPROFILE (
+    '.cache\codex-runtimes\codex-primary-runtime\' +
+    'dependencies\node\node_modules\playwright'
+)
 $vite = Join-Path $webRoot 'node_modules\vite\bin\vite.js'
 
 if (-not (Test-Path -LiteralPath $node -PathType Leaf)) {
@@ -31,6 +36,9 @@ if (-not (Test-Path -LiteralPath $node -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $vite -PathType Leaf)) {
     throw 'OTA_REVIEW_WEB_DEPENDENCIES_NOT_INSTALLED'
+}
+if (-not (Test-Path -LiteralPath $playwrightModule -PathType Container)) {
+    throw 'OTA_REVIEW_BROWSER_RUNTIME_NOT_INSTALLED'
 }
 if (-not (Test-Path -LiteralPath $apiScript -PathType Leaf)) {
     throw 'OTA_REVIEW_API_SCRIPT_NOT_FOUND'
@@ -144,6 +152,8 @@ $apiOut = Join-Path $runtimeRoot 'api.stdout.log'
 $apiErr = Join-Path $runtimeRoot 'api.stderr.log'
 $webOut = Join-Path $runtimeRoot 'web.stdout.log'
 $webErr = Join-Path $runtimeRoot 'web.stderr.log'
+$watchdogOut = Join-Path $runtimeRoot 'watchdog.stdout.log'
+$watchdogErr = Join-Path $runtimeRoot 'watchdog.stderr.log'
 $apiProcess = $null
 $webProcess = $null
 
@@ -157,6 +167,7 @@ $previousSecretKey = $env:OTA_REVIEW_SECRET_KEY
 $previousAutoCollection = $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED
 $previousRuntimeMode = $env:OTA_REVIEW_RUNTIME_MODE
 $previousProxy = $env:OTA_API_PROXY_TARGET
+$previousPlaywrightModule = $env:UAT_PLAYWRIGHT_MODULE
 
 try {
     $env:OTA_REVIEW_API_PORT = [string]$ApiPort
@@ -166,13 +177,19 @@ try {
     $env:OTA_REVIEW_DATA_PATH = $dataPath
     $env:OTA_REVIEW_COOKIE_SECRETS_PATH = $cookieSecretsPath
     $env:OTA_REVIEW_SECRET_KEY = $reviewSecretKey
-    $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = 'true'
+    $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = if ($ConfigurationOnly) {
+        'false'
+    }
+    else {
+        'true'
+    }
     $env:OTA_REVIEW_RUNTIME_MODE = if ($LongRunning) {
         'LOCAL_LIVE_LONG_RUNNING'
     }
     else {
         'LOCAL_LIVE_PILOT'
     }
+    $env:UAT_PLAYWRIGHT_MODULE = $playwrightModule
 
     $apiProcess = Start-Process `
         -FilePath $node `
@@ -194,6 +211,7 @@ try {
     $env:OTA_REVIEW_SECRET_KEY = $previousSecretKey
     $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = $previousAutoCollection
     $env:OTA_REVIEW_RUNTIME_MODE = $previousRuntimeMode
+    $env:UAT_PLAYWRIGHT_MODULE = $previousPlaywrightModule
 
     $env:OTA_API_PROXY_TARGET = "http://127.0.0.1:$ApiPort"
     $webProcess = Start-Process `
@@ -237,8 +255,14 @@ try {
         webPid = $webProcess.Id
         username = $reviewUsername
         realExternalConnections = $true
-        automaticHourlyCollection = $true
-        realWeComDelivery = 'CONFIGURABLE_UAT'
+        automaticHourlyCollection = -not [bool]$ConfigurationOnly
+        configurationOnly = [bool]$ConfigurationOnly
+        realWeComDelivery = if ($ConfigurationOnly) {
+            'MANUAL_ONLY'
+        }
+        else {
+            'CONFIGURABLE_UAT'
+        }
         cookieSecretStorage = 'WINDOWS_DPAPI_AES256_GCM'
         longRunning = [bool]$LongRunning
         restartPolicy = if ($LongRunning) {
@@ -268,6 +292,8 @@ try {
             ) `
             -WorkingDirectory $repoRoot `
             -WindowStyle Hidden `
+            -RedirectStandardOutput $watchdogOut `
+            -RedirectStandardError $watchdogErr `
             -PassThru
         $state['watchdogPid'] = $watchdog.Id
         [IO.File]::WriteAllText(
@@ -328,4 +354,5 @@ finally {
     $env:OTA_REVIEW_AUTO_COLLECTION_ENABLED = $previousAutoCollection
     $env:OTA_REVIEW_RUNTIME_MODE = $previousRuntimeMode
     $env:OTA_API_PROXY_TARGET = $previousProxy
+    $env:UAT_PLAYWRIGHT_MODULE = $previousPlaywrightModule
 }
