@@ -136,6 +136,45 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
 `/var/lib/sifangguan-ota` 的门店数据、账号密码、Cookie 或 Webhook。只有运行数据
 结构或加密边界发生重大变化时，才使用独立迁移流程。
 
+## 大模型建议增强
+
+远期房态简报支持可选的 OpenAI 兼容接口。规则引擎始终生成经营事实和结论；
+大模型只补充“先做、策略、复盘”三行建议。接口超时、鉴权失败、限流、返回格式
+错误或安全校验不通过时，系统自动使用规则建议继续发送简报。
+
+运行配置只保存在服务器 `/etc/sifangguan-ota/runtime.env`，禁止将 API Key
+提交到 Git、写入聊天、浏览器配置、普通日志或发布包。所需变量名称见
+`runtime.env.example`。其中 `OTA_REVIEW_AI_API_KEY_B64` 是 API Key 的 Base64
+编码，仅用于安全写入环境文件，不代表加密；该文件继续保持
+`root:sifangguan-ota 0640`。
+
+启用前必须确认：
+
+- 接口为公网 HTTPS、标准 443 端口且不发生重定向；
+- 模型支持 OpenAI 兼容的 `/chat/completions`；
+- 只发送未来14天按日期汇总的售卖率、余房、ADR和间夜变化；
+- 健康检查中的 `aiAdvice.enabled` 与 `aiAdvice.ready` 均为 `true`；
+- 完成一次受控手动远期简报测试，再允许等待自动发送。
+
+选择供应商和模型后，在本机 PowerShell 运行配置脚本。API Key 由隐藏输入框
+读取，经 SSH 标准输入送到服务器，不进入命令行参数或终端输出：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  infra\ota-standalone-server\scripts\Configure-OtaAiProvider.ps1 `
+  -BaseUrl 'https://供应商的兼容接口/v1' `
+  -Model '供应商模型编码'
+```
+
+脚本会先用合成汇总数据测试模型。测试失败时恢复原配置且不重启线上服务；测试
+通过后才重启 API，并核验健康状态。关闭模型增强时运行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  infra\ota-standalone-server\scripts\Configure-OtaAiProvider.ps1 `
+  -Disable
+```
+
 ## 必须备份
 
 至少备份：
