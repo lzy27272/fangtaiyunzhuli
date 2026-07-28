@@ -332,7 +332,8 @@ dd { margin: 5px 0 0; color: #334f64; font-size: 10px; }
 .login-card input:focus { border-color: #4b9bda; box-shadow: 0 0 0 4px rgba(75,155,218,.1); }
 .login-card > small { color: #90a0aa; text-align: center; font-size: 9px; }
 .login-submit { min-height: 48px; justify-content: center; }
-.logout-button { padding: 7px 9px; border: 0; color: #718592; background: transparent; font-size: 9px; cursor: pointer; }
+.logout-button { min-width: 48px; min-height: 34px; flex: 0 0 auto; padding: 7px 10px; border: 1px solid #dce6eb; border-radius: 9px; color: #526f82; background: #fff; font-size: 10px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.logout-button:hover { border-color: #99bdd8; color: #1f648f; background: #f3f9fd; }
 .wecom-entry-card { min-height: 330px; align-content: center; }
 .wecom-entry-progress { min-height: 116px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #8194a0; text-align: center; }
 .wecom-entry-progress strong { color: #345b73; font-size: 13px; }
@@ -440,7 +441,9 @@ dd { margin: 5px 0 0; color: #334f64; font-size: 10px; }
 
 @media (max-width: 560px) {
   .user { display: none; }
-  .context-select select { width: 165px; }
+  .pilot-badge, .bell { display: none; }
+  .context-select { min-width: 0; flex: 1; }
+  .context-select select { width: 100%; max-width: none; }
   .metrics-grid { grid-template-columns: 1fr; }
   .hero h1 { font-size: 23px; }
   .page-title h1 { font-size: 22px; }

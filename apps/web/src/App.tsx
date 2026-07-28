@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { apiCommand, apiRequest, authMode, clearAccessToken, demoFallbackEnabled, hasAccessToken, login } from './api/client'
+import { consumeLogoutEntry } from './app/logoutEntry'
 import {
   addWorkRecordSupplement,
   createWorkRecordDraft,
@@ -807,7 +808,10 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
 }
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(() => authMode !== 'bearer' || hasAccessToken())
+  const [authenticated, setAuthenticated] = useState(() => {
+    if (authMode === 'bearer' && consumeLogoutEntry(clearAccessToken)) return false
+    return authMode !== 'bearer' || hasAccessToken()
+  })
   const [wecomTaskEntry, setWecomTaskEntry] = useState(initialWecomTaskEntry)
   useEffect(() => {
     const expired = () => setAuthenticated(false)

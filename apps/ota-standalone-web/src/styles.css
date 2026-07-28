@@ -333,6 +333,117 @@ details.history-card { display: block; }
 .coverage-ready { color: #27634f; background: #eef7f3; }
 .coverage-missing { color: #855f18; background: #fff8df; }
 .report-source-list { display: grid; gap: .9rem; margin-top: 1.2rem; }
+.ota-source-config-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.4rem;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid #ddd8ca;
+  scroll-margin-top: 1rem;
+}
+.ota-source-config-panel.attention-requested {
+  border-radius: .95rem;
+  outline: 2px solid rgba(217, 144, 25, .55);
+  outline-offset: .45rem;
+}
+.ota-source-list {
+  display: grid;
+  gap: .9rem;
+}
+.ota-source-card {
+  overflow: hidden;
+  border: 1px solid #cfd8d3;
+  border-radius: .95rem;
+  background: #fcfcfa;
+  scroll-margin-top: 1rem;
+}
+.ota-source-card.needs-attention {
+  border: 2px solid #d99019;
+  box-shadow: 0 .45rem 1.2rem rgba(138, 88, 13, .16);
+}
+.ota-source-card > header,
+.ota-source-card > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem 1rem;
+  background: #eef4f1;
+}
+.ota-source-card.needs-attention > header {
+  background: #fff1c8;
+}
+.ota-source-card > header div {
+  display: grid;
+  gap: .12rem;
+}
+.ota-source-card > header span,
+.ota-source-card > header small {
+  color: #68736f;
+  font-size: .72rem;
+}
+.ota-refresh-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem 1rem;
+  padding: .75rem 1rem;
+  border-top: 1px solid #e2e3de;
+  color: #52615b;
+  background: #f6f8f5;
+  font-size: .76rem;
+}
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.ota-monitor-panel {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #c9d8d1;
+  border-radius: .9rem;
+  background: #f7fbf9;
+}
+.ota-monitor-panel .page-heading {
+  margin-bottom: .8rem;
+}
+.ota-monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: .75rem;
+}
+.ota-monitor-source {
+  display: grid;
+  gap: .45rem;
+  padding: .85rem;
+  border: 1px solid #d4ddd8;
+  border-radius: .75rem;
+  background: #fff;
+}
+.ota-monitor-source.failed {
+  border-color: #e7bd72;
+  background: #fff9e8;
+}
+.ota-monitor-source header {
+  display: flex;
+  justify-content: space-between;
+  gap: .8rem;
+}
+.ota-monitor-source > span {
+  color: #5f6c67;
+  font-size: .76rem;
+}
+.ota-monitor-error {
+  display: grid;
+  gap: .2rem;
+  color: #824b0b;
+  font-size: .78rem;
+}
+.ota-monitor-error .inline-action-link {
+  width: fit-content;
+  margin-left: 0;
+}
 .report-source-attention-panel {
   display: grid;
   gap: .75rem;

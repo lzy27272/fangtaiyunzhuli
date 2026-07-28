@@ -10,6 +10,8 @@ const monitorSource = await readFile(new URL('../src/pages/MonitorPage.tsx', imp
 const historySource = await readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8')
 const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx', import.meta.url), 'utf8')
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
+const otaSourceConfigSource = await readFile(new URL('../src/pages/OtaSourceConfigPanel.tsx', import.meta.url), 'utf8')
+const otaSourceGuidanceSource = await readFile(new URL('../src/pages/otaSourceGuidance.ts', import.meta.url), 'utf8')
 const connectionSource = await readFile(new URL('../src/pages/ConnectionConfigPage.tsx', import.meta.url), 'utf8')
 const realPrepSource = await readFile(new URL('../src/pages/RealConnectorPrepPanel.tsx', import.meta.url), 'utf8')
 const browserRehearsalSource = await readFile(new URL('../src/pages/BrowserAuthorizationRehearsalPanel.tsx', import.meta.url), 'utf8')
@@ -150,6 +152,37 @@ test('multiple report URLs are saved by hotel with HTTPS and secret boundaries',
   )
   assert.doesNotMatch(viewContract, /cookieValue|ciphertext|authTag/)
   assert.doesNotMatch(reportSourceSource, /fetch\(['"`]https?:/)
+})
+
+test('OTA sources support encrypted configuration, immediate read-only refresh and direct correction', () => {
+  assert.match(reportSourceSource, /OtaSourceConfigPanel/)
+  assert.match(otaSourceConfigSource, /OTA后台登录网址/)
+  assert.match(otaSourceConfigSource, /OTA数据接口网址（返回JSON）/)
+  assert.match(otaSourceConfigSource, /OTA Cookie/)
+  assert.match(otaSourceConfigSource, /OTA账号/)
+  assert.match(otaSourceConfigSource, /OTA密码/)
+  assert.match(otaSourceConfigSource, /type="password"/)
+  assert.match(otaSourceConfigSource, /saveOtaSources/)
+  assert.match(otaSourceConfigSource, /refreshOtaSource/)
+  assert.match(otaSourceConfigSource, /保存并立即刷新已启用OTA/)
+  assert.match(otaSourceConfigSource, /打开OTA后台/)
+  assert.match(otaSourceGuidanceSource, /OTA_RESPONSE_NOT_JSON/)
+  assert.match(monitorSource, /OTA多维度对比来源/)
+  assert.match(monitorSource, /直达修改/)
+  assert.match(appSource, /onOpenOtaSource/)
+  assert.match(businessApiSource, /\/ota-sources/)
+  assert.match(businessApiSource, /\/ota-source-refreshes/)
+  assert.match(reviewApiSource, /ota-source-configs\.json/)
+  assert.match(reviewApiSource, /ota-source-secrets\.json/)
+  assert.match(reviewApiSource, /encryptCookie/)
+  const otaViewContract = businessApiSource.slice(
+    businessApiSource.indexOf('export interface OtaSourceView'),
+    businessApiSource.indexOf('export type OtaCookieUpdate'),
+  )
+  assert.doesNotMatch(
+    otaViewContract,
+    /cookieValue|password: string|account: string|ciphertext|authTag/,
+  )
 })
 
 test('Sprint 2B real connector preparation is configuration-only and never echoes secrets', () => {

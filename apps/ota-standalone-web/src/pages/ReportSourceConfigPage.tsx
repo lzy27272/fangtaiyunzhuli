@@ -12,6 +12,7 @@ import {
   type ReportType,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
+import { OtaSourceConfigPanel } from './OtaSourceConfigPanel'
 import {
   reportSourceGuidance,
   type ReportSourceAttention,
@@ -21,6 +22,7 @@ interface Props {
   context: HotelContext | null
   canConfigure: boolean
   attentionItems: ReportSourceAttention[]
+  otaAttentionSourceId: string | null
 }
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
@@ -92,6 +94,7 @@ export function ReportSourceConfigPage({
   context,
   canConfigure,
   attentionItems,
+  otaAttentionSourceId,
 }: Props) {
   const [sources, setSources] = useState<ReportSourceView[]>([])
   const [cookieDrafts, setCookieDrafts] = useState<Record<string, string>>({})
@@ -423,6 +426,12 @@ export function ReportSourceConfigPage({
         <div className="state-panel">请先在顶部选择门店。</div>
       ) : (
         <StatePanel loading={loading} error={error}>
+          <OtaSourceConfigPanel
+            attentionSourceId={otaAttentionSourceId}
+            canConfigure={canConfigure}
+            context={context}
+          />
+
           <article className="report-source-card pms-login-card">
             <header>
               <div>

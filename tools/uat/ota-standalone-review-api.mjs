@@ -14,6 +14,7 @@ import {
   decryptCookie,
   encryptCookie,
 } from './report-source-cookie-crypto.mjs'
+import { collectOtaSource } from './ota-source-collector.mjs'
 import {
   appendAndPersistSnapshot,
   collectLiveReports,
@@ -72,6 +73,12 @@ const simulationHotelPath = dataPath
   : null
 const pmsLoginSecretPath = dataPath
   ? join(dirname(dataPath), 'pms-login-secrets.json')
+  : null
+const otaSourceConfigPath = dataPath
+  ? join(dirname(dataPath), 'ota-source-configs.json')
+  : null
+const otaSourceSecretPath = dataPath
+  ? join(dirname(dataPath), 'ota-source-secrets.json')
   : null
 const weComConfigPath = dataPath
   ? join(dirname(dataPath), 'wecom-configs.json')
@@ -178,6 +185,9 @@ const simulationRuns = new Map()
 const reportSourcesByHotel = new Map()
 const cookieSecretsByHotel = new Map()
 const pmsLoginSecretsByHotel = new Map()
+const otaSourcesByHotel = new Map()
+const otaSourceSecretsByHotel = new Map()
+const otaSourceRefreshLocks = new Map()
 const liveCollectionLocks = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
 const businessDayControlsByHotel = new Map()
@@ -680,6 +690,288 @@ const persistPmsLoginSecrets = () => {
   renameSync(temporaryPath, pmsLoginSecretPath)
 }
 
+const allowedOtaPlatforms = new Set([
+  'CTRIP',
+  'MEITUAN',
+  'FLIGGY',
+  'DOUYIN',
+  'QUNAR',
+  'TONGCHENG',
+  'OTHER',
+])
+
+const otaSecretScope = (hotelId, sourceId, kind) =>
+  `ota-source:${hotelId}:${sourceId}:${kind}`
+
+const normalizeOtaCredentials = (credentials) => {
+  if (!credentials || typeof credentials !== 'object') {
+    throw new Error('OTA_LOGIN_CREDENTIALS_INVALID')
+  }
+  const account = typeof credentials.account === 'string'
+    ? credentials.account.trim()
+    : ''
+  const password = typeof credentials.password === 'string'
+    ? credentials.password
+    : ''
+  if (
+    account.length < 1
+    || account.length > 256
+    || password.length < 1
+    || password.length > 4096
+    || /[\r\n\u0000]/.test(account)
+    || /[\r\n\u0000]/.test(password)
+  ) {
+    throw new Error('OTA_LOGIN_CREDENTIALS_INVALID')
+  }
+  return { account, password }
+}
+
+const normalizeOtaUrl = (value) => {
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('OTA_SOURCE_URL_INVALID')
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.username
+    || url.password
+    || url.hash
+    || [...url.searchParams.keys()].some((key) =>
+      sensitiveQueryKey.test(key))
+  ) {
+    throw new Error('OTA_SOURCE_URL_UNSAFE')
+  }
+  return url.toString()
+}
+
+const otaUpdateValid = (update, kind) => {
+  if (
+    !update
+    || typeof update !== 'object'
+    || !['KEEP', 'REPLACE', 'CLEAR'].includes(update.action)
+  ) {
+    return false
+  }
+  if (kind === 'COOKIE') {
+    return update.action === 'REPLACE'
+      ? typeof update.value === 'string'
+      : !Object.hasOwn(update, 'value')
+  }
+  return update.action === 'REPLACE'
+    ? typeof update.account === 'string'
+      && typeof update.password === 'string'
+    : !Object.hasOwn(update, 'account')
+      && !Object.hasOwn(update, 'password')
+}
+
+const normalizeOtaSources = (
+  input,
+  previousSources = [],
+  { persisted = false } = {},
+) => {
+  if (!Array.isArray(input) || input.length > 10) {
+    throw new Error('OTA_SOURCES_INVALID')
+  }
+  const previousById = new Map(
+    previousSources.map((source) => [source.sourceId, source]),
+  )
+  const normalized = input.map((source) => {
+    const cookieUpdate = source?.cookieUpdate ?? { action: 'KEEP' }
+    const credentialUpdate =
+      source?.credentialUpdate ?? { action: 'KEEP' }
+    const requestPayloadJson =
+      typeof source?.requestPayloadJson === 'string'
+        ? source.requestPayloadJson.trim()
+        : ''
+    let requestPayload = null
+    if (requestPayloadJson) {
+      if (requestPayloadJson.length > 20_000) {
+        throw new Error('OTA_REQUEST_PAYLOAD_INVALID')
+      }
+      try {
+        requestPayload = JSON.parse(requestPayloadJson)
+      } catch {
+        throw new Error('OTA_REQUEST_PAYLOAD_INVALID')
+      }
+      if (
+        requestPayload === null
+        || typeof requestPayload !== 'object'
+        || Array.isArray(requestPayload)
+        || requestPayloadContainsSensitiveKey(requestPayload)
+      ) {
+        throw new Error('OTA_REQUEST_PAYLOAD_INVALID')
+      }
+    }
+    if (
+      !source
+      || typeof source !== 'object'
+      || typeof source.sourceId !== 'string'
+      || !SIMULATION_HOTEL_ID.test(source.sourceId)
+      || typeof source.displayName !== 'string'
+      || source.displayName.trim().length < 1
+      || source.displayName.trim().length > 80
+      || !allowedOtaPlatforms.has(source.platformCode)
+      || !['GET', 'POST'].includes(source.requestMethod)
+      || (
+        source.requestMethod === 'GET'
+        && requestPayload !== null
+      )
+      || !allowedPollIntervals.has(source.pollIntervalMinutes)
+      || typeof source.enabled !== 'boolean'
+      || !Number.isInteger(source.rowVersion)
+      || source.rowVersion < 0
+      || !otaUpdateValid(cookieUpdate, 'COOKIE')
+      || !otaUpdateValid(credentialUpdate, 'CREDENTIALS')
+    ) {
+      throw new Error('OTA_SOURCE_SCHEMA_INVALID')
+    }
+    const previous = previousById.get(source.sourceId)
+    const lastState = persisted ? source : previous
+    return {
+      sourceId: source.sourceId,
+      displayName: source.displayName.trim(),
+      platformCode: source.platformCode,
+      portalUrl: normalizeOtaUrl(source.portalUrl),
+      dataEndpointUrl: normalizeOtaUrl(source.dataEndpointUrl),
+      requestMethod: source.requestMethod,
+      requestPayloadJson:
+        requestPayload === null ? '' : JSON.stringify(requestPayload),
+      pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
+      enabled: source.enabled,
+      lastRefreshStatus:
+        ['NEVER', 'COMPLETE', 'FAILED'].includes(
+          lastState?.lastRefreshStatus,
+        )
+          ? lastState.lastRefreshStatus
+          : 'NEVER',
+      lastRefreshAt:
+        typeof lastState?.lastRefreshAt === 'string'
+          ? lastState.lastRefreshAt
+          : null,
+      lastErrorCode:
+        typeof lastState?.lastErrorCode === 'string'
+          ? lastState.lastErrorCode
+          : null,
+      lastSummary:
+        lastState?.lastSummary
+        && typeof lastState.lastSummary === 'object'
+        && !Array.isArray(lastState.lastSummary)
+          ? lastState.lastSummary
+          : null,
+      rowVersion: persisted ? source.rowVersion : source.rowVersion + 1,
+    }
+  })
+  if (
+    new Set(normalized.map((source) => source.sourceId)).size
+    !== normalized.length
+  ) {
+    throw new Error('OTA_SOURCE_DUPLICATE')
+  }
+  return normalized
+}
+
+const otaSecretsForHotel = (hotelId) =>
+  otaSourceSecretsByHotel.get(hotelId) ?? {}
+
+const otaSecretValuesFor = (hotelId, sourceId) => {
+  const records = otaSecretsForHotel(hotelId)[sourceId] ?? {}
+  const values = {}
+  if (records.cookie) {
+    values.cookie = decryptCookie(
+      records.cookie,
+      cookieSecretKey,
+      otaSecretScope(hotelId, sourceId, 'cookie'),
+    )
+  }
+  if (records.credentials) {
+    values.credentials = normalizeOtaCredentials(JSON.parse(decryptCookie(
+      records.credentials,
+      cookieSecretKey,
+      otaSecretScope(hotelId, sourceId, 'credentials'),
+    )))
+  }
+  return values
+}
+
+const applyOtaSecretUpdates = (hotelId, input) => {
+  const current = otaSecretsForHotel(hotelId)
+  const next = {}
+  for (const source of input) {
+    const records = { ...(current[source.sourceId] ?? {}) }
+    const cookieUpdate = source.cookieUpdate ?? { action: 'KEEP' }
+    const credentialUpdate =
+      source.credentialUpdate ?? { action: 'KEEP' }
+    if (cookieUpdate.action === 'REPLACE') {
+      records.cookie = encryptCookie(
+        cookieUpdate.value,
+        cookieSecretKey,
+        otaSecretScope(hotelId, source.sourceId, 'cookie'),
+      )
+    } else if (cookieUpdate.action === 'CLEAR') {
+      delete records.cookie
+    }
+    if (credentialUpdate.action === 'REPLACE') {
+      records.credentials = encryptCookie(
+        JSON.stringify(normalizeOtaCredentials(credentialUpdate)),
+        cookieSecretKey,
+        otaSecretScope(hotelId, source.sourceId, 'credentials'),
+      )
+    } else if (credentialUpdate.action === 'CLEAR') {
+      delete records.credentials
+    }
+    if (records.cookie || records.credentials) {
+      next[source.sourceId] = records
+    }
+  }
+  otaSourceSecretsByHotel.set(hotelId, next)
+}
+
+const decorateOtaSources = (hotelId, sources) => {
+  const secrets = otaSecretsForHotel(hotelId)
+  return sources.map((source) => ({
+    ...source,
+    cookieConfigured: Boolean(secrets[source.sourceId]?.cookie),
+    cookieUpdatedAt:
+      secrets[source.sourceId]?.cookie?.updatedAt ?? null,
+    credentialsConfigured:
+      Boolean(secrets[source.sourceId]?.credentials),
+    credentialsUpdatedAt:
+      secrets[source.sourceId]?.credentials?.updatedAt ?? null,
+    loginMode: 'CONTROLLED_LOGIN_PENDING',
+    loginExecutionEnabled: false,
+  }))
+}
+
+const persistOtaSources = () => {
+  if (!otaSourceConfigPath) return
+  mkdirSync(dirname(otaSourceConfigPath), { recursive: true })
+  const temporaryPath = `${otaSourceConfigPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(Object.fromEntries(otaSourcesByHotel), null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, otaSourceConfigPath)
+}
+
+const persistOtaSecrets = () => {
+  if (!otaSourceSecretPath) return
+  mkdirSync(dirname(otaSourceSecretPath), { recursive: true })
+  const temporaryPath = `${otaSourceSecretPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      Object.fromEntries(otaSourceSecretsByHotel),
+      null,
+      2,
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, otaSourceSecretPath)
+}
+
 if (dataPath && existsSync(dataPath)) {
   try {
     const persisted = JSON.parse(readFileSync(dataPath, 'utf8'))
@@ -762,6 +1054,62 @@ if (pmsLoginSecretPath && existsSync(pmsLoginSecretPath)) {
     }
   } catch {
     process.stderr.write('REVIEW_PMS_LOGIN_SECRET_STORE_IGNORED\n')
+  }
+}
+
+if (otaSourceConfigPath && existsSync(otaSourceConfigPath)) {
+  try {
+    const persistedConfigs = JSON.parse(
+      readFileSync(otaSourceConfigPath, 'utf8'),
+    )
+    if (
+      persistedConfigs
+      && typeof persistedConfigs === 'object'
+      && !Array.isArray(persistedConfigs)
+    ) {
+      for (const [hotelId, sources] of Object.entries(persistedConfigs)) {
+        if (!hotels.some((hotel) => hotel.hotelId === hotelId)) continue
+        otaSourcesByHotel.set(
+          hotelId,
+          normalizeOtaSources(sources, [], { persisted: true }),
+        )
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_OTA_SOURCE_STORE_IGNORED\n')
+  }
+}
+
+if (otaSourceSecretPath && existsSync(otaSourceSecretPath)) {
+  try {
+    const persistedSecrets = JSON.parse(
+      readFileSync(otaSourceSecretPath, 'utf8'),
+    )
+    if (
+      persistedSecrets
+      && typeof persistedSecrets === 'object'
+      && !Array.isArray(persistedSecrets)
+    ) {
+      for (const [hotelId, sourceSecrets] of Object.entries(
+        persistedSecrets,
+      )) {
+        if (
+          !hotels.some((hotel) => hotel.hotelId === hotelId)
+          || !sourceSecrets
+          || typeof sourceSecrets !== 'object'
+          || Array.isArray(sourceSecrets)
+        ) {
+          continue
+        }
+        otaSourceSecretsByHotel.set(hotelId, sourceSecrets)
+        for (const sourceId of Object.keys(sourceSecrets)) {
+          otaSecretValuesFor(hotelId, sourceId)
+        }
+      }
+    }
+  } catch {
+    otaSourceSecretsByHotel.clear()
+    process.stderr.write('REVIEW_OTA_SECRET_STORE_IGNORED\n')
   }
 }
 
@@ -1341,6 +1689,86 @@ const liveMonitorFor = (hotelId) => {
   )
 }
 
+const safeOtaRefreshErrorCode = (error) => {
+  const code = typeof error?.message === 'string' ? error.message : ''
+  return code.startsWith('OTA_') ? code : 'OTA_REFRESH_FAILED'
+}
+
+const refreshOtaSourceFor = async (hotelId, sourceId) => {
+  const lockKey = `${hotelId}:${sourceId}`
+  const running = otaSourceRefreshLocks.get(lockKey)
+  if (running) return running
+  const operation = (async () => {
+    const sources = otaSourcesByHotel.get(hotelId) ?? []
+    const sourceIndex = sources.findIndex(
+      (candidate) => candidate.sourceId === sourceId,
+    )
+    if (sourceIndex < 0) throw new Error('OTA_SOURCE_NOT_FOUND')
+    const source = sources[sourceIndex]
+    let cookie
+    try {
+      cookie = otaSecretValuesFor(hotelId, sourceId).cookie
+      const summary = await collectOtaSource({ source, cookie })
+      const updated = {
+        ...source,
+        lastRefreshStatus: 'COMPLETE',
+        lastRefreshAt: summary.observedAt,
+        lastErrorCode: null,
+        lastSummary: summary,
+      }
+      sources[sourceIndex] = updated
+      otaSourcesByHotel.set(hotelId, sources)
+      persistOtaSources()
+      return decorateOtaSources(hotelId, [updated])[0]
+    } catch (error) {
+      const errorCode = safeOtaRefreshErrorCode(error)
+      const updated = {
+        ...source,
+        lastRefreshStatus: 'FAILED',
+        lastRefreshAt: new Date().toISOString(),
+        lastErrorCode: errorCode,
+        lastSummary: null,
+      }
+      sources[sourceIndex] = updated
+      otaSourcesByHotel.set(hotelId, sources)
+      persistOtaSources()
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'OTA_SOURCE_REFRESH_FAILED',
+          hotelId,
+          sourceId,
+          errorCode,
+        })}\n`,
+      )
+      throw new Error(errorCode)
+    }
+  })()
+  otaSourceRefreshLocks.set(lockKey, operation)
+  try {
+    return await operation
+  } finally {
+    otaSourceRefreshLocks.delete(lockKey)
+  }
+}
+
+const refreshEnabledOtaSourcesFor = async (hotelId) => {
+  const enabled = (otaSourcesByHotel.get(hotelId) ?? [])
+    .filter((source) => source.enabled)
+  const results = []
+  for (const source of enabled) {
+    try {
+      results.push(await refreshOtaSourceFor(hotelId, source.sourceId))
+    } catch {
+      const current = (otaSourcesByHotel.get(hotelId) ?? [])
+        .find((candidate) => candidate.sourceId === source.sourceId)
+      if (current) {
+        results.push(decorateOtaSources(hotelId, [current])[0])
+      }
+    }
+  }
+  return results
+}
+
 const collectLiveFor = async (hotelId) => {
   const running = liveCollectionLocks.get(hotelId)
   if (running) return running
@@ -1413,7 +1841,11 @@ const collectLiveFor = async (hotelId) => {
       liveSnapshotPath,
       result.snapshot,
     )
-    return result
+    const otaRefreshes = await refreshEnabledOtaSourcesFor(hotelId)
+    return {
+      ...result,
+      otaRefreshes,
+    }
   })()
   liveCollectionLocks.set(hotelId, operation)
   try {
@@ -2028,6 +2460,56 @@ const server = createServer(async (request, response) => {
         })
         return
       }
+      if (request.method === 'GET' && suffix === '/ota-sources') {
+        json(response, 200, {
+          data: decorateOtaSources(
+            hotelId,
+            otaSourcesByHotel.get(hotelId) ?? [],
+          ),
+        })
+        return
+      }
+      if (request.method === 'POST' && suffix === '/ota-sources') {
+        const body = await readBody(request)
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+        ) {
+          throw new Error('OTA_SOURCE_REASON_CODE_INVALID')
+        }
+        const normalized = normalizeOtaSources(
+          body.sources,
+          otaSourcesByHotel.get(hotelId) ?? [],
+        )
+        applyOtaSecretUpdates(hotelId, body.sources)
+        otaSourcesByHotel.set(hotelId, normalized)
+        persistOtaSecrets()
+        persistOtaSources()
+        json(response, 200, {
+          data: decorateOtaSources(hotelId, normalized),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/ota-source-refreshes'
+      ) {
+        const body = await readBody(request)
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+          || typeof body.sourceId !== 'string'
+          || !SIMULATION_HOTEL_ID.test(body.sourceId)
+        ) {
+          throw new Error('OTA_REFRESH_REQUEST_INVALID')
+        }
+        const refreshed = await refreshOtaSourceFor(
+          hotelId,
+          body.sourceId,
+        )
+        json(response, 200, { data: refreshed })
+        return
+      }
       if (request.method === 'GET' && suffix === '/pms-login-config') {
         json(response, 200, { data: pmsLoginConfigFor(hotelId) })
         return
@@ -2318,6 +2800,7 @@ const server = createServer(async (request, response) => {
           data: {
             ...result.run,
             monitor: result.monitor,
+            otaRefreshes: result.otaRefreshes,
           },
         })
         return
@@ -2452,6 +2935,7 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('WECOM_')
                     || error.message.startsWith('LIVE_')
                     || error.message.startsWith('FUTURE_')
+                    || error.message.startsWith('OTA_')
                   )
                     ? error.message
            : 'REVIEW_API_FAILED_CLOSED'

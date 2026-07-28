@@ -111,6 +111,8 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
   const [context, setContext] = useState<HotelContext | null>(null)
   const [reportSourceAttention, setReportSourceAttention] =
     useState<ReportSourceAttention[]>([])
+  const [otaAttentionSourceId, setOtaAttentionSourceId] =
+    useState<string | null>(null)
   const canAdminConfigure = session.account.roles.includes('PLATFORM_ADMIN')
   const canRevenueConfigure = canAdminConfigure
     || session.account.roles.includes('REVENUE_MANAGER')
@@ -146,6 +148,7 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
               type="button"
               onClick={() => {
                 setReportSourceAttention([])
+                setOtaAttentionSourceId(null)
                 setPage(item.code)
               }}
             >
@@ -185,6 +188,7 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
           context={context}
           onApply={(nextContext) => {
             setReportSourceAttention([])
+            setOtaAttentionSourceId(null)
             setContext(nextContext)
           }}
         />
@@ -192,6 +196,7 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
         {page === 'connections' ? (
           <ReportSourceConfigPage
             attentionItems={reportSourceAttention}
+            otaAttentionSourceId={otaAttentionSourceId}
             context={context}
             canConfigure={canAdminConfigure}
           />
@@ -201,6 +206,12 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
             context={context}
             onOpenReportSources={(attention) => {
               setReportSourceAttention(attention)
+              setOtaAttentionSourceId(null)
+              setPage('connections')
+            }}
+            onOpenOtaSource={(sourceId) => {
+              setReportSourceAttention([])
+              setOtaAttentionSourceId(sourceId ?? '')
               setPage('connections')
             }}
           />

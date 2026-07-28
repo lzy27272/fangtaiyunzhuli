@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   loadHotSellingRoomTypes,
   loadMonitor,
+  loadOtaSources,
   loadReportSources,
   saveHotSellingRoomTypes,
   triggerLiveCollection,
   type HotelContext,
   type LiveCollectionRunView,
   type MonitorView,
+  type OtaSourceView,
   type ReportSourceView,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
@@ -15,10 +17,12 @@ import {
   reportSourceGuidance,
   type ReportSourceAttention,
 } from './reportSourceAttention'
+import { otaSourceGuidance } from './otaSourceGuidance'
 
 interface Props {
   context: HotelContext | null
   onOpenReportSources: (attention: ReportSourceAttention[]) => void
+  onOpenOtaSource: (sourceId?: string) => void
 }
 
 const METRIC_LABELS: Record<string, string> = {
@@ -29,6 +33,16 @@ const METRIC_LABELS: Record<string, string> = {
   availableRooms: '今日可售',
   targetProgress: '目标完成进度',
   sellProgress: '售卖进度',
+}
+
+const OTA_DIMENSION_LABELS: Record<string, string> = {
+  DATE: '日期',
+  ROOM_TYPE: '房型',
+  INVENTORY: '库存/可售',
+  PRICE: '价格/收入',
+  SALES: '销量/间夜',
+  CHANNEL: '渠道',
+  CANCELLATION: '取消',
 }
 
 function displayMetric(value: string | number | null | undefined, unit: string, state: string): string {
@@ -74,12 +88,17 @@ function collectionErrorMessage(cause: unknown): string {
   return code || '真实采集失败'
 }
 
-export function MonitorPage({ context, onOpenReportSources }: Props) {
+export function MonitorPage({
+  context,
+  onOpenReportSources,
+  onOpenOtaSource,
+}: Props) {
   const [monitor, setMonitor] = useState<MonitorView | null>(null)
   const [run, setRun] = useState<LiveCollectionRunView | null>(null)
   const [hotRoomTypeCodes, setHotRoomTypeCodes] = useState<string[]>([])
   const [savedHotRoomTypeCodes, setSavedHotRoomTypeCodes] = useState<string[]>([])
   const [reportSources, setReportSources] = useState<ReportSourceView[]>([])
+  const [otaSources, setOtaSources] = useState<OtaSourceView[]>([])
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [savingHotRooms, setSavingHotRooms] = useState(false)
@@ -91,15 +110,22 @@ export function MonitorPage({ context, onOpenReportSources }: Props) {
     setLoading(true)
     setError('')
     try {
-      const [monitorView, hotRoomConfig, sourceConfig] = await Promise.all([
+      const [
+        monitorView,
+        hotRoomConfig,
+        sourceConfig,
+        otaSourceConfig,
+      ] = await Promise.all([
         loadMonitor(context),
         loadHotSellingRoomTypes(context),
         loadReportSources(context),
+        loadOtaSources(context),
       ])
       setMonitor(monitorView)
       setHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
       setSavedHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
       setReportSources(sourceConfig)
+      setOtaSources(otaSourceConfig)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '读取监控失败')
     } finally {
@@ -125,6 +151,7 @@ export function MonitorPage({ context, onOpenReportSources }: Props) {
       const started = await triggerLiveCollection(context)
       setRun(started)
       setMonitor(started.monitor)
+      setOtaSources(started.otaRefreshes ?? await loadOtaSources(context))
       setNotice(
         `已重新采集 ${started.successfulSourceCount}/${started.sourceCount} 个已配置报表。`,
       )
@@ -140,6 +167,7 @@ export function MonitorPage({ context, onOpenReportSources }: Props) {
       setHotRoomTypeCodes([])
       setSavedHotRoomTypeCodes([])
       setReportSources([])
+      setOtaSources([])
       return
     }
     void refresh()
@@ -337,6 +365,93 @@ export function MonitorPage({ context, onOpenReportSources }: Props) {
             进入报表接口核对配置
           </button>
         </div>
+      ) : null}
+
+      {context ? (
+        <section className="ota-monitor-panel">
+          <div className="page-heading">
+            <div>
+              <h3>OTA多维度对比来源</h3>
+              <p>
+                OTA刷新结果与PMS报表分开留痕；当前显示JSON记录数及已识别的
+                日期、房型、库存、价格、销量、渠道和取消等维度。
+              </p>
+            </div>
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => onOpenOtaSource()}
+            >
+              配置OTA来源
+            </button>
+          </div>
+          {otaSources.length > 0 ? (
+            <div className="ota-monitor-grid">
+              {otaSources.map((source) => {
+                const guidance = source.lastRefreshStatus === 'FAILED'
+                  ? otaSourceGuidance(source.lastErrorCode)
+                  : null
+                return (
+                  <article
+                    className={
+                      source.lastRefreshStatus === 'FAILED'
+                        ? 'ota-monitor-source failed'
+                        : 'ota-monitor-source'
+                    }
+                    key={source.sourceId}
+                  >
+                    <header>
+                      <strong>{source.displayName}</strong>
+                      <b className={
+                        source.lastRefreshStatus === 'COMPLETE'
+                          ? 'source-complete'
+                          : 'source-partial'
+                      }>
+                        {source.lastRefreshStatus}
+                      </b>
+                    </header>
+                    <span>
+                      Cookie｜{source.cookieConfigured ? '已配置' : '未配置'}
+                      {' · '}
+                      账号密码｜
+                      {source.credentialsConfigured ? '已加密配置' : '未配置'}
+                    </span>
+                    {source.lastSummary ? (
+                      <>
+                        <span>记录数｜{source.lastSummary.recordCount}</span>
+                        <span>
+                          已识别维度｜
+                          {source.lastSummary.detectedDimensions
+                            .map((code) => OTA_DIMENSION_LABELS[code] ?? code)
+                            .join('、')
+                            || '尚未识别'}
+                        </span>
+                      </>
+                    ) : null}
+                    {guidance ? (
+                      <div className="ota-monitor-error">
+                        <strong>{guidance.reason}</strong>
+                        <span>核对：{guidance.fields.join('、')}</span>
+                        <button
+                          className="inline-action-link"
+                          type="button"
+                          onClick={() => onOpenOtaSource(source.sourceId)}
+                        >
+                          直达修改
+                        </button>
+                      </div>
+                    ) : null}
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="state-panel">
+              尚未配置OTA数据源。进入“报表接口”填写OTA后台网址、
+              JSON数据接口、Cookie及账号密码。
+            </div>
+          )}
+        </section>
       ) : null}
 
       {!context ? (

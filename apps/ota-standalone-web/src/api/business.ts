@@ -193,6 +193,73 @@ export type PmsLoginCredentialUpdate =
   | { action: 'CLEAR' }
   | { action: 'REPLACE'; username: string; password: string }
 
+export type OtaPlatformCode =
+  | 'CTRIP'
+  | 'MEITUAN'
+  | 'FLIGGY'
+  | 'DOUYIN'
+  | 'QUNAR'
+  | 'TONGCHENG'
+  | 'OTHER'
+
+export interface OtaRefreshSummary {
+  observedAt: string
+  httpStatus: number
+  rootType: string
+  recordPath: string | null
+  recordCount: number
+  detectedDimensions: string[]
+  detectedFields: string[]
+}
+
+export interface OtaSourceView {
+  sourceId: string
+  displayName: string
+  platformCode: OtaPlatformCode
+  portalUrl: string
+  dataEndpointUrl: string
+  requestMethod: 'GET' | 'POST'
+  requestPayloadJson: string
+  pollIntervalMinutes: number
+  enabled: boolean
+  cookieConfigured: boolean
+  cookieUpdatedAt: string | null
+  credentialsConfigured: boolean
+  credentialsUpdatedAt: string | null
+  loginMode: 'CONTROLLED_LOGIN_PENDING'
+  loginExecutionEnabled: false
+  lastRefreshStatus: 'NEVER' | 'COMPLETE' | 'FAILED'
+  lastRefreshAt: string | null
+  lastErrorCode: string | null
+  lastSummary: OtaRefreshSummary | null
+  rowVersion: number
+}
+
+export type OtaCookieUpdate =
+  | { action: 'KEEP' }
+  | { action: 'CLEAR' }
+  | { action: 'REPLACE'; value: string }
+
+export type OtaCredentialUpdate =
+  | { action: 'KEEP' }
+  | { action: 'CLEAR' }
+  | { action: 'REPLACE'; account: string; password: string }
+
+export interface OtaSourceInput {
+  sourceId: string
+  displayName: string
+  platformCode: OtaPlatformCode
+  portalUrl: string
+  dataEndpointUrl: string
+  requestMethod: 'GET' | 'POST'
+  requestPayloadJson: string
+  pollIntervalMinutes: number
+  enabled: boolean
+  cookieUpdate: OtaCookieUpdate
+  credentialUpdate: OtaCredentialUpdate
+  rowVersion: number
+}
+
 export interface SourceHealth {
   sourceId: string
   sourceCode: string
@@ -278,6 +345,7 @@ export interface LiveCollectionRunView {
   successfulSourceCount: number
   outboundDeliveryAttempted: false
   monitor: MonitorView
+  otaRefreshes?: OtaSourceView[]
 }
 
 export interface BusinessDayControlView {
@@ -812,6 +880,38 @@ export function savePmsLoginConfig(
     credentialUpdate,
     reasonCode: 'UPDATE_PMS_LOGIN_CREDENTIALS',
   })
+}
+
+export function loadOtaSources(
+  context: HotelContext,
+): Promise<OtaSourceView[]> {
+  return authenticatedRequest(scopedPath(context, '/ota-sources'))
+}
+
+export function saveOtaSources(
+  context: HotelContext,
+  sources: OtaSourceInput[],
+): Promise<OtaSourceView[]> {
+  return postCommand<OtaSourceView[]>(
+    scopedPath(context, '/ota-sources'),
+    {
+      sources,
+      reasonCode: 'UPDATE_OTA_SOURCE_CONFIG',
+    },
+  )
+}
+
+export function refreshOtaSource(
+  context: HotelContext,
+  sourceId: string,
+): Promise<OtaSourceView> {
+  return postCommand<OtaSourceView>(
+    scopedPath(context, '/ota-source-refreshes'),
+    {
+      sourceId,
+      reasonCode: 'MANUAL_OTA_SOURCE_REFRESH',
+    },
+  )
 }
 
 function postCommand<T>(
