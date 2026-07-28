@@ -186,8 +186,15 @@ function Invoke-SshScript {
         [string]$Script
     )
 
+    $normalizedScript = $Script.Replace(
+        "`r`n",
+        "`n"
+    ).Replace(
+        "`r",
+        "`n"
+    )
     $encoded = [Convert]::ToBase64String(
-        [Text.Encoding]::UTF8.GetBytes($Script)
+        [Text.Encoding]::UTF8.GetBytes($normalizedScript)
     )
     & $script:sshPath `
         -i $IdentityFile `
