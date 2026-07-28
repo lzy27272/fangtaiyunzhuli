@@ -23,7 +23,12 @@ param(
 
     [switch]$SkipTests,
 
-    [switch]$AllowDirtyPlan
+    [switch]$AllowDirtyPlan,
+
+    [ValidateRange(1024, 65535)]
+    [int]$LocalTunnelPort = 15180,
+
+    [switch]$SkipTunnelEnsure
 )
 
 Set-StrictMode -Version Latest
@@ -193,6 +198,76 @@ function Invoke-SshScript {
     if ($LASTEXITCODE -ne 0) {
         throw "SSH_SCRIPT_FAILED:EXIT_$LASTEXITCODE"
     }
+}
+
+function Wait-ServerUiThroughTunnel {
+    param(
+        [int]$Port,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        try {
+            $response = Invoke-WebRequest `
+                -Uri "http://127.0.0.1:$Port/" `
+                -UseBasicParsing `
+                -TimeoutSec 2
+            if ($response.StatusCode -eq 200) {
+                return [int]$response.StatusCode
+            }
+        }
+        catch {
+            # The server services or the tunnel may still be starting.
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    return $null
+}
+
+function Test-LocalPortListening([int]$Port) {
+    $lines = netstat -ano -p tcp | Select-String -Pattern 'LISTENING'
+    return @(
+        $lines | Where-Object {
+            $_.Line -match (':{0}\s' -f $Port)
+        }
+    ).Count -gt 0
+}
+
+function Ensure-ServerUiTunnel([int]$Port) {
+    $status = Wait-ServerUiThroughTunnel -Port $Port -TimeoutSeconds 5
+    if ($status -eq 200) {
+        return $status
+    }
+    if (Test-LocalPortListening -Port $Port) {
+        throw 'LOCAL_TUNNEL_PORT_OCCUPIED_BUT_UNHEALTHY'
+    }
+    $arguments = @(
+        '-N',
+        '-i',
+        $IdentityFile,
+        '-L',
+        "${Port}:127.0.0.1:5180",
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ExitOnForwardFailure=yes',
+        '-o',
+        'ServerAliveInterval=30',
+        '-o',
+        'ServerAliveCountMax=3',
+        $RemoteHost
+    )
+    $null = Start-Process `
+        -FilePath $script:sshPath `
+        -ArgumentList $arguments `
+        -WindowStyle Hidden `
+        -PassThru
+    $status = Wait-ServerUiThroughTunnel -Port $Port -TimeoutSeconds 15
+    if ($status -ne 200) {
+        throw 'SERVER_UI_TUNNEL_UNAVAILABLE'
+    }
+    return $status
 }
 
 $gitPath = Resolve-RequiredCommand 'git.exe'
@@ -484,17 +559,13 @@ rmdir '$remoteStage'
 "@
 Invoke-SshScript -Script $deployScript
 
-$uiStatus = $null
-try {
-    $uiStatus = (
-        Invoke-WebRequest `
-            -Uri 'http://127.0.0.1:15180/' `
-            -UseBasicParsing `
-            -TimeoutSec 10
-    ).StatusCode
+$uiStatus = if ($SkipTunnelEnsure) {
+    Wait-ServerUiThroughTunnel `
+        -Port $LocalTunnelPort `
+        -TimeoutSeconds 5
 }
-catch {
-    $uiStatus = $null
+else {
+    Ensure-ServerUiTunnel -Port $LocalTunnelPort
 }
 
 [ordered]@{
