@@ -34,7 +34,13 @@ import {
   shanghaiScheduleParts,
 } from './report-schedule.mjs'
 import { selectHourlyDeliveryCandidates } from './wecom/src/hourly-delivery-candidates.mjs'
-import { createFutureBookingWeComPayloads } from './wecom/src/future-booking-brief.mjs'
+import {
+  createFutureBookingWeComPayloadsWithAi,
+} from './wecom/src/future-booking-brief.mjs'
+import {
+  futureBookingAiConfigFromEnv,
+  futureBookingAiPublicStatus,
+} from './wecom/src/future-booking-ai-advice.mjs'
 import {
   createFutureDemandP1WeComPayloads,
   futureDemandRiskStateAfterDelivery,
@@ -64,6 +70,9 @@ const runtimeMode =
   process.env.OTA_REVIEW_RUNTIME_MODE === 'LOCAL_LIVE_LONG_RUNNING'
     ? 'LOCAL_LIVE_LONG_RUNNING'
     : 'LOCAL_LIVE_PILOT'
+const futureBookingAiConfig = futureBookingAiConfigFromEnv(process.env)
+const futureBookingAiStatus =
+  futureBookingAiPublicStatus(futureBookingAiConfig)
 const liveSnapshotPath = dataPath
   ? join(dirname(dataPath), 'live-report-snapshots.json')
   : null
@@ -2229,7 +2238,7 @@ const deliverWeComSnapshot = async ({
     const hotel = selectedHotel(hotelId)
     const payloads =
       typeof payloadFactory === 'function'
-        ? payloadFactory({ hotel, snapshot, messagePrefix })
+        ? await payloadFactory({ hotel, snapshot, messagePrefix })
         : createReportMonitorWeComPayloads(
             monitorFromSnapshot(
               snapshot,
@@ -2347,6 +2356,41 @@ const deliverWeComSnapshot = async ({
   }
 }
 
+const futureBookingPayloads = ({
+  hotel,
+  snapshot,
+  messagePrefix,
+}) => createFutureBookingWeComPayloadsWithAi(
+  hotel,
+  snapshot,
+  {
+    messagePrefix,
+    aiConfig: futureBookingAiConfig,
+    onAiApplied: () => {
+      process.stdout.write(
+        `${JSON.stringify({
+          event: 'FUTURE_BOOKING_AI_ADVICE_APPLIED',
+          businessDate: snapshot.businessDate,
+        })}\n`,
+      )
+    },
+    onAiFallback: (reasonCode) => {
+      const safeReasonCode =
+        typeof reasonCode === 'string'
+        && /^[A-Z0-9][A-Z0-9_]{1,63}$/.test(reasonCode)
+          ? reasonCode
+          : 'AI_ADVICE_FALLBACK'
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'FUTURE_BOOKING_AI_ADVICE_FALLBACK',
+          businessDate: snapshot.businessDate,
+          reasonCode: safeReasonCode,
+        })}\n`,
+      )
+    },
+  },
+)
+
 const deliverFutureDemandRisks = async (hotelId, snapshot) => {
   if (!isBroadcastWindowOpen()) return []
   const stateChanged = reconcileFutureDemandRiskStates({
@@ -2457,7 +2501,9 @@ const scheduledFutureBookingDeliveryTick = async () => {
           messagePrefix,
           deliveryType: 'FUTURE_14D',
           payloadFactory: ({ hotel: selected, snapshot: current }) =>
-            createFutureBookingWeComPayloads(selected, current, {
+            futureBookingPayloads({
+              hotel: selected,
+              snapshot: current,
               messagePrefix,
             }),
         })
@@ -2542,6 +2588,7 @@ const server = createServer(async (request, response) => {
         outboundDeliveryEnabled:
           [...weComConfigsByHotel.values()]
             .some((config) => config.enabled === true),
+        aiAdvice: futureBookingAiStatus,
       })
       return
     }
@@ -3267,7 +3314,9 @@ const server = createServer(async (request, response) => {
           deliveryType: 'FUTURE_14D_TEST',
           allowDisabled: true,
           payloadFactory: ({ hotel: selected, snapshot: current }) =>
-            createFutureBookingWeComPayloads(selected, current, {
+            futureBookingPayloads({
+              hotel: selected,
+              snapshot: current,
               messagePrefix: '手动通道测试',
             }),
         })

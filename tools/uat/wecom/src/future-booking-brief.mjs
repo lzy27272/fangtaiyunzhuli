@@ -1,3 +1,7 @@
+import {
+  generateFutureBookingAiActionLines,
+} from './future-booking-ai-advice.mjs'
+
 const MAX_MESSAGE_BYTES = 1900
 const DISPLAY_DAYS = 14
 
@@ -58,6 +62,17 @@ const rowForDate = (changes, stayDate) =>
   (changes?.daily ?? []).find((row) => row?.stayDate === stayDate) ?? {
     stayDate,
   }
+
+const rowsForSnapshot = (snapshot) => {
+  const changes = snapshot.futureBookingChanges ?? {
+    daily: snapshot.futureDaily ?? [],
+  }
+  return Array.from(
+    { length: DISPLAY_DAYS },
+    (_, index) =>
+      rowForDate(changes, addDays(snapshot.businessDate, index + 1)),
+  )
+}
 
 const remainingRooms = (row) => {
   const available = finiteNumber(row.availableRooms)
@@ -174,6 +189,26 @@ const adviceFor = (rows) => {
   ]
 }
 
+const adviceLinesFor = (rows, override) => {
+  if (override === undefined || override === null) {
+    return adviceFor(rows)
+  }
+  const prefixes = ['结论｜', '先做｜', '策略｜', '复盘｜']
+  if (
+    !Array.isArray(override)
+    || override.length !== prefixes.length
+    || override.some(
+      (line, index) =>
+        typeof line !== 'string'
+        || !line.startsWith(prefixes[index])
+        || /[\r\n\u0000-\u001f\u007f]/.test(line),
+    )
+  ) {
+    throw new Error('FUTURE_BOOKING_ADVICE_INVALID')
+  }
+  return [...override]
+}
+
 const payload = (lines) => {
   const content = lines
     .map((line) => String(line).trimEnd())
@@ -211,11 +246,14 @@ export const createFutureBookingWeComPayloads = (
   const changes = snapshot.futureBookingChanges ?? {
     daily: snapshot.futureDaily ?? [],
   }
-  const rows = Array.from(
-    { length: DISPLAY_DAYS },
-    (_, index) =>
-      rowForDate(changes, addDays(snapshot.businessDate, index + 1)),
-  )
+  const rows = rowsForSnapshot(snapshot)
+  const adviceLines = adviceLinesFor(rows, options.adviceLines)
+  const adviceHeading =
+    options.adviceMode === 'MODEL'
+      ? '🤖AI建议（模型增强）'
+      : options.adviceMode === 'RULE_FALLBACK'
+        ? '🤖AI建议（规则回退）'
+        : '🤖AI建议'
   const monitoredP1Count = (changes.daily ?? []).filter((row) => {
     const day = Math.round(
       (
@@ -248,8 +286,8 @@ export const createFutureBookingWeComPayloads = (
     ...rows.map((row) => lineFor(row, compactMode)),
     '*小时成交均价按相邻快照房费差额推算，仅作观察',
     '',
-    '🤖AI建议',
-    ...adviceFor(rows),
+    adviceHeading,
+    ...adviceLines,
     '',
     '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
   ]
@@ -258,6 +296,70 @@ export const createFutureBookingWeComPayloads = (
   } catch (error) {
     if (error?.message !== 'FUTURE_BOOKING_MESSAGE_TOO_LARGE') throw error
     return [payload(linesFor(true))]
+  }
+}
+
+export const createFutureBookingWeComPayloadsWithAi = async (
+  hotel,
+  snapshot,
+  options = {},
+) => {
+  const config = options.aiConfig
+  if (config?.enabled !== true) {
+    return createFutureBookingWeComPayloads(hotel, snapshot, options)
+  }
+  if (config.ready !== true) {
+    options.onAiFallback?.(
+      config.reasonCode ?? 'AI_CONFIGURATION_NOT_READY',
+    )
+    return createFutureBookingWeComPayloads(
+      hotel,
+      snapshot,
+      {
+        ...options,
+        adviceMode: 'RULE_FALLBACK',
+      },
+    )
+  }
+  const rows = rowsForSnapshot(snapshot)
+  const ruleAdviceLines = adviceFor(rows)
+  try {
+    const actionLines = await generateFutureBookingAiActionLines({
+      config,
+      businessDate: snapshot.businessDate,
+      rows,
+      ruleAdviceLines,
+      fetchImpl: options.fetchImpl,
+      lookupImpl: options.lookupImpl,
+    })
+    const payloads = createFutureBookingWeComPayloads(
+      hotel,
+      snapshot,
+      {
+        ...options,
+        adviceMode: 'MODEL',
+        adviceLines: [
+          ruleAdviceLines[0],
+          ...actionLines,
+        ],
+      },
+    )
+    options.onAiApplied?.()
+    return payloads
+  } catch (error) {
+    options.onAiFallback?.(
+      error?.reasonCode
+      ?? error?.message
+      ?? 'AI_ADVICE_FALLBACK',
+    )
+    return createFutureBookingWeComPayloads(
+      hotel,
+      snapshot,
+      {
+        ...options,
+        adviceMode: 'RULE_FALLBACK',
+      },
+    )
   }
 }
 
