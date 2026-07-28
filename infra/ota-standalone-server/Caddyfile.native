@@ -4,6 +4,8 @@
 }
 
 http://127.0.0.1:5180 {
+	bind 127.0.0.1
+
 	encode zstd gzip
 
 	header {
