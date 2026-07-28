@@ -66,6 +66,56 @@ test('future booking brief is one @all message with 14 stay dates under 1900 byt
   )
 })
 
+test('high-demand advice gives owner, conditional action and review criteria', () => {
+  const highDemand = {
+    ...snapshot,
+    collectionRunId: 'run-future-high-demand',
+    futureBookingChanges: {
+      ...snapshot.futureBookingChanges,
+      daily: Array.from({ length: 90 }, (_, index) =>
+        dailyRow(index + 1, index === 5 ? 74 : index + 1, 0)),
+    },
+  }
+  const content = createFutureBookingWeComPayloads(
+    hotel,
+    highDemand,
+  )[0].text.content
+  assert.match(content, /结论｜08-01售卖率74%，余13间，高需求但当前未触发加速/)
+  assert.match(content, /先做｜店长\/收益30分钟内核对竞对同房型可售价/)
+  assert.match(content, /策略｜若2小时出现新增且竞对价格不弱/)
+  assert.match(content, /售卖率≥80%再收紧一档/)
+})
+
+test('accelerating advice uses a bounded experiment and rollback signal', () => {
+  const content = createFutureBookingWeComPayloads(
+    hotel,
+    snapshot,
+  )[0].text.content
+  assert.match(content, /结论｜07-29小时净增\+3间夜/)
+  assert.match(content, /人工评估提价3%-5%并限量低价房/)
+  assert.match(content, /避免同时改多个变量/)
+  assert.match(content, /零新增则取消提价试验/)
+})
+
+test('soft-demand advice recommends one-variable testing instead of discounting', () => {
+  const softDemand = {
+    ...snapshot,
+    collectionRunId: 'run-future-soft-demand',
+    futureBookingChanges: {
+      ...snapshot.futureBookingChanges,
+      daily: Array.from({ length: 90 }, (_, index) =>
+        dailyRow(index + 1, Math.min(35, index + 1), 0)),
+    },
+  }
+  const content = createFutureBookingWeComPayloads(
+    hotel,
+    softDemand,
+  )[0].text.content
+  assert.match(content, /未来14天未见明显加速/)
+  assert.match(content, /价格、套餐或曝光三选一/)
+  assert.match(content, /无新增则撤回并记录原因/)
+})
+
 test('D+15 to D+90 first crosses 20 percent and builds a safe P1 payload', () => {
   const candidates = selectFutureDemandRiskCandidates({
     hotelId: hotel.hotelId,

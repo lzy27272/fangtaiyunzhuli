@@ -59,16 +59,20 @@ const rowForDate = (changes, stayDate) =>
     stayDate,
   }
 
-const lineFor = (row, compactMode = false) => {
+const remainingRooms = (row) => {
+  const available = finiteNumber(row.availableRooms)
   const booked = finiteNumber(row.bookedRoomNights)
   const roomCount = finiteNumber(row.roomCount)
-  const available = finiteNumber(row.availableRooms)
-  const remaining =
-    available !== null
-      ? Math.max(0, available)
-      : booked !== null && roomCount !== null
-        ? Math.max(0, roomCount - booked)
-        : null
+  if (available !== null) return Math.max(0, available)
+  if (booked !== null && roomCount !== null) {
+    return Math.max(0, roomCount - booked)
+  }
+  return null
+}
+
+const lineFor = (row, compactMode = false) => {
+  const booked = finiteNumber(row.bookedRoomNights)
+  const remaining = remainingRooms(row)
   const rate = finiteNumber(row.occupancyPercent)
   const hourly = finiteNumber(row.hourlyNetRoomNights)
   const yesterday = finiteNumber(row.previousDayNetRoomNights)
@@ -104,17 +108,70 @@ const adviceFor = (rows) => {
         finiteNumber(right.occupancyPercent)
         - finiteNumber(left.occupancyPercent),
     )
+  const strongest = [...rows]
+    .filter((row) => finiteNumber(row.occupancyPercent) !== null)
+    .sort(
+      (left, right) =>
+        finiteNumber(right.occupancyPercent)
+        - finiteNumber(left.occupancyPercent),
+    )[0]
   if (accelerating.length > 0) {
-    return `${shortDate(accelerating[0].stayDate)}小时净增`
-      + `${signed(accelerating[0].hourlyNetRoomNights)}间夜，建议人工核查`
-      + '流量来源、竞对价格和剩余库存，再决定是否提价或收紧低价房。'
+    const focus = accelerating[0]
+    return [
+      `结论｜${shortDate(focus.stayDate)}小时净增`
+        + `${signed(focus.hourlyNetRoomNights)}间夜`
+        + `，售卖率${compact(focus.occupancyPercent)}%`
+        + `，余${compact(remainingRooms(focus))}间，需求加速。`,
+      '先做｜店长/收益30分钟内核对进单渠道、同房型竞对可售价、'
+        + '退改条件、活动叠加和房态一致性。',
+      '策略｜若竞对仍有房且本店产品条件不弱，人工评估提价3%-5%'
+        + '并限量低价房；否则稳价，避免同时改多个变量。',
+      '复盘｜2小时后看净增间夜、ADR和余房；净增≥2且售卖率继续升'
+        + '再评估下一档，零新增则取消提价试验。',
+    ]
   }
   if (highOccupancy.length > 0) {
-    return `${shortDate(highOccupancy[0].stayDate)}售卖率`
-      + `${compact(highOccupancy[0].occupancyPercent)}%，建议检查竞对价格与`
-      + '剩余库存，保护高需求日期收益。'
+    const focus = highOccupancy[0]
+    const remaining = remainingRooms(focus)
+    if (
+      finiteNumber(focus.occupancyPercent) >= 90
+      || (remaining !== null && remaining <= 2)
+    ) {
+      return [
+        `结论｜${shortDate(focus.stayDate)}售卖率`
+          + `${compact(focus.occupancyPercent)}%`
+          + `，余${compact(remaining)}间，进入尾房收益保护。`,
+        '先做｜店长/收益立即核对超售风险、保留房和各渠道房态，'
+          + '同步比较竞对同房型可售价及退改条件。',
+        '策略｜房态一致且竞对仍有房时，人工评估关闭低价产品并分档提价；'
+          + '保留必要直销/会员库存，不一次性关完所有渠道。',
+        '复盘｜每小时检查取消量、ADR和余房；出现取消回补或零新增时，'
+          + '先恢复一档可售产品再观察。',
+      ]
+    }
+    return [
+      `结论｜${shortDate(focus.stayDate)}售卖率`
+        + `${compact(focus.occupancyPercent)}%`
+        + `，余${compact(remaining)}间，高需求但当前未触发加速。`,
+      '先做｜店长/收益30分钟内核对竞对同房型可售价、退改条件、'
+        + '活动叠加、渠道占比与可售房态。',
+      '策略｜若2小时出现新增且竞对价格不弱，人工评估提价3%-5%'
+        + '并减少低价配额；无新增则稳价，不提前封死渠道。',
+      '复盘｜2小时后以净增间夜、ADR、余房为准；售卖率≥80%'
+        + '再收紧一档，动销停滞则恢复引流。',
+    ]
   }
-  return '未来14天暂未发现明显加速，保持价格与库存观察；出现集中进单时再人工核查竞对和活动。'
+  return [
+    `结论｜未来14天未见明显加速`
+      + `${strongest ? `，最高售卖率${compact(strongest.occupancyPercent)}%` : ''}`
+      + '，暂不支持直接提价或加大促销。',
+    '先做｜店长/收益检查页面可售、价格倒挂、活动生效、房型映射'
+      + '和竞对同房型可售价，先排除配置问题。',
+    '策略｜对低售卖日期只做一个小流量变量测试（价格、套餐或曝光三选一），'
+      + '避免多项同时调整后无法判断效果。',
+    '复盘｜2小时后比较净增间夜、ADR与取消量；有新增再保留测试，'
+      + '无新增则撤回并记录原因。',
+  ]
 }
 
 const payload = (lines) => {
@@ -192,7 +249,7 @@ export const createFutureBookingWeComPayloads = (
     '*小时成交均价按相邻快照房费差额推算，仅作观察',
     '',
     '🤖AI建议',
-    adviceFor(rows),
+    ...adviceFor(rows),
     '',
     '用途｜仅验证企微通道，不得据此调价、调整库存或执行经营动作',
     '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
