@@ -155,7 +155,9 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
     setCreating(true)
     setError('')
     try {
-      const receipt = await initializeSimulationHotel(draft)
+      const receipt = await initializeSimulationHotel({
+        ...draft,
+      })
       const directory = await listSimulationHotels()
       setHotels(directory.hotels)
       const created = directory.hotels.find((hotel) => hotel.hotelId === receipt.resourceId)
@@ -271,6 +273,10 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
             <button disabled={creating} type="button" onClick={createHotel}>
               {creating ? '正在创建…' : '创建评审门店'}
             </button>
+            <p className="hotel-copy-note">
+              创建后自动复制001/001门店的全部报表接口；
+              Cookie和登录账号密码不会复制。
+            </p>
           </div>
         </details>
       ) : null}

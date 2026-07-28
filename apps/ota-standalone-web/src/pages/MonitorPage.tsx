@@ -1,17 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   loadHotSellingRoomTypes,
   loadMonitor,
+  loadReportSources,
   saveHotSellingRoomTypes,
   triggerLiveCollection,
   type HotelContext,
   type LiveCollectionRunView,
   type MonitorView,
+  type ReportSourceView,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
+import {
+  reportSourceGuidance,
+  type ReportSourceAttention,
+} from './reportSourceAttention'
 
 interface Props {
   context: HotelContext | null
+  onOpenReportSources: (attention: ReportSourceAttention[]) => void
 }
 
 const METRIC_LABELS: Record<string, string> = {
@@ -50,30 +57,49 @@ function sameRoomTypeCodes(left: string[], right: string[]) {
   )
 }
 
-export function MonitorPage({ context }: Props) {
+function collectionErrorMessage(cause: unknown): string {
+  const code = cause instanceof Error ? cause.message : ''
+  if (code === 'REPORT_SOURCE_COOKIE_REQUIRED') {
+    return '当前门店已配置报表接口，但尚未保存任何Cookie。请到“报表接口”页为当前门店填写并保存Cookie后重新采集。'
+  }
+  if (code === 'REPORT_SOURCE_ENABLED_REQUIRED') {
+    return '当前门店没有启用的报表接口，请先到“报表接口”页启用接口。'
+  }
+  if (code === 'PMS_BUSINESS_DATE_UNAVAILABLE') {
+    return '当前门店Cookie无法访问PMS营业日接口，可能已经失效或缺少登录上下文。请更新Cookie后重新采集。'
+  }
+  if (code === 'PMS_BUSINESS_DATE_INVALID') {
+    return 'PMS返回的营业日格式无效，本次未生成经营监控数据。'
+  }
+  return code || '真实采集失败'
+}
+
+export function MonitorPage({ context, onOpenReportSources }: Props) {
   const [monitor, setMonitor] = useState<MonitorView | null>(null)
   const [run, setRun] = useState<LiveCollectionRunView | null>(null)
   const [hotRoomTypeCodes, setHotRoomTypeCodes] = useState<string[]>([])
   const [savedHotRoomTypeCodes, setSavedHotRoomTypeCodes] = useState<string[]>([])
+  const [reportSources, setReportSources] = useState<ReportSourceView[]>([])
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [savingHotRooms, setSavingHotRooms] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
-  const lastAutoCollectionContext = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (!context) return
     setLoading(true)
     setError('')
     try {
-      const [monitorView, hotRoomConfig] = await Promise.all([
+      const [monitorView, hotRoomConfig, sourceConfig] = await Promise.all([
         loadMonitor(context),
         loadHotSellingRoomTypes(context),
+        loadReportSources(context),
       ])
       setMonitor(monitorView)
       setHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
       setSavedHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
+      setReportSources(sourceConfig)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '读取监控失败')
     } finally {
@@ -81,22 +107,29 @@ export function MonitorPage({ context }: Props) {
     }
   }, [context])
 
-  const collectNow = useCallback(async (origin: 'automatic' | 'manual' = 'manual') => {
+  const collectNow = useCallback(async () => {
     if (!context) return
     setRunning(true)
     setError('')
     setNotice('')
     try {
+      const sourceConfig = await loadReportSources(context)
+      setReportSources(sourceConfig)
+      const enabledSources = sourceConfig.filter((source) => source.enabled)
+      if (enabledSources.length === 0) {
+        throw new Error('REPORT_SOURCE_ENABLED_REQUIRED')
+      }
+      if (!enabledSources.some((source) => source.cookieConfigured)) {
+        throw new Error('REPORT_SOURCE_COOKIE_REQUIRED')
+      }
       const started = await triggerLiveCollection(context)
       setRun(started)
       setMonitor(started.monitor)
       setNotice(
-        origin === 'automatic'
-          ? `门店加载后已自动采集 ${started.successfulSourceCount}/${started.sourceCount} 个已配置报表。`
-          : `已重新采集 ${started.successfulSourceCount}/${started.sourceCount} 个已配置报表。`,
+        `已重新采集 ${started.successfulSourceCount}/${started.sourceCount} 个已配置报表。`,
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '真实采集失败')
+      setError(collectionErrorMessage(cause))
     } finally {
       setRunning(false)
     }
@@ -104,23 +137,13 @@ export function MonitorPage({ context }: Props) {
 
   useEffect(() => {
     if (!context) {
-      lastAutoCollectionContext.current = null
       setHotRoomTypeCodes([])
       setSavedHotRoomTypeCodes([])
+      setReportSources([])
       return
     }
-    const contextKey = `${context.tenantId}:${context.hotelId}`
-    if (lastAutoCollectionContext.current === contextKey) return
-    lastAutoCollectionContext.current = contextKey
-    let cancelled = false
-    void (async () => {
-      await refresh()
-      if (!cancelled) await collectNow('automatic')
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [collectNow, context, refresh])
+    void refresh()
+  }, [context, refresh])
 
   function toggleHotRoomType(roomTypeCode: string) {
     setHotRoomTypeCodes((current) =>
@@ -163,6 +186,28 @@ export function MonitorPage({ context }: Props) {
       : hotRoomTypeCodes.length > 0
         ? '已保存'
         : '选择后保存'
+  const enabledReportSources = reportSources.filter((source) => source.enabled)
+  const cookieReadySourceCount = enabledReportSources.filter(
+    (source) => source.cookieConfigured,
+  ).length
+  const cookieMissingSources = enabledReportSources.filter(
+    (source) => !source.cookieConfigured,
+  )
+  const cookieMissingAttention: ReportSourceAttention[] =
+    cookieMissingSources.map((source) => ({
+      sourceId: source.sourceId,
+      sourceCode: source.displayName,
+      errorCode: 'COOKIE_NOT_CONFIGURED',
+    }))
+  const incompleteMonitorSources = monitor?.sources.filter(
+    (source) => source.completeness !== 'COMPLETE',
+  ) ?? []
+  const incompleteMonitorAttention: ReportSourceAttention[] =
+    incompleteMonitorSources.map((source) => ({
+      sourceId: source.sourceId,
+      sourceCode: source.sourceCode,
+      errorCode: source.errorCode ?? 'COLLECTION_INCOMPLETE',
+    }))
 
   return (
     <section className="page-card">
@@ -194,22 +239,110 @@ export function MonitorPage({ context }: Props) {
         <span>以每次采集返回的PMS营业日为准，零点不自动切日</span>
       </div>
 
+      {context && enabledReportSources.length > 0 ? (
+        <div
+          className={`monitor-readiness ${
+            cookieReadySourceCount === enabledReportSources.length
+              ? 'ready'
+              : 'missing'
+          }`}
+          role="status"
+        >
+          当前门店已启用
+          {' '}
+          {enabledReportSources.length}
+          {' '}
+          个报表接口，已保存Cookie
+          {' '}
+          {cookieReadySourceCount}
+          /
+          {enabledReportSources.length}
+          个。
+          {cookieReadySourceCount === enabledReportSources.length
+            ? ' 采集凭据已就绪。'
+            : ' 缺少Cookie的接口无法采集，请到“报表接口”页补充并保存。'}
+          {cookieMissingSources.length > 0 ? (
+            <ul className="monitor-attention-list">
+              {cookieMissingSources.map((source) => (
+                <li key={source.sourceId}>
+                  {source.displayName}
+                  {'：Cookie未配置'}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {cookieReadySourceCount < enabledReportSources.length ? (
+            <button
+              className="inline-action-link"
+              type="button"
+              onClick={() => onOpenReportSources(cookieMissingAttention)}
+            >
+              进入报表接口核对配置
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {run ? (
         <div className="run-strip">
           <strong>真实采集 {run.status}</strong>
           <span>{run.runId}</span>
           <span>来源 {run.successfulSourceCount}/{run.sourceCount}</span>
           <span>营业日候选 {run.businessDate}</span>
-          <b>本次仅采集；企微由06分调度处理</b>
+          <b>本次仅采集；企微在08:00至次日02:00的整点约06分推送</b>
         </div>
       ) : null}
 
       {notice ? <div className="success" role="status">{notice}</div> : null}
 
+      {incompleteMonitorSources.length > 0 ? (
+        <div className="monitor-readiness missing" role="alert">
+          本次有
+          {incompleteMonitorSources.length}
+          个报表来源未完整采集，请核对接口、Cookie及POST载荷。
+          <ul className="monitor-attention-list">
+            {incompleteMonitorSources.map((source) => {
+              const configuredSource = reportSources.find(
+                (item) => item.sourceId === source.sourceId,
+              )
+              const sourceIndex = reportSources.findIndex(
+                (item) => item.sourceId === source.sourceId,
+              )
+              const guidance = reportSourceGuidance(
+                source.errorCode ?? 'COLLECTION_INCOMPLETE',
+              )
+              return (
+                <li key={source.sourceId}>
+                  <strong>
+                    {sourceIndex >= 0
+                      ? `报表 ${String(sourceIndex + 1).padStart(2, '0')} · `
+                      : ''}
+                    {configuredSource?.displayName ?? source.sourceCode}
+                  </strong>
+                  <span>
+                    {guidance.reason}
+                    {'；核对：'}
+                    {guidance.fields.join('、')}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          <button
+            className="inline-action-link"
+            type="button"
+            onClick={() =>
+              onOpenReportSources(incompleteMonitorAttention)}
+          >
+            进入报表接口核对配置
+          </button>
+        </div>
+      ) : null}
+
       {!context ? (
         <div className="state-panel">请先在顶部载入租户和门店。</div>
       ) : (
-        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="门店加载后会自动采集所有已配置报表。">
+        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="系统会在播报时段按30分钟轮询；也可以点击“重新采集已配置报表”。">
           {monitor ? (
             <>
               <div className="monitor-summary">
@@ -248,7 +381,11 @@ export function MonitorPage({ context }: Props) {
                 ))}
               </div>
 
-              <h3>小时快照差分</h3>
+              <h3>
+                {monitor.hourlyDelta?.aggregationWindow === 'PAUSE_TO_FIRST_BRIEF'
+                  ? '停播时段汇总'
+                  : '小时快照差分'}
+              </h3>
               {monitor.hourlyDelta?.basis === 'HOURLY_SNAPSHOT_DIFF'
                 && monitor.hourlyDelta.totals ? (
                   <>
@@ -297,16 +434,25 @@ export function MonitorPage({ context }: Props) {
 
               <h3>来源新鲜度</h3>
               <div className="source-row">
-                {monitor.sources.map((source) => (
-                  <article key={source.sourceCode}>
-                    <strong>{source.sourceCode}</strong>
+                {monitor.sources.map((source) => {
+                  const configuredSource = reportSources.find(
+                    (item) => item.sourceId === source.sourceId,
+                  )
+                  return (
+                  <article key={source.sourceId}>
+                    <strong>
+                      {configuredSource?.displayName ?? source.sourceCode}
+                    </strong>
                     <span className={`source-${source.completeness.toLowerCase()}`}>{source.completeness}</span>
                     <small>
+                      {source.sourceCode}
+                      {'｜'}
                       {source.sourceObservedAt ?? '尚未观察'}
                       {source.errorCode ? `｜${source.errorCode}` : ''}
                     </small>
                   </article>
-                ))}
+                  )
+                })}
               </div>
 
               <div className="page-heading">

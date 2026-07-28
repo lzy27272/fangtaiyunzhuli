@@ -191,6 +191,25 @@ test('baseline-pending template does not invent hourly changes', () => {
   assert.doesNotMatch(content, /新增｜4/)
 })
 
+test('08:00 first brief labels the 02:00 to 08:00 pause summary', () => {
+  const payloads = createReportMonitorWeComPayloads({
+    ...monitor,
+    cutoffAt: '2026-07-26T08:00:03+08:00',
+    hourlyDelta: {
+      ...monitor.hourlyDelta,
+      aggregationWindow: 'PAUSE_TO_FIRST_BRIEF',
+      intervalStartAt: '2026-07-26T02:00:00+08:00',
+      intervalEndAt: '2026-07-26T08:00:03+08:00',
+    },
+  }, {
+    snapshot: {
+      ...snapshot,
+      observedAt: '2026-07-26T08:00:18+08:00',
+    },
+  })
+  assert.match(payloads[0].text.content, /✅停播汇总｜02:00→08:00/)
+})
+
 test('long room names are summarized before the single-message limit', () => {
   const manyRooms = Array.from({ length: 30 }, (_, index) => ({
     displayName: `非常非常长的测试实体房型名称-${index + 1}`,

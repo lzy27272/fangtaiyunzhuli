@@ -5,7 +5,7 @@ import {
   loadOutboxPreview,
   loadWeComConfig,
   saveWeComConfig,
-  sendWeComTestDelivery,
+  sendWeComTestSuite,
   type BriefView,
   type HotelContext,
   type IncidentView,
@@ -18,6 +18,19 @@ interface Props {
   context: HotelContext | null
   canConfigure: boolean
 }
+
+const TEMPLATE_LABELS: Record<string, string> = {
+  TODAY_REVENUE: '当日经营简报',
+  TODAY_REVENUE_TEST: '当日经营测试',
+  HOURLY_REVENUE_BRIEF: '当日经营简报',
+  WECOM_CHANNEL_TEST: '企微通道测试',
+  FUTURE_14D: '未来14天房态',
+  FUTURE_14D_TEST: '未来14天房态测试',
+  P1_FUTURE_DEMAND: 'P1远期需求',
+  P1_FUTURE_DEMAND_TEST: 'P1远期需求测试',
+}
+
+const templateLabel = (code: string) => TEMPLATE_LABELS[code] ?? code
 
 export function HistoryPage({ context, canConfigure }: Props) {
   const [briefs, setBriefs] = useState<BriefView[]>([])
@@ -83,7 +96,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
       setClearWebhook(false)
       setNotice(
         saved.enabled
-          ? '企微UAT自动推送已启用：整点采集，06分发送并@所有人。'
+          ? '企微UAT自动推送已启用：08:00至次日02:00每30分钟采集，整点约06分发送并@所有人。'
           : '企微自动推送当前关闭；自动采集不受影响。',
       )
     } catch (cause) {
@@ -99,11 +112,33 @@ export function HistoryPage({ context, canConfigure }: Props) {
     setError('')
     setNotice('')
     try {
-      const delivery = await sendWeComTestDelivery(context)
+      const result = await sendWeComTestSuite(context)
+      const deliveredCount = result.deliveries.filter(
+        (delivery) => delivery.deliveryStatus === 'DELIVERED',
+      ).length
+      const skipped = result.skippedTemplates
+        .map((item) =>
+          item.reasonCode === 'NO_CURRENT_RISK'
+            ? `${templateLabel(item.templateCode)}（当前无真实风险）`
+            : `${templateLabel(item.templateCode)}（本次未采集到所需数据）`)
+        .join('、')
+      const failed = result.failedTemplates
+        .map((item) =>
+          `${templateLabel(item.templateCode)}（${item.reasonCode}）`)
+        .join('、')
+      const rejected = result.deliveries
+        .filter((delivery) => delivery.deliveryStatus !== 'DELIVERED')
+        .map((delivery) =>
+          `${templateLabel(delivery.deliveryType)}（`
+          + `${delivery.deliveryStatus}/${delivery.reasonCode}）`)
+        .join('、')
       setNotice(
-        delivery.deliveryStatus === 'DELIVERED'
-          ? '企微单条完整测试简报已送达，并已写入发送记录。'
-          : `企微测试结果：${delivery.deliveryStatus}（${delivery.reasonCode}）`,
+        `已重新采集 ${result.collectionRun.successfulSourceCount}/`
+        + `${result.collectionRun.sourceCount} 个报表；企微模板送达 `
+        + `${deliveredCount}/${result.deliveries.length}`
+        + `${skipped ? `；无适用数据跳过：${skipped}` : ''}`
+        + `${failed ? `；生成或发送失败：${failed}` : ''}`
+        + `${rejected ? `；未送达：${rejected}` : ''}。`,
       )
       await refresh()
     } catch (cause) {
@@ -136,11 +171,12 @@ export function HistoryPage({ context, canConfigure }: Props) {
                 <p className="eyebrow">WECOM UAT AUTOMATION</p>
                 <h3>企业微信群机器人自动推送</h3>
                 <p>
-                  每小时00–05分完成采集，06分推送；测试阶段固定
+                  08:00至次日02:00每30分钟采集，整点约06分推送；测试阶段固定
                   @所有人，并在正文标注“UAT测试｜非经营指令”。
-                  每份简报压缩为1条高密度消息，在企微安全长度内保留核心经营数据。
+                  每个模板压缩为1条高密度消息，在企微安全长度内保留核心经营数据。
                   启用后会按时间顺序补发已保存但尚未发送的整点简报。
-                  建议先保持关闭、保存Webhook并发送一次测试，确认群无误后再启用。
+                  全模板测试会先重新采集，再发送当日经营和未来14天房态；
+                  仅在D+15至D+90存在真实风险时发送P1远期需求模板。
                 </p>
               </div>
               <b className={weComConfig?.enabled ? 'source-complete' : 'source-partial'}>
@@ -198,7 +234,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
               <span>
                 Webhook｜{weComConfig?.webhookConfigured ? '已配置' : '未配置'}
               </span>
-              <span>发送时间｜每小时06分</span>
+              <span>发送时间｜08:00至次日02:00整点约06分</span>
               <span>
                 指纹｜
                 {weComConfig?.endpointSha256
@@ -229,7 +265,9 @@ export function HistoryPage({ context, canConfigure }: Props) {
                 type="button"
                 onClick={sendTest}
               >
-                {sendingTest ? '正在发送单条简报…' : '发送单条完整UAT测试简报'}
+                {sendingTest
+                  ? '正在采集并发送全部模板…'
+                  : '采集并发送全部适用模板'}
               </button>
             </div>
           </section>
@@ -278,11 +316,11 @@ export function HistoryPage({ context, canConfigure }: Props) {
 
           <section className="outbox-section">
             <h3>企业微信发送记录</h3>
-            <p>每个小时简报使用唯一消息键；结果不明确时不自动重试，避免群内重复消息。</p>
+            <p>每个模板使用唯一消息键；结果不明确时不自动重试，避免群内重复消息。</p>
             {outbox.map((message) => (
               <article className="outbox-card" key={message.messageKey}>
                 <header>
-                  <strong>{message.messageType}</strong>
+                  <strong>{templateLabel(message.messageType)}</strong>
                   <b className={
                     message.deliveryStatus === 'DELIVERED'
                       ? 'source-complete'
@@ -295,8 +333,8 @@ export function HistoryPage({ context, canConfigure }: Props) {
                 <pre>{message.bodyPreview}</pre>
                 <small>
                   {message.createdAt}
-                  {message.messageType === 'WECOM_CHANNEL_TEST'
-                    ? '｜单条高密度完整模板'
+                  {message.messageType.endsWith('_TEST')
+                    ? '｜全模板测试'
                     : ''}
                 </small>
               </article>

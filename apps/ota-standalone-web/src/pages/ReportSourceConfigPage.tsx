@@ -1,18 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  loadPmsLoginConfig,
   loadReportSources,
+  savePmsLoginConfig,
   saveReportSources,
   type CalculationRole,
   type HotelContext,
+  type PmsLoginConfigView,
   type ReportSourceInput,
   type ReportSourceView,
   type ReportType,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
+import {
+  reportSourceGuidance,
+  type ReportSourceAttention,
+} from './reportSourceAttention'
 
 interface Props {
   context: HotelContext | null
   canConfigure: boolean
+  attentionItems: ReportSourceAttention[]
 }
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
@@ -65,17 +73,26 @@ const createEmptySource = (): ReportSourceView => ({
   endpointUrl: '',
   reportType: 'CUSTOM_REPORT',
   calculationRole: 'AUXILIARY_CALCULATION',
-  pollIntervalMinutes: 5,
+  pollIntervalMinutes: 30,
   credentialAlias: '',
   requestPayloadJson: '',
   cookieConfigured: false,
   cookieUpdatedAt: null,
+  definitionLocked: false,
+  definitionTemplateHotelCode: '001/001',
   enabled: false,
   validationStatus: 'NOT_TESTED',
   rowVersion: 0,
 })
 
-export function ReportSourceConfigPage({ context, canConfigure }: Props) {
+const sourceCardId = (sourceId: string) =>
+  `report-source-${sourceId.replace(/[^A-Za-z0-9_-]/g, '-')}`
+
+export function ReportSourceConfigPage({
+  context,
+  canConfigure,
+  attentionItems,
+}: Props) {
   const [sources, setSources] = useState<ReportSourceView[]>([])
   const [cookieDrafts, setCookieDrafts] = useState<Record<string, string>>({})
   const [cookieClears, setCookieClears] = useState<Record<string, boolean>>({})
@@ -84,6 +101,14 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [pmsLoginConfig, setPmsLoginConfig] =
+    useState<PmsLoginConfigView | null>(null)
+  const [pmsUsername, setPmsUsername] = useState('')
+  const [pmsPassword, setPmsPassword] = useState('')
+  const [clearPmsLogin, setClearPmsLogin] = useState(false)
+  const [savingPmsLogin, setSavingPmsLogin] = useState(false)
+  const [pmsLoginError, setPmsLoginError] = useState('')
+  const [pmsLoginNotice, setPmsLoginNotice] = useState('')
 
   useEffect(() => {
     if (!context) {
@@ -116,6 +141,33 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
     }
   }, [context])
 
+  useEffect(() => {
+    setPmsUsername('')
+    setPmsPassword('')
+    setClearPmsLogin(false)
+    setPmsLoginError('')
+    setPmsLoginNotice('')
+    if (!context) {
+      setPmsLoginConfig(null)
+      return
+    }
+    let cancelled = false
+    loadPmsLoginConfig(context)
+      .then((config) => {
+        if (!cancelled) setPmsLoginConfig(config)
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setPmsLoginError(
+            cause instanceof Error ? cause.message : '读取PMS登录配置失败',
+          )
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [context])
+
   const coverage = useMemo(
     () => REQUIRED_COVERAGE.map((item) => ({
       ...item,
@@ -124,6 +176,39 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
     })),
     [sources],
   )
+  const definitionsLocked = sources.some((source) => source.definitionLocked)
+  const definitionTemplateHotelCode =
+    sources[0]?.definitionTemplateHotelCode ?? '001/001'
+  const attentionBySourceId = useMemo(
+    () => new Map(
+      attentionItems.map((attention) => [attention.sourceId, attention]),
+    ),
+    [attentionItems],
+  )
+  const attentionRows = useMemo(
+    () => attentionItems.map((attention) => {
+      const sourceIndex = sources.findIndex(
+        (source) => source.sourceId === attention.sourceId,
+      )
+      return {
+        attention,
+        guidance: reportSourceGuidance(attention.errorCode),
+        source: sourceIndex >= 0 ? sources[sourceIndex] : null,
+        sourceIndex,
+      }
+    }),
+    [attentionItems, sources],
+  )
+
+  useEffect(() => {
+    if (loading || attentionRows.length === 0) return
+    const frame = window.requestAnimationFrame(() => {
+      const panel = document.getElementById('report-source-attention-panel')
+      panel?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      panel?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [attentionRows.length, context?.hotelId, loading])
 
   function updateSource(
     sourceId: string,
@@ -230,11 +315,58 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
       setSources(await loadReportSources(context))
       setCookieDrafts({})
       setCookieClears({})
-      setNotice('报表URL及各自Cookie状态已保存；Cookie写入后不回显，仅在“实时监控”页主动采集时使用。')
+      setNotice(
+        definitionsLocked
+          ? `当前门店Cookie及POST载荷已保存；其他接口定义继续由${definitionTemplateHotelCode}门店统一同步。`
+          : '报表URL及当前门店Cookie状态已保存；接口定义已同步到全部评审门店，Cookie不会被复制或覆盖。',
+      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存报表URL失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function savePmsCredentials() {
+    if (!context || !canConfigure) return
+    setPmsLoginError('')
+    setPmsLoginNotice('')
+    const username = pmsUsername.trim()
+    if (
+      !clearPmsLogin
+      && (
+        !username
+        || !pmsPassword
+        || /[\r\n\u0000]/.test(username)
+        || /[\r\n\u0000]/.test(pmsPassword)
+      )
+    ) {
+      setPmsLoginError('请完整填写账号和密码，且不能包含换行或空字符。')
+      return
+    }
+    setSavingPmsLogin(true)
+    try {
+      const saved = await savePmsLoginConfig(
+        context,
+        clearPmsLogin
+          ? { action: 'CLEAR' }
+          : { action: 'REPLACE', username, password: pmsPassword },
+      )
+      setPmsLoginConfig(saved)
+      setPmsUsername('')
+      setPmsPassword('')
+      setClearPmsLogin(false)
+      setPmsLoginNotice(
+        saved.configured
+          ? 'PMS账号密码已加密保存，页面输入已清空且不会回显。'
+          : 'PMS账号密码配置已清除。',
+      )
+    } catch (cause) {
+      setPmsLoginError(
+        cause instanceof Error ? cause.message : '保存PMS登录配置失败',
+      )
+    } finally {
+      setSavingPmsLogin(false)
     }
   }
 
@@ -272,13 +404,13 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
       <div className="delivery-policy-grid" aria-label="企业微信推送规则">
         <article>
           <span>整点简报</span>
-          <strong>每小时 00 分</strong>
-          <small>按上一小时同一截止点对比，过时简报恢复后补发。</small>
+          <strong>08:00—次日02:00整点</strong>
+          <small>每30分钟采集；02:00后暂停，08:00首轮汇总停播时段。</small>
         </article>
         <article>
           <span>P1房态风险</span>
-          <strong>立即推送</strong>
-          <small>任一OTA辅助库存低于实体库存时，不等待整点。</small>
+          <strong>播报时段内立即推送</strong>
+          <small>08:00至次日02:00不等待整点；停播期间不采集、不推送。</small>
         </article>
         <article>
           <span>推送对象</span>
@@ -291,6 +423,182 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
         <div className="state-panel">请先在顶部选择门店。</div>
       ) : (
         <StatePanel loading={loading} error={error}>
+          <article className="report-source-card pms-login-card">
+            <header>
+              <div>
+                <span>PMS LOGIN</span>
+                <strong>模拟登录账号配置</strong>
+              </div>
+              <span className="mode-chip">
+                {pmsLoginConfig?.configured ? '已加密配置' : '未配置'}
+              </span>
+            </header>
+            <p>
+              账号密码仅按当前门店加密保存，提交后立即从页面清空且不回显。
+              当前仅提供配置接口，模拟登录执行保持关闭，不会自动访问PMS或处理验证码。
+            </p>
+            <div className="report-source-form">
+              <label>
+                PMS账号
+                <input
+                  autoComplete="off"
+                  disabled={!canConfigure || clearPmsLogin}
+                  maxLength={256}
+                  placeholder={
+                    pmsLoginConfig?.configured
+                      ? '已配置；重新填写将替换原账号'
+                      : '请输入PMS登录账号'
+                  }
+                  value={pmsUsername}
+                  onChange={(event) => {
+                    setPmsUsername(event.target.value)
+                    setClearPmsLogin(false)
+                  }}
+                />
+              </label>
+              <label>
+                PMS密码
+                <input
+                  autoComplete="new-password"
+                  disabled={!canConfigure || clearPmsLogin}
+                  maxLength={4096}
+                  placeholder={
+                    pmsLoginConfig?.configured
+                      ? '已配置；重新填写将替换原密码'
+                      : '请输入PMS登录密码'
+                  }
+                  type="password"
+                  value={pmsPassword}
+                  onChange={(event) => {
+                    setPmsPassword(event.target.value)
+                    setClearPmsLogin(false)
+                  }}
+                />
+              </label>
+            </div>
+            {pmsLoginConfig?.configured ? (
+              <label className="cookie-clear-option">
+                <input
+                  checked={clearPmsLogin}
+                  disabled={!canConfigure}
+                  type="checkbox"
+                  onChange={(event) => {
+                    setClearPmsLogin(event.target.checked)
+                    if (event.target.checked) {
+                      setPmsUsername('')
+                      setPmsPassword('')
+                    }
+                  }}
+                />
+                保存时清除当前门店的PMS账号密码
+              </label>
+            ) : null}
+            <footer>
+              <span>
+                {pmsLoginConfig?.configured
+                  ? `配置时间：${pmsLoginConfig.updatedAt
+                    ? new Date(pmsLoginConfig.updatedAt).toLocaleString('zh-CN')
+                    : '已配置'}`
+                  : '账号密码尚未配置'}
+                {' · '}
+                模拟登录：未启用
+              </span>
+              {canConfigure ? (
+                <button
+                  disabled={
+                    savingPmsLogin
+                    || (
+                      !clearPmsLogin
+                      && (!pmsUsername.trim() || !pmsPassword)
+                    )
+                  }
+                  type="button"
+                  onClick={savePmsCredentials}
+                >
+                  {savingPmsLogin
+                    ? '保存中…'
+                    : clearPmsLogin
+                      ? '确认清除'
+                      : pmsLoginConfig?.configured
+                        ? '替换账号密码'
+                        : '保存账号密码'}
+                </button>
+              ) : null}
+            </footer>
+            {pmsLoginError ? (
+              <p className="field-error" role="alert">{pmsLoginError}</p>
+            ) : null}
+            {pmsLoginNotice ? (
+              <p className="success-note" role="status">{pmsLoginNotice}</p>
+            ) : null}
+          </article>
+
+          {definitionsLocked ? (
+            <div className="security-note report-source-note" role="status">
+              报表接口由
+              {definitionTemplateHotelCode}
+              门店统一配置并自动同步；当前门店可单独填写Cookie和POST请求载荷，
+              HTTPS地址及其他接口定义无需重复填写。
+            </div>
+          ) : (
+            <div className="security-note report-source-note" role="status">
+              当前门店是报表接口模板。保存接口定义后会自动同步到现有及后续新增的全部评审门店；
+              各门店Cookie始终独立，不会被同步或覆盖。
+            </div>
+          )}
+
+          {attentionRows.length > 0 ? (
+            <section
+              className="report-source-attention-panel"
+              id="report-source-attention-panel"
+              role="alert"
+              tabIndex={-1}
+            >
+              <div>
+                <strong>最近一次采集需要核对以下报表</strong>
+                <span>
+                  已按失败来源定位；修改并保存后，请返回“实时监控”重新采集验证。
+                </span>
+              </div>
+              <ul>
+                {attentionRows.map((row) => (
+                  <li key={`${row.attention.sourceId}:${row.attention.errorCode}`}>
+                    <div>
+                      <strong>
+                        {row.sourceIndex >= 0
+                          ? `报表 ${String(row.sourceIndex + 1).padStart(2, '0')} · `
+                          : ''}
+                        {row.source?.displayName
+                          ?? row.attention.sourceCode
+                          ?? '未识别报表'}
+                      </strong>
+                      <span>
+                        {row.guidance.reason}
+                        {'；需核对：'}
+                        {row.guidance.fields.join('、')}
+                      </span>
+                    </div>
+                    {row.source ? (
+                      <button
+                        className="secondary"
+                        type="button"
+                        onClick={() =>
+                          document
+                            .getElementById(sourceCardId(row.source!.sourceId))
+                            ?.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'center',
+                            })}
+                      >
+                        定位该报表
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <h3>计算覆盖</h3>
           <div className="coverage-grid">
             {coverage.map((item) => (
@@ -313,19 +621,34 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
               const endpointError = source.endpointUrl
                 ? validateEndpoint(source.endpointUrl)
                 : null
+              const attention = attentionBySourceId.get(source.sourceId)
+              const attentionGuidance = attention
+                ? reportSourceGuidance(attention.errorCode)
+                : null
               return (
-                <article className="report-source-card" key={source.sourceId}>
+                <article
+                  className={`report-source-card ${
+                    attention ? 'needs-attention' : ''
+                  }`}
+                  id={sourceCardId(source.sourceId)}
+                  key={source.sourceId}
+                >
                   <header>
                     <div>
                       <span>报表 {String(index + 1).padStart(2, '0')}</span>
                       <strong>
                         {source.displayName || '未命名报表接口'}
                       </strong>
+                      {attentionGuidance ? (
+                        <b className="attention-chip">
+                          需核对：{attentionGuidance.fields.join('、')}
+                        </b>
+                      ) : null}
                     </div>
                     <label className="inline-toggle">
                       <input
                         checked={source.enabled}
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.definitionLocked}
                         type="checkbox"
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -336,11 +659,19 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                     </label>
                   </header>
 
+                  {attentionGuidance ? (
+                    <div className="report-source-card-attention" role="alert">
+                      <strong>{attentionGuidance.reason}</strong>
+                      <span>{attentionGuidance.action}</span>
+                      <code>{attention?.errorCode}</code>
+                    </div>
+                  ) : null}
+
                   <div className="report-source-form">
                     <label>
                       报表名称
                       <input
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.definitionLocked}
                         value={source.displayName}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -351,7 +682,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                     <label>
                       报表用途
                       <select
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.definitionLocked}
                         value={source.reportType}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -366,7 +697,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                     <label>
                       计算角色
                       <select
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.definitionLocked}
                         value={source.calculationRole}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -381,14 +712,14 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                     <label>
                       轮询间隔
                       <select
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.definitionLocked}
                         value={source.pollIntervalMinutes}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
                             pollIntervalMinutes: Number(event.target.value),
                           })}
                       >
-                        {[5, 10, 15, 30, 60].map((minutes) => (
+                        {[30].map((minutes) => (
                           <option key={minutes} value={minutes}>
                             {minutes}分钟
                           </option>
@@ -398,7 +729,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                     <label className="wide-field">
                       完整HTTPS接口地址
                       <input
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.definitionLocked}
                         placeholder="https://example.com/report/api"
                         value={source.endpointUrl}
                         onChange={(event) =>
@@ -413,7 +744,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                     <label>
                       其他凭据别名（可空）
                       <input
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.definitionLocked}
                         placeholder="REPORT_READER_01"
                         value={source.credentialAlias}
                         onChange={(event) =>
@@ -436,7 +767,8 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                           })}
                       />
                       <small>
-                        不得填写Token、Cookie或密码。房态预测接口的日期会按本次采集返回的PMS营业日自动更新。
+                        每家门店可单独修改。不得填写Token、Cookie或密码；
+                        房态预测接口的日期会按本次采集返回的PMS营业日自动更新。
                       </small>
                     </label>
                     <label className="wide-field cookie-field">
@@ -500,7 +832,7 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
                       {' · '}
                       {source.cookieConfigured ? 'Cookie已配置' : 'Cookie未配置'}
                     </span>
-                    {canConfigure ? (
+                    {canConfigure && !source.definitionLocked ? (
                       <button
                         className="danger-link"
                         type="button"
@@ -521,26 +853,34 @@ export function ReportSourceConfigPage({ context, canConfigure }: Props) {
 
           {canConfigure ? (
             <div className="report-source-actions">
-              <button
-                className="secondary"
-                type="button"
-                onClick={() => setSources((current) => [
-                  ...current,
-                  createEmptySource(),
-                ])}
-              >
-                新增报表URL
-              </button>
-              <label>
-                变更原因码
-                <input
-                  value={reasonCode}
-                  onChange={(event) =>
-                    setReasonCode(event.target.value.toUpperCase())}
-                />
-              </label>
+              {!definitionsLocked ? (
+                <>
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => setSources((current) => [
+                      ...current,
+                      createEmptySource(),
+                    ])}
+                  >
+                    新增报表URL
+                  </button>
+                  <label>
+                    变更原因码
+                    <input
+                      value={reasonCode}
+                      onChange={(event) =>
+                        setReasonCode(event.target.value.toUpperCase())}
+                    />
+                  </label>
+                </>
+              ) : null}
               <button disabled={saving} type="button" onClick={save}>
-                {saving ? '正在保存…' : '保存全部报表URL'}
+                {saving
+                  ? '正在保存…'
+                  : definitionsLocked
+                    ? '保存当前门店Cookie及POST载荷'
+                    : '保存并同步全部接口'}
               </button>
             </div>
           ) : null}

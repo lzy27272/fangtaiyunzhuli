@@ -20,6 +20,13 @@ import {
   loadSnapshotStore,
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
+import {
+  briefingCycleSnapshots,
+  collectionSlotFor,
+  isBriefDeliveryTime,
+  isBroadcastWindowOpen,
+  shanghaiScheduleParts,
+} from './report-schedule.mjs'
 import { selectHourlyDeliveryCandidates } from './wecom/src/hourly-delivery-candidates.mjs'
 import { createFutureBookingWeComPayloads } from './wecom/src/future-booking-brief.mjs'
 import {
@@ -34,6 +41,7 @@ import {
   sendWeComGroupRobotMessage,
   sha256,
 } from './wecom/src/wecom-group-robot.mjs'
+import { createWeComTestSuitePlan } from './wecom/src/wecom-test-suite.mjs'
 
 const host = '127.0.0.1'
 const port = Number.parseInt(process.env.OTA_REVIEW_API_PORT ?? '8091', 10)
@@ -58,6 +66,12 @@ const businessDayControlPath = dataPath
   : null
 const hotSellingRoomTypePath = dataPath
   ? join(dirname(dataPath), 'hot-selling-room-types.json')
+  : null
+const simulationHotelPath = dataPath
+  ? join(dirname(dataPath), 'simulation-hotels.json')
+  : null
+const pmsLoginSecretPath = dataPath
+  ? join(dirname(dataPath), 'pms-login-secrets.json')
   : null
 const weComConfigPath = dataPath
   ? join(dirname(dataPath), 'wecom-configs.json')
@@ -163,6 +177,7 @@ const onboardingTemplates = [
 const simulationRuns = new Map()
 const reportSourcesByHotel = new Map()
 const cookieSecretsByHotel = new Map()
+const pmsLoginSecretsByHotel = new Map()
 const liveCollectionLocks = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
 const businessDayControlsByHotel = new Map()
@@ -172,6 +187,153 @@ const weComSecretsByHotel = new Map()
 const weComDeliveriesByKey = new Map()
 const weComDeliveryLocks = new Map()
 const futureDemandRiskStates = {}
+const lastScheduledCollectionSlotByHotel = new Map()
+const REPORT_POLL_INTERVAL_MINUTES = 30
+
+const SIMULATION_HOTEL_CODE = /^[A-Z0-9][A-Z0-9_-]{0,15}$/
+const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const normalizeSimulationHotel = (candidate) => {
+  if (!candidate || typeof candidate !== 'object') return null
+  const tenantCode = typeof candidate.tenantCode === 'string'
+    ? candidate.tenantCode.trim().toUpperCase()
+    : ''
+  const hotelCode = typeof candidate.hotelCode === 'string'
+    ? candidate.hotelCode.trim().toUpperCase()
+    : ''
+  const tenantName = typeof candidate.tenantName === 'string'
+    ? candidate.tenantName.trim()
+    : ''
+  const hotelName = typeof candidate.hotelName === 'string'
+    ? candidate.hotelName.trim()
+    : ''
+  const timezone = typeof candidate.timezone === 'string'
+    ? candidate.timezone.trim()
+    : ''
+  if (
+    !SIMULATION_HOTEL_ID.test(candidate.tenantId)
+    || !SIMULATION_HOTEL_ID.test(candidate.hotelId)
+    || !SIMULATION_HOTEL_CODE.test(tenantCode)
+    || !SIMULATION_HOTEL_CODE.test(hotelCode)
+    || tenantName.length < 1
+    || tenantName.length > 80
+    || hotelName.length < 1
+    || hotelName.length > 80
+    || !timezone
+  ) {
+    return null
+  }
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timezone })
+  } catch {
+    return null
+  }
+  return {
+    tenantId: candidate.tenantId,
+    hotelId: candidate.hotelId,
+    tenantCode,
+    tenantName,
+    hotelCode,
+    hotelName,
+    timezone,
+    lifecycleStatus:
+      typeof candidate.lifecycleStatus === 'string'
+      && /^[A-Z][A-Z0-9_]{2,39}$/.test(candidate.lifecycleStatus)
+        ? candidate.lifecycleStatus
+        : 'PILOT',
+    collectionEnabled: candidate.collectionEnabled !== false,
+    messageEnabled: false,
+    configuredMockConnectors: Number.isInteger(candidate.configuredMockConnectors)
+      ? Math.min(Math.max(candidate.configuredMockConnectors, 0), 3)
+      : 2,
+    simulationOnly: true,
+    rowVersion: Number.isInteger(candidate.rowVersion) && candidate.rowVersion > 0
+      ? candidate.rowVersion
+      : 1,
+  }
+}
+
+const normalizeSimulationHotelInput = (body) => {
+  if (!body || typeof body !== 'object') return null
+  const tenantCode = typeof body.tenantCode === 'string'
+    ? body.tenantCode.trim().toUpperCase()
+    : ''
+  const hotelCode = typeof body.hotelCode === 'string'
+    ? body.hotelCode.trim().toUpperCase()
+    : ''
+  const tenantName = typeof body.tenantDisplayName === 'string'
+    ? body.tenantDisplayName.trim()
+    : ''
+  const hotelName = typeof body.hotelDisplayName === 'string'
+    ? body.hotelDisplayName.trim()
+    : ''
+  const timezone = typeof body.timezone === 'string'
+    ? body.timezone.trim()
+    : ''
+  const templateHotelId = body.templateHotelId === undefined
+    || body.templateHotelId === null
+    || body.templateHotelId === ''
+      ? null
+      : body.templateHotelId
+  if (
+    !SIMULATION_HOTEL_CODE.test(tenantCode)
+    || !SIMULATION_HOTEL_CODE.test(hotelCode)
+    || tenantName.length < 1
+    || tenantName.length > 80
+    || hotelName.length < 1
+    || hotelName.length > 80
+    || typeof body.reasonCode !== 'string'
+    || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+    || (
+      templateHotelId !== null
+      && !SIMULATION_HOTEL_ID.test(templateHotelId)
+    )
+  ) {
+    return null
+  }
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timezone })
+  } catch {
+    return null
+  }
+  return {
+    tenantCode,
+    tenantName,
+    hotelCode,
+    hotelName,
+    timezone,
+    templateHotelId,
+  }
+}
+
+const persistSimulationHotels = () => {
+  if (!simulationHotelPath) return
+  mkdirSync(dirname(simulationHotelPath), { recursive: true })
+  const temporaryPath = `${simulationHotelPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(hotels, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, simulationHotelPath)
+}
+
+if (simulationHotelPath && existsSync(simulationHotelPath)) {
+  try {
+    const persistedHotels = JSON.parse(readFileSync(simulationHotelPath, 'utf8'))
+    if (Array.isArray(persistedHotels)) {
+      const restored = persistedHotels
+        .map(normalizeSimulationHotel)
+        .filter((hotel) => hotel !== null)
+        .slice(0, 100)
+      if (restored.length > 0) {
+        hotels.splice(0, hotels.length, ...restored)
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_SIMULATION_HOTEL_STORE_IGNORED\n')
+  }
+}
 
 const defaultReportSources = () => [
   {
@@ -180,7 +342,7 @@ const defaultReportSources = () => [
     endpointUrl: 'https://pms.meituan.com/hotelpms/api/v1/report/jd01',
     reportType: 'ORDER_DETAIL',
     calculationRole: 'PRIMARY_CALCULATION',
-    pollIntervalMinutes: 5,
+    pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
     credentialAlias: 'REPORT_READER_ORDERS',
     requestPayloadJson: '',
     cookieConfigured: false,
@@ -196,7 +358,7 @@ const defaultReportSources = () => [
       'https://pms.meituan.com/hotelpms/api/v1/report/lion/manager/workbench/room',
     reportType: 'PHYSICAL_INVENTORY',
     calculationRole: 'PRIMARY_CALCULATION',
-    pollIntervalMinutes: 5,
+    pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
     credentialAlias: 'REPORT_READER_INVENTORY',
     requestPayloadJson: '',
     cookieConfigured: false,
@@ -206,6 +368,75 @@ const defaultReportSources = () => [
     rowVersion: 1,
   },
 ]
+
+const primaryReportSourceHotel = () =>
+  hotels.find((hotel) =>
+    hotel.tenantCode === '001' && hotel.hotelCode === '001')
+  ?? hotels[0]
+
+const cloneReportSourceDefinitions = (sources, hotelSources = []) => {
+  const requestPayloadsBySourceId = new Map(
+    hotelSources.map((source) => [
+      source.sourceId,
+      source.requestPayloadJson,
+    ]),
+  )
+  return sources.map((source) => ({
+    sourceId: source.sourceId,
+    displayName: source.displayName,
+    endpointUrl: source.endpointUrl,
+    reportType: source.reportType,
+    calculationRole: source.calculationRole,
+    pollIntervalMinutes: source.pollIntervalMinutes,
+    credentialAlias: source.credentialAlias,
+    requestPayloadJson: requestPayloadsBySourceId.has(source.sourceId)
+      ? requestPayloadsBySourceId.get(source.sourceId)
+      : source.requestPayloadJson,
+    enabled: source.enabled,
+    validationStatus: source.validationStatus,
+    rowVersion: source.rowVersion,
+  }))
+}
+
+const reportSourceDefinitionsMatch = (left, right) => {
+  const comparable = (sources) =>
+    cloneReportSourceDefinitions(sources)
+      .map(({
+        requestPayloadJson,
+        validationStatus,
+        rowVersion,
+        ...source
+      }) => source)
+      .sort((first, second) =>
+        first.sourceId.localeCompare(second.sourceId))
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
+}
+
+const ensurePrimaryReportSourceTemplate = () => {
+  const primary = primaryReportSourceHotel()
+  if (!primary) throw new Error('REPORT_SOURCE_TEMPLATE_HOTEL_NOT_FOUND')
+  if (!reportSourcesByHotel.has(primary.hotelId)) {
+    reportSourcesByHotel.set(primary.hotelId, defaultReportSources())
+  }
+  return {
+    primary,
+    sources: reportSourcesByHotel.get(primary.hotelId),
+  }
+}
+
+const synchronizeReportSourcesFromPrimary = () => {
+  const { primary, sources } = ensurePrimaryReportSourceTemplate()
+  for (const hotel of hotels) {
+    if (hotel.hotelId === primary.hotelId) continue
+    reportSourcesByHotel.set(
+      hotel.hotelId,
+      cloneReportSourceDefinitions(
+        sources,
+        reportSourcesByHotel.get(hotel.hotelId),
+      ),
+    )
+  }
+}
 
 const allowedReportTypes = new Set([
   'ORDER_DETAIL',
@@ -316,7 +547,7 @@ const normalizeReportSources = (input) => {
       endpointUrl: endpoint.toString(),
       reportType: source.reportType,
       calculationRole: source.calculationRole,
-      pollIntervalMinutes: source.pollIntervalMinutes,
+      pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
       credentialAlias: source.credentialAlias,
       enabled: source.enabled,
       requestPayloadJson:
@@ -343,12 +574,16 @@ const secretsForHotel = (hotelId) =>
 
 const decorateReportSources = (hotelId, sources) => {
   const secrets = secretsForHotel(hotelId)
+  const primary = primaryReportSourceHotel()
   return sources.map((source) => {
     const secret = secrets[source.sourceId]
     return {
       ...source,
       cookieConfigured: Boolean(secret),
       cookieUpdatedAt: secret?.updatedAt ?? null,
+      definitionLocked: hotelId !== primary.hotelId,
+      definitionTemplateHotelCode:
+        `${primary.tenantCode}/${primary.hotelCode}`,
     }
   })
 }
@@ -398,6 +633,53 @@ const persistCookieSecrets = () => {
   renameSync(temporaryPath, cookieSecretsPath)
 }
 
+const pmsLoginScope = (hotelId) => `pms-login:${hotelId}`
+
+const normalizePmsLoginCredentials = (credentials) => {
+  if (!credentials || typeof credentials !== 'object') {
+    throw new Error('PMS_LOGIN_CREDENTIALS_INVALID')
+  }
+  const username = typeof credentials.username === 'string'
+    ? credentials.username.trim()
+    : ''
+  const password = typeof credentials.password === 'string'
+    ? credentials.password
+    : ''
+  if (
+    username.length < 1
+    || username.length > 256
+    || password.length < 1
+    || password.length > 4096
+    || /[\r\n\u0000]/.test(username)
+    || /[\r\n\u0000]/.test(password)
+  ) {
+    throw new Error('PMS_LOGIN_CREDENTIALS_INVALID')
+  }
+  return { username, password }
+}
+
+const pmsLoginConfigFor = (hotelId) => {
+  const record = pmsLoginSecretsByHotel.get(hotelId)
+  return {
+    configured: Boolean(record),
+    updatedAt: record?.updatedAt ?? null,
+    loginMode: 'CONTROLLED_BROWSER',
+    loginExecutionEnabled: false,
+  }
+}
+
+const persistPmsLoginSecrets = () => {
+  if (!pmsLoginSecretPath) return
+  mkdirSync(dirname(pmsLoginSecretPath), { recursive: true })
+  const temporaryPath = `${pmsLoginSecretPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(Object.fromEntries(pmsLoginSecretsByHotel), null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, pmsLoginSecretPath)
+}
+
 if (dataPath && existsSync(dataPath)) {
   try {
     const persisted = JSON.parse(readFileSync(dataPath, 'utf8'))
@@ -417,6 +699,9 @@ if (dataPath && existsSync(dataPath)) {
     process.stderr.write('REVIEW_REPORT_SOURCE_STORE_IGNORED\n')
   }
 }
+
+synchronizeReportSourcesFromPrimary()
+persistReportSources()
 
 if (existsSync(cookieSecretsPath)) {
   try {
@@ -451,6 +736,32 @@ if (existsSync(cookieSecretsPath)) {
     }
   } catch {
     process.stderr.write('REVIEW_COOKIE_SECRET_STORE_IGNORED\n')
+  }
+}
+
+if (pmsLoginSecretPath && existsSync(pmsLoginSecretPath)) {
+  try {
+    const persistedCredentials = JSON.parse(
+      readFileSync(pmsLoginSecretPath, 'utf8'),
+    )
+    if (
+      persistedCredentials
+      && typeof persistedCredentials === 'object'
+      && !Array.isArray(persistedCredentials)
+    ) {
+      for (const [hotelId, record] of Object.entries(persistedCredentials)) {
+        if (!hotels.some((hotel) => hotel.hotelId === hotelId)) continue
+        const plaintext = decryptCookie(
+          record,
+          cookieSecretKey,
+          pmsLoginScope(hotelId),
+        )
+        normalizePmsLoginCredentials(JSON.parse(plaintext))
+        pmsLoginSecretsByHotel.set(hotelId, record)
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_PMS_LOGIN_SECRET_STORE_IGNORED\n')
   }
 }
 
@@ -868,7 +1179,7 @@ const configurationFor = (hotelId) => {
   ]
   return {
     tenant: {
-      tenantId,
+      tenantId: selected.tenantId,
       tenantCode: selected.tenantCode,
       displayName: selected.tenantName,
       timezone: selected.timezone,
@@ -876,7 +1187,7 @@ const configurationFor = (hotelId) => {
       rowVersion: 1,
     },
     hotel: {
-      tenantId,
+      tenantId: selected.tenantId,
       hotelId: selected.hotelId,
       hotelCode: selected.hotelCode,
       displayName: selected.hotelName,
@@ -954,7 +1265,7 @@ const configurationFor = (hotelId) => {
 const monitorFor = (hotelId) => {
   const selected = selectedHotel(hotelId)
   return {
-    tenantId,
+    tenantId: selected.tenantId,
     hotelId: selected.hotelId,
     hotelName: selected.hotelName,
     businessDate: '2026-07-25',
@@ -1038,7 +1349,7 @@ const collectLiveFor = async (hotelId) => {
     const hotel = selectedHotel(hotelId)
     const businessDayControl = businessDayControlFor(hotelId)
     if (!reportSourcesByHotel.has(hotelId)) {
-      reportSourcesByHotel.set(hotelId, defaultReportSources())
+      synchronizeReportSourcesFromPrimary()
     }
     const sources = reportSourcesByHotel.get(hotelId)
     const encryptedSecrets = secretsForHotel(hotelId)
@@ -1051,6 +1362,16 @@ const collectLiveFor = async (hotelId) => {
         cookieSecretKey,
         cookieScope(hotelId, source.sourceId),
       )
+    }
+    const enabledSources = sources.filter((source) => source.enabled)
+    if (enabledSources.length === 0) {
+      throw new Error('REPORT_SOURCE_ENABLED_REQUIRED')
+    }
+    if (
+      !enabledSources.some((source) =>
+        typeof cookiesBySourceId[source.sourceId] === 'string')
+    ) {
+      throw new Error('REPORT_SOURCE_COOKIE_REQUIRED')
     }
     const result = await collectLiveReports({
       hotel,
@@ -1092,19 +1413,6 @@ const collectLiveFor = async (hotelId) => {
       liveSnapshotPath,
       result.snapshot,
     )
-    try {
-      await deliverFutureDemandRisks(hotelId, result.snapshot)
-    } catch (error) {
-      process.stderr.write(
-        `${JSON.stringify({
-          event: 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
-          hotelId,
-          collectionRunId: result.snapshot.collectionRunId,
-          reasonCode:
-            error?.message ?? 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
-        })}\n`,
-      )
-    }
     return result
   })()
   liveCollectionLocks.set(hotelId, operation)
@@ -1115,51 +1423,49 @@ const collectLiveFor = async (hotelId) => {
   }
 }
 
-const shanghaiHour = (date = new Date()) => {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Shanghai',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(date)
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value]),
-  )
-  return {
-    hourKey:
-      `${parts.year}-${parts.month}-${parts.day}T${parts.hour}`,
-    minute: Number(parts.minute),
-  }
-}
-
 const scheduledCollectionTick = async () => {
   if (!automaticHourlyCollectionEnabled) return
-  const { hourKey, minute } = shanghaiHour()
-  if (minute > 5) return
+  const slot = collectionSlotFor()
+  if (!slot) return
   for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
     if (
       Object.keys(secretsForHotel(hotel.hotelId)).length === 0
     ) {
       continue
     }
-    const latest = (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
     if (
-      latest?.observedAt?.startsWith(hourKey)
-      && latest.completeness === 'COMPLETE'
+      lastScheduledCollectionSlotByHotel.get(hotel.hotelId) === slot.slotKey
     ) {
       continue
     }
+    const latest = (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
+    if (
+      latest?.observedAt?.startsWith(slot.slotKey)
+    ) {
+      lastScheduledCollectionSlotByHotel.set(hotel.hotelId, slot.slotKey)
+      continue
+    }
+    lastScheduledCollectionSlotByHotel.set(hotel.hotelId, slot.slotKey)
     try {
-      await collectLiveFor(hotel.hotelId)
+      const result = await collectLiveFor(hotel.hotelId)
+      try {
+        await deliverFutureDemandRisks(hotel.hotelId, result.snapshot)
+      } catch (error) {
+        process.stderr.write(
+          `${JSON.stringify({
+            event: 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+            hotelId: hotel.hotelId,
+            collectionRunId: result.snapshot.collectionRunId,
+            reasonCode:
+              error?.message ?? 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+          })}\n`,
+        )
+      }
       process.stdout.write(
         `${JSON.stringify({
           event: 'SCHEDULED_COLLECTION_COMPLETED',
           hotelId: hotel.hotelId,
-          hourKey,
+          collectionSlot: slot.slotKey,
         })}\n`,
       )
     } catch {
@@ -1167,7 +1473,7 @@ const scheduledCollectionTick = async () => {
         `${JSON.stringify({
           event: 'SCHEDULED_COLLECTION_FAILED',
           hotelId: hotel.hotelId,
-          hourKey,
+          collectionSlot: slot.slotKey,
         })}\n`,
       )
     }
@@ -1325,6 +1631,7 @@ const deliverWeComSnapshot = async ({
 }
 
 const deliverFutureDemandRisks = async (hotelId, snapshot) => {
+  if (!isBroadcastWindowOpen()) return []
   const stateChanged = reconcileFutureDemandRiskStates({
     hotelId,
     snapshot,
@@ -1360,14 +1667,18 @@ const deliverFutureDemandRisks = async (hotelId, snapshot) => {
 }
 
 const scheduledWeComDeliveryTick = async () => {
-  const { hourKey, minute } = shanghaiHour()
-  if (minute < 6) return
+  const now = new Date()
+  if (!isBriefDeliveryTime(now, 6)) return
+  const { hourKey } = shanghaiScheduleParts(now)
   for (const hotel of hotels) {
     const config = weComConfigFor(hotel.hotelId)
     if (!config.enabled || !config.webhookConfigured) continue
     const candidates = selectHourlyDeliveryCandidates({
       hotelId: hotel.hotelId,
-      snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
+      snapshots: briefingCycleSnapshots(
+        liveSnapshotStore[hotel.hotelId] ?? [],
+        now,
+      ),
       deliveredMessageKeys: new Set(weComDeliveriesByKey.keys()),
       businessDayControl: businessDayControlFor(hotel.hotelId),
       limit: 4,
@@ -1397,14 +1708,18 @@ const scheduledWeComDeliveryTick = async () => {
 }
 
 const scheduledFutureBookingDeliveryTick = async () => {
-  const { hourKey, minute } = shanghaiHour()
-  if (minute < 8) return
+  const now = new Date()
+  if (!isBriefDeliveryTime(now, 8)) return
+  const { hourKey } = shanghaiScheduleParts(now)
   for (const hotel of hotels) {
     const config = weComConfigFor(hotel.hotelId)
     if (!config.enabled || !config.webhookConfigured) continue
     const candidates = selectHourlyDeliveryCandidates({
       hotelId: hotel.hotelId,
-      snapshots: (liveSnapshotStore[hotel.hotelId] ?? []).filter(
+      snapshots: briefingCycleSnapshots(
+        liveSnapshotStore[hotel.hotelId] ?? [],
+        now,
+      ).filter(
         (snapshot) =>
           Array.isArray(snapshot?.futureBookingChanges?.daily)
           && snapshot.futureBookingChanges.daily.length > 0,
@@ -1573,13 +1888,67 @@ const server = createServer(async (request, response) => {
       request.method === 'POST'
       && path === '/api/v1/ota/simulation/hotels'
     ) {
-      await readBody(request)
-      json(response, 200, {
+      const input = normalizeSimulationHotelInput(await readBody(request))
+      if (!input) throw new Error('SIMULATION_HOTEL_INVALID')
+      const tenant = hotels.find(
+        (hotel) => hotel.tenantCode === input.tenantCode,
+      )
+      if (tenant && tenant.tenantName !== input.tenantName) {
+        throw new Error('SIMULATION_TENANT_NAME_CONFLICT')
+      }
+      const existing = hotels.find(
+        (hotel) =>
+          hotel.tenantCode === input.tenantCode
+          && hotel.hotelCode === input.hotelCode,
+      )
+      if (existing) {
+        if (
+          existing.hotelName !== input.hotelName
+          || existing.timezone !== input.timezone
+        ) {
+          throw new Error('SIMULATION_HOTEL_CODE_CONFLICT')
+        }
+        json(response, 200, {
+          data: {
+            commandId: randomUUID(),
+            resourceId: existing.hotelId,
+            resultingRowVersion: existing.rowVersion,
+            replayed: true,
+          },
+        })
+        return
+      }
+      if (hotels.length >= 100) {
+        throw new Error('SIMULATION_HOTEL_LIMIT_REACHED')
+      }
+      const created = {
+        tenantId: tenant?.tenantId ?? randomUUID(),
+        hotelId: randomUUID(),
+        tenantCode: input.tenantCode,
+        tenantName: input.tenantName,
+        hotelCode: input.hotelCode,
+        hotelName: input.hotelName,
+        timezone: input.timezone,
+        lifecycleStatus: 'PILOT',
+        collectionEnabled: true,
+        messageEnabled: false,
+        configuredMockConnectors: 2,
+        simulationOnly: true,
+        rowVersion: 1,
+      }
+      const { sources: templateSources } = ensurePrimaryReportSourceTemplate()
+      const clonedSources = cloneReportSourceDefinitions(templateSources)
+      hotels.push(created)
+      reportSourcesByHotel.set(created.hotelId, clonedSources)
+      persistSimulationHotels()
+      persistReportSources()
+      json(response, 201, {
         data: {
           commandId: randomUUID(),
-          resourceId: hotels[0].hotelId,
+          resourceId: created.hotelId,
           resultingRowVersion: 1,
           replayed: false,
+          copiedReportSourceCount: clonedSources.length,
         },
       })
       return
@@ -1592,9 +1961,10 @@ const server = createServer(async (request, response) => {
       const requestTenantId = decodeURIComponent(scoped[1])
       const hotelId = decodeURIComponent(scoped[2])
       const suffix = scoped[3]
+      const selected = hotels.find((hotel) => hotel.hotelId === hotelId)
       if (
-        requestTenantId !== tenantId
-        || !hotels.some((hotel) => hotel.hotelId === hotelId)
+        !selected
+        || selected.tenantId !== requestTenantId
       ) {
         json(response, 404, { code: 'REVIEW_HOTEL_NOT_FOUND' })
         return
@@ -1606,7 +1976,7 @@ const server = createServer(async (request, response) => {
       }
       if (request.method === 'GET' && suffix === '/report-sources') {
         if (!reportSourcesByHotel.has(hotelId)) {
-          reportSourcesByHotel.set(hotelId, defaultReportSources())
+          synchronizeReportSourcesFromPrimary()
         }
         json(response, 200, {
           data: decorateReportSources(
@@ -1624,10 +1994,26 @@ const server = createServer(async (request, response) => {
         ) {
           throw new Error('REASON_CODE_INVALID')
         }
-        const sources = normalizeReportSources(body.sources)
+        const normalizedSources = normalizeReportSources(body.sources)
+        const { primary, sources: templateSources } =
+          ensurePrimaryReportSourceTemplate()
+        let savedSources
+        if (hotelId === primary.hotelId) {
+          reportSourcesByHotel.set(hotelId, normalizedSources)
+          synchronizeReportSourcesFromPrimary()
+          savedSources = normalizedSources
+        } else {
+          if (!reportSourceDefinitionsMatch(normalizedSources, templateSources)) {
+            throw new Error('REPORT_SOURCE_DEFINITION_MANAGED')
+          }
+          savedSources = cloneReportSourceDefinitions(
+            templateSources,
+            normalizedSources,
+          )
+          reportSourcesByHotel.set(hotelId, savedSources)
+        }
         applyCookieUpdates(hotelId, body.sources)
         persistCookieSecrets()
-        reportSourcesByHotel.set(hotelId, sources)
         persistReportSources()
         json(response, 200, {
           data: {
@@ -1635,11 +2021,44 @@ const server = createServer(async (request, response) => {
             resourceId: hotelId,
             resultingRowVersion: Math.max(
               1,
-              ...sources.map((source) => source.rowVersion),
+              ...savedSources.map((source) => source.rowVersion),
             ),
             replayed: false,
           },
         })
+        return
+      }
+      if (request.method === 'GET' && suffix === '/pms-login-config') {
+        json(response, 200, { data: pmsLoginConfigFor(hotelId) })
+        return
+      }
+      if (request.method === 'POST' && suffix === '/pms-login-config') {
+        const body = await readBody(request)
+        const credentialUpdate = body.credentialUpdate ?? { action: 'KEEP' }
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+          || !credentialUpdate
+          || typeof credentialUpdate !== 'object'
+          || !['KEEP', 'REPLACE', 'CLEAR'].includes(credentialUpdate.action)
+        ) {
+          throw new Error('PMS_LOGIN_CONFIG_INVALID')
+        }
+        if (credentialUpdate.action === 'REPLACE') {
+          const credentials = normalizePmsLoginCredentials(credentialUpdate)
+          pmsLoginSecretsByHotel.set(
+            hotelId,
+            encryptCookie(
+              JSON.stringify(credentials),
+              cookieSecretKey,
+              pmsLoginScope(hotelId),
+            ),
+          )
+        } else if (credentialUpdate.action === 'CLEAR') {
+          pmsLoginSecretsByHotel.delete(hotelId)
+        }
+        persistPmsLoginSecrets()
+        json(response, 200, { data: pmsLoginConfigFor(hotelId) })
         return
       }
       if (request.method === 'GET' && suffix === '/business-day-control') {
@@ -1766,6 +2185,72 @@ const server = createServer(async (request, response) => {
       }
       if (
         request.method === 'POST'
+        && suffix === '/wecom-test-suite-deliveries'
+      ) {
+        const body = await readBody(request)
+        if (
+          typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+        ) {
+          throw new Error('REASON_CODE_INVALID')
+        }
+        const config = weComConfigFor(hotelId)
+        if (!config.webhookConfigured) {
+          throw new Error('WECOM_DELIVERY_NOT_CONFIGURED')
+        }
+        const collection = await collectLiveFor(hotelId)
+        const snapshot = collection.snapshot
+        const suiteId = randomUUID()
+        const deliveries = []
+        const failedTemplates = []
+        const suitePlan = createWeComTestSuitePlan({
+          hotelId,
+          snapshot,
+        })
+        const deliverTemplate = async (templateCode, task) => {
+          try {
+            deliveries.push(await task())
+          } catch (error) {
+            failedTemplates.push({
+              templateCode,
+              reasonCode:
+                typeof error?.message === 'string'
+                  ? error.message
+                  : 'WECOM_TEMPLATE_DELIVERY_FAILED',
+            })
+          }
+        }
+
+        for (const template of suitePlan.templates) {
+          await deliverTemplate(template.templateCode, () =>
+            deliverWeComSnapshot({
+              hotelId,
+              snapshot,
+              messageKey:
+                `${hotelId}:TEST_SUITE:${suiteId}:${template.templateCode}`,
+              messagePrefix: template.messagePrefix,
+              deliveryType: template.deliveryType,
+              allowDisabled: true,
+              payloadFactory: template.payloadFactory,
+            }))
+        }
+
+        json(response, 200, {
+          data: {
+            collectionRun: {
+              ...collection.run,
+              monitor: collection.monitor,
+            },
+            requestedTemplateCount: suitePlan.requestedTemplateCount,
+            deliveries,
+            skippedTemplates: suitePlan.skippedTemplates,
+            failedTemplates,
+          },
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
         && suffix === '/wecom-test-deliveries'
       ) {
         const body = await readBody(request)
@@ -1857,10 +2342,12 @@ const server = createServer(async (request, response) => {
           data: deliveries.map((delivery) => ({
             eventId: delivery.deliveryId,
             messageKey: delivery.messageKey,
-            messageType:
-              delivery.messageKey.includes(':TEST:')
-                ? 'WECOM_CHANNEL_TEST'
-                : 'HOURLY_REVENUE_BRIEF',
+            messageType: delivery.deliveryType
+              ?? (
+                delivery.messageKey.includes(':TEST:')
+                  ? 'WECOM_CHANNEL_TEST'
+                  : 'HOURLY_REVENUE_BRIEF'
+              ),
             createdAt: delivery.attemptedAt,
             deliveryBlocked: false,
             deliveryStatus: delivery.deliveryStatus,
@@ -1954,9 +2441,20 @@ const server = createServer(async (request, response) => {
             ? 'BUSINESS_DAY_UNCONFIRMED'
             : error?.message === 'BUSINESS_DAY_CONTROL_INVALID'
               ? 'BUSINESS_DAY_CONTROL_INVALID'
-              : error?.message === 'HOT_SELLING_ROOM_TYPES_INVALID'
-                ? 'HOT_SELLING_ROOM_TYPES_INVALID'
-          : 'REVIEW_API_FAILED_CLOSED'
+           : error?.message === 'HOT_SELLING_ROOM_TYPES_INVALID'
+                 ? 'HOT_SELLING_ROOM_TYPES_INVALID'
+                : typeof error?.message === 'string'
+                  && (
+                    error.message.startsWith('SIMULATION_')
+                    || error.message.startsWith('PMS_LOGIN_')
+                    || error.message.startsWith('PMS_BUSINESS_DATE_')
+                    || error.message.startsWith('REPORT_SOURCE_')
+                    || error.message.startsWith('WECOM_')
+                    || error.message.startsWith('LIVE_')
+                    || error.message.startsWith('FUTURE_')
+                  )
+                    ? error.message
+           : 'REVIEW_API_FAILED_CLOSED'
     json(response, 400, { code })
   }
 })

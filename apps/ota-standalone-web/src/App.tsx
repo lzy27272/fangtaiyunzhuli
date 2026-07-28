@@ -7,6 +7,7 @@ import { HistoryPage } from './pages/HistoryPage'
 import { MappingTargetPage } from './pages/MappingTargetPage'
 import { MonitorPage } from './pages/MonitorPage'
 import { ReportSourceConfigPage } from './pages/ReportSourceConfigPage'
+import type { ReportSourceAttention } from './pages/reportSourceAttention'
 
 function LoginPanel({ onAuthenticated }: { onAuthenticated: (session: AuthSession) => void }) {
   const [username, setUsername] = useState('')
@@ -108,6 +109,8 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
   const [logoutError, setLogoutError] = useState('')
   const [page, setPage] = useState<PageCode>('monitor')
   const [context, setContext] = useState<HotelContext | null>(null)
+  const [reportSourceAttention, setReportSourceAttention] =
+    useState<ReportSourceAttention[]>([])
   const canAdminConfigure = session.account.roles.includes('PLATFORM_ADMIN')
   const canRevenueConfigure = canAdminConfigure
     || session.account.roles.includes('REVENUE_MANAGER')
@@ -141,7 +144,10 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
               className={page === item.code ? 'active' : ''}
               key={item.code}
               type="button"
-              onClick={() => setPage(item.code)}
+              onClick={() => {
+                setReportSourceAttention([])
+                setPage(item.code)
+              }}
             >
               <span>{item.number}</span>
               {item.label}
@@ -170,23 +176,35 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
 
         <div className="simulation-banner" role="status">
           <strong>本机试点环境 · 报表只读采集已启用 · 企微UAT推送可配置</strong>
-          <span>系统每小时00–05分自动采集、06分发送；Webhook在本机加密保存，推送结果可追踪。</span>
+          <span>系统在08:00至次日02:00每30分钟采集、整点约06分发送；Webhook在本机加密保存，推送结果可追踪。</span>
         </div>
 
         {logoutError ? <div className="shell-error" role="alert">{logoutError}，当前会话仍保留。</div> : null}
         <HotelContextBar
           canCreate={session.account.roles.includes('PLATFORM_ADMIN')}
           context={context}
-          onApply={setContext}
+          onApply={(nextContext) => {
+            setReportSourceAttention([])
+            setContext(nextContext)
+          }}
         />
 
         {page === 'connections' ? (
           <ReportSourceConfigPage
+            attentionItems={reportSourceAttention}
             context={context}
             canConfigure={canAdminConfigure}
           />
         ) : null}
-        {page === 'monitor' ? <MonitorPage context={context} /> : null}
+        {page === 'monitor' ? (
+          <MonitorPage
+            context={context}
+            onOpenReportSources={(attention) => {
+              setReportSourceAttention(attention)
+              setPage('connections')
+            }}
+          />
+        ) : null}
         {page === 'mapping' ? <MappingTargetPage context={context} canConfigure={canRevenueConfigure} /> : null}
         {page === 'history' ? (
           <HistoryPage

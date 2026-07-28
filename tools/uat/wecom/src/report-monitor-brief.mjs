@@ -249,8 +249,12 @@ const hourlyOrderLines = (hourlyDelta) => {
   }
   const totals = hourlyDelta.totals
   const summary = aggregateHourlyChannels(hourlyDelta)
+  const heading =
+    hourlyDelta.aggregationWindow === 'PAUSE_TO_FIRST_BRIEF'
+      ? '✅停播汇总'
+      : '✅小时进单'
   return [
-    `✅小时进单｜${localHour(hourlyDelta.intervalStartAt)}→`
+    `${heading}｜${localHour(hourlyDelta.intervalStartAt)}→`
       + `${localHour(hourlyDelta.intervalEndAt)}`,
     '渠道顺序｜美团/飞猪/抖音/其他',
     `新增｜${numberText(totals.newRoomNights)}`

@@ -656,8 +656,13 @@ const emptyChannelDelta = () => ({
   canceledRoomNights: 0,
 })
 
+const isMorningFirstBriefSnapshot = (snapshot) =>
+  /^\d{4}-\d{2}-\d{2}T08:0[0-5]/.test(
+    String(snapshot?.observedAt ?? ''),
+  )
+
 const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
-  const candidates = previousSnapshots
+  const hourlyCandidates = previousSnapshots
     .filter(
       (candidate) =>
         candidate.businessDate === snapshot.businessDate
@@ -673,10 +678,34 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
     }))
     .filter((item) => item.distance <= 15 * 60 * 1000)
     .sort((left, right) => left.distance - right.distance)
-  const previous = candidates[0]?.candidate
+  const pauseCandidates = previousSnapshots
+    .filter(
+      (candidate) =>
+        Array.isArray(candidate.orders)
+        && /^\d{4}-\d{2}-\d{2}T02:0[0-5]/.test(
+          String(candidate.observedAt ?? ''),
+        ),
+    )
+    .map((candidate) => ({
+      candidate,
+      distance:
+        Math.abs(
+          new Date(candidate.observedAt).getTime()
+          - (observedAtMs - 6 * 60 * 60 * 1000),
+        ),
+    }))
+    .filter((item) => item.distance <= 15 * 60 * 1000)
+    .sort((left, right) => left.distance - right.distance)
+  const pauseWindow =
+    isMorningFirstBriefSnapshot(snapshot)
+    && pauseCandidates.length > 0
+  const previous = pauseWindow
+    ? pauseCandidates[0].candidate
+    : hourlyCandidates[0]?.candidate
   if (!previous) {
     return {
       basis: 'BASELINE_PENDING',
+      aggregationWindow: null,
       intervalStartAt: null,
       intervalEndAt: snapshot.observedAt,
       totals: null,
@@ -724,7 +753,9 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
     emptyChannelDelta(),
   )
   const metricDelta =
-    snapshot.overview && previous.overview
+    snapshot.businessDate === previous.businessDate
+    && snapshot.overview
+    && previous.overview
       ? {
           roomFee:
             snapshot.overview.roomFee === null
@@ -754,6 +785,8 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
       : null
   return {
     basis: 'HOURLY_SNAPSHOT_DIFF',
+    aggregationWindow:
+      pauseWindow ? 'PAUSE_TO_FIRST_BRIEF' : 'HOURLY',
     intervalStartAt: previous.observedAt,
     intervalEndAt: snapshot.observedAt,
     totals,
@@ -924,6 +957,7 @@ export const monitorFromSnapshot = (
       revenueSemantics: 'REPORT_ESTIMATED_ROOM_FEE',
       hourlyDelta: {
         basis: 'BASELINE_PENDING',
+        aggregationWindow: null,
         intervalStartAt: null,
         intervalEndAt: null,
         totals: null,
@@ -993,7 +1027,9 @@ export const monitorFromSnapshot = (
     completeness: snapshot.completeness,
     simulationMode: false,
     sources: snapshot.sources.map((source) => ({
+      sourceId: source.sourceId,
       sourceCode: source.sourceCode,
+      reportType: source.reportType,
       completeness: source.completeness,
       sourceObservedAt: source.observedAt,
       ingestedAt: source.ingestedAt,

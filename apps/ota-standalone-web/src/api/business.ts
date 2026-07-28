@@ -155,6 +155,8 @@ export interface ReportSourceView {
   requestPayloadJson: string
   cookieConfigured: boolean
   cookieUpdatedAt: string | null
+  definitionLocked: boolean
+  definitionTemplateHotelCode: string
   enabled: boolean
   validationStatus: 'NOT_TESTED' | 'FORMAT_VALID'
   rowVersion: number
@@ -179,8 +181,22 @@ export interface ReportSourceInput {
   rowVersion: number
 }
 
+export interface PmsLoginConfigView {
+  configured: boolean
+  updatedAt: string | null
+  loginMode: 'CONTROLLED_BROWSER'
+  loginExecutionEnabled: false
+}
+
+export type PmsLoginCredentialUpdate =
+  | { action: 'KEEP' }
+  | { action: 'CLEAR' }
+  | { action: 'REPLACE'; username: string; password: string }
+
 export interface SourceHealth {
+  sourceId: string
   sourceCode: string
+  reportType: ReportType
   completeness: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE'
   sourceObservedAt?: string
   ingestedAt?: string
@@ -228,6 +244,7 @@ export interface MonitorView {
   collectionRunId?: string
   hourlyDelta?: {
     basis: 'HOURLY_SNAPSHOT_DIFF' | 'BASELINE_PENDING'
+    aggregationWindow: 'HOURLY' | 'PAUSE_TO_FIRST_BRIEF' | null
     intervalStartAt: string | null
     intervalEndAt: string | null
     totals: {
@@ -313,6 +330,7 @@ export interface OutboxPreview {
 export interface WeComDeliveryView {
   deliveryId: string
   messageKey: string
+  deliveryType: string
   hotelId: string
   businessDate: string
   cutoffAt: string
@@ -336,6 +354,19 @@ export interface WeComDeliveryView {
     weComCode: number | null
   }>
   bodyPreview: string
+}
+
+export interface WeComTestSuiteTemplateResult {
+  templateCode: string
+  reasonCode: string
+}
+
+export interface WeComTestSuiteView {
+  collectionRun: LiveCollectionRunView
+  requestedTemplateCount: number
+  deliveries: WeComDeliveryView[]
+  skippedTemplates: WeComTestSuiteTemplateResult[]
+  failedTemplates: WeComTestSuiteTemplateResult[]
 }
 
 export interface WeComConfigView {
@@ -767,6 +798,22 @@ export function saveReportSources(
   })
 }
 
+export function loadPmsLoginConfig(
+  context: HotelContext,
+): Promise<PmsLoginConfigView> {
+  return authenticatedRequest(scopedPath(context, '/pms-login-config'))
+}
+
+export function savePmsLoginConfig(
+  context: HotelContext,
+  credentialUpdate: PmsLoginCredentialUpdate,
+): Promise<PmsLoginConfigView> {
+  return postCommand(scopedPath(context, '/pms-login-config'), {
+    credentialUpdate,
+    reasonCode: 'UPDATE_PMS_LOGIN_CREDENTIALS',
+  })
+}
+
 function postCommand<T>(
   path: string,
   body: Record<string, unknown>,
@@ -894,6 +941,7 @@ export function initializeSimulationHotel(input: {
   hotelDisplayName: string
   timezone: string
   reasonCode: string
+  templateHotelId?: string
 }): Promise<CommandReceipt> {
   return postCommand('/ota/simulation/hotels', {
     ...input,
@@ -987,12 +1035,12 @@ export function saveWeComConfig(
   )
 }
 
-export function sendWeComTestDelivery(
+export function sendWeComTestSuite(
   context: HotelContext,
-): Promise<WeComDeliveryView> {
-  return postCommand<WeComDeliveryView>(
-    scopedPath(context, '/wecom-test-deliveries'),
-    { reasonCode: 'SEND_WECOM_UAT_TEST' },
+): Promise<WeComTestSuiteView> {
+  return postCommand<WeComTestSuiteView>(
+    scopedPath(context, '/wecom-test-suite-deliveries'),
+    { reasonCode: 'SEND_WECOM_UAT_TEST_SUITE' },
   )
 }
 

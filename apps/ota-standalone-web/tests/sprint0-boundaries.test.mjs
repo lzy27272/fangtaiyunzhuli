@@ -16,6 +16,10 @@ const browserRehearsalSource = await readFile(new URL('../src/pages/BrowserAutho
 const browserRehearsalStateSource = await readFile(new URL('../src/pages/browserAuthorizationRehearsalState.ts', import.meta.url), 'utf8')
 const admissionSource = await readFile(new URL('../src/pages/ConnectorAdmissionReadinessPanel.tsx', import.meta.url), 'utf8')
 const stylesSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
+const reviewApiSource = await readFile(
+  new URL('../../../tools/uat/ota-standalone-review-api.mjs', import.meta.url),
+  'utf8',
+)
 
 test('Sprint 0 web does not persist access tokens in browser storage', () => {
   assert.equal(sessionSource.includes('localStorage'), false)
@@ -35,13 +39,33 @@ test('pilot shell exposes four report-fusion pages and controlled WeCom UAT deli
   assert.doesNotMatch(monitorSource, /confirmBusinessDateAndCollect/)
   assert.doesNotMatch(monitorSource, /loadBusinessDayControl|saveBusinessDayControl/)
   assert.doesNotMatch(monitorSource, /type="date"/)
-  assert.match(monitorSource, /collectNow\('automatic'\)/)
+  assert.doesNotMatch(monitorSource, /collectNow\('automatic'\)/)
+  assert.match(monitorSource, /系统会在播报时段按30分钟轮询/)
   assert.match(monitorSource, /重新采集已配置报表/)
-  assert.match(monitorSource, /本次仅采集；企微由06分调度处理/)
+  assert.match(monitorSource, /进入报表接口核对配置/)
+  assert.match(
+    appSource,
+    /onOpenReportSources=\{\(attention\) => \{[\s\S]*setReportSourceAttention\(attention\)[\s\S]*setPage\('connections'\)/,
+  )
+  assert.match(appSource, /attentionItems=\{reportSourceAttention\}/)
+  assert.match(monitorSource, /incompleteMonitorAttention/)
+  assert.match(monitorSource, /reportSourceGuidance/)
+  assert.match(reportSourceSource, /最近一次采集需要核对以下报表/)
+  assert.match(reportSourceSource, /定位该报表/)
+  assert.match(reportSourceSource, /needs-attention/)
+  assert.match(reportSourceSource, /scrollIntoView/)
+  assert.match(stylesSource, /\.report-source-attention-panel/)
+  assert.match(
+    monitorSource,
+    /本次仅采集；企微在08:00至次日02:00的整点约06分推送/,
+  )
   assert.match(historySource, /type="password"/)
   assert.match(historySource, /saveWeComConfig/)
-  assert.match(historySource, /sendWeComTestDelivery/)
+  assert.match(historySource, /sendWeComTestSuite/)
+  assert.match(historySource, /采集并发送全部适用模板/)
   assert.match(historySource, /@所有人/)
+  assert.match(reviewApiSource, /\/wecom-test-suite-deliveries/)
+  assert.match(reviewApiSource, /createWeComTestSuitePlan/)
   assert.doesNotMatch(
     historySource,
     /qyapi\.weixin\.qq\.com[^<]*key=[A-Za-z0-9-]{20}/,

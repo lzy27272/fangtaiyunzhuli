@@ -210,6 +210,14 @@ test('collector creates a safe real baseline from all three PMS reports', async 
   assert.equal(result.monitor.metrics.targetProgress.value, 50)
   assert.equal(result.monitor.hourlyDelta.basis, 'BASELINE_PENDING')
   assert.equal(result.monitor.inventory.length, 2)
+  assert.equal(
+    result.monitor.sources[0].sourceId,
+    result.snapshot.sources[0].sourceId,
+  )
+  assert.equal(
+    result.monitor.sources[0].reportType,
+    result.snapshot.sources[0].reportType,
+  )
   assert.ok(result.monitor.inventory.every((room) => room.state === 'UNAVAILABLE'))
   assert.equal(
     result.snapshot.orders.some((item) => item.channel === 'DOUYIN'),
@@ -318,6 +326,50 @@ test('second hourly snapshot reports room-night additions and cancellation trans
   )
   assert.equal(second.monitor.hourlyDelta.metricDelta.roomFee, 100)
   assert.equal(second.monitor.hourlyDelta.metricDelta.roomNights, 1)
+})
+
+test('08:00 first brief summarizes changes since the final 02:00 snapshot', async () => {
+  const finalBeforePause = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-07-25T18:00:00Z'),
+    fetchImpl: fetchFor(1, []),
+  })
+  const firstMorningBrief = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [finalBeforePause.snapshot],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-07-26T00:00:00Z'),
+    fetchImpl: fetchFor(2, []),
+  })
+
+  assert.equal(
+    firstMorningBrief.monitor.hourlyDelta.basis,
+    'HOURLY_SNAPSHOT_DIFF',
+  )
+  assert.equal(
+    firstMorningBrief.monitor.hourlyDelta.aggregationWindow,
+    'PAUSE_TO_FIRST_BRIEF',
+  )
+  assert.equal(
+    firstMorningBrief.monitor.hourlyDelta.intervalStartAt,
+    '2026-07-26T02:00:00+08:00',
+  )
+  assert.equal(
+    firstMorningBrief.monitor.hourlyDelta.intervalEndAt,
+    '2026-07-26T08:00:00+08:00',
+  )
+  assert.deepEqual(firstMorningBrief.monitor.hourlyDelta.totals, {
+    newRoomNights: 1,
+    todayRoomNights: 1,
+    futureRoomNights: 0,
+    canceledRoomNights: 1,
+  })
 })
 
 test('future booking changes compare both the previous hour and yesterday end', async () => {
