@@ -1,0 +1,36 @@
+[Unit]
+Description=Sifangguan OTA Loopback Web
+Wants=network-online.target
+After=network-online.target sifangguan-ota-api.service
+
+[Service]
+Type=notify
+User=sifangguan-ota
+Group=sifangguan-ota
+Environment=XDG_DATA_HOME=/var/lib/sifangguan-ota/caddy-data
+Environment=XDG_CONFIG_HOME=/var/lib/sifangguan-ota/caddy-config
+ExecStartPre=/usr/bin/caddy validate --config /etc/sifangguan-ota/Caddyfile --adapter caddyfile
+ExecStart=/usr/bin/caddy run --environ --config /etc/sifangguan-ota/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/sifangguan-ota/Caddyfile --adapter caddyfile --force
+TimeoutStopSec=10s
+LimitNOFILE=1048576
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/sifangguan-ota
+
+[Install]
+WantedBy=multi-user.target

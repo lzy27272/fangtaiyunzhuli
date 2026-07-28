@@ -20,6 +20,18 @@ UAT/长期运行环境。它包括：
 - 服务器首次启动后，所有真实凭据必须由用户在服务器后台重新配置。
 - `/etc/sifangguan-ota/runtime.env` 只存在服务器，权限为 `0600`，不得提交 Git。
 
+## 当前服务器采用的部署方式
+
+腾讯轻量云可以连接 Node.js 官方下载站，但到 GitHub/Docker Hub 的连接不稳定。
+因此当前服务器采用原生 systemd 部署：
+
+- Node.js 24 LTS 官方 Linux 二进制，并校验官方 SHA-256；
+- 服务器已有 Caddy 2.11.4；
+- 本机构建前端并上传完整发布包；
+- API 与 Web 分别由 systemd 自动启动和恢复。
+
+Dockerfile 与 Compose 保留为网络条件允许时的替代方案，不用于当前服务器。
+
 ## 首次部署
 
 服务器必须先安装本项目专用 SSH 公钥。之后从本机执行：
@@ -29,20 +41,21 @@ ssh -i "$env:USERPROFILE\.ssh\sifangguan_tencent_ota_ed25519" `
   ubuntu@43.136.184.38
 ```
 
-在服务器 SSH 会话中执行：
+首次部署由本机上传完整发布包后，在服务器执行：
 
 ```bash
-git clone --depth=1 \
-  https://github.com/lzy27272/OTAyunyingtuisongzhushou.git \
-  /tmp/sifangguan-ota-bootstrap
 sudo bash \
-  /tmp/sifangguan-ota-bootstrap/infra/ota-standalone-server/scripts/bootstrap-ubuntu.sh
-sudo bash \
-  /tmp/sifangguan-ota-bootstrap/infra/ota-standalone-server/scripts/deploy.sh
+  <上传目录>/infra/ota-standalone-server/scripts/bootstrap-native-ubuntu.sh
+
+sudo env \
+  SFG_OTA_RELEASE_ARCHIVE=<发布包路径> \
+  SFG_OTA_RELEASE_COMMIT=<40位Git提交> \
+  SFG_OTA_RELEASE_SHA256=<发布包SHA-256> \
+  bash <上传目录>/infra/ota-standalone-server/scripts/deploy-native.sh
 ```
 
-部署脚本从 GitHub `main` 获取精确提交，先构建镜像，再更新容器并检查
-`8091/health` 和 `5180`。健康检查失败时，如存在上一版本，会恢复上一版本容器。
+部署脚本先验证发布包哈希和路径安全，再切换不可变发布目录并检查
+`8091/health` 和 `5180`。健康检查失败时，如存在上一版本，会恢复上一版本。
 
 ## 从本机打开服务器后台
 
@@ -69,23 +82,18 @@ http://127.0.0.1:15180
 
 ```bash
 sudo bash \
-  /opt/sifangguan-ota/current/infra/ota-standalone-server/scripts/status.sh
+  /opt/sifangguan-ota/current/infra/ota-standalone-server/scripts/status-native.sh
 ```
 
-只有同时看到两个容器为 healthy、API 返回 `UP`，并确认 5180/8091 仅监听
+只有同时看到两个 systemd 服务为 active、API 返回 `UP`，并确认 5180/8091 仅监听
 `127.0.0.1`，才能认定服务器运行态正常。
 
 ## 后续发布
 
-代码通过测试并推送 GitHub 后，在服务器执行：
-
-```bash
-sudo bash \
-  /opt/sifangguan-ota/current/infra/ota-standalone-server/scripts/deploy.sh
-```
-
-不需要重新配置服务器或重新填写已保存在 `/var/lib/sifangguan-ota` 的门店数据和
-加密凭据。只有数据结构或安全边界发生重大变化时，才需要单独迁移。
+代码通过测试并推送 GitHub 后，在本机重新构建前端、生成包含精确 Git 提交的
+发布包并上传，再执行 `deploy-native.sh`。不需要重新配置服务器或重新填写已保存
+在 `/var/lib/sifangguan-ota` 的门店数据和加密凭据。只有数据结构或安全边界发生
+重大变化时，才需要单独迁移。
 
 ## 必须备份
 

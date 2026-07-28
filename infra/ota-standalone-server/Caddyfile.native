@@ -1,0 +1,28 @@
+{
+	auto_https off
+	admin off
+}
+
+http://127.0.0.1:5180 {
+	encode zstd gzip
+
+	header {
+		-Server
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:8091
+	}
+
+	handle {
+		root * /opt/sifangguan-ota/current/apps/ota-standalone-web/dist
+		try_files {path} /index.html
+		file_server
+	}
+}

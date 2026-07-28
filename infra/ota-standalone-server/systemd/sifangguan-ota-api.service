@@ -1,0 +1,36 @@
+[Unit]
+Description=Sifangguan OTA Review API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=sifangguan-ota
+Group=sifangguan-ota
+WorkingDirectory=/opt/sifangguan-ota/current
+EnvironmentFile=/etc/sifangguan-ota/runtime.env
+ExecStartPre=/usr/bin/test -f /opt/sifangguan-ota/current/tools/uat/ota-standalone-review-api.mjs
+ExecStart=/opt/sifangguan-ota/runtime/node/bin/node /opt/sifangguan-ota/current/tools/uat/ota-standalone-review-api.mjs
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/sifangguan-ota
+
+[Install]
+WantedBy=multi-user.target
