@@ -56,9 +56,9 @@ test('future booking brief is one @all message with 14 stay dates under 1900 byt
   assert.match(payloads[0].text.content, /07-27｜/)
   assert.match(payloads[0].text.content, /08-09｜/)
   assert.doesNotMatch(payloads[0].text.content, /08-10｜/)
-  assert.match(
+  assert.doesNotMatch(
     payloads[0].text.content,
-    /用途｜仅验证企微通道，不得据此调价、调整库存或执行经营动作/,
+    /^用途｜/m,
   )
   assert.ok(
     Buffer.byteLength(payloads[0].text.content, 'utf8')
@@ -134,6 +134,7 @@ test('D+15 to D+90 first crosses 20 percent and builds a safe P1 payload', () =>
   assert.deepEqual(payloads[0].text.mentioned_list, ['@all'])
   assert.match(payloads[0].text.content, /🚨P1远期需求异动/)
   assert.match(payloads[0].text.content, /不能仅凭本告警直接调价/)
+  assert.doesNotMatch(payloads[0].text.content, /^用途｜/m)
   assert.ok(
     Buffer.byteLength(payloads[0].text.content, 'utf8')
       <= futureDemandRiskLimits.maxMessageBytes,

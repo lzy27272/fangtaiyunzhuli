@@ -154,7 +154,7 @@ test('confirmed 1900-byte monitor template produces one sanitized @all message',
   assert.match(content, /^【UAT测试｜非经营指令】/)
   assert.match(content, /喷水池态六酒店｜今日收益分析/)
   assert.doesNotMatch(content, /手动通道测试/)
-  assert.match(content, /用途｜仅验证企微通道/)
+  assert.doesNotMatch(content, /^用途｜/m)
   assert.match(content, /隐私处理｜已过滤姓名/)
   assert.match(
     content,

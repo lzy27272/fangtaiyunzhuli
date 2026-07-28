@@ -288,7 +288,6 @@ export function createWeComTextPayload(summary, { hotelName }) {
   const content = [
     '【UAT测试｜非经营指令】',
     `门店｜${safeName}`,
-    '用途｜仅验证企微通道，不得据此调价、调整库存或执行经营动作',
     `统计时间｜${summary.currentTime}`,
     `PMS营业日｜${summary.businessDate}`,
     `查询区间｜${summary.startDate}→${summary.endDate}`,

@@ -159,6 +159,7 @@ test('WeCom text payload forces at-all and excludes sensitive row values', () =>
     true,
   )
   assert.equal(payload.text.content.includes('喷水池态六酒店'), true)
+  assert.doesNotMatch(payload.text.content, /^用途｜/m)
   assert.equal(payload.text.content.includes('sensitive'), false)
   assert.equal(payload.text.content.includes('/private/'), false)
   assert.equal(Buffer.byteLength(payload.text.content, 'utf8') < 1900, true)

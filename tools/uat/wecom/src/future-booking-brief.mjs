@@ -251,7 +251,6 @@ export const createFutureBookingWeComPayloads = (
     '🤖AI建议',
     ...adviceFor(rows),
     '',
-    '用途｜仅验证企微通道，不得据此调价、调整库存或执行经营动作',
     '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
   ]
   try {
