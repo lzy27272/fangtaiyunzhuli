@@ -46,7 +46,10 @@ fi
 install -d -m 0755 /opt/sifangguan-ota
 install -d -m 0755 /opt/sifangguan-ota/releases
 install -d -m 0755 "${runtime_root}"
-install -d -m 0700 /etc/sifangguan-ota
+install -d -m 0750 \
+  -o root \
+  -g sifangguan-ota \
+  /etc/sifangguan-ota
 install -d -m 0700 \
   -o sifangguan-ota \
   -g sifangguan-ota \
