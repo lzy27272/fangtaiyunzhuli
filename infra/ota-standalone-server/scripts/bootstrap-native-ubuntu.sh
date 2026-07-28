@@ -89,6 +89,7 @@ OTA_REVIEW_API_PORT=8091
 OTA_REVIEW_USERNAME=review-admin
 OTA_REVIEW_PASSWORD=${review_password}
 OTA_REVIEW_ACCESS_TOKEN=${access_token}
+OTA_REVIEW_AUTH_STATE_PATH=/var/lib/sifangguan-ota/review-auth-state.json
 OTA_REVIEW_DATA_PATH=/var/lib/sifangguan-ota/report-sources.json
 OTA_REVIEW_COOKIE_SECRETS_PATH=/var/lib/sifangguan-ota/report-source-cookie-secrets.json
 OTA_REVIEW_SECRET_KEY=${secret_key}

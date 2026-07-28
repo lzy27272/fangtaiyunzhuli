@@ -623,6 +623,70 @@ details.history-card { display: block; }
   border-top: 1px solid #e6e2da;
 }
 
+.account-security-form {
+  max-width: 52rem;
+  margin-top: 1.5rem;
+}
+.security-current-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: .9rem 1rem;
+  border-radius: .8rem;
+  color: #35584f;
+  background: #eef6f3;
+}
+.security-current-account span { font-size: .78rem; font-weight: 800; }
+.security-current-account strong { overflow-wrap: anywhere; }
+.account-security-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.account-security-grid label {
+  display: grid;
+  align-content: start;
+  gap: .4rem;
+  color: #4f625b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+.account-security-grid input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #c8cec9;
+  border-radius: .65rem;
+  padding: .75rem .8rem;
+  color: #17231f;
+  background: #fff;
+  outline: none;
+}
+.account-security-grid input:focus {
+  border-color: #346d5e;
+  box-shadow: 0 0 0 3px rgba(52,109,94,.1);
+}
+.account-security-grid small {
+  color: #6c7773;
+  font-size: .68rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.credential-success {
+  margin-top: 1rem;
+  padding: .8rem 1rem;
+  border-radius: .7rem;
+  color: #27634f;
+  background: #eef8f4;
+  font-weight: 700;
+}
+.credential-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
 @media (max-width: 760px) {
   .login-layout { grid-template-columns: 1fr; }
   .brand-panel { min-height: 38vh; padding: 2.25rem; }
@@ -631,7 +695,7 @@ details.history-card { display: block; }
   .login-panel form { padding: 1.6rem; }
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; padding: 1rem; }
-  .sidebar nav { grid-template-columns: repeat(4, 1fr); }
+  .sidebar nav { grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); }
   .sidebar nav button { display: grid; justify-items: center; padding: .65rem .35rem; font-size: .72rem; }
   .sidebar-account { display: none; }
   .workspace { padding: 1.25rem .8rem 3rem; }
@@ -639,7 +703,7 @@ details.history-card { display: block; }
   .simulation-banner { align-items: flex-start; flex-direction: column; gap: .35rem; }
   .context-bar { grid-template-columns: 1fr; }
   .simulation-hotel-creator > div { grid-template-columns: 1fr; }
-  .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row, .wecom-config-grid { grid-template-columns: 1fr; }
+  .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row, .wecom-config-grid, .account-security-grid { grid-template-columns: 1fr; }
   .real-prep-heading, .rehearsal-heading { flex-direction: column; }
   .rehearsal-boundary-grid { grid-template-columns: 1fr; }
   .monitor-summary { grid-template-columns: repeat(2, 1fr); }

@@ -16,6 +16,7 @@ export interface AuthenticatedAccount {
 export interface AuthSession {
   accessToken: string
   expiresInSeconds: number
+  username: string
   account: AuthenticatedAccount
 }
 

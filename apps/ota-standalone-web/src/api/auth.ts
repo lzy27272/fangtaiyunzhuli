@@ -86,3 +86,56 @@ export async function logout(): Promise<void> {
     throw new ApiError(await readError(response, 'session'), response.status)
   }
 }
+
+export interface CredentialChangeInput {
+  currentPassword: string
+  newUsername: string
+  newPassword: string
+}
+
+async function readCredentialError(response: Response): Promise<string> {
+  if (response.status === 401) {
+    return '会话已失效，请重新登录'
+  }
+  let code = ''
+  try {
+    code = String(((await response.json()) as { code?: string }).code ?? '')
+  } catch {
+    return '账号密码修改失败，请稍后重试'
+  }
+  if (code === 'REVIEW_AUTH_CURRENT_PASSWORD_INVALID') {
+    return '当前密码不正确'
+  }
+  if (code === 'REVIEW_AUTH_USERNAME_INVALID') {
+    return '账号需为 3–64 位，可使用中英文、数字及 . _ @ -'
+  }
+  if (code === 'REVIEW_AUTH_PASSWORD_WEAK') {
+    return '新密码需为 10–128 位，并至少包含三类字符'
+  }
+  if (code === 'REVIEW_AUTH_CREDENTIALS_UNCHANGED') {
+    return '新账号和新密码不能与当前设置完全相同'
+  }
+  return '账号密码修改失败，请稍后重试'
+}
+
+export async function changeCredentials(
+  session: AuthSession,
+  input: CredentialChangeInput,
+): Promise<AuthSession> {
+  const response = await fetch(`${API_BASE_URL}/auth/credentials`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) {
+    throw new ApiError(
+      await readCredentialError(response),
+      response.status,
+    )
+  }
+  return (await response.json()) as AuthSession
+}

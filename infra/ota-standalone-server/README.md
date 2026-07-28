@@ -74,9 +74,11 @@ ssh -N `
 http://127.0.0.1:15180
 ```
 
-登录用户名固定为 `review-admin`。随机登录密码只保存在服务器
-`/etc/sifangguan-ota/runtime.env`；请在自己的 SSH 会话中读取，不要粘贴到聊天、
-文档或 Git。
+首次登录用户名为 `review-admin`，随机初始密码只保存在服务器
+`/etc/sifangguan-ota/runtime.env`。登录后由平台管理员在“账号安全”页面自行修改
+账号和密码；新密码只以 scrypt 哈希写入
+`/var/lib/sifangguan-ota/review-auth-state.json`，修改成功后旧登录会话失效。
+任何真实密码都不要粘贴到聊天、文档或 Git。
 
 ## 状态检查
 

@@ -3,6 +3,7 @@ import { hasRefreshContext, login, logout, refreshSession } from './api/auth'
 import type { HotelContext } from './api/business'
 import { clearSession, getSession, setSession, type AuthSession, type OtaRole } from './auth/session'
 import { HotelContextBar } from './components/HotelContextBar'
+import { AccountSecurityPage } from './pages/AccountSecurityPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { MappingTargetPage } from './pages/MappingTargetPage'
 import { MonitorPage } from './pages/MonitorPage'
@@ -77,13 +78,19 @@ function LoginPanel({ onAuthenticated }: { onAuthenticated: (session: AuthSessio
   )
 }
 
-type PageCode = 'connections' | 'monitor' | 'mapping' | 'history'
+type PageCode =
+  | 'connections'
+  | 'monitor'
+  | 'mapping'
+  | 'history'
+  | 'security'
 
 const NAVIGATION: Array<{ code: PageCode; number: string; label: string }> = [
   { code: 'connections', number: '01', label: '报表接口' },
   { code: 'monitor', number: '02', label: '实时监控' },
   { code: 'mapping', number: '03', label: '指标规则' },
   { code: 'history', number: '04', label: '简报推送' },
+  { code: 'security', number: '05', label: '账号安全' },
 ]
 
 const ROLE_LABELS: Record<OtaRole, string> = {
@@ -104,7 +111,15 @@ function getRoleSummary(roles: OtaRole[]): string {
   return roles.length > 1 ? `${primaryLabel} · ${roles.length}项权限` : primaryLabel
 }
 
-function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout: () => void }) {
+function SprintOneShell({
+  session,
+  onLogout,
+  onSessionChange,
+}: {
+  session: AuthSession
+  onLogout: () => void
+  onSessionChange: (session: AuthSession) => void
+}) {
   const [working, setWorking] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const [page, setPage] = useState<PageCode>('monitor')
@@ -141,7 +156,9 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
           <strong>四方馆酒店房态运营助手</strong>
         </div>
         <nav aria-label="业务页面">
-          {NAVIGATION.map((item) => (
+          {NAVIGATION
+            .filter((item) => item.code !== 'security' || canAdminConfigure)
+            .map((item) => (
             <button
               className={page === item.code ? 'active' : ''}
               key={item.code}
@@ -155,7 +172,7 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
               <span>{item.number}</span>
               {item.label}
             </button>
-          ))}
+            ))}
         </nav>
         <div className="sidebar-account">
           <span className="status-dot" aria-hidden="true" />
@@ -223,6 +240,12 @@ function SprintOneShell({ session, onLogout }: { session: AuthSession; onLogout:
             canConfigure={canAdminConfigure}
           />
         ) : null}
+        {page === 'security' && canAdminConfigure ? (
+          <AccountSecurityPage
+            session={session}
+            onSessionChange={onSessionChange}
+          />
+        ) : null}
       </main>
     </div>
   )
@@ -284,6 +307,12 @@ export default function App() {
     return <main className="login-layout" aria-live="polite">正在安全恢复会话…</main>
   }
   return session
-    ? <SprintOneShell session={session} onLogout={() => updateSession(null)} />
+    ? (
+      <SprintOneShell
+        session={session}
+        onLogout={() => updateSession(null)}
+        onSessionChange={updateSession}
+      />
+    )
     : <LoginPanel onAuthenticated={updateSession} />
 }

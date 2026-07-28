@@ -57,7 +57,7 @@ async function startReviewApi(runtimePath) {
       ...process.env,
       OTA_REVIEW_API_PORT: String(port),
       OTA_REVIEW_USERNAME: 'review-test',
-      OTA_REVIEW_PASSWORD: 'review-test',
+      OTA_REVIEW_PASSWORD: 'example-Review-Test-Password-42',
       OTA_REVIEW_ACCESS_TOKEN: token,
       OTA_REVIEW_DATA_PATH: join(runtimePath, 'report-sources.json'),
       OTA_REVIEW_COOKIE_SECRETS_PATH: join(
@@ -469,9 +469,22 @@ test('created review hotels are returned by the directory and survive restart', 
     await stopReviewApi(first.child)
     first = null
     second = await startReviewApi(runtimePath)
+    const restartedLogin = await fetch(
+      `http://127.0.0.1:${second.port}/api/v1/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'review-test',
+          password: 'example-Review-Test-Password-42',
+        }),
+      },
+    )
+    assert.equal(restartedLogin.status, 200)
+    const restartedToken = (await restartedLogin.json()).accessToken
     const restartedDirectory = await fetch(
       `http://127.0.0.1:${second.port}/api/v1/ota/simulation/hotels`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${restartedToken}` } },
     )
     const restartedBody = await restartedDirectory.json()
     assert.equal(
@@ -491,7 +504,7 @@ test('created review hotels are returned by the directory and survive restart', 
       + `${created.tenantId}/hotels/${created.hotelId}`
     const restartedLoginConfig = await fetch(
       `${restartedCreatedPath}/pms-login-config`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${restartedToken}` } },
     )
     assert.equal(
       (await restartedLoginConfig.json()).data.configured,
@@ -502,7 +515,7 @@ test('created review hotels are returned by the directory and survive restart', 
       + `${existingManagedHotel.tenantId}/hotels/${existingManagedHotel.hotelId}`
     const restartedManagedReports = await fetch(
       `${restartedManagedPath}/report-sources`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${restartedToken}` } },
     )
     const restartedManagedBody = await restartedManagedReports.json()
     assert.equal(

@@ -68,6 +68,7 @@ OTA_REVIEW_API_PORT=8091
 OTA_REVIEW_USERNAME=review-admin
 OTA_REVIEW_PASSWORD=${review_password}
 OTA_REVIEW_ACCESS_TOKEN=${access_token}
+OTA_REVIEW_AUTH_STATE_PATH=/data/review-auth-state.json
 OTA_REVIEW_DATA_PATH=/data/report-sources.json
 OTA_REVIEW_COOKIE_SECRETS_PATH=/data/report-source-cookie-secrets.json
 OTA_REVIEW_SECRET_KEY=${secret_key}

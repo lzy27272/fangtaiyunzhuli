@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http'
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -14,6 +14,7 @@ import {
   decryptCookie,
   encryptCookie,
 } from './report-source-cookie-crypto.mjs'
+import { createReviewAuthStore } from './review-auth-store.mjs'
 import { collectOtaSource } from './ota-source-collector.mjs'
 import {
   appendAndPersistSnapshot,
@@ -46,9 +47,9 @@ import { createWeComTestSuitePlan } from './wecom/src/wecom-test-suite.mjs'
 
 const host = '127.0.0.1'
 const port = Number.parseInt(process.env.OTA_REVIEW_API_PORT ?? '8091', 10)
-const username = process.env.OTA_REVIEW_USERNAME
-const password = process.env.OTA_REVIEW_PASSWORD
-const accessToken = process.env.OTA_REVIEW_ACCESS_TOKEN
+const bootstrapUsername = process.env.OTA_REVIEW_USERNAME
+const bootstrapPassword = process.env.OTA_REVIEW_PASSWORD
+const bootstrapAccessToken = process.env.OTA_REVIEW_ACCESS_TOKEN
 const dataPath = process.env.OTA_REVIEW_DATA_PATH?.trim()
 const cookieSecretsPath =
   process.env.OTA_REVIEW_COOKIE_SECRETS_PATH?.trim()
@@ -92,20 +93,38 @@ const weComDeliveryPath = dataPath
 const futureDemandRiskStatePath = dataPath
   ? join(dirname(dataPath), 'future-demand-risk-states.json')
   : null
+const authStatePath =
+  process.env.OTA_REVIEW_AUTH_STATE_PATH?.trim()
+  || (
+    dataPath || cookieSecretsPath
+      ? join(
+        dirname(dataPath || cookieSecretsPath),
+        'review-auth-state.json',
+      )
+      : null
+  )
 
 if (
   !Number.isInteger(port)
   || port < 1024
   || port > 65535
-  || !username
-  || !password
-  || !accessToken
+  || !bootstrapUsername
+  || !bootstrapPassword
+  || !bootstrapAccessToken
+  || !authStatePath
   || !cookieSecretsPath
   || !cookieSecretKey
 ) {
   process.stderr.write('REVIEW_API_CONFIGURATION_INVALID\n')
   process.exit(2)
 }
+
+const authStore = createReviewAuthStore({
+  statePath: authStatePath,
+  bootstrapUsername,
+  bootstrapPassword,
+  bootstrapAccessToken,
+})
 
 const tenantId = '10000000-0000-4000-8000-000000000001'
 const hotels = [
@@ -1410,15 +1429,6 @@ const persistFutureDemandRiskStates = () => {
   renameSync(temporaryPath, futureDemandRiskStatePath)
 }
 
-const safeEqual = (left, right) => {
-  const leftBuffer = Buffer.from(left ?? '', 'utf8')
-  const rightBuffer = Buffer.from(right ?? '', 'utf8')
-  return (
-    leftBuffer.length === rightBuffer.length
-    && timingSafeEqual(leftBuffer, rightBuffer)
-  )
-}
-
 const json = (response, status, body) => {
   const content = JSON.stringify(body)
   response.writeHead(status, {
@@ -2233,7 +2243,11 @@ const briefFor = (hotelId) => {
 }
 
 const requireAuth = (request, response) => {
-  if (request.headers.authorization !== `Bearer ${accessToken}`) {
+  const authorization = request.headers.authorization ?? ''
+  const token = authorization.startsWith('Bearer ')
+    ? authorization.slice('Bearer '.length)
+    : ''
+  if (!authStore.authenticate(token)) {
     json(response, 401, { code: 'REVIEW_SESSION_REQUIRED' })
     return false
   }
@@ -2259,16 +2273,16 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'POST' && path === '/api/v1/auth/login') {
       const body = await readBody(request)
-      if (
-        !safeEqual(String(body.username ?? ''), username)
-        || !safeEqual(String(body.password ?? ''), password)
-      ) {
+      const authSession = authStore.login(
+        String(body.username ?? ''),
+        String(body.password ?? ''),
+      )
+      if (!authSession) {
         json(response, 401, { code: 'REVIEW_LOGIN_FAILED' })
         return
       }
       json(response, 200, {
-        accessToken,
-        expiresInSeconds: 14400,
+        ...authSession,
         account: {
           id: '90000000-0000-4000-8000-000000000001',
           displayName: '本机评审管理员',
@@ -2281,6 +2295,51 @@ const server = createServer(async (request, response) => {
           ],
         },
       })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/auth/credentials'
+    ) {
+      if (!requireAuth(request, response)) return
+      const body = await readBody(request)
+      try {
+        const authSession = authStore.changeCredentials({
+          currentPassword: String(body.currentPassword ?? ''),
+          newUsername: String(body.newUsername ?? ''),
+          newPassword: String(body.newPassword ?? ''),
+        })
+        json(response, 200, {
+          ...authSession,
+          account: {
+            id: '90000000-0000-4000-8000-000000000001',
+            displayName: '\u672c\u673a\u8bc4\u5ba1\u7ba1\u7406\u5458',
+            roles: [
+              'PLATFORM_ADMIN',
+              'OTA_OPERATION_MANAGER',
+              'CEO',
+              'REGIONAL_MANAGER',
+              'REVENUE_MANAGER',
+            ],
+          },
+        })
+      } catch (reason) {
+        const code = reason instanceof Error ? reason.message : ''
+        if (code === 'REVIEW_AUTH_CURRENT_PASSWORD_INVALID') {
+          json(response, 403, { code })
+          return
+        }
+        if (
+          code === 'REVIEW_AUTH_USERNAME_INVALID'
+          || code === 'REVIEW_AUTH_PASSWORD_WEAK'
+          || code === 'REVIEW_AUTH_CREDENTIALS_UNCHANGED'
+        ) {
+          json(response, 400, { code })
+          return
+        }
+        throw reason
+      }
       return
     }
 

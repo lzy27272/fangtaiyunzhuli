@@ -8,6 +8,7 @@ const authApiSource = await readFile(new URL('../src/api/auth.ts', import.meta.u
 const businessApiSource = await readFile(new URL('../src/api/business.ts', import.meta.url), 'utf8')
 const monitorSource = await readFile(new URL('../src/pages/MonitorPage.tsx', import.meta.url), 'utf8')
 const historySource = await readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8')
+const accountSecuritySource = await readFile(new URL('../src/pages/AccountSecurityPage.tsx', import.meta.url), 'utf8')
 const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx', import.meta.url), 'utf8')
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
 const otaSourceConfigSource = await readFile(new URL('../src/pages/OtaSourceConfigPanel.tsx', import.meta.url), 'utf8')
@@ -28,11 +29,12 @@ test('Sprint 0 web does not persist access tokens in browser storage', () => {
   assert.equal(sessionSource.includes('sessionStorage'), false)
 })
 
-test('pilot shell exposes four report-fusion pages and controlled WeCom UAT delivery', () => {
+test('pilot shell exposes five report-fusion pages and controlled WeCom UAT delivery', () => {
   assert.match(appSource, /ReportSourceConfigPage/)
   assert.match(appSource, /MonitorPage/)
   assert.match(appSource, /MappingTargetPage/)
   assert.match(appSource, /HistoryPage/)
+  assert.match(appSource, /AccountSecurityPage/)
   assert.match(appSource, /LOCAL REVIEW · REPORT FUSION/)
   assert.match(appSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canAdminConfigure\}/)
   assert.match(appSource, /报表只读采集已启用 · 企微UAT推送可配置/)
@@ -75,9 +77,33 @@ test('pilot shell exposes four report-fusion pages and controlled WeCom UAT deli
 })
 
 test('cookie-authenticated logout forwards a double-submit CSRF token', () => {
+  const logoutSource = authApiSource.slice(
+    authApiSource.indexOf('export async function logout'),
+    authApiSource.indexOf('export interface CredentialChangeInput'),
+  )
   assert.match(authApiSource, /ota_csrf=/)
-  assert.match(authApiSource, /X-CSRF-TOKEN/)
-  assert.doesNotMatch(authApiSource, /Authorization: `Bearer/)
+  assert.match(logoutSource, /X-CSRF-TOKEN/)
+  assert.doesNotMatch(logoutSource, /Authorization: `Bearer/)
+})
+
+test('platform administrators can rotate their own login credentials', () => {
+  assert.match(appSource, /code: 'security'/)
+  assert.match(
+    appSource,
+    /item\.code !== 'security' \|\| canAdminConfigure/,
+  )
+  assert.match(accountSecuritySource, /changeCredentials/)
+  assert.match(accountSecuritySource, /currentPassword/)
+  assert.match(accountSecuritySource, /newUsername/)
+  assert.match(accountSecuritySource, /newPassword/)
+  assert.match(accountSecuritySource, /type="password"/)
+  assert.match(accountSecuritySource, /旧登录已失效/)
+  assert.match(authApiSource, /\/auth\/credentials/)
+  assert.match(
+    authApiSource,
+    /Authorization: `Bearer \$\{session\.accessToken\}`/,
+  )
+  assert.doesNotMatch(accountSecuritySource, /localStorage|sessionStorage/)
 })
 
 test('page startup and token expiry use one cookie-authenticated refresh flight', () => {
