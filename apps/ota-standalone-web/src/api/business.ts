@@ -157,6 +157,7 @@ export interface ReportSourceView {
   cookieUpdatedAt: string | null
   definitionLocked: boolean
   definitionTemplateHotelCode: string
+  enabledToggleOnly: boolean
   enabled: boolean
   validationStatus: 'NOT_TESTED' | 'FORMAT_VALID'
   rowVersion: number

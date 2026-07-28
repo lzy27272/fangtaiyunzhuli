@@ -164,7 +164,7 @@ test('new hotels use an explicit PMS template without copying store secrets or O
   assert.match(reviewApiSource, /LUOPAN_CLOUD/)
   assert.match(
     reviewApiSource,
-    /requestPayloadsBySourceId\.has\(source\.sourceId\)[\s\S]*: ''/,
+    /hotelSourcesBySourceId\.has\(source\.sourceId\)[\s\S]*: ''/,
   )
   assert.match(reviewApiSource, /otaSourcesByHotel\.set\(created\.hotelId, \[\]\)/)
   assert.match(reviewApiSource, /pmsLoginScope\(created\.hotelId\)/)
@@ -211,6 +211,16 @@ test('multiple report URLs are saved by hotel with HTTPS and secret boundaries',
   )
   assert.doesNotMatch(viewContract, /cookieValue|ciphertext|authTag/)
   assert.doesNotMatch(reportSourceSource, /fetch\(['"`]https?:/)
+})
+
+test('Luopan stores can disable legacy reports without editing interfaces or credentials', () => {
+  assert.match(businessApiSource, /enabledToggleOnly: boolean/)
+  assert.match(reportSourceSource, /保存报表启用状态/)
+  assert.match(reportSourceSource, /无须配置美团报表接口/)
+  assert.match(reportSourceSource, /未启用的报表无需配置Cookie或POST载荷/)
+  assert.match(reviewApiSource, /LUOPAN_REPORT_SOURCE_ENABLED_ONLY/)
+  assert.match(reviewApiSource, /reportSourceEnabledToggleOnlyMatch/)
+  assert.match(monitorSource, /enabledReportSourceIds\.has\(source\.sourceId\)/)
 })
 
 test('OTA sources support encrypted configuration, immediate read-only refresh and direct correction', () => {

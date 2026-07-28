@@ -464,12 +464,13 @@ const primaryReportSourceHotel = () =>
     hotel.tenantCode === '001' && hotel.hotelCode === '001')
   ?? hotels[0]
 
-const cloneReportSourceDefinitions = (sources, hotelSources = []) => {
-  const requestPayloadsBySourceId = new Map(
-    hotelSources.map((source) => [
-      source.sourceId,
-      source.requestPayloadJson,
-    ]),
+const cloneReportSourceDefinitions = (
+  sources,
+  hotelSources = [],
+  { preserveEnabled = false } = {},
+) => {
+  const hotelSourcesBySourceId = new Map(
+    hotelSources.map((source) => [source.sourceId, source]),
   )
   return sources.map((source) => ({
     sourceId: source.sourceId,
@@ -479,24 +480,54 @@ const cloneReportSourceDefinitions = (sources, hotelSources = []) => {
     calculationRole: source.calculationRole,
     pollIntervalMinutes: source.pollIntervalMinutes,
     credentialAlias: source.credentialAlias,
-    requestPayloadJson: requestPayloadsBySourceId.has(source.sourceId)
-      ? requestPayloadsBySourceId.get(source.sourceId)
+    requestPayloadJson: hotelSourcesBySourceId.has(source.sourceId)
+      ? hotelSourcesBySourceId.get(source.sourceId).requestPayloadJson
       : '',
-    enabled: source.enabled,
+    enabled:
+      preserveEnabled && hotelSourcesBySourceId.has(source.sourceId)
+        ? hotelSourcesBySourceId.get(source.sourceId).enabled
+        : source.enabled,
     validationStatus: source.validationStatus,
     rowVersion: source.rowVersion,
   }))
 }
 
-const reportSourceDefinitionsMatch = (left, right) => {
+const reportSourceDefinitionsMatch = (
+  left,
+  right,
+  { ignoreEnabled = false } = {},
+) => {
   const comparable = (sources) =>
     cloneReportSourceDefinitions(sources)
       .map(({
         requestPayloadJson,
         validationStatus,
         rowVersion,
+        enabled,
         ...source
-      }) => source)
+      }) => ({
+        ...source,
+        requestPayloadJson,
+        ...(ignoreEnabled ? {} : { enabled }),
+      }))
+      .sort((first, second) =>
+        first.sourceId.localeCompare(second.sourceId))
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
+}
+
+const reportSourceEnabledToggleOnlyMatch = (left, right) => {
+  const comparable = (sources) =>
+    sources
+      .map((source) => ({
+        sourceId: source.sourceId,
+        displayName: source.displayName,
+        endpointUrl: source.endpointUrl,
+        reportType: source.reportType,
+        calculationRole: source.calculationRole,
+        pollIntervalMinutes: source.pollIntervalMinutes,
+        credentialAlias: source.credentialAlias,
+        requestPayloadJson: source.requestPayloadJson,
+      }))
       .sort((first, second) =>
         first.sourceId.localeCompare(second.sourceId))
   return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
@@ -529,6 +560,9 @@ const synchronizeReportSourcesFromPrimary = () => {
       cloneReportSourceDefinitions(
         sources,
         reportSourcesByHotel.get(hotel.hotelId),
+        {
+          preserveEnabled: hotel.pmsSystemCode === 'LUOPAN_CLOUD',
+        },
       ),
     )
   }
@@ -671,6 +705,7 @@ const secretsForHotel = (hotelId) =>
 const decorateReportSources = (hotelId, sources) => {
   const secrets = secretsForHotel(hotelId)
   const primary = primaryReportSourceHotel()
+  const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
   return sources.map((source) => {
     const secret = secrets[source.sourceId]
     return {
@@ -680,6 +715,7 @@ const decorateReportSources = (hotelId, sources) => {
       definitionLocked: hotelId !== primary.hotelId,
       definitionTemplateHotelCode:
         `${primary.tenantCode}/${primary.hotelCode}`,
+      enabledToggleOnly: hotel?.pmsSystemCode === 'LUOPAN_CLOUD',
     }
   })
 }
@@ -2786,9 +2822,6 @@ const server = createServer(async (request, response) => {
         return
       }
       if (request.method === 'POST' && suffix === '/report-sources') {
-        if (selected.pmsSystemCode === 'LUOPAN_CLOUD') {
-          throw new Error('REPORT_SOURCE_NOT_APPLICABLE_FOR_LUOPAN')
-        }
         const body = await readBody(request)
         if (
           typeof body.reasonCode !== 'string'
@@ -2797,6 +2830,34 @@ const server = createServer(async (request, response) => {
           throw new Error('REASON_CODE_INVALID')
         }
         const normalizedSources = normalizeReportSources(body.sources)
+        if (selected.pmsSystemCode === 'LUOPAN_CLOUD') {
+          const existingSources = reportSourcesByHotel.get(hotelId) ?? []
+          const cookieUpdateRequested = body.sources.some((source) =>
+            (source?.cookieUpdate?.action ?? 'KEEP') !== 'KEEP')
+          if (
+            cookieUpdateRequested
+            || !reportSourceEnabledToggleOnlyMatch(
+              normalizedSources,
+              existingSources,
+            )
+          ) {
+            throw new Error('LUOPAN_REPORT_SOURCE_ENABLED_ONLY')
+          }
+          reportSourcesByHotel.set(hotelId, normalizedSources)
+          persistReportSources()
+          json(response, 200, {
+            data: {
+              commandId: randomUUID(),
+              resourceId: hotelId,
+              resultingRowVersion: Math.max(
+                1,
+                ...normalizedSources.map((source) => source.rowVersion),
+              ),
+              replayed: false,
+            },
+          })
+          return
+        }
         const { primary, sources: templateSources } =
           ensurePrimaryReportSourceTemplate()
         let savedSources

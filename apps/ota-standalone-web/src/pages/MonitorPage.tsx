@@ -219,6 +219,9 @@ export function MonitorPage({
   const luopanPrimaryEnabled =
     luopanConfig?.enabled === true
     && luopanConfig.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
+  const enabledReportSourceIds = new Set(
+    enabledReportSources.map((source) => source.sourceId),
+  )
   const cookieReadySourceCount = enabledReportSources.filter(
     (source) => source.cookieConfigured,
   ).length
@@ -232,7 +235,12 @@ export function MonitorPage({
       errorCode: 'COOKIE_NOT_CONFIGURED',
     }))
   const incompleteMonitorSources = monitor?.sources.filter(
-    (source) => source.completeness !== 'COMPLETE',
+    (source) =>
+      source.completeness !== 'COMPLETE'
+      && (
+        luopanPrimaryEnabled
+        || enabledReportSourceIds.has(source.sourceId)
+      ),
   ) ?? []
   const incompleteMonitorAttention: ReportSourceAttention[] =
     incompleteMonitorSources.map((source) => ({

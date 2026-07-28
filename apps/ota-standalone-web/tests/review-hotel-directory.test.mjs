@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -585,6 +585,150 @@ test('created review hotels are returned by the directory and survive restart', 
       restartedManagedBody.data[0].requestPayloadJson,
       '{"hotelSpecific":true}',
     )
+  } finally {
+    if (first) await stopReviewApi(first.child)
+    if (second) await stopReviewApi(second.child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
+test('Luopan legacy reports allow enabled-only changes and keep them across restart', { timeout: 15_000 }, async () => {
+  const runtimePath = await mkdtemp(join(tmpdir(), 'sfg-review-luopan-toggle-'))
+  const tenantId = '10000000-0000-4000-8000-000000000001'
+  const meituanHotelId = '20000000-0000-4000-8000-000000000001'
+  const luopanHotelId = '20000000-0000-4000-8000-000000000002'
+  const source = {
+    sourceId: '34000000-0000-4000-8000-000000000001',
+    displayName: 'Legacy report',
+    endpointUrl: 'https://pms.meituan.com/hotelpms/api/v1/report/jd01',
+    reportType: 'ORDER_DETAIL',
+    calculationRole: 'PRIMARY_CALCULATION',
+    pollIntervalMinutes: 30,
+    credentialAlias: 'REPORT_READER_ORDERS',
+    requestPayloadJson: '',
+    enabled: true,
+    validationStatus: 'FORMAT_VALID',
+    rowVersion: 1,
+  }
+  const hotels = [
+    {
+      tenantId,
+      hotelId: meituanHotelId,
+      tenantCode: '001',
+      tenantName: 'Test tenant',
+      hotelCode: '001',
+      hotelName: 'Meituan hotel',
+      pmsSystemCode: 'MEITUAN_BIEYANGHONG',
+      timezone: 'Asia/Shanghai',
+      rowVersion: 1,
+    },
+    {
+      tenantId,
+      hotelId: luopanHotelId,
+      tenantCode: '001',
+      tenantName: 'Test tenant',
+      hotelCode: '002',
+      hotelName: 'Luopan hotel',
+      pmsSystemCode: 'LUOPAN_CLOUD',
+      timezone: 'Asia/Shanghai',
+      rowVersion: 1,
+    },
+  ]
+  let first = null
+  let second = null
+  try {
+    await writeFile(
+      join(runtimePath, 'simulation-hotels.json'),
+      JSON.stringify(hotels),
+      'utf8',
+    )
+    await writeFile(
+      join(runtimePath, 'report-sources.json'),
+      JSON.stringify({
+        [meituanHotelId]: [source],
+        [luopanHotelId]: [source],
+      }),
+      'utf8',
+    )
+    first = await startReviewApi(runtimePath)
+    const scopedPath =
+      `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
+      + `${tenantId}/hotels/${luopanHotelId}`
+    const loaded = await fetch(`${scopedPath}/report-sources`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const loadedSources = (await loaded.json()).data
+    assert.equal(loadedSources[0].enabled, true)
+    assert.equal(loadedSources[0].enabledToggleOnly, true)
+
+    const disabledResponse = await fetch(`${scopedPath}/report-sources`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'review-luopan-disable-001',
+      },
+      body: JSON.stringify({
+        reasonCode: 'DISABLE_LEGACY_LUOPAN_REPORT',
+        sources: loadedSources.map((item) => ({
+          ...item,
+          enabled: false,
+          cookieUpdate: { action: 'KEEP' },
+        })),
+      }),
+    })
+    assert.equal(disabledResponse.status, 200)
+
+    const changedDefinitionResponse = await fetch(
+      `${scopedPath}/report-sources`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'review-luopan-definition-rejected-001',
+        },
+        body: JSON.stringify({
+          reasonCode: 'REJECT_LUOPAN_DEFINITION_EDIT',
+          sources: loadedSources.map((item) => ({
+            ...item,
+            displayName: 'Must stay managed',
+            enabled: false,
+            cookieUpdate: { action: 'KEEP' },
+          })),
+        }),
+      },
+    )
+    assert.equal(changedDefinitionResponse.status, 400)
+    assert.equal(
+      (await changedDefinitionResponse.json()).code,
+      'LUOPAN_REPORT_SOURCE_ENABLED_ONLY',
+    )
+
+    await stopReviewApi(first.child)
+    first = null
+    second = await startReviewApi(runtimePath)
+    const loginResponse = await fetch(
+      `http://127.0.0.1:${second.port}/api/v1/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'review-test',
+          password: 'example-Review-Test-Password-42',
+        }),
+      },
+    )
+    const restartedToken = (await loginResponse.json()).accessToken
+    const restartedPath =
+      `http://127.0.0.1:${second.port}/api/v1/ota/tenants/`
+      + `${tenantId}/hotels/${luopanHotelId}`
+    const restarted = await fetch(`${restartedPath}/report-sources`, {
+      headers: { Authorization: `Bearer ${restartedToken}` },
+    })
+    const restartedSources = (await restarted.json()).data
+    assert.equal(restartedSources[0].enabled, false)
+    assert.equal(restartedSources[0].enabledToggleOnly, true)
   } finally {
     if (first) await stopReviewApi(first.child)
     if (second) await stopReviewApi(second.child)

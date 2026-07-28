@@ -85,6 +85,7 @@ const createEmptySource = (): ReportSourceView => ({
   cookieUpdatedAt: null,
   definitionLocked: false,
   definitionTemplateHotelCode: '001/001',
+  enabledToggleOnly: false,
   enabled: false,
   validationStatus: 'NOT_TESTED',
   rowVersion: 0,
@@ -184,6 +185,7 @@ export function ReportSourceConfigPage({
     [sources],
   )
   const definitionsLocked = sources.some((source) => source.definitionLocked)
+  const enabledToggleOnly = sources.some((source) => source.enabledToggleOnly)
   const definitionTemplateHotelCode =
     sources[0]?.definitionTemplateHotelCode ?? '001/001'
   const attentionBySourceId = useMemo(
@@ -323,6 +325,13 @@ export function ReportSourceConfigPage({
       setSources(savedSources)
       setCookieDrafts({})
       setCookieClears({})
+      if (enabledToggleOnly) {
+        setOverviewVersion((current) => current + 1)
+        setNotice(
+          '罗盘PMS报表启用状态已保存；未启用的报表无需配置Cookie或POST载荷，也不会参与采集。',
+        )
+        return
+      }
       let collectionNotice = ''
       try {
         const run = await triggerLiveCollection(context)
@@ -644,22 +653,31 @@ export function ReportSourceConfigPage({
             </section>
           ) : null}
 
-          <h3>计算覆盖</h3>
-          <div className="coverage-grid">
-            {coverage.map((item) => (
-              <article
-                className={item.configured ? 'coverage-ready' : 'coverage-missing'}
-                key={item.type}
-              >
-                <strong>{item.label}</strong>
-                <span>
-                  {item.configured
-                    ? '已配置'
-                    : item.required ? '缺少主数据' : '可选'}
-                </span>
-              </article>
-            ))}
-          </div>
+          {enabledToggleOnly ? (
+            <div className="state-panel">
+              当前为罗盘PMS门店，无须配置美团报表接口。可取消报表右上角的“启用”并保存；
+              停用后不要求Cookie或POST载荷，也不会参与轮询采集。
+            </div>
+          ) : (
+            <>
+              <h3>计算覆盖</h3>
+              <div className="coverage-grid">
+                {coverage.map((item) => (
+                  <article
+                    className={item.configured ? 'coverage-ready' : 'coverage-missing'}
+                    key={item.type}
+                  >
+                    <strong>{item.label}</strong>
+                    <span>
+                      {item.configured
+                        ? '已配置'
+                        : item.required ? '缺少主数据' : '可选'}
+                    </span>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
 
           <div className="report-source-list" id="report-source-list">
             {sources.map((source, index) => {
@@ -693,7 +711,10 @@ export function ReportSourceConfigPage({
                     <label className="inline-toggle">
                       <input
                         checked={source.enabled}
-                        disabled={!canConfigure || source.definitionLocked}
+                        disabled={
+                          !canConfigure
+                          || (source.definitionLocked && !source.enabledToggleOnly)
+                        }
                         type="checkbox"
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -801,7 +822,7 @@ export function ReportSourceConfigPage({
                     <label className="wide-field">
                       POST请求载荷（JSON，可空）
                       <textarea
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.enabledToggleOnly}
                         maxLength={20_000}
                         placeholder='例如：{"roomTypes":[],"channelKey":"Hotel"}'
                         rows={6}
@@ -820,7 +841,7 @@ export function ReportSourceConfigPage({
                       该网址专用Cookie（可空）
                       <input
                         autoComplete="off"
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || source.enabledToggleOnly}
                         maxLength={16 * 1024}
                         placeholder={
                           source.cookieConfigured
@@ -856,7 +877,11 @@ export function ReportSourceConfigPage({
                       <label className="cookie-clear-option">
                         <input
                           checked={Boolean(cookieClears[source.sourceId])}
-                          disabled={!canConfigure || Boolean(cookieDrafts[source.sourceId])}
+                          disabled={
+                            !canConfigure
+                            || source.enabledToggleOnly
+                            || Boolean(cookieDrafts[source.sourceId])
+                          }
                           type="checkbox"
                           onChange={(event) =>
                             setCookieClears((current) => ({
@@ -875,7 +900,9 @@ export function ReportSourceConfigPage({
                         ? '地址格式已校验'
                         : '尚未执行真实连通测试'}
                       {' · '}
-                      {source.cookieConfigured ? 'Cookie已配置' : 'Cookie未配置'}
+                      {source.enabledToggleOnly && !source.enabled
+                        ? '已停用，不参与采集'
+                        : source.cookieConfigured ? 'Cookie已配置' : 'Cookie未配置'}
                     </span>
                     {canConfigure && !source.definitionLocked ? (
                       <button
@@ -922,8 +949,10 @@ export function ReportSourceConfigPage({
               ) : null}
               <button disabled={saving} type="button" onClick={save}>
                 {saving
-                  ? '正在保存并采集…'
-                  : definitionsLocked
+                  ? enabledToggleOnly ? '正在保存…' : '正在保存并采集…'
+                  : enabledToggleOnly
+                    ? '保存报表启用状态'
+                    : definitionsLocked
                     ? '保存当前门店配置并自动采集一次'
                     : '保存同步接口并自动采集一次'}
               </button>
