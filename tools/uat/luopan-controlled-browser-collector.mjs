@@ -11,6 +11,7 @@ import {
   luopanProfilePaths,
 } from './luopan-profile.mjs'
 import { isAuthenticationUrl } from './luopan-network-sanitizer.mjs'
+import { applyLuopanSessionState } from './luopan-session-state.mjs'
 
 const require = createRequire(import.meta.url)
 let cachedChromium = null
@@ -124,7 +125,7 @@ const selectedFingerprint = (option) =>
     .digest('hex')
     .slice(0, 16)
 
-const launchContext = async (profileRef) => {
+const launchContext = async (profileRef, sessionState = null) => {
   const chromium = chromiumFor()
   const browserExecutable = browserExecutableFor()
   if (!browserExecutable || !existsSync(browserExecutable)) {
@@ -148,6 +149,7 @@ const launchContext = async (profileRef) => {
       '--no-first-run',
     ],
   })
+  await applyLuopanSessionState(context, sessionState)
   return { context, profileName }
 }
 
@@ -413,9 +415,13 @@ const safeCollectorError = (error) => {
 export const validateLuopanBrowserSession = async ({
   profileRef,
   expectedHotelFingerprint = null,
+  sessionState = null,
   now = new Date(),
 }) => {
-  const { context, profileName } = await launchContext(profileRef)
+  const { context, profileName } = await launchContext(
+    profileRef,
+    sessionState,
+  )
   try {
     const page = context.pages()[0] ?? await context.newPage()
     await page.goto(homeUrl, {
@@ -446,6 +452,7 @@ export const collectLuopanControlledBrowser = async ({
   expectedHotelFingerprint,
   previousSnapshots = [],
   secretKey,
+  sessionState = null,
   target = null,
   hotSellingRoomTypeCodes = [],
   now = new Date(),
@@ -457,7 +464,7 @@ export const collectLuopanControlledBrowser = async ({
   ) {
     throw new Error('LUOPAN_SESSION_VALIDATION_REQUIRED')
   }
-  const { context } = await launchContext(profileRef)
+  const { context } = await launchContext(profileRef, sessionState)
   try {
     const page = context.pages()[0] ?? await context.newPage()
     await page.goto(homeUrl, {

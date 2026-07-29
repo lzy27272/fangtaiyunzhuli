@@ -57,6 +57,7 @@ $runtimeSourcePaths = @(
     'tools/uat/review-auth-store.mjs',
     'tools/uat/ota-source-collector.mjs',
     'tools/uat/luopan-controlled-browser-collector.mjs',
+    'tools/uat/luopan-session-state.mjs',
     'tools/uat/luopan-forecast-parser.mjs',
     'tools/uat/luopan-network-sanitizer.mjs',
     'tools/uat/luopan-profile.mjs',
@@ -435,6 +436,7 @@ $forbiddenNames = @(
     'report-source-cookie-secrets.json',
     'pms-login-secrets.json',
     'ota-source-secrets.json',
+    'luopan-session-secrets.json',
     'wecom-webhook-secrets.json',
     'runtime.env'
 )

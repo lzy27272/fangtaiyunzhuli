@@ -24,6 +24,7 @@ protected_paths=(
   /var/lib/sifangguan-ota/pms-login-secrets.json
   /var/lib/sifangguan-ota/ota-source-configs.json
   /var/lib/sifangguan-ota/ota-source-secrets.json
+  /var/lib/sifangguan-ota/luopan-session-secrets.json
   /var/lib/sifangguan-ota/hot-selling-room-types.json
   /var/lib/sifangguan-ota/business-day-controls.json
   /var/lib/sifangguan-ota/wecom-configs.json
@@ -62,7 +63,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "${listing_file}"; then
   exit 2
 fi
 if grep -Eiq \
-  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|runtime\.env)$' \
+  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|ota-source-secrets\.json|luopan-session-secrets\.json|wecom-webhook-secrets\.json|runtime\.env)$' \
   "${listing_file}"; then
   echo "RELEASE_ARCHIVE_FORBIDDEN_CONTENT" >&2
   exit 2

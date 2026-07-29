@@ -21,6 +21,9 @@ import {
   validateLuopanBrowserSession,
 } from './luopan-controlled-browser-collector.mjs'
 import {
+  normalizeLuopanSessionState,
+} from './luopan-session-state.mjs'
+import {
   appendAndPersistSnapshot,
   collectLiveReports,
   loadSnapshotStore,
@@ -96,6 +99,9 @@ const otaSourceSecretPath = dataPath
   : null
 const luopanBrowserConfigPath = dataPath
   ? join(dirname(dataPath), 'luopan-browser-configs.json')
+  : null
+const luopanSessionSecretPath = dataPath
+  ? join(dirname(dataPath), 'luopan-session-secrets.json')
   : null
 const weComConfigPath = dataPath
   ? join(dirname(dataPath), 'wecom-configs.json')
@@ -226,6 +232,7 @@ const otaSourcesByHotel = new Map()
 const otaSourceSecretsByHotel = new Map()
 const otaSourceRefreshLocks = new Map()
 const luopanBrowserConfigsByHotel = new Map()
+const luopanSessionStatesByHotel = new Map()
 const liveCollectionLocks = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
 const businessDayControlsByHotel = new Map()
@@ -823,6 +830,7 @@ const persistPmsLoginSecrets = () => {
 
 const LUOPAN_PROFILE_REF = /^[a-z0-9][a-z0-9_-]{0,39}$/
 const LUOPAN_FINGERPRINT = /^[a-f0-9]{16}$/
+const luopanSessionScope = (hotelId) => `luopan-session:${hotelId}`
 
 const defaultLuopanBrowserConfig = () => ({
   providerCode: 'LUOPAN_CLOUD',
@@ -921,6 +929,8 @@ const luopanBrowserConfigFor = (hotelId) => {
     lastErrorCode: config.lastErrorCode,
     loginMode: 'CONTROLLED_BROWSER_MANUAL_SESSION',
     automaticCredentialLoginEnabled: false,
+    encryptedSessionConfigured:
+      luopanSessionStatesByHotel.has(hotelId),
     rowVersion: config.rowVersion,
   }
 }
@@ -1328,6 +1338,34 @@ if (luopanBrowserConfigPath && existsSync(luopanBrowserConfigPath)) {
     }
   } catch {
     process.stderr.write('REVIEW_LUOPAN_BROWSER_CONFIG_STORE_IGNORED\n')
+  }
+}
+
+if (luopanSessionSecretPath && existsSync(luopanSessionSecretPath)) {
+  try {
+    const persistedSessions = JSON.parse(
+      readFileSync(luopanSessionSecretPath, 'utf8'),
+    )
+    if (
+      persistedSessions
+      && typeof persistedSessions === 'object'
+      && !Array.isArray(persistedSessions)
+    ) {
+      for (const [hotelId, record] of Object.entries(persistedSessions)) {
+        if (!hotels.some((hotel) => hotel.hotelId === hotelId)) continue
+        const plaintext = decryptCookie(
+          record,
+          cookieSecretKey,
+          luopanSessionScope(hotelId),
+        )
+        luopanSessionStatesByHotel.set(
+          hotelId,
+          normalizeLuopanSessionState(JSON.parse(plaintext)),
+        )
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_LUOPAN_SESSION_SECRET_STORE_IGNORED\n')
   }
 }
 
@@ -2043,6 +2081,7 @@ const collectLuopanLiveFor = async (hotelId, config) => {
       expectedHotelFingerprint: config.expectedHotelFingerprint,
       previousSnapshots: liveSnapshotStore[hotelId] ?? [],
       secretKey: cookieSecretKey,
+      sessionState: luopanSessionStatesByHotel.get(hotelId) ?? null,
       target: null,
       hotSellingRoomTypeCodes:
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
@@ -3074,6 +3113,8 @@ const server = createServer(async (request, response) => {
             profileRef: existing.profileRef,
             expectedHotelFingerprint:
               existing.expectedHotelFingerprint,
+            sessionState:
+              luopanSessionStatesByHotel.get(hotelId) ?? null,
           })
           luopanBrowserConfigsByHotel.set(hotelId, {
             ...existing,
