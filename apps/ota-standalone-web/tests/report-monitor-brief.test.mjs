@@ -140,7 +140,7 @@ const snapshot = {
   ],
 }
 
-test('confirmed 1900-byte monitor template produces one sanitized @all message', () => {
+test('confirmed 1900-byte monitor template omits removed broadcast decorations', () => {
   const payloads = createReportMonitorWeComPayloads(monitor, {
     snapshot,
     briefId: 'brief-001',
@@ -150,12 +150,13 @@ test('confirmed 1900-byte monitor template produces one sanitized @all message',
 
   assert.equal(payloads.length, reportMonitorBriefLimits.partCount)
   assert.equal(payloads[0].msgtype, 'text')
-  assert.deepEqual(payloads[0].text.mentioned_list, ['@all'])
-  assert.match(content, /^【UAT测试｜非经营指令】/)
+  assert.deepEqual(payloads[0].text.mentioned_list, [])
+  assert.doesNotMatch(content, /【UAT测试｜非经营指令】/)
   assert.match(content, /喷水池态六酒店｜今日收益分析/)
   assert.doesNotMatch(content, /手动通道测试/)
   assert.doesNotMatch(content, /^用途｜/m)
-  assert.match(content, /隐私处理｜已过滤姓名/)
+  assert.doesNotMatch(content, /隐私处理｜已过滤姓名/)
+  assert.doesNotMatch(content, /@所有人/)
   assert.match(
     content,
     /⏰截止 07-26 02:00｜营业日 07-25｜采集 02:02（4\/4完整）/,

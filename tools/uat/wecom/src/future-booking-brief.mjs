@@ -225,7 +225,7 @@ const payload = (lines) => {
     msgtype: 'text',
     text: {
       content,
-      mentioned_list: ['@all'],
+      mentioned_list: [],
     },
   }
 }
@@ -275,7 +275,6 @@ export const createFutureBookingWeComPayloads = (
       : ''
   const baselines = snapshot.futureBookingChanges ?? {}
   const linesFor = (compactMode = false) => [
-    '【UAT测试｜非经营指令】',
     `${hotel.hotelName.trim().slice(0, 40)}｜远期房态${prefix}`,
     `⏰截止 ${cutoffHour(snapshot.observedAt)}`
       + `｜上时${localTime(baselines.hourlyBaselineAt)}`
@@ -288,8 +287,6 @@ export const createFutureBookingWeComPayloads = (
     '',
     adviceHeading,
     ...adviceLines,
-    '',
-    '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
   ]
   try {
     return [payload(linesFor(false))]

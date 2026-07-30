@@ -86,18 +86,18 @@ const validatePayload = (payload) => {
     Buffer.byteLength(payload.text.content, 'utf8') >
       MAX_REQUEST_TEXT_BYTES ||
     !Array.isArray(payload.text.mentioned_list) ||
-    payload.text.mentioned_list.length !== 1 ||
-    payload.text.mentioned_list[0] !== '@all'
+    payload.text.mentioned_list.length !== 0
   ) {
     fail('WECOM_PAYLOAD_INVALID')
   }
   if (
-    !payload.text.content.startsWith('【UAT测试｜非经营指令】\n') ||
-    !payload.text.content.includes(
+    [
+      '【UAT测试｜非经营指令】',
       '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
-    )
+      '@所有人',
+    ].some((removed) => payload.text.content.includes(removed))
   ) {
-    fail('WECOM_UAT_BANNER_REQUIRED')
+    fail('WECOM_REMOVED_DECORATION_PRESENT')
   }
 }
 

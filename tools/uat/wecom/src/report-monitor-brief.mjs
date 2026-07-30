@@ -312,7 +312,7 @@ const buildPayload = (lines) => {
     msgtype: 'text',
     text: {
       content,
-      mentioned_list: ['@all'],
+      mentioned_list: [],
     },
   }
 }
@@ -429,7 +429,6 @@ export const createReportMonitorWeComPayloads = (
       : '库存数据不可用'
 
   const linesFor = (soldOutBudget, hotRoomBudget) => [
-    '【UAT测试｜非经营指令】',
     `${monitor.hotelName.trim().slice(0, 40)}｜今日收益分析${messagePrefix}`,
     `⏰截止 ${cutoffHour(monitor.cutoffAt)}`
       + `｜营业日 ${shortDate(monitor.businessDate)}`
@@ -480,8 +479,6 @@ export const createReportMonitorWeComPayloads = (
     '',
     '🤖AI建议',
     aiAdvice(monitor, p1Risk),
-    '',
-    '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
   ]
 
   for (const [soldOutBudget, hotRoomBudget] of [

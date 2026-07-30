@@ -34,8 +34,8 @@ OTA Connector Worker 的真实连接器和生产发送门禁。
 - 每次最多发送一次，不自动重试。网络结果不明确时返回 `AMBIGUOUS`，避免重复推送。
 - `(endpoint SHA-256, message SHA-256)` 会在
   `.uat-runtime/wecom/delivery-claims/` 原子占位；相同消息并发或重复执行会被拒绝。
-- 强制 `mentioned_list:["@all"]`。
-- 群消息首行固定为 `【UAT测试｜非经营指令】`。
+- `mentioned_list` 固定为空，不触发群内 `@所有人`。
+- 群消息不显示 `【UAT测试｜非经营指令】` 和“隐私处理”装饰文案。
 - 不发送姓名、订单号、电话、备注、操作员、内部 URL、机构 ID 或原始 JSON。
 - `roomPrice` 不作为营业额；`roomCount` 未经接口口径确认前不标记为间夜。
 - 输入限制为 1 MiB、5000 行，并拒绝符号链接、未知字段和嵌套值。

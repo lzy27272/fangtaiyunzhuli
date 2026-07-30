@@ -54,7 +54,7 @@ test('all applicable WeCom templates include future room status and real P1 risk
   )) {
     const payloads = template.payloadFactory({ hotel, snapshot })
     assert.equal(payloads.length, 1)
-    assert.deepEqual(payloads[0].text.mentioned_list, ['@all'])
+    assert.deepEqual(payloads[0].text.mentioned_list, [])
   }
 })
 

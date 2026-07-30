@@ -286,7 +286,6 @@ export function createWeComTextPayload(summary, { hotelName }) {
     : '输入校验｜JSON结构完整'
 
   const content = [
-    '【UAT测试｜非经营指令】',
     `门店｜${safeName}`,
     `统计时间｜${summary.currentTime}`,
     `PMS营业日｜${summary.businessDate}`,
@@ -298,7 +297,6 @@ export function createWeComTextPayload(summary, { hotelName }) {
     'customerLevel原字段分布｜',
     ...channels,
     recoveryNotice,
-    '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
     '口径提示｜customerLevel、roomCount与roomPrice均未完成厂商口径确认，不用于收益结论',
   ].join('\n')
 
@@ -310,7 +308,7 @@ export function createWeComTextPayload(summary, { hotelName }) {
     msgtype: 'text',
     text: Object.freeze({
       content,
-      mentioned_list: Object.freeze(['@all']),
+      mentioned_list: Object.freeze([]),
     }),
   })
 }
