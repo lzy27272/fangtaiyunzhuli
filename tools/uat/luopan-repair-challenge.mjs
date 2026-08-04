@@ -1,0 +1,273 @@
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+} from 'node:crypto'
+import { isIP } from 'node:net'
+
+const CAPTCHA_PATTERN = /^[a-zA-Z0-9]{4,8}$/u
+const TOKEN_PATTERN = /^[A-Za-z0-9_-]{40,96}$/u
+const DEFAULT_TTL_MS = 10 * 60 * 1000
+const DEFAULT_MAX_ATTEMPTS = 3
+
+const tokenHash = (token) =>
+  createHash('sha256').update(token).digest('hex')
+
+const copyCaptcha = (captcha) =>
+  Buffer.isBuffer(captcha) ? Buffer.from(captcha) : null
+
+const publicRecord = (record) => ({
+  challengeId: record.challengeId,
+  hotelCode: record.hotelCode,
+  hotelName: record.hotelName,
+  status: record.status,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+  expiresAt: record.expiresAt,
+  attemptsUsed: record.attemptsUsed,
+  attemptsRemaining: Math.max(
+    0,
+    record.maxAttempts - record.attemptsUsed,
+  ),
+  captchaAvailable:
+    record.status === 'WAITING_FOR_CAPTCHA'
+    && Buffer.isBuffer(record.captcha),
+  reasonCode: record.reasonCode,
+})
+
+export const validateLuopanRepairPublicBaseUrl = (value) => {
+  const raw = String(value ?? '').trim().replace(/\/$/u, '')
+  if (!raw) return null
+  let url
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new Error('LUOPAN_REPAIR_PUBLIC_URL_INVALID')
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.port
+    || url.username
+    || url.password
+    || url.search
+    || url.hash
+    || url.pathname !== '/'
+    || !url.hostname.includes('.')
+    || isIP(url.hostname) !== 0
+  ) {
+    throw new Error('LUOPAN_REPAIR_PUBLIC_URL_INVALID')
+  }
+  return url.origin
+}
+
+export const luopanRepairLink = (baseUrl, token) => {
+  const origin = validateLuopanRepairPublicBaseUrl(baseUrl)
+  if (!origin || !TOKEN_PATTERN.test(String(token ?? ''))) {
+    throw new Error('LUOPAN_REPAIR_LINK_INVALID')
+  }
+  return `${origin}/api/v1/luopan-repair#${token}`
+}
+
+export const createLuopanRepairChallengeStore = ({
+  now = () => new Date(),
+  tokenBytes = () => randomBytes(32),
+  ttlMs = DEFAULT_TTL_MS,
+  maxAttempts = DEFAULT_MAX_ATTEMPTS,
+} = {}) => {
+  if (
+    !Number.isInteger(ttlMs)
+    || ttlMs < 60_000
+    || ttlMs > 30 * 60_000
+    || !Number.isInteger(maxAttempts)
+    || maxAttempts < 1
+    || maxAttempts > 5
+  ) {
+    throw new Error('LUOPAN_REPAIR_CHALLENGE_CONFIG_INVALID')
+  }
+
+  const recordsByHash = new Map()
+
+  const currentTime = () => {
+    const value = now()
+    if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+      throw new Error('LUOPAN_REPAIR_CLOCK_INVALID')
+    }
+    return value
+  }
+
+  const expireIfNeeded = (record) => {
+    if (
+      !['COMPLETE', 'FAILED', 'EXPIRED'].includes(record.status)
+      && currentTime().getTime() >= new Date(record.expiresAt).getTime()
+    ) {
+      record.status = 'EXPIRED'
+      record.updatedAt = currentTime().toISOString()
+      record.reasonCode = 'LUOPAN_REPAIR_CHALLENGE_EXPIRED'
+      record.captcha = null
+    }
+    return record
+  }
+
+  const recordForHash = (hash) => {
+    const record = recordsByHash.get(hash)
+    return record ? expireIfNeeded(record) : null
+  }
+
+  const recordForToken = (token) => {
+    if (!TOKEN_PATTERN.test(String(token ?? ''))) return null
+    return recordForHash(tokenHash(token))
+  }
+
+  const update = (hash, mutator) => {
+    const record = recordForHash(hash)
+    if (!record) throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_FOUND')
+    mutator(record)
+    record.updatedAt = currentTime().toISOString()
+    return publicRecord(record)
+  }
+
+  return {
+    create({ hotelId, hotelCode, hotelName }) {
+      if (
+        typeof hotelId !== 'string'
+        || !hotelId
+        || !/^\d{3}$/u.test(String(hotelCode ?? ''))
+        || typeof hotelName !== 'string'
+        || !hotelName.trim()
+      ) {
+        throw new Error('LUOPAN_REPAIR_CHALLENGE_INPUT_INVALID')
+      }
+      const token = tokenBytes().toString('base64url')
+      if (!TOKEN_PATTERN.test(token)) {
+        throw new Error('LUOPAN_REPAIR_TOKEN_INVALID')
+      }
+      const hash = tokenHash(token)
+      const createdAt = currentTime()
+      const record = {
+        challengeId: randomUUID(),
+        tokenSha256: hash,
+        hotelId,
+        hotelCode,
+        hotelName: hotelName.trim().slice(0, 120),
+        status: 'PREPARING',
+        createdAt: createdAt.toISOString(),
+        updatedAt: createdAt.toISOString(),
+        expiresAt: new Date(createdAt.getTime() + ttlMs).toISOString(),
+        attemptsUsed: 0,
+        maxAttempts,
+        reasonCode: null,
+        captcha: null,
+      }
+      recordsByHash.set(hash, record)
+      return {
+        token,
+        tokenSha256: hash,
+        record: publicRecord(record),
+      }
+    },
+
+    get(token) {
+      const record = recordForToken(token)
+      return record ? publicRecord(record) : null
+    },
+
+    getInternalByHash(hash) {
+      const record = recordForHash(hash)
+      return record ? { ...record, captcha: copyCaptcha(record.captcha) } : null
+    },
+
+    setWaiting(hash, captcha, reasonCode = null) {
+      if (
+        !Buffer.isBuffer(captcha)
+        || captcha.length < 16
+        || captcha.length > 2 * 1024 * 1024
+      ) {
+        throw new Error('LUOPAN_REPAIR_CAPTCHA_INVALID')
+      }
+      return update(hash, (record) => {
+        if (
+          ['COMPLETE', 'FAILED', 'EXPIRED'].includes(record.status)
+          || record.attemptsUsed >= record.maxAttempts
+        ) {
+          throw new Error('LUOPAN_REPAIR_CHALLENGE_CLOSED')
+        }
+        record.status = 'WAITING_FOR_CAPTCHA'
+        record.captcha = Buffer.from(captcha)
+        record.reasonCode = reasonCode
+      })
+    },
+
+    captcha(token) {
+      const record = recordForToken(token)
+      return record?.status === 'WAITING_FOR_CAPTCHA'
+        ? copyCaptcha(record.captcha)
+        : null
+    },
+
+    submit(token, captcha) {
+      const record = recordForToken(token)
+      if (!record) throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_FOUND')
+      if (record.status !== 'WAITING_FOR_CAPTCHA') {
+        throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_READY')
+      }
+      const answer = String(captcha ?? '').trim()
+      if (!CAPTCHA_PATTERN.test(answer)) {
+        throw new Error('LUOPAN_REPAIR_CAPTCHA_INVALID')
+      }
+      if (record.attemptsUsed >= record.maxAttempts) {
+        throw new Error('LUOPAN_REPAIR_ATTEMPTS_EXHAUSTED')
+      }
+      record.attemptsUsed += 1
+      record.status = 'SUBMITTED'
+      record.updatedAt = currentTime().toISOString()
+      record.reasonCode = null
+      record.captcha = null
+      return {
+        answer,
+        tokenSha256: record.tokenSha256,
+        record: publicRecord(record),
+      }
+    },
+
+    markVerifying(hash) {
+      return update(hash, (record) => {
+        if (!['PREPARING', 'SUBMITTED', 'VERIFYING'].includes(record.status)) {
+          throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_SUBMITTED')
+        }
+        record.status = 'VERIFYING'
+        record.captcha = null
+      })
+    },
+
+    complete(hash) {
+      return update(hash, (record) => {
+        record.status = 'COMPLETE'
+        record.reasonCode = null
+        record.captcha = null
+      })
+    },
+
+    fail(hash, reasonCode) {
+      return update(hash, (record) => {
+        record.status = 'FAILED'
+        record.reasonCode =
+          typeof reasonCode === 'string'
+          && /^[A-Z][A-Z0-9_]{2,80}$/u.test(reasonCode)
+            ? reasonCode
+            : 'LUOPAN_REPAIR_FAILED'
+        record.captcha = null
+      })
+    },
+
+    cleanupExpired() {
+      for (const record of recordsByHash.values()) expireIfNeeded(record)
+    },
+
+    debugSnapshot() {
+      return [...recordsByHash.values()].map((record) => ({
+        ...publicRecord(expireIfNeeded(record)),
+        tokenSha256: record.tokenSha256,
+      }))
+    },
+  }
+}
