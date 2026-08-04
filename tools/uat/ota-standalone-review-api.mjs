@@ -41,6 +41,7 @@ import {
 } from './live-report-collector.mjs'
 import {
   briefingCycleSnapshots,
+  briefingSnapshotsObservedAfter,
   collectionSlotFor,
   isBriefDeliveryTime,
   isBroadcastWindowOpen,
@@ -281,7 +282,9 @@ const lastScheduledCollectionSlotByHotel = new Map()
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
 const lastDailyBriefingAuditKeyByHotel = new Map()
+const schedulerStartedAt = new Date()
 const REPORT_POLL_INTERVAL_MINUTES = 30
+const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
 
 const SIMULATION_HOTEL_CODE = /^[A-Z0-9][A-Z0-9_-]{0,15}$/
 const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -1672,7 +1675,7 @@ const persistWeComDeliveries = () => {
   const deliveries = [...weComDeliveriesByKey.values()]
     .sort((left, right) =>
       String(left.attemptedAt).localeCompare(String(right.attemptedAt)))
-    .slice(-200)
+    .slice(-WECOM_DELIVERY_RETENTION_LIMIT)
   const temporaryPath = `${weComDeliveryPath}.${process.pid}.tmp`
   writeFileSync(
     temporaryPath,
@@ -1744,7 +1747,7 @@ if (weComDeliveryPath && existsSync(weComDeliveryPath)) {
   try {
     const persisted = JSON.parse(readFileSync(weComDeliveryPath, 'utf8'))
     if (Array.isArray(persisted)) {
-      for (const delivery of persisted.slice(-200)) {
+      for (const delivery of persisted.slice(-WECOM_DELIVERY_RETENTION_LIMIT)) {
         if (
           delivery
           && typeof delivery === 'object'
@@ -3069,6 +3072,9 @@ const deliverFutureDemandRisks = async (hotelId, snapshot) => {
   return [delivery]
 }
 
+const postStartupBriefingSnapshots = (snapshots) =>
+  briefingSnapshotsObservedAfter(snapshots, schedulerStartedAt)
+
 const scheduledWeComDeliveryTick = async () => {
   const now = new Date()
   if (!isBriefDeliveryTime(now, 6)) return
@@ -3078,9 +3084,11 @@ const scheduledWeComDeliveryTick = async () => {
     if (!config.enabled || !config.webhookConfigured) continue
     const candidates = selectHourlyDeliveryCandidates({
       hotelId: hotel.hotelId,
-      snapshots: briefingCycleSnapshots(
-        liveSnapshotStore[hotel.hotelId] ?? [],
-        now,
+      snapshots: postStartupBriefingSnapshots(
+        briefingCycleSnapshots(
+          liveSnapshotStore[hotel.hotelId] ?? [],
+          now,
+        ),
       ),
       deliveredMessageKeys: new Set(weComDeliveriesByKey.keys()),
       businessDayControl: businessDayControlFor(hotel.hotelId),
@@ -3119,9 +3127,11 @@ const scheduledFutureBookingDeliveryTick = async () => {
     if (!config.enabled || !config.webhookConfigured) continue
     const candidates = selectHourlyDeliveryCandidates({
       hotelId: hotel.hotelId,
-      snapshots: briefingCycleSnapshots(
-        liveSnapshotStore[hotel.hotelId] ?? [],
-        now,
+      snapshots: postStartupBriefingSnapshots(
+        briefingCycleSnapshots(
+          liveSnapshotStore[hotel.hotelId] ?? [],
+          now,
+        ),
       ).filter(
         (snapshot) =>
           Array.isArray(snapshot?.futureBookingChanges?.daily)

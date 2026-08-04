@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   briefingCycleSnapshots,
   briefingCycleStart,
+  briefingSnapshotsObservedAfter,
   collectionSlotFor,
   isBriefDeliveryTime,
   isBroadcastWindowOpen,
@@ -66,5 +67,24 @@ test('08:00 starts a new briefing cycle without replaying pause snapshots', () =
   assert.equal(
     briefingCycleStart(localDate('2026-07-29T01:00:00')),
     '2026-07-28T08:00:00+08:00',
+  )
+})
+
+test('service restart does not replay briefing snapshots observed before startup', () => {
+  const selected = briefingSnapshotsObservedAfter([
+    { observedAt: '2026-07-29T08:00:00+08:00' },
+    { observedAt: '2026-07-29T08:30:00+08:00' },
+    { observedAt: 'invalid' },
+  ], '2026-07-29T08:30:00+08:00')
+  assert.deepEqual(
+    selected.map((snapshot) => snapshot.observedAt),
+    ['2026-07-29T08:30:00+08:00'],
+  )
+  assert.deepEqual(
+    briefingSnapshotsObservedAfter(
+      [{ observedAt: '2026-07-29T08:30:00+08:00' }],
+      'invalid',
+    ),
+    [],
   )
 })

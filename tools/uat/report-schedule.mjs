@@ -99,3 +99,12 @@ export const briefingCycleSnapshots = (snapshots, date = new Date()) => {
     return Number.isFinite(observedAt) && observedAt >= cycleStartedAt
   })
 }
+
+export const briefingSnapshotsObservedAfter = (snapshots, startedAt) => {
+  const startedAtTime = new Date(startedAt).getTime()
+  if (!Number.isFinite(startedAtTime)) return []
+  return snapshots.filter((snapshot) => {
+    const observedAt = new Date(snapshot?.observedAt ?? '').getTime()
+    return Number.isFinite(observedAt) && observedAt >= startedAtTime
+  })
+}
