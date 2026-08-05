@@ -9,6 +9,14 @@ const LOGIN_URL =
 const HOME_URL =
   'http://bj.chinapms.com:8880/pms-web/home/hg_index.do'
 
+export const luopanLoginPageSelectors = Object.freeze({
+  username: '[name="userId"], [name="username"]',
+  passwordField: '[name="password"]',
+  verification: '[name="verification"]',
+  captcha: 'img[src*="Kaptcha"], img[src*="kaptcha"]',
+  submit: 'button[type="submit"]',
+})
+
 const safeRejectReason = (text) => {
   if (/锁定|冻结|次数过多|稍后再试/u.test(text)) {
     return 'PMS_ACCOUNT_LOCKED'
@@ -22,19 +30,31 @@ const safeRejectReason = (text) => {
   return 'AUTHENTICATION_REJECTED'
 }
 
-const preparePage = async (page, credentials) => {
+export const prepareLuopanLoginPage = async (page, credentials) => {
   await page.goto(LOGIN_URL, {
     waitUntil: 'domcontentloaded',
     timeout: 30_000,
   })
-  await page.locator('[name="username"]').fill(credentials.username)
-  await page.locator('[name="password"]').fill(credentials.password)
-  await page.locator('[name="verification"]').fill('')
-  const captcha = page.locator(
-    'img[src*="Kaptcha"], img[src*="kaptcha"]',
-  ).first()
-  await captcha.waitFor({ state: 'visible', timeout: 15_000 })
-  return captcha.screenshot()
+  try {
+    await page.locator(luopanLoginPageSelectors.username)
+      .first()
+      .fill(credentials.username)
+    await page.locator(luopanLoginPageSelectors.passwordField)
+      .first()
+      .fill(credentials.password)
+    await page.locator(luopanLoginPageSelectors.verification)
+      .first()
+      .fill('')
+  } catch {
+    throw new Error('LUOPAN_LOGIN_FORM_UNAVAILABLE')
+  }
+  try {
+    const captcha = page.locator(luopanLoginPageSelectors.captcha).first()
+    await captcha.waitFor({ state: 'visible', timeout: 15_000 })
+    return await captcha.screenshot()
+  } catch {
+    throw new Error('LUOPAN_CAPTCHA_UNAVAILABLE')
+  }
 }
 
 const captureSessionState = async (context) => {
@@ -85,19 +105,21 @@ export const startLuopanAssistedLogin = async ({
         close,
       }
     }
-    const captcha = await preparePage(page, credentials)
+    const captcha = await prepareLuopanLoginPage(page, credentials)
     return {
       alreadyAuthenticated: false,
       captcha,
       close,
       submit: async (answer) => {
         if (closed) throw new Error('LUOPAN_REPAIR_CHALLENGE_CLOSED')
-        await page.locator('[name="verification"]').fill(answer)
+        await page.locator(luopanLoginPageSelectors.verification)
+          .first()
+          .fill(answer)
         const navigation = page.waitForNavigation({
           waitUntil: 'domcontentloaded',
           timeout: 30_000,
         }).catch(() => null)
-        await page.locator('button[type="submit"]').first().click()
+        await page.locator(luopanLoginPageSelectors.submit).first().click()
         await navigation
         await page.waitForTimeout(1_500)
         if (!isAuthenticationUrl(page.url())) {
@@ -118,7 +140,7 @@ export const startLuopanAssistedLogin = async ({
         return {
           authenticated: false,
           reasonCode,
-          captcha: await preparePage(page, credentials),
+          captcha: await prepareLuopanLoginPage(page, credentials),
         }
       },
     }
