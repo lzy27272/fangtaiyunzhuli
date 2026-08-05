@@ -46,7 +46,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
       const next = await loadWeComRepairBotConfig()
       setConfig(next)
       setEnabled(next.enabled)
-      if (next.paired) setPairing(null)
+      if (!next.pairing.active) setPairing(null)
       setError('')
     } catch (cause) {
       if (!quiet) {
@@ -128,7 +128,8 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
           <p>
             服务器通过企业微信官方长连接接收消息，无需域名。
             发现罗盘会话失效时，机器人会私聊发送验证码图片；
-            只有完成一次性绑定的企业微信账号可以回复“门店编号 验证码”。
+            最多绑定两位企业微信成员，两人同时接收；
+            只有完成一次性绑定的账号可以回复“门店编号 验证码”。
           </p>
         </div>
         <b className={config?.paired && config.connected ? 'source-complete' : 'source-partial'}>
@@ -189,7 +190,11 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
       <div className="wecom-status-row">
         <span>凭据｜{config?.credentialConfigured ? '已加密保存' : '未配置'}</span>
         <span>连接｜{connectionLabel(config)}</span>
-        <span>授权账号｜{config?.paired ? '已绑定1人' : '尚未绑定'}</span>
+        <span>
+          授权账号｜{config?.pairedUserCount
+            ? `已绑定${config.pairedUserCount}/${config.pairedUserCapacity}人`
+            : '尚未绑定'}
+        </span>
         <span>机器人指纹｜{config?.botIdFingerprint ?? '无'}</span>
       </div>
 
@@ -218,11 +223,20 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
             || pairingLoading
             || !config?.connected
             || config.connectionStatus !== 'AUTHENTICATED'
+            || (config?.pairedUserCount ?? 0)
+              >= (config?.pairedUserCapacity ?? 2)
           }
           type="button"
           onClick={createPairingCode}
         >
-          {pairingLoading ? '正在生成…' : config?.paired ? '重新绑定授权账号' : '生成一次性配对码'}
+          {pairingLoading
+            ? '正在生成…'
+            : (config?.pairedUserCount ?? 0)
+                >= (config?.pairedUserCapacity ?? 2)
+              ? '已绑定2人'
+              : config?.pairedUserCount === 1
+                ? '绑定第二位接收人'
+                : '生成第一位配对码'}
         </button>
       </div>
     </section>

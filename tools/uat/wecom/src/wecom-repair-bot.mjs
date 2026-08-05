@@ -13,26 +13,62 @@ const PAIRING_CODE_PATTERN = /^\d{6}$/u
 const CAPTCHA_PATTERN = /^[A-Za-z0-9]{4,8}$/u
 const DEFAULT_PAIRING_TTL_MS = 10 * 60 * 1000
 const DEFAULT_PAIRING_ATTEMPTS = 5
+export const WECOM_REPAIR_BOT_MAX_ALLOWED_USERS = 2
 
 const hash = (value) =>
   createHash('sha256').update(String(value), 'utf8').digest('hex')
 
 export const fingerprintWeComRepairBotValue = (value) => hash(value)
 
+export const normalizeWeComRepairBotAllowedUserIds = (candidate) => {
+  const source = Array.isArray(candidate?.allowedUserIds)
+    ? candidate.allowedUserIds
+    : candidate?.allowedUserId == null
+      ? []
+      : [candidate.allowedUserId]
+  const allowedUserIds = [...new Set(source.map((value) =>
+    String(value ?? '').trim()))]
+  if (
+    allowedUserIds.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS
+    || allowedUserIds.some((userId) => !USER_ID_PATTERN.test(userId))
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_ALLOWED_USERS_INVALID')
+  }
+  return allowedUserIds
+}
+
 export const normalizeWeComRepairBotCredentials = (candidate) => {
   const botId = String(candidate?.botId ?? '').trim()
   const secret = String(candidate?.secret ?? '').trim()
-  const allowedUserId = candidate?.allowedUserId == null
-    ? null
-    : String(candidate.allowedUserId).trim()
+  const allowedUserIds = normalizeWeComRepairBotAllowedUserIds(candidate)
   if (
     !BOT_ID_PATTERN.test(botId)
     || !SECRET_PATTERN.test(secret)
-    || (allowedUserId !== null && !USER_ID_PATTERN.test(allowedUserId))
   ) {
     throw new Error('WECOM_REPAIR_BOT_CREDENTIALS_INVALID')
   }
-  return { botId, secret, allowedUserId }
+  return {
+    botId,
+    secret,
+    allowedUserId: allowedUserIds[0] ?? null,
+    allowedUserIds,
+  }
+}
+
+export const deliverWeComRepairBotToAllowedUsers = async ({
+  credentials,
+  deliver,
+}) => {
+  const allowedUserIds = normalizeWeComRepairBotAllowedUserIds(credentials)
+  if (allowedUserIds.length === 0) {
+    throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
+  }
+  if (typeof deliver !== 'function') {
+    throw new Error('WECOM_REPAIR_BOT_DELIVERY_INVALID')
+  }
+  return Promise.allSettled(
+    allowedUserIds.map((userId, partIndex) => deliver(userId, partIndex)),
+  )
 }
 
 export const parseWeComRepairBotText = (value) => {

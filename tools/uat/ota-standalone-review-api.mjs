@@ -75,9 +75,11 @@ import {
 import {
   createWeComRepairBotPairingStore,
   createWeComRepairBotRuntime,
+  deliverWeComRepairBotToAllowedUsers,
   fingerprintWeComRepairBotValue,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
 } from './wecom/src/wecom-repair-bot.mjs'
 
 const host = '127.0.0.1'
@@ -300,6 +302,7 @@ let weComRepairBotConfig = {
   enabled: false,
   botIdSha256: null,
   allowedUserIdSha256: null,
+  allowedUserIdSha256s: [],
   updatedAt: null,
 }
 let weComRepairBotCredentials = null
@@ -1751,14 +1754,21 @@ const weComRepairBotStatus = () => {
     lastDisconnectedAt: null,
     lastErrorCode: null,
   }
+  const allowedUserIds = weComRepairBotCredentials?.allowedUserIds ?? []
+  const allowedUserFingerprints =
+    weComRepairBotConfig.allowedUserIdSha256s
+      .map((fingerprint) => fingerprint.slice(0, 16))
   return {
     enabled: weComRepairBotConfig.enabled === true,
     credentialConfigured: Boolean(weComRepairBotCredentials),
-    paired: Boolean(weComRepairBotCredentials?.allowedUserId),
+    paired: allowedUserIds.length > 0,
+    pairedUserCount: allowedUserIds.length,
+    pairedUserCapacity: WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
     botIdFingerprint:
       weComRepairBotConfig.botIdSha256?.slice(0, 16) ?? null,
     allowedUserFingerprint:
       weComRepairBotConfig.allowedUserIdSha256?.slice(0, 16) ?? null,
+    allowedUserFingerprints,
     updatedAt: weComRepairBotConfig.updatedAt,
     pairing: weComRepairBotPairingStore.status(),
     ...runtimeStatus,
@@ -1803,16 +1813,29 @@ if (weComRepairBotConfigPath && existsSync(weComRepairBotConfigPath)) {
     if (!persisted || typeof persisted !== 'object') {
       throw new Error('WECOM_REPAIR_BOT_CONFIG_INVALID')
     }
+    const legacyAllowedUserIdSha256 =
+      SHA256_PATTERN.test(String(persisted.allowedUserIdSha256 ?? ''))
+        ? String(persisted.allowedUserIdSha256).toLowerCase()
+        : null
+    const allowedUserIdSha256s = [...new Set([
+      ...(Array.isArray(persisted.allowedUserIdSha256s)
+        ? persisted.allowedUserIdSha256s
+          .map((value) => String(value).toLowerCase())
+          .filter((value) => SHA256_PATTERN.test(value))
+        : []),
+      ...(legacyAllowedUserIdSha256 ? [legacyAllowedUserIdSha256] : []),
+    ])]
+    if (allowedUserIdSha256s.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
+      throw new Error('WECOM_REPAIR_BOT_ALLOWED_USERS_INVALID')
+    }
     weComRepairBotConfig = {
       enabled: persisted.enabled === true,
       botIdSha256:
         SHA256_PATTERN.test(String(persisted.botIdSha256 ?? ''))
           ? String(persisted.botIdSha256).toLowerCase()
           : null,
-      allowedUserIdSha256:
-        SHA256_PATTERN.test(String(persisted.allowedUserIdSha256 ?? ''))
-          ? String(persisted.allowedUserIdSha256).toLowerCase()
-          : null,
+      allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
+      allowedUserIdSha256s,
       updatedAt:
         typeof persisted.updatedAt === 'string' ? persisted.updatedAt : null,
     }
@@ -1835,15 +1858,15 @@ if (weComRepairBotSecretPath && existsSync(weComRepairBotSecretPath)) {
       ),
     ))
     const botIdSha256 = fingerprintWeComRepairBotValue(credentials.botId)
-    const allowedUserIdSha256 = credentials.allowedUserId
-      ? fingerprintWeComRepairBotValue(credentials.allowedUserId)
-      : null
+    const allowedUserIdSha256s = credentials.allowedUserIds
+      .map(fingerprintWeComRepairBotValue)
+    const allowedUserIdSha256 = allowedUserIdSha256s[0] ?? null
     if (
       (weComRepairBotConfig.botIdSha256
         && weComRepairBotConfig.botIdSha256 !== botIdSha256)
-      || (weComRepairBotConfig.allowedUserIdSha256
-        && weComRepairBotConfig.allowedUserIdSha256
-          !== allowedUserIdSha256)
+      || (weComRepairBotConfig.allowedUserIdSha256s.length > 0
+        && JSON.stringify(weComRepairBotConfig.allowedUserIdSha256s)
+          !== JSON.stringify(allowedUserIdSha256s))
     ) {
       throw new Error('WECOM_REPAIR_BOT_SECRET_FINGERPRINT_MISMATCH')
     }
@@ -1852,6 +1875,7 @@ if (weComRepairBotSecretPath && existsSync(weComRepairBotSecretPath)) {
       ...weComRepairBotConfig,
       botIdSha256,
       allowedUserIdSha256,
+      allowedUserIdSha256s,
     }
   } catch {
     weComRepairBotCredentials = null
@@ -1878,27 +1902,30 @@ const applyWeComRepairBotConfigUpdate = (body) => {
   let nextCredentials = weComRepairBotCredentials
   let nextBotIdSha256 = weComRepairBotConfig.botIdSha256
   let nextAllowedUserIdSha256 = weComRepairBotConfig.allowedUserIdSha256
+  let nextAllowedUserIdSha256s =
+    weComRepairBotConfig.allowedUserIdSha256s
   if (credentialUpdate.action === 'REPLACE') {
     const candidateBotId = String(credentialUpdate.botId ?? '').trim()
     const candidateBotIdSha256 = fingerprintWeComRepairBotValue(candidateBotId)
     const preservePairing =
       candidateBotIdSha256 === weComRepairBotConfig.botIdSha256
-        ? weComRepairBotCredentials?.allowedUserId ?? null
-        : null
+        ? weComRepairBotCredentials?.allowedUserIds ?? []
+        : []
     nextCredentials = normalizeWeComRepairBotCredentials({
       botId: candidateBotId,
       secret: credentialUpdate.secret,
-      allowedUserId: preservePairing,
+      allowedUserIds: preservePairing,
     })
     nextBotIdSha256 = candidateBotIdSha256
-    nextAllowedUserIdSha256 = preservePairing
-      ? fingerprintWeComRepairBotValue(preservePairing)
-      : null
-    if (!preservePairing) weComRepairBotPairingStore.clear()
+    nextAllowedUserIdSha256s = preservePairing
+      .map(fingerprintWeComRepairBotValue)
+    nextAllowedUserIdSha256 = nextAllowedUserIdSha256s[0] ?? null
+    if (preservePairing.length === 0) weComRepairBotPairingStore.clear()
   } else if (credentialUpdate.action === 'CLEAR') {
     nextCredentials = null
     nextBotIdSha256 = null
     nextAllowedUserIdSha256 = null
+    nextAllowedUserIdSha256s = []
     weComRepairBotPairingStore.clear()
   }
 
@@ -1911,6 +1938,7 @@ const applyWeComRepairBotConfigUpdate = (body) => {
     enabled: body.enabled,
     botIdSha256: nextBotIdSha256,
     allowedUserIdSha256: nextAllowedUserIdSha256,
+    allowedUserIdSha256s: nextAllowedUserIdSha256s,
     updatedAt: new Date().toISOString(),
   }
   persistWeComRepairBotSecret()
@@ -1931,6 +1959,9 @@ const startWeComRepairBotPairing = () => {
     || !status.connected
   ) {
     throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+  }
+  if (status.pairedUserCount >= WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
+    throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
   }
   return weComRepairBotPairingStore.start()
 }
@@ -2943,6 +2974,10 @@ const deliverWeComRepairBotDirectMessage = async ({
     if (!weComRepairBotReady()) {
       throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
     }
+    const allowedUserIds = weComRepairBotCredentials?.allowedUserIds ?? []
+    if (allowedUserIds.length === 0) {
+      throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
+    }
     const attemptedAt = new Date().toISOString()
     const delivery = {
       deliveryId: randomUUID(),
@@ -2960,7 +2995,7 @@ const deliverWeComRepairBotDirectMessage = async ({
       httpStatus: null,
       weComCode: null,
       automaticRetryAttempted: false,
-      partCount: 1,
+      partCount: allowedUserIds.length,
       deliveredPartCount: 0,
       parts: [],
       bodyPreview: '企业微信智能机器人私聊通知（内容已隐藏）',
@@ -2968,42 +3003,47 @@ const deliverWeComRepairBotDirectMessage = async ({
     }
     weComDeliveriesByKey.set(messageKey, delivery)
     persistWeComDeliveries()
-    try {
-      const allowedUserId = weComRepairBotCredentials?.allowedUserId
-      if (!allowedUserId) {
-        throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
-      }
-      const result = captcha
-        ? await weComRepairBotRuntime.sendCaptcha({
-          userId: allowedUserId,
-          captcha,
-          content,
+    const results = await deliverWeComRepairBotToAllowedUsers({
+      credentials: weComRepairBotCredentials,
+      deliver: (userId) => captcha
+        ? weComRepairBotRuntime.sendCaptcha({ userId, captcha, content })
+        : weComRepairBotRuntime.sendText(userId, content),
+    })
+    for (const [partIndex, result] of results.entries()) {
+      if (result.status === 'fulfilled') {
+        const weComCode = Number.isInteger(result.value?.errcode)
+          ? result.value.errcode
+          : null
+        delivery.deliveredPartCount += 1
+        delivery.parts.push({
+          partIndex,
+          deliveryStatus: 'DELIVERED',
+          reasonCode: 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED',
+          httpStatus: null,
+          weComCode,
         })
-        : await weComRepairBotRuntime.sendText(allowedUserId, content)
-      delivery.deliveryStatus = 'DELIVERED'
-      delivery.reasonCode = 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED'
-      delivery.weComCode = Number.isInteger(result?.errcode)
-        ? result.errcode
-        : null
-      delivery.deliveredPartCount = 1
-      delivery.parts.push({
-        partIndex: 0,
-        deliveryStatus: 'DELIVERED',
-        reasonCode: 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED',
-        httpStatus: null,
-        weComCode: delivery.weComCode,
-      })
-    } catch (error) {
-      delivery.deliveryStatus = 'REJECTED'
-      delivery.reasonCode = safeLuopanRepairReason(error)
-      delivery.parts.push({
-        partIndex: 0,
-        deliveryStatus: 'REJECTED',
-        reasonCode: delivery.reasonCode,
-        httpStatus: null,
-        weComCode: null,
-      })
+      } else {
+        delivery.parts.push({
+          partIndex,
+          deliveryStatus: 'REJECTED',
+          reasonCode: safeLuopanRepairReason(result.reason),
+          httpStatus: null,
+          weComCode: null,
+        })
+      }
     }
+    delivery.deliveryStatus =
+      delivery.deliveredPartCount === delivery.partCount
+        ? 'DELIVERED'
+        : delivery.deliveredPartCount > 0
+          ? 'PARTIAL'
+          : 'REJECTED'
+    delivery.reasonCode =
+      delivery.deliveryStatus === 'DELIVERED'
+        ? 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED'
+        : delivery.deliveryStatus === 'PARTIAL'
+          ? 'WECOM_REPAIR_BOT_MESSAGE_PARTIAL'
+          : 'WECOM_REPAIR_BOT_MESSAGE_REJECTED'
     delivery.completedAt = new Date().toISOString()
     persistWeComDeliveries()
     process.stdout.write(
@@ -3250,7 +3290,7 @@ const startLuopanRepairChallenge = async (
         bodyPreview:
           `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
       })
-    if (delivery.deliveryStatus !== 'DELIVERED') {
+    if (delivery.deliveredPartCount < 1) {
       throw new Error('LUOPAN_REPAIR_NOTICE_NOT_DELIVERED')
     }
     process.stdout.write(
@@ -3323,7 +3363,7 @@ const processSubmittedLuopanRepair = (submitted) => {
                 `剩余次数：${Math.max(0, challenge.maxAttempts - challenge.attemptsUsed)}`,
               ].join('\n'),
             })
-            if (retryDelivery.deliveryStatus !== 'DELIVERED') {
+            if (retryDelivery.deliveredPartCount < 1) {
               throw new Error('LUOPAN_REPAIR_NOTICE_NOT_DELIVERED')
             }
           }
@@ -3404,30 +3444,45 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         pairingCode: command.pairingCode,
         userId,
       })
+      const existingAllowedUserIds =
+        weComRepairBotCredentials.allowedUserIds
+      const allowedUserIds = existingAllowedUserIds.includes(pairing.userId)
+        ? existingAllowedUserIds
+        : [...existingAllowedUserIds, pairing.userId]
+      if (allowedUserIds.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
+        throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
+      }
       weComRepairBotCredentials = normalizeWeComRepairBotCredentials({
         ...weComRepairBotCredentials,
-        allowedUserId: pairing.userId,
+        allowedUserIds,
       })
+      const allowedUserIdSha256s = weComRepairBotCredentials.allowedUserIds
+        .map(fingerprintWeComRepairBotValue)
       weComRepairBotConfig = {
         ...weComRepairBotConfig,
-        allowedUserIdSha256:
-          fingerprintWeComRepairBotValue(pairing.userId),
+        allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
+        allowedUserIdSha256s,
         updatedAt: new Date().toISOString(),
       }
       persistWeComRepairBotSecret()
       persistWeComRepairBotConfig()
       await replyText(
         frame,
-        '绑定成功。以后只有此企业微信账号可以提交门店验证码。',
+        `绑定成功。当前已授权${allowedUserIds.length}/2人，两人都会同时收到验证码。`,
       )
-    } catch {
-      await replyText(frame, '配对码无效或已过期，请在后台重新生成。')
+    } catch (error) {
+      await replyText(
+        frame,
+        error?.message === 'WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED'
+          ? '已绑定2人，不能再添加其他账号。'
+          : '配对码无效或已过期，请在后台重新生成。',
+      )
     }
     return
   }
 
-  const allowedUserId = weComRepairBotCredentials?.allowedUserId
-  if (!allowedUserId || userId !== allowedUserId) {
+  const allowedUserIds = weComRepairBotCredentials?.allowedUserIds ?? []
+  if (!allowedUserIds.includes(userId)) {
     await replyText(frame, '当前账号未获授权，请先使用后台配对码完成绑定。')
     return
   }

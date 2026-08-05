@@ -470,8 +470,11 @@ export interface WeComRepairBotConfigView {
   enabled: boolean
   credentialConfigured: boolean
   paired: boolean
+  pairedUserCount: number
+  pairedUserCapacity: 2
   botIdFingerprint: string | null
   allowedUserFingerprint: string | null
+  allowedUserFingerprints: string[]
   updatedAt: string | null
   connectionStatus:
     | 'DISABLED'

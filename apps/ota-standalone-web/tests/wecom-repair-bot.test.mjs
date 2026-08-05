@@ -5,6 +5,7 @@ import test from 'node:test'
 import {
   createWeComRepairBotPairingStore,
   createWeComRepairBotRuntime,
+  deliverWeComRepairBotToAllowedUsers,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
 } from '../../../tools/uat/wecom/src/wecom-repair-bot.mjs'
@@ -47,6 +48,7 @@ test('credentials reject whitespace and never appear in runtime status', () => {
     secret: 'example_secret_value_1234567890',
   })
   assert.equal(normalized.allowedUserId, null)
+  assert.deepEqual(normalized.allowedUserIds, [])
   assert.throws(
     () => normalizeWeComRepairBotCredentials({
       botId: 'aib-example-bot',
@@ -54,6 +56,55 @@ test('credentials reject whitespace and never appear in runtime status', () => {
     }),
     /WECOM_REPAIR_BOT_CREDENTIALS_INVALID/u,
   )
+})
+
+test('credentials migrate one legacy user and allow at most two users', () => {
+  const legacy = normalizeWeComRepairBotCredentials({
+    botId: 'aib-example-bot',
+    secret: 'example_secret_value_1234567890',
+    allowedUserId: 'first.user',
+  })
+  assert.equal(legacy.allowedUserId, 'first.user')
+  assert.deepEqual(legacy.allowedUserIds, ['first.user'])
+
+  const dual = normalizeWeComRepairBotCredentials({
+    botId: 'aib-example-bot',
+    secret: 'example_secret_value_1234567890',
+    allowedUserIds: ['first.user', 'second.user', 'first.user'],
+  })
+  assert.equal(dual.allowedUserId, 'first.user')
+  assert.deepEqual(dual.allowedUserIds, ['first.user', 'second.user'])
+
+  assert.throws(
+    () => normalizeWeComRepairBotCredentials({
+      botId: 'aib-example-bot',
+      secret: 'example_secret_value_1234567890',
+      allowedUserIds: ['first.user', 'second.user', 'third.user'],
+    }),
+    /WECOM_REPAIR_BOT_ALLOWED_USERS_INVALID/u,
+  )
+})
+
+test('delivery fans out to both authorized users without exposing ids', async () => {
+  const delivered = []
+  const results = await deliverWeComRepairBotToAllowedUsers({
+    credentials: {
+      allowedUserIds: ['first.user', 'second.user'],
+    },
+    deliver: async (userId, partIndex) => {
+      delivered.push({ userId, partIndex })
+      return { errcode: 0 }
+    },
+  })
+
+  assert.deepEqual(delivered, [
+    { userId: 'first.user', partIndex: 0 },
+    { userId: 'second.user', partIndex: 1 },
+  ])
+  assert.deepEqual(results.map((result) => result.status), [
+    'fulfilled',
+    'fulfilled',
+  ])
 })
 
 test('runtime authenticates, receives text and sends captcha without logging frames', async () => {
@@ -125,4 +176,3 @@ test('runtime authenticates, receives text and sends captcha without logging fra
     ['upload', 'media', 'message'],
   )
 })
-

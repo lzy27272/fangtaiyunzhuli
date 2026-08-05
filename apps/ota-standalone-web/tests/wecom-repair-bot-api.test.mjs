@@ -96,6 +96,9 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     assert.equal(initial.enabled, false)
     assert.equal(initial.credentialConfigured, false)
     assert.equal(initial.paired, false)
+    assert.equal(initial.pairedUserCount, 0)
+    assert.equal(initial.pairedUserCapacity, 2)
+    assert.deepEqual(initial.allowedUserFingerprints, [])
 
     const savedResponse = await fetch(endpoint, {
       method: 'POST',
