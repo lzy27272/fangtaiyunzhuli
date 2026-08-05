@@ -65,11 +65,24 @@ test('repair page is no-store and assisted repair stays disabled by default', as
     }
     assert.equal(health?.ok, true)
     const healthBody = await health.json()
-    assert.deepEqual(healthBody.luopanAssistedRepair, {
-      enabled: false,
-      ready: false,
-      reasonCode: 'LUOPAN_REPAIR_DISABLED',
-    })
+    assert.equal(healthBody.luopanAssistedRepair.enabled, false)
+    assert.equal(healthBody.luopanAssistedRepair.ready, false)
+    assert.equal(
+      healthBody.luopanAssistedRepair.reasonCode,
+      'LUOPAN_REPAIR_DISABLED',
+    )
+    assert.equal(healthBody.luopanAssistedRepair.webLinkReady, false)
+    assert.equal(
+      healthBody.luopanAssistedRepair.weComRepairBot.credentialConfigured,
+      false,
+    )
+    assert.equal(
+      Object.hasOwn(
+        healthBody.luopanAssistedRepair.weComRepairBot,
+        'secret',
+      ),
+      false,
+    )
 
     const page = await fetch(
       `http://127.0.0.1:${port}/api/v1/luopan-repair`,

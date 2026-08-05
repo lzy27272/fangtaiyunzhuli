@@ -56,6 +56,23 @@ test('accepts up to three bounded answers and never retains submitted values', (
   )
 })
 
+test('accepts an internal bot submission by token hash without exposing the token', () => {
+  const store = createLuopanRepairChallengeStore({
+    now: () => new Date('2026-08-04T00:15:00Z'),
+    tokenBytes: () => Buffer.alloc(32, 9),
+  })
+  const created = store.create({
+    hotelId: 'hotel-009',
+    hotelCode: '009',
+    hotelName: '示例门店',
+  })
+  store.setWaiting(created.tokenSha256, captchaImage())
+  const submitted = store.submitByHash(created.tokenSha256, 'm8D2')
+  assert.equal(submitted.record.attemptsUsed, 1)
+  assert.equal(JSON.stringify(store.debugSnapshot()).includes('m8D2'), false)
+  assert.equal(JSON.stringify(store.debugSnapshot()).includes(created.token), false)
+})
+
 test('expires a challenge after ten minutes and removes its captcha', () => {
   let current = new Date('2026-08-04T00:15:00Z')
   const store = createLuopanRepairChallengeStore({

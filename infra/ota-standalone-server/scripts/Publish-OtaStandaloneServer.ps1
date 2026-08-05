@@ -75,7 +75,10 @@ $runtimeSourcePaths = @(
     'tools/uat/wecom/src/pms-json-summary.mjs',
     'tools/uat/wecom/src/report-monitor-brief.mjs',
     'tools/uat/wecom/src/wecom-group-robot.mjs',
+    'tools/uat/wecom/src/wecom-repair-bot.mjs',
     'tools/uat/wecom/src/wecom-test-suite.mjs',
+    'tools/uat/vendor/wecom-aibot-sdk-1.0.7.cjs',
+    'tools/uat/vendor/NOTICE.md',
     'tools/uat/wecom/Test-FutureBookingAiConfig.mjs'
 )
 
@@ -442,6 +445,7 @@ $forbiddenNames = @(
     'luopan-session-secrets.json',
     'ota-source-secrets.json',
     'wecom-webhook-secrets.json',
+    'wecom-repair-bot-secrets.json',
     'runtime.env'
 )
 $stagedItems = @(

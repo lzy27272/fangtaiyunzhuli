@@ -1,0 +1,128 @@
+import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import test from 'node:test'
+
+import {
+  createWeComRepairBotPairingStore,
+  createWeComRepairBotRuntime,
+  normalizeWeComRepairBotCredentials,
+  parseWeComRepairBotText,
+} from '../../../tools/uat/wecom/src/wecom-repair-bot.mjs'
+
+test('parses only pairing, help and strict store captcha commands', () => {
+  assert.deepEqual(parseWeComRepairBotText('绑定 123456'), {
+    type: 'PAIR',
+    pairingCode: '123456',
+  })
+  assert.deepEqual(parseWeComRepairBotText('014 5dm8'), {
+    type: 'CAPTCHA',
+    hotelCode: '014',
+    captcha: '5dm8',
+  })
+  assert.deepEqual(parseWeComRepairBotText('帮助'), { type: 'HELP' })
+  assert.deepEqual(parseWeComRepairBotText('014 密码=111111'), {
+    type: 'INVALID',
+  })
+})
+
+test('pairing stores only a code hash and binds one valid user', () => {
+  const store = createWeComRepairBotPairingStore({
+    now: () => new Date('2026-08-05T00:00:00Z'),
+    codeFactory: () => '654321',
+  })
+  const created = store.start()
+  assert.equal(created.pairingCode, '654321')
+  const snapshot = JSON.stringify(store.debugSnapshot())
+  assert.equal(snapshot.includes('654321'), false)
+  assert.equal(store.submit({
+    pairingCode: '654321',
+    userId: 'approved.user',
+  }).userId, 'approved.user')
+  assert.equal(store.status().active, false)
+})
+
+test('credentials reject whitespace and never appear in runtime status', () => {
+  const normalized = normalizeWeComRepairBotCredentials({
+    botId: 'aib-example-bot',
+    secret: 'example_secret_value_1234567890',
+  })
+  assert.equal(normalized.allowedUserId, null)
+  assert.throws(
+    () => normalizeWeComRepairBotCredentials({
+      botId: 'aib-example-bot',
+      secret: 'bad secret value',
+    }),
+    /WECOM_REPAIR_BOT_CREDENTIALS_INVALID/u,
+  )
+})
+
+test('runtime authenticates, receives text and sends captcha without logging frames', async () => {
+  class FakeClient extends EventEmitter {
+    isConnected = false
+    sent = []
+    connect() {
+      this.isConnected = true
+      this.emit('authenticated')
+    }
+    disconnect() {
+      this.isConnected = false
+    }
+    async replyStream(frame, streamId, content, finish) {
+      this.sent.push({ type: 'reply', frame, streamId, content, finish })
+      return { errcode: 0 }
+    }
+    async replyWelcome() {
+      return { errcode: 0 }
+    }
+    async uploadMedia() {
+      this.sent.push({ type: 'upload' })
+      return { media_id: 'media-safe-id' }
+    }
+    async sendMediaMessage(userId, type, mediaId) {
+      this.sent.push({ type: 'media', userId, mediaType: type, mediaId })
+      return { errcode: 0 }
+    }
+    async sendMessage(userId, body) {
+      this.sent.push({ type: 'message', userId, body })
+      return { errcode: 0 }
+    }
+  }
+  let fake
+  let received = null
+  const runtime = createWeComRepairBotRuntime({
+    createClient: () => {
+      fake = new FakeClient()
+      return fake
+    },
+    onTextMessage: async (frame, reply) => {
+      received = frame.body.text.content
+      await reply(frame, '已接收')
+    },
+  })
+  runtime.configure({
+    enabled: true,
+    credentials: {
+      botId: 'aib-example-bot',
+      secret: 'example_secret_value_1234567890',
+    },
+  })
+  assert.equal(runtime.status().connected, true)
+  assert.equal(JSON.stringify(runtime.status()).includes('example_secret'), false)
+  fake.emit('message.text', {
+    headers: { req_id: 'req-safe' },
+    body: { text: { content: '014 5dm8' } },
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(received, '014 5dm8')
+  await runtime.sendCaptcha({
+    userId: 'approved.user',
+    captcha: Buffer.alloc(128, 5),
+    content: '请回复门店编号和验证码',
+  })
+  assert.deepEqual(
+    fake.sent.filter((item) => ['upload', 'media', 'message'].includes(item.type))
+      .map((item) => item.type),
+    ['upload', 'media', 'message'],
+  )
+})
+

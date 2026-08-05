@@ -466,6 +466,43 @@ export interface WeComConfigView {
   lastDelivery: WeComDeliveryView | null
 }
 
+export interface WeComRepairBotConfigView {
+  enabled: boolean
+  credentialConfigured: boolean
+  paired: boolean
+  botIdFingerprint: string | null
+  allowedUserFingerprint: string | null
+  updatedAt: string | null
+  connectionStatus:
+    | 'DISABLED'
+    | 'STARTING'
+    | 'NOT_CONFIGURED'
+    | 'CONNECTING'
+    | 'AUTHENTICATED'
+    | 'DISCONNECTED'
+    | 'ERROR'
+  connected: boolean
+  lastAuthenticatedAt: string | null
+  lastDisconnectedAt: string | null
+  lastErrorCode: string | null
+  pairing: {
+    active: boolean
+    expiresAt: string | null
+    attemptsRemaining: number
+  }
+}
+
+export type WeComRepairBotCredentialUpdate =
+  | { action: 'KEEP' }
+  | { action: 'CLEAR' }
+  | { action: 'REPLACE'; botId: string; secret: string }
+
+export interface WeComRepairBotPairingView {
+  pairingCode: string
+  expiresAt: string
+  attemptsRemaining: number
+}
+
 export type WeComWebhookUpdate =
   | { action: 'KEEP' }
   | { action: 'CLEAR' }
@@ -1180,6 +1217,31 @@ export function loadWeComConfig(
   context: HotelContext,
 ): Promise<WeComConfigView> {
   return authenticatedRequest(scopedPath(context, '/wecom-config'))
+}
+
+export function loadWeComRepairBotConfig(): Promise<WeComRepairBotConfigView> {
+  return authenticatedRequest('/ota/wecom-repair-bot-config')
+}
+
+export function saveWeComRepairBotConfig(
+  enabled: boolean,
+  credentialUpdate: WeComRepairBotCredentialUpdate,
+): Promise<WeComRepairBotConfigView> {
+  return postCommand<WeComRepairBotConfigView>(
+    '/ota/wecom-repair-bot-config',
+    {
+      enabled,
+      credentialUpdate,
+      reasonCode: 'UPDATE_WECOM_REPAIR_BOT_CONFIG',
+    },
+  )
+}
+
+export function startWeComRepairBotPairing(): Promise<WeComRepairBotPairingView> {
+  return postCommand<WeComRepairBotPairingView>(
+    '/ota/wecom-repair-bot-pairing',
+    { reasonCode: 'START_WECOM_REPAIR_BOT_PAIRING' },
+  )
 }
 
 export function saveWeComConfig(

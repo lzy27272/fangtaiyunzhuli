@@ -13,6 +13,7 @@ import {
   type WeComConfigView,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
+import { WeComRepairBotConfigPanel } from './WeComRepairBotConfigPanel'
 
 interface Props {
   context: HotelContext | null
@@ -160,6 +161,8 @@ export function HistoryPage({ context, canConfigure }: Props) {
           刷新证据
         </button>
       </div>
+
+      <WeComRepairBotConfigPanel canConfigure={canConfigure} />
 
       {!context ? (
         <div className="state-panel">请先在顶部载入租户和门店。</div>

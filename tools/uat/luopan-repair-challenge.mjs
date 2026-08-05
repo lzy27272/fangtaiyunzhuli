@@ -126,6 +126,30 @@ export const createLuopanRepairChallengeStore = ({
     return publicRecord(record)
   }
 
+  const submitRecord = (record, captcha) => {
+    if (!record) throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_FOUND')
+    if (record.status !== 'WAITING_FOR_CAPTCHA') {
+      throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_READY')
+    }
+    const answer = String(captcha ?? '').trim()
+    if (!CAPTCHA_PATTERN.test(answer)) {
+      throw new Error('LUOPAN_REPAIR_CAPTCHA_INVALID')
+    }
+    if (record.attemptsUsed >= record.maxAttempts) {
+      throw new Error('LUOPAN_REPAIR_ATTEMPTS_EXHAUSTED')
+    }
+    record.attemptsUsed += 1
+    record.status = 'SUBMITTED'
+    record.updatedAt = currentTime().toISOString()
+    record.reasonCode = null
+    record.captcha = null
+    return {
+      answer,
+      tokenSha256: record.tokenSha256,
+      record: publicRecord(record),
+    }
+  }
+
   return {
     create({ hotelId, hotelCode, hotelName }) {
       if (
@@ -205,28 +229,14 @@ export const createLuopanRepairChallengeStore = ({
     },
 
     submit(token, captcha) {
-      const record = recordForToken(token)
-      if (!record) throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_FOUND')
-      if (record.status !== 'WAITING_FOR_CAPTCHA') {
-        throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_READY')
+      return submitRecord(recordForToken(token), captcha)
+    },
+
+    submitByHash(tokenSha256, captcha) {
+      if (!/^[a-f0-9]{64}$/iu.test(String(tokenSha256 ?? ''))) {
+        throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_FOUND')
       }
-      const answer = String(captcha ?? '').trim()
-      if (!CAPTCHA_PATTERN.test(answer)) {
-        throw new Error('LUOPAN_REPAIR_CAPTCHA_INVALID')
-      }
-      if (record.attemptsUsed >= record.maxAttempts) {
-        throw new Error('LUOPAN_REPAIR_ATTEMPTS_EXHAUSTED')
-      }
-      record.attemptsUsed += 1
-      record.status = 'SUBMITTED'
-      record.updatedAt = currentTime().toISOString()
-      record.reasonCode = null
-      record.captcha = null
-      return {
-        answer,
-        tokenSha256: record.tokenSha256,
-        record: publicRecord(record),
-      }
+      return submitRecord(recordForHash(tokenSha256), captcha)
     },
 
     markVerifying(hash) {

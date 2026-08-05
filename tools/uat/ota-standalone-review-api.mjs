@@ -72,6 +72,13 @@ import {
   auditLuopanBriefingStore,
   dailyBriefingAuditSlot,
 } from './wecom/src/briefing-delivery-audit.mjs'
+import {
+  createWeComRepairBotPairingStore,
+  createWeComRepairBotRuntime,
+  fingerprintWeComRepairBotValue,
+  normalizeWeComRepairBotCredentials,
+  parseWeComRepairBotText,
+} from './wecom/src/wecom-repair-bot.mjs'
 
 const host = '127.0.0.1'
 const port = Number.parseInt(process.env.OTA_REVIEW_API_PORT ?? '8091', 10)
@@ -94,7 +101,7 @@ const futureBookingAiStatus =
 const luopanAssistedRepairEnabled =
   process.env.OTA_REVIEW_LUOPAN_ASSISTED_REAUTH_ENABLED === 'true'
 let luopanRepairPublicBaseUrl = null
-let luopanRepairConfigurationReason =
+let luopanWebRepairConfigurationReason =
   luopanAssistedRepairEnabled
     ? 'LUOPAN_REPAIR_PUBLIC_URL_REQUIRED'
     : 'LUOPAN_REPAIR_DISABLED'
@@ -103,15 +110,15 @@ try {
     process.env.OTA_REVIEW_REPAIR_PUBLIC_BASE_URL,
   )
   if (luopanAssistedRepairEnabled && luopanRepairPublicBaseUrl) {
-    luopanRepairConfigurationReason = null
+    luopanWebRepairConfigurationReason = null
   }
 } catch {
-  luopanRepairConfigurationReason = 'LUOPAN_REPAIR_PUBLIC_URL_INVALID'
+  luopanWebRepairConfigurationReason = 'LUOPAN_REPAIR_PUBLIC_URL_INVALID'
 }
-const luopanAssistedRepairReady =
+const luopanWebRepairReady =
   luopanAssistedRepairEnabled
   && Boolean(luopanRepairPublicBaseUrl)
-  && !luopanRepairConfigurationReason
+  && !luopanWebRepairConfigurationReason
 const liveSnapshotPath = dataPath
   ? join(dirname(dataPath), 'live-report-snapshots.json')
   : null
@@ -150,6 +157,12 @@ const weComDeliveryPath = dataPath
   : null
 const futureDemandRiskStatePath = dataPath
   ? join(dirname(dataPath), 'future-demand-risk-states.json')
+  : null
+const weComRepairBotConfigPath = dataPath
+  ? join(dirname(dataPath), 'wecom-repair-bot-config.json')
+  : null
+const weComRepairBotSecretPath = dataPath
+  ? join(dirname(dataPath), 'wecom-repair-bot-secrets.json')
   : null
 const authStatePath =
   process.env.OTA_REVIEW_AUTH_STATE_PATH?.trim()
@@ -281,6 +294,16 @@ const futureDemandRiskStates = {}
 const lastScheduledCollectionSlotByHotel = new Map()
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
+const weComRepairBotPairingStore = createWeComRepairBotPairingStore()
+const seenWeComRepairBotMessageHashes = new Map()
+let weComRepairBotConfig = {
+  enabled: false,
+  botIdSha256: null,
+  allowedUserIdSha256: null,
+  updatedAt: null,
+}
+let weComRepairBotCredentials = null
+let weComRepairBotRuntime = null
 const lastDailyBriefingAuditKeyByHotel = new Map()
 const schedulerStartedAt = new Date()
 const REPORT_POLL_INTERVAL_MINUTES = 30
@@ -1685,6 +1708,233 @@ const persistWeComDeliveries = () => {
   renameSync(temporaryPath, weComDeliveryPath)
 }
 
+const weComRepairBotSecretScope = () => 'wecom-repair-bot:v1'
+const SHA256_PATTERN = /^[a-f0-9]{64}$/iu
+
+const persistWeComRepairBotConfig = () => {
+  if (!weComRepairBotConfigPath) return
+  mkdirSync(dirname(weComRepairBotConfigPath), { recursive: true })
+  const temporaryPath = `${weComRepairBotConfigPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(weComRepairBotConfig, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, weComRepairBotConfigPath)
+}
+
+const persistWeComRepairBotSecret = () => {
+  if (!weComRepairBotSecretPath) return
+  mkdirSync(dirname(weComRepairBotSecretPath), { recursive: true })
+  const temporaryPath = `${weComRepairBotSecretPath}.${process.pid}.tmp`
+  const record = weComRepairBotCredentials
+    ? encryptCookie(
+      JSON.stringify(weComRepairBotCredentials),
+      cookieSecretKey,
+      weComRepairBotSecretScope(),
+    )
+    : null
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(record ? { record } : {}, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, weComRepairBotSecretPath)
+}
+
+const weComRepairBotStatus = () => {
+  const runtimeStatus = weComRepairBotRuntime?.status() ?? {
+    connectionStatus:
+      weComRepairBotConfig.enabled ? 'STARTING' : 'DISABLED',
+    connected: false,
+    lastAuthenticatedAt: null,
+    lastDisconnectedAt: null,
+    lastErrorCode: null,
+  }
+  return {
+    enabled: weComRepairBotConfig.enabled === true,
+    credentialConfigured: Boolean(weComRepairBotCredentials),
+    paired: Boolean(weComRepairBotCredentials?.allowedUserId),
+    botIdFingerprint:
+      weComRepairBotConfig.botIdSha256?.slice(0, 16) ?? null,
+    allowedUserFingerprint:
+      weComRepairBotConfig.allowedUserIdSha256?.slice(0, 16) ?? null,
+    updatedAt: weComRepairBotConfig.updatedAt,
+    pairing: weComRepairBotPairingStore.status(),
+    ...runtimeStatus,
+  }
+}
+
+const weComRepairBotReady = () => {
+  const status = weComRepairBotStatus()
+  return status.enabled
+    && status.credentialConfigured
+    && status.paired
+    && status.connectionStatus === 'AUTHENTICATED'
+    && status.connected
+}
+
+const luopanAssistedRepairReady = () =>
+  luopanAssistedRepairEnabled
+  && (luopanWebRepairReady || weComRepairBotReady())
+
+const luopanRepairReasonCode = () => {
+  if (!luopanAssistedRepairEnabled) return 'LUOPAN_REPAIR_DISABLED'
+  if (luopanWebRepairReady || weComRepairBotReady()) return null
+  const bot = weComRepairBotStatus()
+  if (!bot.enabled || !bot.credentialConfigured) {
+    return luopanWebRepairConfigurationReason
+      === 'LUOPAN_REPAIR_PUBLIC_URL_INVALID'
+      ? luopanWebRepairConfigurationReason
+      : 'WECOM_REPAIR_BOT_CONFIGURATION_REQUIRED'
+  }
+  if (!bot.paired) return 'WECOM_REPAIR_BOT_PAIRING_REQUIRED'
+  if (bot.connectionStatus !== 'AUTHENTICATED' || !bot.connected) {
+    return bot.lastErrorCode ?? 'WECOM_REPAIR_BOT_NOT_CONNECTED'
+  }
+  return 'LUOPAN_REPAIR_NOT_READY'
+}
+
+if (weComRepairBotConfigPath && existsSync(weComRepairBotConfigPath)) {
+  try {
+    const persisted = JSON.parse(
+      readFileSync(weComRepairBotConfigPath, 'utf8'),
+    )
+    if (!persisted || typeof persisted !== 'object') {
+      throw new Error('WECOM_REPAIR_BOT_CONFIG_INVALID')
+    }
+    weComRepairBotConfig = {
+      enabled: persisted.enabled === true,
+      botIdSha256:
+        SHA256_PATTERN.test(String(persisted.botIdSha256 ?? ''))
+          ? String(persisted.botIdSha256).toLowerCase()
+          : null,
+      allowedUserIdSha256:
+        SHA256_PATTERN.test(String(persisted.allowedUserIdSha256 ?? ''))
+          ? String(persisted.allowedUserIdSha256).toLowerCase()
+          : null,
+      updatedAt:
+        typeof persisted.updatedAt === 'string' ? persisted.updatedAt : null,
+    }
+  } catch {
+    process.stderr.write('REVIEW_WECOM_REPAIR_BOT_CONFIG_STORE_IGNORED\n')
+  }
+}
+
+if (weComRepairBotSecretPath && existsSync(weComRepairBotSecretPath)) {
+  try {
+    const persisted = JSON.parse(
+      readFileSync(weComRepairBotSecretPath, 'utf8'),
+    )
+    if (!persisted?.record) throw new Error('WECOM_REPAIR_BOT_SECRET_MISSING')
+    const credentials = normalizeWeComRepairBotCredentials(JSON.parse(
+      decryptCookie(
+        persisted.record,
+        cookieSecretKey,
+        weComRepairBotSecretScope(),
+      ),
+    ))
+    const botIdSha256 = fingerprintWeComRepairBotValue(credentials.botId)
+    const allowedUserIdSha256 = credentials.allowedUserId
+      ? fingerprintWeComRepairBotValue(credentials.allowedUserId)
+      : null
+    if (
+      (weComRepairBotConfig.botIdSha256
+        && weComRepairBotConfig.botIdSha256 !== botIdSha256)
+      || (weComRepairBotConfig.allowedUserIdSha256
+        && weComRepairBotConfig.allowedUserIdSha256
+          !== allowedUserIdSha256)
+    ) {
+      throw new Error('WECOM_REPAIR_BOT_SECRET_FINGERPRINT_MISMATCH')
+    }
+    weComRepairBotCredentials = credentials
+    weComRepairBotConfig = {
+      ...weComRepairBotConfig,
+      botIdSha256,
+      allowedUserIdSha256,
+    }
+  } catch {
+    weComRepairBotCredentials = null
+    process.stderr.write('REVIEW_WECOM_REPAIR_BOT_SECRET_STORE_IGNORED\n')
+  }
+}
+
+const applyWeComRepairBotConfigUpdate = (body) => {
+  const credentialUpdate = body?.credentialUpdate ?? { action: 'KEEP' }
+  if (
+    typeof body?.enabled !== 'boolean'
+    || typeof body?.reasonCode !== 'string'
+    || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/u.test(body.reasonCode)
+    || !credentialUpdate
+    || typeof credentialUpdate !== 'object'
+    || !['KEEP', 'REPLACE', 'CLEAR'].includes(credentialUpdate.action)
+    || (credentialUpdate.action !== 'REPLACE'
+      && (Object.hasOwn(credentialUpdate, 'botId')
+        || Object.hasOwn(credentialUpdate, 'secret')))
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_CONFIG_INVALID')
+  }
+
+  let nextCredentials = weComRepairBotCredentials
+  let nextBotIdSha256 = weComRepairBotConfig.botIdSha256
+  let nextAllowedUserIdSha256 = weComRepairBotConfig.allowedUserIdSha256
+  if (credentialUpdate.action === 'REPLACE') {
+    const candidateBotId = String(credentialUpdate.botId ?? '').trim()
+    const candidateBotIdSha256 = fingerprintWeComRepairBotValue(candidateBotId)
+    const preservePairing =
+      candidateBotIdSha256 === weComRepairBotConfig.botIdSha256
+        ? weComRepairBotCredentials?.allowedUserId ?? null
+        : null
+    nextCredentials = normalizeWeComRepairBotCredentials({
+      botId: candidateBotId,
+      secret: credentialUpdate.secret,
+      allowedUserId: preservePairing,
+    })
+    nextBotIdSha256 = candidateBotIdSha256
+    nextAllowedUserIdSha256 = preservePairing
+      ? fingerprintWeComRepairBotValue(preservePairing)
+      : null
+    if (!preservePairing) weComRepairBotPairingStore.clear()
+  } else if (credentialUpdate.action === 'CLEAR') {
+    nextCredentials = null
+    nextBotIdSha256 = null
+    nextAllowedUserIdSha256 = null
+    weComRepairBotPairingStore.clear()
+  }
+
+  if (body.enabled && !nextCredentials) {
+    throw new Error('WECOM_REPAIR_BOT_CREDENTIALS_REQUIRED')
+  }
+
+  weComRepairBotCredentials = nextCredentials
+  weComRepairBotConfig = {
+    enabled: body.enabled,
+    botIdSha256: nextBotIdSha256,
+    allowedUserIdSha256: nextAllowedUserIdSha256,
+    updatedAt: new Date().toISOString(),
+  }
+  persistWeComRepairBotSecret()
+  persistWeComRepairBotConfig()
+  weComRepairBotRuntime?.configure({
+    enabled: weComRepairBotConfig.enabled,
+    credentials: weComRepairBotCredentials,
+  })
+  return weComRepairBotStatus()
+}
+
+const startWeComRepairBotPairing = () => {
+  const status = weComRepairBotStatus()
+  if (
+    !status.enabled
+    || !status.credentialConfigured
+    || status.connectionStatus !== 'AUTHENTICATED'
+    || !status.connected
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+  }
+  return weComRepairBotPairingStore.start()
+}
+
 if (weComConfigPath && existsSync(weComConfigPath)) {
   try {
     const persisted = JSON.parse(readFileSync(weComConfigPath, 'utf8'))
@@ -2678,6 +2928,103 @@ const deliverWeComAuditNotice = async ({
   }
 }
 
+const deliverWeComRepairBotDirectMessage = async ({
+  hotelId,
+  messageKey,
+  deliveryType,
+  content,
+  captcha = null,
+}) => {
+  const existing = weComDeliveriesByKey.get(messageKey)
+  if (existing) return existing
+  const running = weComDeliveryLocks.get(messageKey)
+  if (running) return running
+  const operation = (async () => {
+    if (!weComRepairBotReady()) {
+      throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+    }
+    const attemptedAt = new Date().toISOString()
+    const delivery = {
+      deliveryId: randomUUID(),
+      messageKey,
+      deliveryType,
+      hotelId,
+      businessDate: null,
+      cutoffAt: attemptedAt,
+      attemptedAt,
+      completedAt: null,
+      deliveryStatus: 'SENDING',
+      reasonCode: 'WECOM_REPAIR_BOT_MESSAGE_SENDING',
+      endpointSha256: weComRepairBotConfig.botIdSha256,
+      messageSha256: sha256(content),
+      httpStatus: null,
+      weComCode: null,
+      automaticRetryAttempted: false,
+      partCount: 1,
+      deliveredPartCount: 0,
+      parts: [],
+      bodyPreview: '企业微信智能机器人私聊通知（内容已隐藏）',
+      deliveryChannel: 'WECOM_LONG_CONNECTION',
+    }
+    weComDeliveriesByKey.set(messageKey, delivery)
+    persistWeComDeliveries()
+    try {
+      const allowedUserId = weComRepairBotCredentials?.allowedUserId
+      if (!allowedUserId) {
+        throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
+      }
+      const result = captcha
+        ? await weComRepairBotRuntime.sendCaptcha({
+          userId: allowedUserId,
+          captcha,
+          content,
+        })
+        : await weComRepairBotRuntime.sendText(allowedUserId, content)
+      delivery.deliveryStatus = 'DELIVERED'
+      delivery.reasonCode = 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED'
+      delivery.weComCode = Number.isInteger(result?.errcode)
+        ? result.errcode
+        : null
+      delivery.deliveredPartCount = 1
+      delivery.parts.push({
+        partIndex: 0,
+        deliveryStatus: 'DELIVERED',
+        reasonCode: 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED',
+        httpStatus: null,
+        weComCode: delivery.weComCode,
+      })
+    } catch (error) {
+      delivery.deliveryStatus = 'REJECTED'
+      delivery.reasonCode = safeLuopanRepairReason(error)
+      delivery.parts.push({
+        partIndex: 0,
+        deliveryStatus: 'REJECTED',
+        reasonCode: delivery.reasonCode,
+        httpStatus: null,
+        weComCode: null,
+      })
+    }
+    delivery.completedAt = new Date().toISOString()
+    persistWeComDeliveries()
+    process.stdout.write(
+      `${JSON.stringify({
+        event: 'WECOM_REPAIR_BOT_DELIVERY_COMPLETED',
+        hotelId,
+        deliveryType,
+        deliveryStatus: delivery.deliveryStatus,
+        reasonCode: delivery.reasonCode,
+      })}\n`,
+    )
+    return delivery
+  })()
+  weComDeliveryLocks.set(messageKey, operation)
+  try {
+    return await operation
+  } finally {
+    weComDeliveryLocks.delete(messageKey)
+  }
+}
+
 const safeLuopanRepairReason = (error) => {
   const candidate = String(error?.message ?? '')
   return /^[A-Z][A-Z0-9_]{2,80}$/u.test(candidate)
@@ -2766,6 +3113,19 @@ const finishLuopanRepair = async ({
       bodyPreview:
         `罗盘简报自动修复完成 · ${hotel.hotelCode} · ${hotel.hotelName}`,
     })
+    if (handle.channel === 'WECOM_LONG_CONNECTION') {
+      await deliverWeComRepairBotDirectMessage({
+        hotelId,
+        messageKey:
+          `${hotelId}:LUOPAN_REPAIR_BOT_COMPLETE:${collection.snapshot.collectionRunId}`,
+        deliveryType: 'LUOPAN_REPAIR_BOT_COMPLETE',
+        content: [
+          '### 罗盘简报修复完成',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          '重新登录、采集及两类简报补发均已完成。',
+        ].join('\n'),
+      }).catch(() => {})
+    }
   } catch (error) {
     const reasonCode = safeLuopanRepairReason(error)
     luopanRepairChallengeStore.fail(tokenSha256, reasonCode)
@@ -2784,6 +3144,20 @@ const finishLuopanRepair = async ({
       bodyPreview:
         `罗盘简报自动修复未完成 · ${hotel.hotelCode} · ${reasonCode}`,
     }).catch(() => {})
+    if (handle.channel === 'WECOM_LONG_CONNECTION') {
+      await deliverWeComRepairBotDirectMessage({
+        hotelId,
+        messageKey:
+          `${hotelId}:LUOPAN_REPAIR_BOT_FAILED:${tokenSha256.slice(0, 16)}`,
+        deliveryType: 'LUOPAN_REPAIR_BOT_FAILED',
+        content: [
+          '### 罗盘简报修复未完成',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          `状态码：${reasonCode}`,
+          '系统已停止本次尝试，不会继续提交验证码。',
+        ].join('\n'),
+      }).catch(() => {})
+    }
   }
 }
 
@@ -2791,7 +3165,7 @@ const startLuopanRepairChallenge = async (
   hotelId,
   trigger = 'SCHEDULED_AUDIT',
 ) => {
-  if (!luopanAssistedRepairReady) return null
+  if (!luopanAssistedRepairReady()) return null
   const active = activeLuopanRepairsByHotel.get(hotelId)
   if (active) {
     return luopanRepairChallengeStore.getInternalByHash(active.tokenSha256)
@@ -2799,7 +3173,14 @@ const startLuopanRepairChallenge = async (
   const hotel = selectedHotel(hotelId)
   const config = luopanBrowserConfigRecordFor(hotelId)
   const weComConfig = weComConfigFor(hotelId)
+  const repairChannel = weComRepairBotReady()
+    ? 'WECOM_LONG_CONNECTION'
+    : luopanWebRepairReady
+      ? 'WECOM_SECURE_LINK'
+      : null
   if (
+    !repairChannel
+    ||
     hotel.pmsSystemCode !== 'LUOPAN_CLOUD'
     || !config.enabled
     || !weComConfig.enabled
@@ -2816,6 +3197,7 @@ const startLuopanRepairChallenge = async (
     hotelId,
     tokenSha256: created.tokenSha256,
     challengeId: created.record.challengeId,
+    channel: repairChannel,
     login: null,
   }
   activeLuopanRepairsByHotel.set(hotelId, handle)
@@ -2837,26 +3219,37 @@ const startLuopanRepairChallenge = async (
       created.tokenSha256,
       handle.login.captcha,
     )
-    const repairUrl = luopanRepairLink(
-      luopanRepairPublicBaseUrl,
-      created.token,
-    )
-    const delivery = await deliverWeComAuditNotice({
-      hotelId,
-      messageKey:
-        `${hotelId}:LUOPAN_REPAIR_REQUIRED:${created.record.challengeId}`,
-      deliveryType: 'LUOPAN_REPAIR_REQUIRED',
-      content: [
-        '【罗盘简报需要人工验证码】',
-        `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '原因：罗盘登录会话已失效，自动简报已暂停。',
-        '处理：点击下方链接，在企业微信内填写验证码。',
-        '有效期：10分钟，最多提交3次。',
-        repairUrl,
-      ].join('\n'),
-      bodyPreview:
-        `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
-    })
+    const delivery = repairChannel === 'WECOM_LONG_CONNECTION'
+      ? await deliverWeComRepairBotDirectMessage({
+        hotelId,
+        messageKey:
+          `${hotelId}:LUOPAN_REPAIR_REQUIRED:${created.record.challengeId}`,
+        deliveryType: 'LUOPAN_REPAIR_REQUIRED',
+        captcha: handle.login.captcha,
+        content: [
+          '### 罗盘简报需要人工验证码',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          '请查看上方验证码图片，并直接回复：',
+          `**${hotel.hotelCode} 验证码**`,
+          '有效期10分钟，最多提交3次。',
+        ].join('\n'),
+      })
+      : await deliverWeComAuditNotice({
+        hotelId,
+        messageKey:
+          `${hotelId}:LUOPAN_REPAIR_REQUIRED:${created.record.challengeId}`,
+        deliveryType: 'LUOPAN_REPAIR_REQUIRED',
+        content: [
+          '【罗盘简报需要人工验证码】',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          '原因：罗盘登录会话已失效，自动简报已暂停。',
+          '处理：点击下方链接，在企业微信内填写验证码。',
+          '有效期：10分钟，最多提交3次。',
+          luopanRepairLink(luopanRepairPublicBaseUrl, created.token),
+        ].join('\n'),
+        bodyPreview:
+          `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
+      })
     if (delivery.deliveryStatus !== 'DELIVERED') {
       throw new Error('LUOPAN_REPAIR_NOTICE_NOT_DELIVERED')
     }
@@ -2865,6 +3258,7 @@ const startLuopanRepairChallenge = async (
         event: 'LUOPAN_REPAIR_CHALLENGE_STARTED',
         hotelId,
         trigger,
+        channel: repairChannel,
         expiresAt: created.record.expiresAt,
       })}\n`,
     )
@@ -2886,8 +3280,7 @@ const startLuopanRepairChallenge = async (
   }
 }
 
-const processLuopanRepairSubmission = ({ token, captcha }) => {
-  const submitted = luopanRepairChallengeStore.submit(token, captcha)
+const processSubmittedLuopanRepair = (submitted) => {
   const challenge = luopanRepairChallengeStore.getInternalByHash(
     submitted.tokenSha256,
   )
@@ -2915,6 +3308,25 @@ const processLuopanRepairSubmission = ({ token, captcha }) => {
             result.captcha,
             result.reasonCode,
           )
+          if (handle.channel === 'WECOM_LONG_CONNECTION') {
+            const hotel = selectedHotel(challenge.hotelId)
+            const retryDelivery = await deliverWeComRepairBotDirectMessage({
+              hotelId: challenge.hotelId,
+              messageKey:
+                `${challenge.hotelId}:LUOPAN_REPAIR_CAPTCHA_RETRY:${challenge.challengeId}:${challenge.attemptsUsed}`,
+              deliveryType: 'LUOPAN_REPAIR_CAPTCHA_RETRY',
+              captcha: result.captcha,
+              content: [
+                '### 验证码未通过，请重新填写',
+                `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+                `请回复：**${hotel.hotelCode} 新验证码**`,
+                `剩余次数：${Math.max(0, challenge.maxAttempts - challenge.attemptsUsed)}`,
+              ].join('\n'),
+            })
+            if (retryDelivery.deliveryStatus !== 'DELIVERED') {
+              throw new Error('LUOPAN_REPAIR_NOTICE_NOT_DELIVERED')
+            }
+          }
           return
         }
         throw new Error(
@@ -2939,6 +3351,140 @@ const processLuopanRepairSubmission = ({ token, captcha }) => {
   return submitted.record
 }
 
+const processLuopanRepairSubmission = ({ token, captcha }) =>
+  processSubmittedLuopanRepair(
+    luopanRepairChallengeStore.submit(token, captcha),
+  )
+
+const processLuopanRepairSubmissionByHash = ({ tokenSha256, captcha }) =>
+  processSubmittedLuopanRepair(
+    luopanRepairChallengeStore.submitByHash(tokenSha256, captcha),
+  )
+
+const handleWeComRepairBotText = async (frame, replyText) => {
+  const body = frame?.body
+  const userId = typeof body?.from?.userid === 'string'
+    ? body.from.userid.trim()
+    : ''
+  if (body?.chattype !== 'single' || !userId) {
+    await replyText(frame, '请在与机器人的单聊中完成验证码修复。')
+    return
+  }
+
+  const messageId = typeof body?.msgid === 'string' ? body.msgid : ''
+  if (!messageId) {
+    await replyText(frame, '消息格式无效，请重新发送。')
+    return
+  }
+  const now = Date.now()
+  for (const [messageHash, seenAt] of seenWeComRepairBotMessageHashes) {
+    if (now - seenAt > 60 * 60 * 1000) {
+      seenWeComRepairBotMessageHashes.delete(messageHash)
+    }
+  }
+  const messageHash = fingerprintWeComRepairBotValue(messageId)
+  if (seenWeComRepairBotMessageHashes.has(messageHash)) {
+    await replyText(frame, '本条消息已接收，请勿重复提交。')
+    return
+  }
+  seenWeComRepairBotMessageHashes.set(messageHash, now)
+  while (seenWeComRepairBotMessageHashes.size > 1_000) {
+    seenWeComRepairBotMessageHashes.delete(
+      seenWeComRepairBotMessageHashes.keys().next().value,
+    )
+  }
+
+  const command = parseWeComRepairBotText(body?.text?.content)
+  if (command.type === 'PAIR') {
+    try {
+      if (!weComRepairBotCredentials) {
+        throw new Error('WECOM_REPAIR_BOT_CREDENTIALS_REQUIRED')
+      }
+      const pairing = weComRepairBotPairingStore.submit({
+        pairingCode: command.pairingCode,
+        userId,
+      })
+      weComRepairBotCredentials = normalizeWeComRepairBotCredentials({
+        ...weComRepairBotCredentials,
+        allowedUserId: pairing.userId,
+      })
+      weComRepairBotConfig = {
+        ...weComRepairBotConfig,
+        allowedUserIdSha256:
+          fingerprintWeComRepairBotValue(pairing.userId),
+        updatedAt: new Date().toISOString(),
+      }
+      persistWeComRepairBotSecret()
+      persistWeComRepairBotConfig()
+      await replyText(
+        frame,
+        '绑定成功。以后只有此企业微信账号可以提交门店验证码。',
+      )
+    } catch {
+      await replyText(frame, '配对码无效或已过期，请在后台重新生成。')
+    }
+    return
+  }
+
+  const allowedUserId = weComRepairBotCredentials?.allowedUserId
+  if (!allowedUserId || userId !== allowedUserId) {
+    await replyText(frame, '当前账号未获授权，请先使用后台配对码完成绑定。')
+    return
+  }
+
+  if (command.type === 'HELP') {
+    const pendingCodes = [...activeLuopanRepairsByHotel.values()]
+      .filter((handle) => handle.channel === 'WECOM_LONG_CONNECTION')
+      .map((handle) => selectedHotel(handle.hotelId).hotelCode)
+      .sort()
+    await replyText(
+      frame,
+      pendingCodes.length > 0
+        ? `已安全连接。待处理门店：${pendingCodes.join('、')}。请发送“门店编号 验证码”。`
+        : '已安全连接，目前没有等待填写验证码的门店。',
+    )
+    return
+  }
+
+  if (command.type === 'CAPTCHA') {
+    const hotel = hotels.find(
+      (candidate) =>
+        candidate.hotelCode === command.hotelCode
+        && candidate.pmsSystemCode === 'LUOPAN_CLOUD',
+    )
+    const handle = hotel
+      ? activeLuopanRepairsByHotel.get(hotel.hotelId)
+      : null
+    if (!hotel || !handle || handle.channel !== 'WECOM_LONG_CONNECTION') {
+      await replyText(frame, '该门店当前没有等待填写的验证码。')
+      return
+    }
+    try {
+      processLuopanRepairSubmissionByHash({
+        tokenSha256: handle.tokenSha256,
+        captcha: command.captcha,
+      })
+      await replyText(frame, '验证码已提交，系统正在验证并恢复简报。')
+    } catch {
+      await replyText(frame, '验证码未被接收，可能已过期或次数已用完。')
+    }
+    return
+  }
+
+  await replyText(
+    frame,
+    '仅支持“门店编号 验证码”，例如：014 5dm8；可发送“状态”查看待处理门店。',
+  )
+}
+
+weComRepairBotRuntime = createWeComRepairBotRuntime({
+  onTextMessage: handleWeComRepairBotText,
+})
+weComRepairBotRuntime.configure({
+  enabled: weComRepairBotConfig.enabled,
+  credentials: weComRepairBotCredentials,
+})
+
 const expireLuopanRepairSessions = async () => {
   luopanRepairChallengeStore.cleanupExpired()
   for (const [hotelId, handle] of activeLuopanRepairsByHotel) {
@@ -2954,7 +3500,7 @@ const expireLuopanRepairSessions = async () => {
 
 const scheduledBriefingAuditTick = async () => {
   await expireLuopanRepairSessions()
-  if (!luopanAssistedRepairReady) return
+  if (!luopanAssistedRepairReady()) return
   const now = new Date()
   const slot = dailyBriefingAuditSlot(now)
   if (!slot) return
@@ -3243,8 +3789,10 @@ const server = createServer(async (request, response) => {
         aiAdvice: futureBookingAiStatus,
         luopanAssistedRepair: {
           enabled: luopanAssistedRepairEnabled,
-          ready: luopanAssistedRepairReady,
-          reasonCode: luopanRepairConfigurationReason,
+          ready: luopanAssistedRepairReady(),
+          reasonCode: luopanRepairReasonCode(),
+          webLinkReady: luopanWebRepairReady,
+          weComRepairBot: weComRepairBotStatus(),
         },
       })
       return
@@ -3388,6 +3936,37 @@ const server = createServer(async (request, response) => {
     }
 
     if (path.startsWith('/api/v1/ota/') && !requireAuth(request, response)) {
+      return
+    }
+
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/ota/wecom-repair-bot-config'
+    ) {
+      json(response, 200, { data: weComRepairBotStatus() })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/ota/wecom-repair-bot-config'
+    ) {
+      const status = applyWeComRepairBotConfigUpdate(await readBody(request))
+      json(response, 200, { data: status })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/ota/wecom-repair-bot-pairing'
+    ) {
+      const body = await readBody(request)
+      if (
+        body?.reasonCode !== 'START_WECOM_REPAIR_BOT_PAIRING'
+      ) {
+        throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUEST_INVALID')
+      }
+      json(response, 201, { data: startWeComRepairBotPairing() })
       return
     }
 
@@ -4248,3 +4827,12 @@ server.listen(port, host, () => {
   }, 2_000)
   initialScheduler.unref()
 })
+
+const shutdown = () => {
+  weComRepairBotRuntime?.disconnect()
+  server.close(() => process.exit(0))
+  setTimeout(() => process.exit(0), 2_000).unref()
+}
+
+process.once('SIGINT', shutdown)
+process.once('SIGTERM', shutdown)
