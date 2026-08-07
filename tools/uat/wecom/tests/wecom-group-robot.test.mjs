@@ -92,6 +92,29 @@ test('approved operational brief does not require visible UAT or privacy lines',
   assert.deepEqual(JSON.parse(captured.init.body), operationalPayload)
 })
 
+test('combined operations brief is an approved operational template', async () => {
+  const combinedPayload = {
+    msgtype: 'text',
+    text: {
+      content: '毕节慧博酒店｜经营综合简报｜合并版预览\n📌今日｜售/余 10/20',
+      mentioned_list: ['@all'],
+    },
+  }
+  let captured
+  const result = await sendWeComGroupRobotMessage({
+    rawWebhook: webhook,
+    payload: combinedPayload,
+    expectedEndpointSha256: endpointSha256,
+    networkAuthorized: true,
+    fetchImpl: async (url, init) => {
+      captured = { url, init }
+      return response({ errcode: 0, errmsg: 'ok' })
+    },
+  })
+  assert.equal(result.deliveryStatus, 'DELIVERED')
+  assert.deepEqual(JSON.parse(captured.init.body), combinedPayload)
+})
+
 test('unregistered markerless text is rejected before HTTP', async () => {
   let attempts = 0
   await assert.rejects(

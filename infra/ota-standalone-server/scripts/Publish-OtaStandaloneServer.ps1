@@ -66,6 +66,8 @@ $runtimeSourcePaths = @(
     'tools/uat/luopan-session-state.mjs',
     'tools/uat/live-report-collector.mjs',
     'tools/uat/report-schedule.mjs',
+    'tools/uat/send-combined-operations-test.mjs',
+    'tools/uat/wecom/src/combined-operations-brief.mjs',
     'tools/uat/wecom/src/delivery-claim.mjs',
     'tools/uat/wecom/src/future-booking-ai-advice.mjs',
     'tools/uat/wecom/src/future-booking-brief.mjs',

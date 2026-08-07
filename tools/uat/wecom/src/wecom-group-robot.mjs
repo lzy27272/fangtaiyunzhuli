@@ -11,6 +11,7 @@ const LEGACY_PRIVACY_NOTICE =
 const isApprovedOperationalTemplate = (content) =>
   /^[^\n]{1,40}｜今日收益分析(?:｜[^\n]{1,16})?\n/u.test(content)
   || /^[^\n]{1,40}｜远期房态(?:｜[^\n]{1,12})?\n/u.test(content)
+  || /^[^\n]{1,40}｜经营综合简报(?:｜[^\n]{1,12})?\n/u.test(content)
   || content.startsWith('【热销房型售罄预警】\n')
 
 export class SafeWeComError extends Error {
