@@ -278,6 +278,8 @@ const safeRows = (rows) => {
       remainingRooms: remainingRooms(row),
       adr: finiteOrNull(row.adr),
       hourlyNetRoomNights: finiteOrNull(row.hourlyNetRoomNights),
+      cumulativeNetRoomNights:
+        finiteOrNull(row.cumulativeNetRoomNights),
       previousDayNetRoomNights:
         finiteOrNull(row.previousDayNetRoomNights),
     }

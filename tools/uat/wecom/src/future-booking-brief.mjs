@@ -90,6 +90,7 @@ const lineFor = (row, compactMode = false) => {
   const remaining = remainingRooms(row)
   const rate = finiteNumber(row.occupancyPercent)
   const hourly = finiteNumber(row.hourlyNetRoomNights)
+  const cumulative = finiteNumber(row.cumulativeNetRoomNights)
   const yesterday = finiteNumber(row.previousDayNetRoomNights)
   const inferredAdr = finiteNumber(row.inferredHourlyAdr)
   const hourlyAdr =
@@ -101,11 +102,11 @@ const lineFor = (row, compactMode = false) => {
   if (compactMode) {
     return `${shortDate(row.stayDate)}｜${compact(booked, 1)}/${compact(remaining, 1)}`
       + `｜${compact(rate, 0)}%｜${money(row.adr)}`
-      + `｜${hourlyAdr}/${signed(yesterday)}`
+      + `｜${hourlyAdr}/${signed(cumulative)}/${signed(yesterday)}`
   }
   return `${shortDate(row.stayDate)}｜${compact(booked, 1)}/${compact(remaining, 1)}`
     + `｜${compact(rate, 0)}%｜${money(row.adr)}`
-    + `｜${hourlyAdr}｜${signed(yesterday)}`
+    + `｜${hourlyAdr}｜${signed(cumulative)}｜${signed(yesterday)}`
 }
 
 const adviceFor = (rows) => {
@@ -269,6 +270,12 @@ export const createFutureBookingWeComPayloads = (
     (sum, row) => sum + (finiteNumber(row.hourlyNetRoomNights) ?? 0),
     0,
   )
+  const cumulativeValues = rows
+    .map((row) => finiteNumber(row.cumulativeNetRoomNights))
+    .filter((value) => value !== null)
+  const totalCumulativeNet = cumulativeValues.length > 0
+    ? cumulativeValues.reduce((sum, value) => sum + value, 0)
+    : null
   const prefix =
     typeof options.messagePrefix === 'string' && options.messagePrefix.trim()
       ? `｜${options.messagePrefix.trim().slice(0, 12)}`
@@ -279,10 +286,12 @@ export const createFutureBookingWeComPayloads = (
     `${hotel.hotelName.trim().slice(0, 40)}｜远期房态${prefix}`,
     `⏰截止 ${cutoffHour(snapshot.observedAt)}`
       + `｜上时${localTime(baselines.hourlyBaselineAt)}`
+      + `｜累起${localTime(baselines.cumulativeBaselineAt, true)}`
       + `｜昨末${localTime(baselines.previousDayEndAt, true)}`,
     `📊未来14天｜小时净${signed(totalHourlyNet, 1)}`
+      + `｜周期累计净${signed(totalCumulativeNet, 1)}`
       + `｜15-90天P1日期${monitoredP1Count}`,
-    '日期｜售/余｜率｜ADR｜时｜昨',
+    '日期｜售/余｜率｜ADR｜时｜累｜昨',
     ...rows.map((row) => lineFor(row, compactMode)),
     '*小时成交均价按相邻快照房费差额推算，仅作观察',
     '',

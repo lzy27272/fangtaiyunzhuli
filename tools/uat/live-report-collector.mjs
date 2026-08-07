@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname } from 'node:path'
+import { briefingCycleStart } from './report-schedule.mjs'
 
 const MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 const SNAPSHOT_RETENTION = 50
@@ -848,6 +849,25 @@ const previousCalendarDayEndBaseline = (
       String(right.observedAt).localeCompare(String(left.observedAt)))[0] ?? null
 }
 
+const currentBriefingCycleBaseline = (
+  snapshot,
+  previousSnapshots,
+) => {
+  const observedAt = new Date(snapshot.observedAt)
+  const cycleStartMs = new Date(briefingCycleStart(observedAt)).getTime()
+  if (!Number.isFinite(cycleStartMs)) return null
+  return previousSnapshots
+    .filter((candidate) => {
+      const candidateAtMs = new Date(candidate?.observedAt ?? '').getTime()
+      return Array.isArray(candidate?.futureDaily)
+        && ['COMPLETE', 'PARTIAL'].includes(candidate?.completeness)
+        && Number.isFinite(candidateAtMs)
+        && candidateAtMs < cycleStartMs
+    })
+    .sort((left, right) =>
+      String(right.observedAt).localeCompare(String(left.observedAt)))[0] ?? null
+}
+
 const futureBookingChangesFor = (
   snapshot,
   previousSnapshots,
@@ -861,6 +881,10 @@ const futureBookingChangesFor = (
     snapshot,
     previousSnapshots,
   )
+  const cumulativeBaseline = currentBriefingCycleBaseline(
+    snapshot,
+    previousSnapshots,
+  )
   const hourlyRows = new Map(
     (hourlyBaseline?.futureDaily ?? [])
       .map((row) => [row.stayDate, row]),
@@ -869,12 +893,18 @@ const futureBookingChangesFor = (
     (previousDayEnd?.futureDaily ?? [])
       .map((row) => [row.stayDate, row]),
   )
+  const cumulativeRows = new Map(
+    (cumulativeBaseline?.futureDaily ?? [])
+      .map((row) => [row.stayDate, row]),
+  )
   const daily = (snapshot.futureDaily ?? []).map((row) => {
     const bookedRoomNights = futureBookedRoomNights(row)
     const hourly = hourlyRows.get(row.stayDate)
     const yesterday = previousDayRows.get(row.stayDate)
+    const cumulative = cumulativeRows.get(row.stayDate)
     const hourlyBooked = futureBookedRoomNights(hourly)
     const yesterdayBooked = futureBookedRoomNights(yesterday)
+    const cumulativeBooked = futureBookedRoomNights(cumulative)
     const hourlyNetRoomNights =
       bookedRoomNights === null || hourlyBooked === null
         ? null
@@ -883,6 +913,10 @@ const futureBookingChangesFor = (
       bookedRoomNights === null || yesterdayBooked === null
         ? null
         : rounded(bookedRoomNights - yesterdayBooked)
+    const cumulativeNetRoomNights =
+      bookedRoomNights === null || cumulativeBooked === null
+        ? null
+        : rounded(bookedRoomNights - cumulativeBooked)
     const hourlyRoomFeeDelta =
       finiteNumber(row.roomFee) === null || finiteNumber(hourly?.roomFee) === null
         ? null
@@ -898,6 +932,7 @@ const futureBookingChangesFor = (
       bookedRoomNights,
       occupancyPercent: occupancyPercentFor(row),
       hourlyNetRoomNights,
+      cumulativeNetRoomNights,
       previousDayNetRoomNights,
       hourlyAdrDelta:
         finiteNumber(row.adr) === null || finiteNumber(hourly?.adr) === null
@@ -908,10 +943,11 @@ const futureBookingChangesFor = (
   })
   return {
     basis:
-      hourlyBaseline || previousDayEnd
+      hourlyBaseline || cumulativeBaseline || previousDayEnd
         ? 'FUTURE_SNAPSHOT_DIFF'
         : 'BASELINE_PENDING',
     hourlyBaselineAt: hourlyBaseline?.observedAt ?? null,
+    cumulativeBaselineAt: cumulativeBaseline?.observedAt ?? null,
     previousDayEndAt: previousDayEnd?.observedAt ?? null,
     daily,
   }

@@ -4,6 +4,9 @@ import {
   collectLiveReports,
   monitorFromSnapshot,
 } from '../../../tools/uat/live-report-collector.mjs'
+import {
+  futureBookingChangesForLuopan,
+} from '../../../tools/uat/luopan-controlled-browser-collector.mjs'
 
 const hotel = {
   tenantId: 'tenant-001',
@@ -372,7 +375,7 @@ test('08:00 first brief summarizes changes since the final 02:00 snapshot', asyn
   })
 })
 
-test('future booking changes compare both the previous hour and yesterday end', async () => {
+test('future booking changes compare hour, cycle and yesterday baselines', async () => {
   const previousDay = await collectLiveReports({
     hotel,
     sources,
@@ -387,11 +390,24 @@ test('future booking changes compare both the previous hour and yesterday end', 
     collectionRunId: 'hourly-future-baseline',
     observedAt: '2026-07-26T10:00:00+08:00',
   }
+  const cumulativeBaseline = {
+    ...previousDay.snapshot,
+    collectionRunId: 'cycle-future-baseline',
+    observedAt: '2026-07-26T02:00:00+08:00',
+    futureDaily: previousDay.snapshot.futureDaily.map((row) =>
+      row.stayDate === '2026-07-27'
+        ? { ...row, roomNights: 3, soldRooms: 3 }
+        : row),
+  }
   const current = await collectLiveReports({
     hotel,
     sources,
     cookiesBySourceId,
-    previousSnapshots: [previousDay.snapshot, hourlyBaseline],
+    previousSnapshots: [
+      previousDay.snapshot,
+      cumulativeBaseline,
+      hourlyBaseline,
+    ],
     secretKey: 'unit-test-hmac-key',
     now: new Date('2026-07-26T03:00:00Z'),
     fetchImpl: fetchFor(2, []),
@@ -405,14 +421,55 @@ test('future booking changes compare both the previous hour and yesterday end', 
     current.snapshot.futureBookingChanges.previousDayEndAt,
     '2026-07-25T23:41:00+08:00',
   )
+  assert.equal(
+    current.snapshot.futureBookingChanges.cumulativeBaselineAt,
+    '2026-07-26T02:00:00+08:00',
+  )
   const july27 = current.snapshot.futureBookingChanges.daily.find(
     (row) => row.stayDate === '2026-07-27',
   )
   assert.equal(july27.bookedRoomNights, 5)
   assert.equal(july27.occupancyPercent, 50)
   assert.equal(july27.hourlyNetRoomNights, 3)
+  assert.equal(july27.cumulativeNetRoomNights, 2)
   assert.equal(july27.previousDayNetRoomNights, 3)
   assert.equal(july27.inferredHourlyAdr, 250)
+})
+
+test('Luopan future booking changes keep cycle cumulative separate from yesterday', () => {
+  const row = (soldRooms, roomFee = soldRooms * 200) => ({
+    stayDate: '2026-08-20',
+    soldRooms,
+    roomFee,
+    occupancyRate: soldRooms,
+    adr: 200,
+  })
+  const previous = (observedAt, soldRooms) => ({
+    sourceSystem: 'LUOPAN_CLOUD',
+    observedAt,
+    completeness: 'COMPLETE',
+    overview: {},
+    futureDaily: [row(soldRooms)],
+  })
+  const current = {
+    ...previous('2026-08-07T13:00:00+08:00', 20),
+  }
+  const changes = futureBookingChangesForLuopan(
+    current,
+    [
+      previous('2026-08-06T23:30:00+08:00', 10),
+      previous('2026-08-07T02:00:00+08:00', 12),
+      previous('2026-08-07T12:00:00+08:00', 19),
+    ],
+    new Date(current.observedAt).getTime(),
+  )
+
+  assert.equal(changes.hourlyBaselineAt, '2026-08-07T12:00:00+08:00')
+  assert.equal(changes.cumulativeBaselineAt, '2026-08-07T02:00:00+08:00')
+  assert.equal(changes.previousDayEndAt, '2026-08-06T23:30:00+08:00')
+  assert.equal(changes.daily[0].hourlyNetRoomNights, 1)
+  assert.equal(changes.daily[0].cumulativeNetRoomNights, 8)
+  assert.equal(changes.daily[0].previousDayNetRoomNights, 10)
 })
 
 test('empty monitor does not expose simulation data or a false zero', () => {

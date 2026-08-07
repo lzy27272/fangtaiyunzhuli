@@ -12,6 +12,7 @@ import {
 } from './luopan-profile.mjs'
 import { isAuthenticationUrl } from './luopan-network-sanitizer.mjs'
 import { applyLuopanSessionState } from './luopan-session-state.mjs'
+import { briefingCycleStart } from './report-schedule.mjs'
 
 const require = createRequire(import.meta.url)
 let cachedChromium = null
@@ -324,7 +325,7 @@ const metricDeltaFor = (
   }
 }
 
-const futureBookingChangesFor = (
+export const futureBookingChangesForLuopan = (
   snapshot,
   previousSnapshots,
   observedAtMs,
@@ -344,23 +345,47 @@ const futureBookingChangesFor = (
     )
     .sort((left, right) =>
       String(right.observedAt).localeCompare(String(left.observedAt)))[0] ?? null
+  const cycleStartMs = new Date(
+    briefingCycleStart(new Date(snapshot.observedAt)),
+  ).getTime()
+  const cumulativeBaseline = previousSnapshots
+    .filter((candidate) => {
+      const candidateAtMs = new Date(candidate?.observedAt ?? '').getTime()
+      return candidate?.sourceSystem === 'LUOPAN_CLOUD'
+        && Array.isArray(candidate?.futureDaily)
+        && ['COMPLETE', 'PARTIAL'].includes(candidate?.completeness)
+        && Number.isFinite(candidateAtMs)
+        && Number.isFinite(cycleStartMs)
+        && candidateAtMs < cycleStartMs
+    })
+    .sort((left, right) =>
+      String(right.observedAt).localeCompare(String(left.observedAt)))[0] ?? null
   const hourlyRows = new Map(
     (hourly?.futureDaily ?? []).map((row) => [row.stayDate, row]),
   )
   const yesterdayRows = new Map(
     (yesterday?.futureDaily ?? []).map((row) => [row.stayDate, row]),
   )
+  const cumulativeRows = new Map(
+    (cumulativeBaseline?.futureDaily ?? [])
+      .map((row) => [row.stayDate, row]),
+  )
   return {
     basis:
-      hourly || yesterday ? 'FUTURE_SNAPSHOT_DIFF' : 'BASELINE_PENDING',
+      hourly || cumulativeBaseline || yesterday
+        ? 'FUTURE_SNAPSHOT_DIFF'
+        : 'BASELINE_PENDING',
     hourlyBaselineAt: hourly?.observedAt ?? null,
+    cumulativeBaselineAt: cumulativeBaseline?.observedAt ?? null,
     previousDayEndAt: yesterday?.observedAt ?? null,
     daily: snapshot.futureDaily.map((row) => {
       const hourlyRow = hourlyRows.get(row.stayDate)
       const yesterdayRow = yesterdayRows.get(row.stayDate)
+      const cumulativeRow = cumulativeRows.get(row.stayDate)
       const sold = finiteNumber(row.soldRooms)
       const hourlySold = finiteNumber(hourlyRow?.soldRooms)
       const yesterdaySold = finiteNumber(yesterdayRow?.soldRooms)
+      const cumulativeSold = finiteNumber(cumulativeRow?.soldRooms)
       const hourlyNetRoomNights =
         sold === null || hourlySold === null
           ? null
@@ -379,6 +404,10 @@ const futureBookingChangesFor = (
         bookedRoomNights: sold,
         occupancyPercent: row.occupancyRate,
         hourlyNetRoomNights,
+        cumulativeNetRoomNights:
+          sold === null || cumulativeSold === null
+            ? null
+            : rounded(sold - cumulativeSold),
         previousDayNetRoomNights:
           sold === null || yesterdaySold === null
             ? null
@@ -579,7 +608,7 @@ export const collectLuopanControlledBrowser = async ({
       previousSnapshots,
       now.getTime(),
     )
-    snapshot.futureBookingChanges = futureBookingChangesFor(
+    snapshot.futureBookingChanges = futureBookingChangesForLuopan(
       snapshot,
       previousSnapshots,
       now.getTime(),
