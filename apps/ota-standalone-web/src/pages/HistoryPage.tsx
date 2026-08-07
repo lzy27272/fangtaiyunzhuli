@@ -174,7 +174,8 @@ export function HistoryPage({ context, canConfigure }: Props) {
                 <p className="eyebrow">WECOM UAT AUTOMATION</p>
                 <h3>企业微信群机器人自动推送</h3>
                 <p>
-                  08:00至次日02:00每30分钟采集，整点约06分推送；测试阶段固定
+                  08:00至次日02:00每30分钟采集，整点约06分推送今日经营、约08分推送远期房态；
+                  热销房型可靠售罄时，在两类简报送达后约09分单独预警。测试阶段固定
                   @所有人，并在正文标注“UAT测试｜非经营指令”。
                   每个模板压缩为1条高密度消息，在企微安全长度内保留核心经营数据。
                   启用后会按时间顺序补发已保存但尚未发送的整点简报。
@@ -237,7 +238,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
               <span>
                 Webhook｜{weComConfig?.webhookConfigured ? '已配置' : '未配置'}
               </span>
-              <span>发送时间｜08:00至次日02:00整点约06分</span>
+              <span>发送时间｜今日06分 · 远期08分 · 售罄预警09分</span>
               <span>
                 指纹｜
                 {weComConfig?.endpointSha256

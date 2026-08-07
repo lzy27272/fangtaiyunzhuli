@@ -194,7 +194,7 @@ export function MonitorPage({
       setHotRoomTypeCodes(saved.roomTypeCodes)
       setSavedHotRoomTypeCodes(saved.roomTypeCodes)
       setMonitor(await loadMonitor(context))
-      setNotice('热销房型配置已保存；可售为0时生成售罄简报告警。')
+      setNotice('热销房型配置已保存；可售为0或以下时生成独立售罄预警。')
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : '保存热销房型失败',
@@ -596,7 +596,7 @@ export function MonitorPage({
                 <div>
                   <h3>热销房型监测配置</h3>
                   <p>
-                    勾选后持续监测实体可售量；等于0时生成售罄告警，
+                    勾选后持续监测实体可售量；为0或以下时生成售罄告警，
                     数据缺失时不误报。
                   </p>
                 </div>
@@ -624,7 +624,7 @@ export function MonitorPage({
                 >
                   {alert.message}
                   {alert.state === 'SOLD_OUT'
-                    ? '｜已进入简报告警候选，将随下一小时简报处理。'
+                    ? '｜已进入独立预警候选，将在两类简报送达后1分钟推送。'
                     : ''}
                 </div>
               ))}

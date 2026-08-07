@@ -459,6 +459,8 @@ export interface WeComTestSuiteView {
 export interface WeComConfigView {
   enabled: boolean
   sendMinute: 6
+  futureBriefSendMinute: 8
+  hotSellingSoldOutAlertSendMinute: 9
   deliveryMode: 'UAT_SANITIZED_AT_ALL'
   webhookConfigured: boolean
   endpointSha256: string | null

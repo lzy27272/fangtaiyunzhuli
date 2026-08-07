@@ -161,8 +161,9 @@ test('confirmed 1900-byte monitor template produces one sanitized @all message',
     /⏰截止 07-26 02:00｜营业日 07-25｜采集 02:02（4\/4完整）/,
   )
   assert.match(content, /房费｜¥18,440.65（↑166.00）/)
-  assert.match(content, /售罄｜TAI-PLUS大床房、TAI-PRO双床房/)
-  assert.match(content, /热销库存｜TAI-PLUS大床房0/)
+  assert.doesNotMatch(content, /售罄｜/)
+  assert.doesNotMatch(content, /热销库存｜/)
+  assert.doesNotMatch(content, /TAI-PLUS大床房|TAI-PRO双床房/)
   assert.match(content, /今日有效｜64（33\/0\/29\/2）/)
   assert.match(content, /新增｜4（2\/1\/1\/0）/)
   assert.match(content, /P1｜暂无法判断/)
@@ -210,7 +211,7 @@ test('08:00 first brief labels the 02:00 to 08:00 pause summary', () => {
   assert.match(payloads[0].text.content, /✅停播汇总｜02:00→08:00/)
 })
 
-test('long room names are summarized before the single-message limit', () => {
+test('hot-selling room names stay out of the today brief', () => {
   const manyRooms = Array.from({ length: 30 }, (_, index) => ({
     displayName: `非常非常长的测试实体房型名称-${index + 1}`,
     primaryAvailableRooms: 0,
@@ -225,7 +226,7 @@ test('long room names are summarized before the single-message limit', () => {
       state: 'SOLD_OUT',
     })),
   }, { snapshot })[0]
-  assert.equal(payload.text.content.includes('等30型'), true)
+  assert.equal(payload.text.content.includes('非常非常长的测试实体房型名称'), false)
   assert.ok(
     Buffer.byteLength(payload.text.content, 'utf8')
       <= reportMonitorBriefLimits.maxMessageBytes,

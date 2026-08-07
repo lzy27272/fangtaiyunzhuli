@@ -61,6 +61,11 @@ import {
   reconcileFutureDemandRiskStates,
   selectFutureDemandRiskCandidates,
 } from './wecom/src/future-demand-risk.mjs'
+import {
+  createHotSellingSoldOutWeComPayloads,
+  hourlyBriefBundleDelivered,
+  selectHotSellingSoldOutAlerts,
+} from './wecom/src/hot-selling-sold-out-alert.mjs'
 import { createReportMonitorWeComPayloads } from './wecom/src/report-monitor-brief.mjs'
 import {
   fingerprintWeComWebhook,
@@ -1661,6 +1666,7 @@ const weComConfigFor = (hotelId) => {
     enabled: config.enabled === true,
     sendMinute: 6,
     futureBriefSendMinute: 8,
+    hotSellingSoldOutAlertSendMinute: 9,
     futureDemandP1Immediate: true,
     deliveryMode: 'UAT_SANITIZED_AT_ALL',
     webhookConfigured: Boolean(secret),
@@ -3775,6 +3781,75 @@ const scheduledFutureBookingDeliveryTick = async () => {
   }
 }
 
+const scheduledHotSellingSoldOutDeliveryTick = async () => {
+  const now = new Date()
+  if (!isBriefDeliveryTime(now, 9)) return
+  const { hourKey } = shanghaiScheduleParts(now)
+  for (const hotel of hotels) {
+    const config = weComConfigFor(hotel.hotelId)
+    if (!config.enabled || !config.webhookConfigured) continue
+    const candidates = selectHourlyDeliveryCandidates({
+      hotelId: hotel.hotelId,
+      snapshots: postStartupBriefingSnapshots(
+        briefingCycleSnapshots(
+          liveSnapshotStore[hotel.hotelId] ?? [],
+          now,
+        ),
+      ).filter((snapshot) => {
+        const monitor = monitorFromSnapshot(
+          snapshot,
+          hotel,
+          null,
+          hotSellingRoomTypesFor(hotel.hotelId).roomTypeCodes,
+        )
+        return selectHotSellingSoldOutAlerts(monitor).length > 0
+      }),
+      deliveredMessageKeys: new Set(weComDeliveriesByKey.keys()),
+      businessDayControl: businessDayControlFor(hotel.hotelId),
+      messageKeySuffix: 'HOT_SELLING_SOLD_OUT_V1',
+      limit: 4,
+    }).filter((candidate) => hourlyBriefBundleDelivered({
+      hotelId: hotel.hotelId,
+      candidate,
+      deliveriesByKey: weComDeliveriesByKey,
+      now,
+    }))
+    for (const candidate of candidates) {
+      const messagePrefix =
+        candidate.snapshotHour === hourKey ? null : '补发售罄预警'
+      try {
+        await deliverWeComSnapshot({
+          hotelId: hotel.hotelId,
+          snapshot: candidate.snapshot,
+          messageKey: candidate.messageKey,
+          messagePrefix,
+          deliveryType: 'HOT_SELLING_SOLD_OUT',
+          payloadFactory: ({ hotel: selected, snapshot: current }) =>
+            createHotSellingSoldOutWeComPayloads(
+              monitorFromSnapshot(
+                current,
+                selected,
+                null,
+                hotSellingRoomTypesFor(selected.hotelId).roomTypeCodes,
+              ),
+              { messagePrefix },
+            ),
+        })
+      } catch (error) {
+        process.stderr.write(
+          `${JSON.stringify({
+            event: 'HOT_SELLING_SOLD_OUT_WECOM_DELIVERY_FAILED_CLOSED',
+            hotelId: hotel.hotelId,
+            messageKey: candidate.messageKey,
+            reasonCode:
+              error?.message ?? 'HOT_SELLING_SOLD_OUT_DELIVERY_FAILED_CLOSED',
+          })}\n`,
+        )
+      }
+    }
+  }
+}
+
 const briefFor = (hotelId) => {
   const hotel = selectedHotel(hotelId)
   const snapshot = (liveSnapshotStore[hotelId] ?? []).at(-1)
@@ -4871,6 +4946,7 @@ server.listen(port, host, () => {
     void scheduledCollectionTick()
     void scheduledWeComDeliveryTick()
     void scheduledFutureBookingDeliveryTick()
+    void scheduledHotSellingSoldOutDeliveryTick()
     void scheduledBriefingAuditTick()
   }, 30_000)
   scheduler.unref()
@@ -4878,6 +4954,7 @@ server.listen(port, host, () => {
     void scheduledCollectionTick()
     void scheduledWeComDeliveryTick()
     void scheduledFutureBookingDeliveryTick()
+    void scheduledHotSellingSoldOutDeliveryTick()
     void scheduledBriefingAuditTick()
   }, 2_000)
   initialScheduler.unref()

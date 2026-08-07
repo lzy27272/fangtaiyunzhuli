@@ -62,6 +62,7 @@ test('future booking brief is one @all message with 14 stay dates under 1900 byt
     payloads[0].text.content,
     /^用途｜/m,
   )
+  assert.doesNotMatch(payloads[0].text.content, /热销房型售罄|售罄房型/)
   assert.match(payloads[0].text.content, /日期｜售\/余｜率｜ADR｜时｜累｜昨/)
   assert.match(payloads[0].text.content, /累起07-26 02:02/)
   assert.match(payloads[0].text.content, /08-09｜[^\n]*｜\+10｜/)

@@ -423,7 +423,7 @@ export function ReportSourceConfigPage({
         <span>→</span>
         <strong>融合计算</strong>
         <span>→</span>
-        <strong>小时简报 / P1</strong>
+        <strong>两类简报 / 售罄预警 / P1</strong>
         <span>→</span>
         <strong>企微机器人</strong>
       </div>
@@ -438,6 +438,11 @@ export function ReportSourceConfigPage({
           <span>整点简报</span>
           <strong>08:00—次日02:00整点</strong>
           <small>每30分钟采集；02:00后暂停，08:00首轮汇总停播时段。</small>
+        </article>
+        <article>
+          <span>热销房型售罄</span>
+          <strong>两类简报后1分钟独立推送</strong>
+          <small>仅可靠可售量为0或以下时触发；数据缺失不误报，同小时不重复。</small>
         </article>
         <article>
           <span>P1房态风险</span>

@@ -122,22 +122,6 @@ const listWithinByteBudget = (
   return kept.length > 0 ? `${kept.join('、')}、${suffix}` : `共${values.length}型`
 }
 
-const soldOutRooms = (monitor) =>
-  (monitor.inventory ?? [])
-    .filter((room) => {
-      const available = finiteNumber(room.primaryAvailableRooms)
-      return available !== null && available <= 0
-    })
-    .map((room) => normalizeRoomName(room.displayName))
-
-const hotInventory = (monitor) =>
-  (monitor.hotSellingAlerts ?? []).map((alert) => {
-    const available = finiteNumber(alert.availableRooms)
-    return `${normalizeRoomName(alert.displayName)}${
-      available === null ? '?' : compactNumber(available)
-    }`
-  })
-
 const sourceStatus = (monitor) => {
   const sources = Array.isArray(monitor.sources) ? monitor.sources : []
   const complete = sources.filter(
@@ -378,8 +362,10 @@ export const createReportMonitorWeComPayloads = (
   const totalRooms = finiteNumber(snapshot?.overview?.roomCount)
   const availableRooms = metricNumber(monitor.metrics?.availableRooms)
   const sellProgress = metricNumber(monitor.metrics?.sellProgress)
-  const soldOut = soldOutRooms(monitor)
-  const hotRooms = hotInventory(monitor)
+  const soldOutCount = (monitor.inventory ?? []).filter((room) => {
+    const available = finiteNumber(room.primaryAvailableRooms)
+    return available !== null && available <= 0
+  }).length
   const targets = targetValues(monitor, options)
   const paceProgress = finiteNumber(options.paceProgressPercent)
   const roomNightDelta = finiteNumber(metricDelta?.roomNights)
@@ -423,12 +409,12 @@ export const createReportMonitorWeComPayloads = (
     : '基线待建立'
   const inventoryText =
     monitor.inventory?.length > 0
-      ? soldOut.length === monitor.inventory.length
-        ? `${soldOut.length}个实体房型售罄`
-        : `售罄${soldOut.length}/${monitor.inventory.length}个实体房型`
+      ? soldOutCount === monitor.inventory.length
+        ? `${soldOutCount}个实体房型售罄`
+        : `售罄${soldOutCount}/${monitor.inventory.length}个实体房型`
       : '库存数据不可用'
 
-  const linesFor = (soldOutBudget, hotRoomBudget) => [
+  const lines = [
     '【UAT测试｜非经营指令】',
     `${monitor.hotelName.trim().slice(0, 40)}｜今日收益分析${messagePrefix}`,
     `⏰截止 ${cutoffHour(monitor.cutoffAt)}`
@@ -440,8 +426,6 @@ export const createReportMonitorWeComPayloads = (
       + `${availableRooms === 0 ? '（满房）' : ''}`
       + `｜差额目标｜${targets.gap === null ? '待配置' : currency(targets.gap)}`
       + `｜剩余均价｜${targets.remainingAverage}`,
-    `售罄｜${listWithinByteBudget(soldOut, soldOutBudget, '暂无')}`,
-    '',
     '🎯今日进度',
     `目标任务｜${targets.targetRevenue === null ? '待配置' : currency(targets.targetRevenue)}`
       + `｜目标均价｜${targets.targetAdr === null ? '待配置' : currency(targets.targetAdr)}`,
@@ -469,7 +453,6 @@ export const createReportMonitorWeComPayloads = (
     `价格｜${priceText}`,
     `时速｜${speedText}`,
     `库存｜${inventoryText}`,
-    `热销库存｜${listWithinByteBudget(hotRooms, hotRoomBudget, '暂无配置')}`,
     p1Risk,
     '',
     `【订单汇报｜统计日${shortDate(monitor.businessDate)}】`,
@@ -483,19 +466,7 @@ export const createReportMonitorWeComPayloads = (
     '',
     '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
   ]
-
-  for (const [soldOutBudget, hotRoomBudget] of [
-    [420, 300],
-    [260, 170],
-    [160, 90],
-  ]) {
-    try {
-      return [buildPayload(linesFor(soldOutBudget, hotRoomBudget))]
-    } catch (error) {
-      if (error?.message !== 'REPORT_MONITOR_MESSAGE_TOO_LARGE') throw error
-    }
-  }
-  return [buildPayload(linesFor(80, 60))]
+  return [buildPayload(lines)]
 }
 
 export const reportMonitorBriefLimits = Object.freeze({
