@@ -31,22 +31,11 @@ test('same completeness selects the latest retry and ignores late snapshots', ()
     snapshots: [
       snapshot('2026-07-26T03:01:10+08:00', 'PARTIAL'),
       snapshot('2026-07-26T03:04:10+08:00', 'PARTIAL'),
-      snapshot('2026-07-26T03:30:10+08:00', 'COMPLETE'),
+      snapshot('2026-07-26T03:06:10+08:00', 'COMPLETE'),
     ],
   })
   assert.equal(candidates.length, 1)
   assert.equal(candidates[0].snapshot.observedAt, '2026-07-26T03:04:10+08:00')
-})
-
-test('a serialized store collection finishing after minute five is deliverable', () => {
-  const candidates = selectHourlyDeliveryCandidates({
-    hotelId: 'hotel-007',
-    snapshots: [
-      snapshot('2026-07-26T14:17:10+08:00', 'COMPLETE'),
-    ],
-  })
-  assert.equal(candidates.length, 1)
-  assert.equal(candidates[0].snapshotHour, '2026-07-26T14')
 })
 
 test('delivered hours stay excluded and the backlog remains chronological', () => {

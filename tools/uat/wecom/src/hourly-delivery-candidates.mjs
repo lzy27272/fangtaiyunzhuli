@@ -10,7 +10,7 @@ const snapshotHourKey = (snapshot) => {
   )
   if (!match) return null
   const minute = Number(match[2])
-  if (!Number.isInteger(minute) || minute > 29) return null
+  if (!Number.isInteger(minute) || minute > 5) return null
   return match[1]
 }
 

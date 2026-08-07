@@ -86,7 +86,8 @@ export const isScheduledBriefSnapshot = (snapshot) => {
   const minute = Number(match[2])
   return (
     isBroadcastHour(hour)
-    && minute <= 29
+    && minute <= 5
+    && !(hour === BROADCAST_END_HOUR && minute > 5)
   )
 }
 
@@ -105,24 +106,5 @@ export const briefingSnapshotsObservedAfter = (snapshots, startedAt) => {
   return snapshots.filter((snapshot) => {
     const observedAt = new Date(snapshot?.observedAt ?? '').getTime()
     return Number.isFinite(observedAt) && observedAt >= startedAtTime
-  })
-}
-
-export const briefingSnapshotsObservedAfterOrCurrentHour = (
-  snapshots,
-  startedAt,
-  date = new Date(),
-) => {
-  const startedAtTime = new Date(startedAt).getTime()
-  if (!Number.isFinite(startedAtTime)) return []
-  const { hourKey } = shanghaiScheduleParts(date)
-  return snapshots.filter((snapshot) => {
-    const observedAtText = String(snapshot?.observedAt ?? '')
-    const observedAt = new Date(observedAtText).getTime()
-    return Number.isFinite(observedAt)
-      && (
-        observedAt >= startedAtTime
-        || observedAtText.startsWith(`${hourKey}:`)
-      )
   })
 }

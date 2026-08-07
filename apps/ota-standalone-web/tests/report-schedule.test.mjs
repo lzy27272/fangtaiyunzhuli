@@ -4,7 +4,6 @@ import {
   briefingCycleSnapshots,
   briefingCycleStart,
   briefingSnapshotsObservedAfter,
-  briefingSnapshotsObservedAfterOrCurrentHour,
   collectionSlotFor,
   isBriefDeliveryTime,
   isBroadcastWindowOpen,
@@ -60,15 +59,10 @@ test('08:00 starts a new briefing cycle without replaying pause snapshots', () =
     { observedAt: '2026-07-29T02:00:00+08:00' },
     { observedAt: '2026-07-29T03:00:00+08:00' },
     { observedAt: '2026-07-29T08:00:00+08:00' },
-    { observedAt: '2026-07-29T08:17:00+08:00' },
-    { observedAt: '2026-07-29T08:30:00+08:00' },
   ], now)
   assert.deepEqual(
     selected.map((snapshot) => snapshot.observedAt),
-    [
-      '2026-07-29T08:00:00+08:00',
-      '2026-07-29T08:17:00+08:00',
-    ],
+    ['2026-07-29T08:00:00+08:00'],
   )
   assert.equal(
     briefingCycleStart(localDate('2026-07-29T01:00:00')),
@@ -92,20 +86,5 @@ test('service restart does not replay briefing snapshots observed before startup
       'invalid',
     ),
     [],
-  )
-})
-
-test('service restart can finish only the undelivered current-hour batch', () => {
-  const selected = briefingSnapshotsObservedAfterOrCurrentHour([
-    { observedAt: '2026-07-29T13:04:00+08:00' },
-    { observedAt: '2026-07-29T14:17:00+08:00' },
-    { observedAt: '2026-07-29T14:20:30+08:00' },
-  ], '2026-07-29T14:20:00+08:00', localDate('2026-07-29T14:21:00'))
-  assert.deepEqual(
-    selected.map((snapshot) => snapshot.observedAt),
-    [
-      '2026-07-29T14:17:00+08:00',
-      '2026-07-29T14:20:30+08:00',
-    ],
   )
 })
