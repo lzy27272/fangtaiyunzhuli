@@ -41,7 +41,7 @@ import {
 } from './live-report-collector.mjs'
 import {
   briefingCycleSnapshots,
-  briefingSnapshotsObservedAfter,
+  briefingSnapshotsObservedAfterOrCurrentHour,
   collectionSlotFor,
   isBriefDeliveryTime,
   isBroadcastWindowOpen,
@@ -3673,8 +3673,12 @@ const deliverFutureDemandRisks = async (hotelId, snapshot) => {
   return [delivery]
 }
 
-const postStartupBriefingSnapshots = (snapshots) =>
-  briefingSnapshotsObservedAfter(snapshots, schedulerStartedAt)
+const postStartupBriefingSnapshots = (snapshots, now) =>
+  briefingSnapshotsObservedAfterOrCurrentHour(
+    snapshots,
+    schedulerStartedAt,
+    now,
+  )
 
 const scheduledWeComDeliveryTick = async () => {
   const now = new Date()
@@ -3690,6 +3694,7 @@ const scheduledWeComDeliveryTick = async () => {
           liveSnapshotStore[hotel.hotelId] ?? [],
           now,
         ),
+        now,
       ),
       deliveredMessageKeys: new Set(weComDeliveriesByKey.keys()),
       businessDayControl: businessDayControlFor(hotel.hotelId),
@@ -3733,6 +3738,7 @@ const scheduledFutureBookingDeliveryTick = async () => {
           liveSnapshotStore[hotel.hotelId] ?? [],
           now,
         ),
+        now,
       ).filter(
         (snapshot) =>
           Array.isArray(snapshot?.futureBookingChanges?.daily)
