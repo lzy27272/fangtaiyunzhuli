@@ -151,11 +151,12 @@ test('confirmed 1900-byte monitor template produces one sanitized @all message',
   assert.equal(payloads.length, reportMonitorBriefLimits.partCount)
   assert.equal(payloads[0].msgtype, 'text')
   assert.deepEqual(payloads[0].text.mentioned_list, ['@all'])
-  assert.match(content, /^【UAT测试｜非经营指令】/)
+  assert.match(content, /^喷水池态六酒店｜今日收益分析/)
+  assert.doesNotMatch(content, /UAT测试｜非经营指令/)
   assert.match(content, /喷水池态六酒店｜今日收益分析/)
   assert.doesNotMatch(content, /手动通道测试/)
   assert.doesNotMatch(content, /^用途｜/m)
-  assert.match(content, /隐私处理｜已过滤姓名/)
+  assert.doesNotMatch(content, /隐私处理｜已过滤姓名/)
   assert.match(
     content,
     /⏰截止 07-26 02:00｜营业日 07-25｜采集 02:02（4\/4完整）/,
@@ -188,7 +189,7 @@ test('baseline-pending template does not invent hourly changes', () => {
     briefId: 'brief-002',
   })
   const content = payloads[0].text.content
-  assert.match(content, /✅小时进单｜基线待建立/)
+  assert.match(content, /✅小时进单｜同PMS一小时前基线待建立/)
   assert.doesNotMatch(content, /新增｜4/)
 })
 

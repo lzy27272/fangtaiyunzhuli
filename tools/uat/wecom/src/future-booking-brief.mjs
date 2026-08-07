@@ -3,7 +3,7 @@ import {
 } from './future-booking-ai-advice.mjs'
 
 const MAX_MESSAGE_BYTES = 1900
-const DISPLAY_DAYS = 14
+const DISPLAY_FUTURE_DAYS = 14
 
 const finiteNumber = (value) => {
   if (value === null || value === undefined || value === '') return null
@@ -68,9 +68,9 @@ const rowsForSnapshot = (snapshot) => {
     daily: snapshot.futureDaily ?? [],
   }
   return Array.from(
-    { length: DISPLAY_DAYS },
+    { length: DISPLAY_FUTURE_DAYS + 1 },
     (_, index) =>
-      rowForDate(changes, addDays(snapshot.businessDate, index + 1)),
+      rowForDate(changes, addDays(snapshot.businessDate, index)),
   )
 }
 
@@ -248,7 +248,10 @@ export const createFutureBookingWeComPayloads = (
     daily: snapshot.futureDaily ?? [],
   }
   const rows = rowsForSnapshot(snapshot)
-  const adviceLines = adviceLinesFor(rows, options.adviceLines)
+  const futureRows = rows.filter(
+    (row) => String(row?.stayDate ?? '') > snapshot.businessDate,
+  )
+  const adviceLines = adviceLinesFor(futureRows, options.adviceLines)
   const adviceHeading =
     options.adviceMode === 'MODEL'
       ? '🤖AI建议（模型增强）'
@@ -282,13 +285,12 @@ export const createFutureBookingWeComPayloads = (
       : ''
   const baselines = snapshot.futureBookingChanges ?? {}
   const linesFor = (compactMode = false) => [
-    '【UAT测试｜非经营指令】',
     `${hotel.hotelName.trim().slice(0, 40)}｜远期房态${prefix}`,
     `⏰截止 ${cutoffHour(snapshot.observedAt)}`
       + `｜上时${localTime(baselines.hourlyBaselineAt)}`
       + `｜累起${localTime(baselines.cumulativeBaselineAt, true)}`
       + `｜昨末${localTime(baselines.previousDayEndAt, true)}`,
-    `📊未来14天｜小时净${signed(totalHourlyNet, 1)}`
+    `📊当日+未来14天｜小时净${signed(totalHourlyNet, 1)}`
       + `｜周期累计净${signed(totalCumulativeNet, 1)}`
       + `｜15-90天P1日期${monitoredP1Count}`,
     '日期｜售/余｜率｜ADR｜时｜累｜昨',
@@ -297,8 +299,6 @@ export const createFutureBookingWeComPayloads = (
     '',
     adviceHeading,
     ...adviceLines,
-    '',
-    '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
   ]
   try {
     return [payload(linesFor(false))]
@@ -331,12 +331,15 @@ export const createFutureBookingWeComPayloadsWithAi = async (
     )
   }
   const rows = rowsForSnapshot(snapshot)
-  const ruleAdviceLines = adviceFor(rows)
+  const futureRows = rows.filter(
+    (row) => String(row?.stayDate ?? '') > snapshot.businessDate,
+  )
+  const ruleAdviceLines = adviceFor(futureRows)
   try {
     const actionLines = await generateFutureBookingAiActionLines({
       config,
       businessDate: snapshot.businessDate,
-      rows,
+      rows: futureRows,
       ruleAdviceLines,
       fetchImpl: options.fetchImpl,
       lookupImpl: options.lookupImpl,
@@ -374,6 +377,7 @@ export const createFutureBookingWeComPayloadsWithAi = async (
 
 export const futureBookingBriefLimits = Object.freeze({
   maxMessageBytes: MAX_MESSAGE_BYTES,
-  displayDays: DISPLAY_DAYS,
+  displayDays: DISPLAY_FUTURE_DAYS + 1,
+  futureDays: DISPLAY_FUTURE_DAYS,
   partCount: 1,
 })

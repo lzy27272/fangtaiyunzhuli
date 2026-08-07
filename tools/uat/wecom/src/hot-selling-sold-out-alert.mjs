@@ -104,7 +104,7 @@ export const createHotSellingSoldOutWeComPayloads = (
       : ''
   const roomNames = alerts.map((alert) => alert.displayName)
   return [buildPayload([
-    '【UAT测试｜热销房型售罄预警】',
+    '【热销房型售罄预警】',
     `${monitor.hotelName.trim().slice(0, 40)}｜独立库存预警${prefix}`,
     `⏰截止 ${cutoffHour(monitor.cutoffAt)}｜营业日 ${shortDate(monitor.businessDate)}`,
     '',

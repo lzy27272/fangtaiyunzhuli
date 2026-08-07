@@ -25,8 +25,8 @@ const TEMPLATE_LABELS: Record<string, string> = {
   TODAY_REVENUE_TEST: '当日经营测试',
   HOURLY_REVENUE_BRIEF: '当日经营简报',
   WECOM_CHANNEL_TEST: '企微通道测试',
-  FUTURE_14D: '未来14天房态',
-  FUTURE_14D_TEST: '未来14天房态测试',
+  FUTURE_14D: '当日+未来14天房态',
+  FUTURE_14D_TEST: '当日+未来14天房态测试',
   P1_FUTURE_DEMAND: 'P1远期需求',
   P1_FUTURE_DEMAND_TEST: 'P1远期需求测试',
 }
@@ -97,7 +97,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
       setClearWebhook(false)
       setNotice(
         saved.enabled
-          ? '企微UAT自动推送已启用：08:00至次日02:00每30分钟采集，整点约06分发送并@所有人。'
+          ? '企微自动推送已启用：08:00至次日02:00每30分钟采集，按既定顺序发送并@所有人。'
           : '企微自动推送当前关闭；自动采集不受影响。',
       )
     } catch (cause) {
@@ -171,15 +171,15 @@ export function HistoryPage({ context, canConfigure }: Props) {
           <section className="wecom-automation-card">
             <div className="page-heading">
               <div>
-                <p className="eyebrow">WECOM UAT AUTOMATION</p>
+                <p className="eyebrow">WECOM AUTOMATION</p>
                 <h3>企业微信群机器人自动推送</h3>
                 <p>
                   08:00至次日02:00每30分钟采集，整点约06分推送今日经营、约08分推送远期房态；
-                  热销房型可靠售罄时，在两类简报送达后约09分单独预警。测试阶段固定
-                  @所有人，并在正文标注“UAT测试｜非经营指令”。
+                  热销房型可靠售罄时，在两类简报送达后约09分单独预警。固定
+                  @所有人，消息正文仅保留经营数据与建议。
                   每个模板压缩为1条高密度消息，在企微安全长度内保留核心经营数据。
                   启用后会按时间顺序补发已保存但尚未发送的整点简报。
-                  全模板测试会先重新采集，再发送当日经营和未来14天房态；
+                  全模板测试会先重新采集，再发送当日经营和当日+未来14天房态；
                   仅在D+15至D+90存在真实风险时发送P1远期需求模板。
                 </p>
               </div>
@@ -196,7 +196,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
                   type="checkbox"
                   onChange={(event) => setWeComEnabled(event.target.checked)}
                 />
-                启用企微UAT自动推送
+                启用企微自动推送
               </label>
               <label className="wide-field">
                 企业微信群机器人Webhook

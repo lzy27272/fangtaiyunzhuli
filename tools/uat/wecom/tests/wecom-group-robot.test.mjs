@@ -19,6 +19,13 @@ const payload = {
   },
 }
 const endpointSha256 = fingerprintWeComWebhook(webhook)
+const operationalPayload = {
+  msgtype: 'text',
+  text: {
+    content: '测试酒店｜今日收益分析\n经营数据',
+    mentioned_list: ['@all'],
+  },
+}
 
 const response = (body, { status = 200, ok = true } = {}) => ({
   status,
@@ -67,6 +74,45 @@ test('sends exact text payload with at-all through injected fetch', async () => 
   assert.equal(result.weComCode, 0)
   assert.equal(captured.init.redirect, 'error')
   assert.deepEqual(JSON.parse(captured.init.body), payload)
+})
+
+test('approved operational brief does not require visible UAT or privacy lines', async () => {
+  let captured
+  const result = await sendWeComGroupRobotMessage({
+    rawWebhook: webhook,
+    payload: operationalPayload,
+    expectedEndpointSha256: endpointSha256,
+    networkAuthorized: true,
+    fetchImpl: async (url, init) => {
+      captured = { url, init }
+      return response({ errcode: 0, errmsg: 'ok' })
+    },
+  })
+  assert.equal(result.deliveryStatus, 'DELIVERED')
+  assert.deepEqual(JSON.parse(captured.init.body), operationalPayload)
+})
+
+test('unregistered markerless text is rejected before HTTP', async () => {
+  let attempts = 0
+  await assert.rejects(
+    sendWeComGroupRobotMessage({
+      rawWebhook: webhook,
+      payload: {
+        ...operationalPayload,
+        text: { ...operationalPayload.text, content: '任意未登记消息' },
+      },
+      expectedEndpointSha256: endpointSha256,
+      networkAuthorized: true,
+      fetchImpl: async () => {
+        attempts += 1
+        return response({ errcode: 0 })
+      },
+    }),
+    (error) =>
+      error instanceof SafeWeComError
+      && error.reasonCode === 'WECOM_TEMPLATE_POLICY_REQUIRED',
+  )
+  assert.equal(attempts, 0)
 })
 
 test('HTTP 200 with nonzero errcode is rejected without exposing errmsg', async () => {

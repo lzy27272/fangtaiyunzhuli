@@ -41,7 +41,7 @@ test('standalone alert contains only reliably sold-out hot-selling rooms', () =>
   const payload = createHotSellingSoldOutWeComPayloads(monitor)[0]
   assert.equal(payload.msgtype, 'text')
   assert.deepEqual(payload.text.mentioned_list, ['@all'])
-  assert.match(payload.text.content, /【UAT测试｜热销房型售罄预警】/)
+  assert.match(payload.text.content, /^【热销房型售罄预警】/)
   assert.match(payload.text.content, /售罄房型｜无界PRO大/)
   assert.doesNotMatch(payload.text.content, /无界双床|无界套房/)
   assert.ok(

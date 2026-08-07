@@ -4,6 +4,14 @@ const OFFICIAL_HOST = 'qyapi.weixin.qq.com'
 const WEBHOOK_PATH = '/cgi-bin/webhook/send'
 const MAX_REQUEST_TEXT_BYTES = 1900
 const MAX_RESPONSE_BYTES = 4096
+const LEGACY_UAT_BANNER = '【UAT测试｜非经营指令】\n'
+const LEGACY_PRIVACY_NOTICE =
+  '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接'
+
+const isApprovedOperationalTemplate = (content) =>
+  /^[^\n]{1,40}｜今日收益分析(?:｜[^\n]{1,16})?\n/u.test(content)
+  || /^[^\n]{1,40}｜远期房态(?:｜[^\n]{1,12})?\n/u.test(content)
+  || content.startsWith('【热销房型售罄预警】\n')
 
 export class SafeWeComError extends Error {
   constructor(reasonCode) {
@@ -91,13 +99,11 @@ const validatePayload = (payload) => {
   ) {
     fail('WECOM_PAYLOAD_INVALID')
   }
-  if (
-    !payload.text.content.startsWith('【UAT测试｜非经营指令】\n') ||
-    !payload.text.content.includes(
-      '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
-    )
-  ) {
-    fail('WECOM_UAT_BANNER_REQUIRED')
+  const legacyUatTemplate =
+    payload.text.content.startsWith(LEGACY_UAT_BANNER)
+    && payload.text.content.includes(LEGACY_PRIVACY_NOTICE)
+  if (!legacyUatTemplate && !isApprovedOperationalTemplate(payload.text.content)) {
+    fail('WECOM_TEMPLATE_POLICY_REQUIRED')
   }
 }
 

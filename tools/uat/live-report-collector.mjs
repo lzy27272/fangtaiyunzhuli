@@ -657,6 +657,18 @@ const emptyChannelDelta = () => ({
   canceledRoomNights: 0,
 })
 
+const snapshotSourceSystem = (snapshot) => {
+  if (typeof snapshot?.sourceSystem === 'string' && snapshot.sourceSystem) {
+    return snapshot.sourceSystem
+  }
+  return Array.isArray(snapshot?.orders) ? 'MEITUAN_BIEYANGHONG' : null
+}
+
+const sameSnapshotSource = (left, right) => {
+  const leftSource = snapshotSourceSystem(left)
+  return leftSource !== null && leftSource === snapshotSourceSystem(right)
+}
+
 const isMorningFirstBriefSnapshot = (snapshot) =>
   /^\d{4}-\d{2}-\d{2}T08:0[0-5]/.test(
     String(snapshot?.observedAt ?? ''),
@@ -667,6 +679,7 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
     .filter(
       (candidate) =>
         candidate.businessDate === snapshot.businessDate
+        && sameSnapshotSource(candidate, snapshot)
         && Array.isArray(candidate.orders),
     )
     .map((candidate) => ({
@@ -683,6 +696,7 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
     .filter(
       (candidate) =>
         Array.isArray(candidate.orders)
+        && sameSnapshotSource(candidate, snapshot)
         && /^\d{4}-\d{2}-\d{2}T02:0[0-5]/.test(
           String(candidate.observedAt ?? ''),
         ),
@@ -810,6 +824,7 @@ const occupancyPercentFor = (row) => {
 }
 
 const closestHourlyFutureBaseline = (
+  snapshot,
   previousSnapshots,
   observedAtMs,
 ) =>
@@ -817,6 +832,7 @@ const closestHourlyFutureBaseline = (
     .filter(
       (candidate) =>
         Array.isArray(candidate?.futureDaily)
+        && sameSnapshotSource(candidate, snapshot)
         && Number.isFinite(new Date(candidate.observedAt).getTime()),
     )
     .map((candidate) => ({
@@ -842,6 +858,7 @@ const previousCalendarDayEndBaseline = (
     .filter(
       (candidate) =>
         Array.isArray(candidate?.futureDaily)
+        && sameSnapshotSource(candidate, snapshot)
         && ['COMPLETE', 'PARTIAL'].includes(candidate?.completeness)
         && String(candidate.observedAt ?? '').startsWith(`${previousDate}T`),
     )
@@ -860,6 +877,7 @@ const currentBriefingCycleBaseline = (
     .filter((candidate) => {
       const candidateAtMs = new Date(candidate?.observedAt ?? '').getTime()
       return Array.isArray(candidate?.futureDaily)
+        && sameSnapshotSource(candidate, snapshot)
         && ['COMPLETE', 'PARTIAL'].includes(candidate?.completeness)
         && Number.isFinite(candidateAtMs)
         && candidateAtMs < cycleStartMs
@@ -868,12 +886,70 @@ const currentBriefingCycleBaseline = (
       String(right.observedAt).localeCompare(String(left.observedAt)))[0] ?? null
 }
 
+const bookingRowForDate = (snapshot, stayDate) => {
+  if (!snapshot || !canonicalBusinessDate(stayDate)) return null
+  if (snapshot.businessDate === stayDate && snapshot.overview) {
+    return { ...snapshot.overview, stayDate }
+  }
+  return (snapshot.futureDaily ?? []).find(
+    (row) => row?.stayDate === stayDate,
+  ) ?? null
+}
+
+const futureBookingChangeRow = ({
+  row,
+  hourly,
+  yesterday,
+  cumulative,
+}) => {
+  const bookedRoomNights = futureBookedRoomNights(row)
+  const hourlyBooked = futureBookedRoomNights(hourly)
+  const yesterdayBooked = futureBookedRoomNights(yesterday)
+  const cumulativeBooked = futureBookedRoomNights(cumulative)
+  const hourlyNetRoomNights =
+    bookedRoomNights === null || hourlyBooked === null
+      ? null
+      : rounded(bookedRoomNights - hourlyBooked)
+  const previousDayNetRoomNights =
+    bookedRoomNights === null || yesterdayBooked === null
+      ? null
+      : rounded(bookedRoomNights - yesterdayBooked)
+  const cumulativeNetRoomNights =
+    bookedRoomNights === null || cumulativeBooked === null
+      ? null
+      : rounded(bookedRoomNights - cumulativeBooked)
+  const hourlyRoomFeeDelta =
+    finiteNumber(row.roomFee) === null || finiteNumber(hourly?.roomFee) === null
+      ? null
+      : rounded(finiteNumber(row.roomFee) - finiteNumber(hourly.roomFee))
+  const inferredHourlyAdr =
+    hourlyNetRoomNights !== null
+    && hourlyNetRoomNights > 0
+    && hourlyRoomFeeDelta !== null
+      ? rounded(hourlyRoomFeeDelta / hourlyNetRoomNights)
+      : null
+  return {
+    ...row,
+    bookedRoomNights,
+    occupancyPercent: occupancyPercentFor(row),
+    hourlyNetRoomNights,
+    cumulativeNetRoomNights,
+    previousDayNetRoomNights,
+    hourlyAdrDelta:
+      finiteNumber(row.adr) === null || finiteNumber(hourly?.adr) === null
+        ? null
+        : rounded(finiteNumber(row.adr) - finiteNumber(hourly.adr)),
+    inferredHourlyAdr,
+  }
+}
+
 const futureBookingChangesFor = (
   snapshot,
   previousSnapshots,
   observedAtMs,
 ) => {
   const hourlyBaseline = closestHourlyFutureBaseline(
+    snapshot,
     previousSnapshots,
     observedAtMs,
   )
@@ -885,62 +961,18 @@ const futureBookingChangesFor = (
     snapshot,
     previousSnapshots,
   )
-  const hourlyRows = new Map(
-    (hourlyBaseline?.futureDaily ?? [])
-      .map((row) => [row.stayDate, row]),
-  )
-  const previousDayRows = new Map(
-    (previousDayEnd?.futureDaily ?? [])
-      .map((row) => [row.stayDate, row]),
-  )
-  const cumulativeRows = new Map(
-    (cumulativeBaseline?.futureDaily ?? [])
-      .map((row) => [row.stayDate, row]),
-  )
-  const daily = (snapshot.futureDaily ?? []).map((row) => {
-    const bookedRoomNights = futureBookedRoomNights(row)
-    const hourly = hourlyRows.get(row.stayDate)
-    const yesterday = previousDayRows.get(row.stayDate)
-    const cumulative = cumulativeRows.get(row.stayDate)
-    const hourlyBooked = futureBookedRoomNights(hourly)
-    const yesterdayBooked = futureBookedRoomNights(yesterday)
-    const cumulativeBooked = futureBookedRoomNights(cumulative)
-    const hourlyNetRoomNights =
-      bookedRoomNights === null || hourlyBooked === null
-        ? null
-        : rounded(bookedRoomNights - hourlyBooked)
-    const previousDayNetRoomNights =
-      bookedRoomNights === null || yesterdayBooked === null
-        ? null
-        : rounded(bookedRoomNights - yesterdayBooked)
-    const cumulativeNetRoomNights =
-      bookedRoomNights === null || cumulativeBooked === null
-        ? null
-        : rounded(bookedRoomNights - cumulativeBooked)
-    const hourlyRoomFeeDelta =
-      finiteNumber(row.roomFee) === null || finiteNumber(hourly?.roomFee) === null
-        ? null
-        : rounded(finiteNumber(row.roomFee) - finiteNumber(hourly.roomFee))
-    const inferredHourlyAdr =
-      hourlyNetRoomNights !== null
-      && hourlyNetRoomNights > 0
-      && hourlyRoomFeeDelta !== null
-        ? rounded(hourlyRoomFeeDelta / hourlyNetRoomNights)
-        : null
-    return {
-      ...row,
-      bookedRoomNights,
-      occupancyPercent: occupancyPercentFor(row),
-      hourlyNetRoomNights,
-      cumulativeNetRoomNights,
-      previousDayNetRoomNights,
-      hourlyAdrDelta:
-        finiteNumber(row.adr) === null || finiteNumber(hourly?.adr) === null
-          ? null
-          : rounded(finiteNumber(row.adr) - finiteNumber(hourly.adr)),
-      inferredHourlyAdr,
-    }
-  })
+  const sourceRows = [
+    ...(snapshot.overview
+      ? [{ ...snapshot.overview, stayDate: snapshot.businessDate }]
+      : []),
+    ...(snapshot.futureDaily ?? []),
+  ]
+  const daily = sourceRows.map((row) => futureBookingChangeRow({
+    row,
+    hourly: bookingRowForDate(hourlyBaseline, row.stayDate),
+    yesterday: bookingRowForDate(previousDayEnd, row.stayDate),
+    cumulative: bookingRowForDate(cumulativeBaseline, row.stayDate),
+  }))
   return {
     basis:
       hourlyBaseline || cumulativeBaseline || previousDayEnd
@@ -1203,6 +1235,7 @@ export const collectLiveReports = async ({
     Boolean(orderReport) && Boolean(overviewReport) && Boolean(physicalReport)
   const snapshot = {
     schemaVersion: 1,
+    sourceSystem: 'MEITUAN_BIEYANGHONG',
     collectionRunId,
     tenantId: hotel.tenantId,
     hotelId: hotel.hotelId,

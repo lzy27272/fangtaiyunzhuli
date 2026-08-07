@@ -45,16 +45,21 @@ const snapshot = {
     hourlyBaselineAt: '2026-07-26T10:02:00+08:00',
     cumulativeBaselineAt: '2026-07-26T02:02:00+08:00',
     previousDayEndAt: '2026-07-25T23:41:00+08:00',
-    daily: Array.from({ length: 90 }, (_, index) =>
-      dailyRow(index + 1, index === 19 ? 25 : index + 1, index === 2 ? 3 : 0)),
+    daily: [
+      dailyRow(0, 60, 1),
+      ...Array.from({ length: 90 }, (_, index) =>
+        dailyRow(index + 1, index === 19 ? 25 : index + 1, index === 2 ? 3 : 0)),
+    ],
   },
 }
 
-test('future booking brief is one @all message with 14 stay dates under 1900 bytes', () => {
+test('future booking brief is one @all message with today plus 14 future stay dates', () => {
   const payloads = createFutureBookingWeComPayloads(hotel, snapshot)
   assert.equal(payloads.length, 1)
   assert.deepEqual(payloads[0].text.mentioned_list, ['@all'])
   assert.match(payloads[0].text.content, /喷水池态六酒店｜远期房态/)
+  assert.match(payloads[0].text.content, /07-26｜/)
+  assert.match(payloads[0].text.content, /07-26｜30\/20｜60%/)
   assert.match(payloads[0].text.content, /07-27｜/)
   assert.match(payloads[0].text.content, /08-09｜/)
   assert.doesNotMatch(payloads[0].text.content, /08-10｜/)
@@ -63,6 +68,9 @@ test('future booking brief is one @all message with 14 stay dates under 1900 byt
     /^用途｜/m,
   )
   assert.doesNotMatch(payloads[0].text.content, /热销房型售罄|售罄房型/)
+  assert.doesNotMatch(payloads[0].text.content, /UAT测试｜非经营指令/)
+  assert.doesNotMatch(payloads[0].text.content, /隐私处理｜已过滤姓名/)
+  assert.match(payloads[0].text.content, /📊当日\+未来14天/)
   assert.match(payloads[0].text.content, /日期｜售\/余｜率｜ADR｜时｜累｜昨/)
   assert.match(payloads[0].text.content, /累起07-26 02:02/)
   assert.match(payloads[0].text.content, /08-09｜[^\n]*｜\+10｜/)

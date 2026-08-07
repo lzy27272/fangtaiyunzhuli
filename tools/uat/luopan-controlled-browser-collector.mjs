@@ -325,6 +325,19 @@ const metricDeltaFor = (
   }
 }
 
+const luopanBookedRoomNights = (row) =>
+  finiteNumber(row?.soldRooms) ?? finiteNumber(row?.roomNights)
+
+const luopanBookingRowForDate = (snapshot, stayDate) => {
+  if (!snapshot || typeof stayDate !== 'string') return null
+  if (snapshot.businessDate === stayDate && snapshot.overview) {
+    return { ...snapshot.overview, stayDate }
+  }
+  return (snapshot.futureDaily ?? []).find(
+    (row) => row?.stayDate === stayDate,
+  ) ?? null
+}
+
 export const futureBookingChangesForLuopan = (
   snapshot,
   previousSnapshots,
@@ -360,16 +373,12 @@ export const futureBookingChangesForLuopan = (
     })
     .sort((left, right) =>
       String(right.observedAt).localeCompare(String(left.observedAt)))[0] ?? null
-  const hourlyRows = new Map(
-    (hourly?.futureDaily ?? []).map((row) => [row.stayDate, row]),
-  )
-  const yesterdayRows = new Map(
-    (yesterday?.futureDaily ?? []).map((row) => [row.stayDate, row]),
-  )
-  const cumulativeRows = new Map(
-    (cumulativeBaseline?.futureDaily ?? [])
-      .map((row) => [row.stayDate, row]),
-  )
+  const sourceRows = [
+    ...(typeof snapshot.businessDate === 'string' && snapshot.overview
+      ? [{ ...snapshot.overview, stayDate: snapshot.businessDate }]
+      : []),
+    ...(snapshot.futureDaily ?? []),
+  ]
   return {
     basis:
       hourly || cumulativeBaseline || yesterday
@@ -378,14 +387,17 @@ export const futureBookingChangesForLuopan = (
     hourlyBaselineAt: hourly?.observedAt ?? null,
     cumulativeBaselineAt: cumulativeBaseline?.observedAt ?? null,
     previousDayEndAt: yesterday?.observedAt ?? null,
-    daily: snapshot.futureDaily.map((row) => {
-      const hourlyRow = hourlyRows.get(row.stayDate)
-      const yesterdayRow = yesterdayRows.get(row.stayDate)
-      const cumulativeRow = cumulativeRows.get(row.stayDate)
-      const sold = finiteNumber(row.soldRooms)
-      const hourlySold = finiteNumber(hourlyRow?.soldRooms)
-      const yesterdaySold = finiteNumber(yesterdayRow?.soldRooms)
-      const cumulativeSold = finiteNumber(cumulativeRow?.soldRooms)
+    daily: sourceRows.map((row) => {
+      const hourlyRow = luopanBookingRowForDate(hourly, row.stayDate)
+      const yesterdayRow = luopanBookingRowForDate(yesterday, row.stayDate)
+      const cumulativeRow = luopanBookingRowForDate(
+        cumulativeBaseline,
+        row.stayDate,
+      )
+      const sold = luopanBookedRoomNights(row)
+      const hourlySold = luopanBookedRoomNights(hourlyRow)
+      const yesterdaySold = luopanBookedRoomNights(yesterdayRow)
+      const cumulativeSold = luopanBookedRoomNights(cumulativeRow)
       const hourlyNetRoomNights =
         sold === null || hourlySold === null
           ? null
