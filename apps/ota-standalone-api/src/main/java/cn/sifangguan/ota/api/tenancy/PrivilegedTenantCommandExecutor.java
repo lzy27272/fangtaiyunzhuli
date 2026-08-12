@@ -58,8 +58,8 @@ public final class PrivilegedTenantCommandExecutor {
         }
         boolean platformAdmin = authorization.roles().contains(OtaRole.PLATFORM_ADMIN)
                 && authorization.has(command.requiredPermission());
-        boolean scopedRevenueManager = isScopedRevenueManagerCommand(authorization, command);
-        if (!platformAdmin && !scopedRevenueManager) {
+        boolean scopedOtaOperationManager = isScopedOtaOperationManagerCommand(authorization, command);
+        if (!platformAdmin && !scopedOtaOperationManager) {
             audit(authorization, command, "DENIED", "MISSING_EXPLICIT_CONFIG_PERMISSION", correlationId, false);
             throw new SecurityException("Explicit platform configuration permission is required");
         }
@@ -72,7 +72,7 @@ public final class PrivilegedTenantCommandExecutor {
         try {
             TenantConfigurationCommandHandler.CommandReceipt receipt = tenantContext.inTenant(
                     command.targetTenantId(), false, () -> {
-                        if (scopedRevenueManager
+                        if (scopedOtaOperationManager
                                 && !hotelScopes.hasActiveScope(
                                         authorization.accountId(),
                                         ((Sprint1TenantCommand) command).mutation().hotelId(),
@@ -122,11 +122,11 @@ public final class PrivilegedTenantCommandExecutor {
         }
     }
 
-    private static boolean isScopedRevenueManagerCommand(
+    private static boolean isScopedOtaOperationManagerCommand(
             TrustedAuthorizationContext authorization,
             TenantConfigurationCommand command
     ) {
-        if (!authorization.roles().contains(OtaRole.REVENUE_MANAGER)
+        if (!authorization.roles().contains(OtaRole.OTA_OPERATION_MANAGER)
                 || !authorization.has(command.requiredPermission())
                 || !(command instanceof Sprint1TenantCommand sprint1)
                 || sprint1.mutation().hotelId() == null) {

@@ -48,7 +48,7 @@ class Sprint1TenantReadBoundaryTest {
     }
 
     @Test
-    void revenueManagerCannotReadAnUnscopedHotelOrUseGlobalRead() {
+    void unsupportedLegacyRevenueManagerCannotReadAnUnscopedHotelOrUseGlobalRead() {
         UUID tenantId = UUID.randomUUID();
         UUID hotelId = UUID.randomUUID();
         TenantContextExecutor tenantContext = new TenantContextExecutor() {
@@ -76,7 +76,7 @@ class Sprint1TenantReadBoundaryTest {
     }
 
     @Test
-    void scopedRevenueManagerReceivesOnlyRevenueConfigurationAndNoOperationsReads() {
+    void scopedHotelManagerReceivesOnlyPreviewInputsAndNoOperationsReads() {
         UUID accountId = UUID.randomUUID();
         UUID tenantId = UUID.randomUUID();
         UUID hotelId = UUID.randomUUID();
@@ -92,12 +92,12 @@ class Sprint1TenantReadBoundaryTest {
         Sprint1ControlPlanePort port = mock(Sprint1ControlPlanePort.class);
         Sprint1Views.ConfigurationView full = configuration(tenantId, hotelId);
         when(port.findConfiguration(tenantId, hotelId)).thenReturn(Optional.of(full));
-        when(port.hasHotelScope(accountId, hotelId, "REVENUE_CONFIGURATION"))
+        when(port.hasHotelScope(accountId, hotelId, "PRICE_PREVIEW"))
                 .thenReturn(true);
         Sprint1ControlPlaneService service = new Sprint1ControlPlaneService(
                 port, tenantContext, null, null, null);
         AccountView account = new AccountView(
-                accountId, "Revenue", Set.of(OtaRole.REVENUE_MANAGER));
+                accountId, "Hotel manager", Set.of(OtaRole.GENERAL_MANAGER));
 
         Sprint1Views.ConfigurationView scoped =
                 service.configuration(account, tenantId, hotelId);

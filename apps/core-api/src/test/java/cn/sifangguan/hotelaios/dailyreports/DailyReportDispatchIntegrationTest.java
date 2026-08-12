@@ -14,6 +14,8 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,10 +25,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DailyReportDispatchIntegrationTest {
     private static final UUID TENANT =
             UUID.fromString("10000000-0000-0000-0000-000000000001");
-    private static final LocalDate BUSINESS_DATE = LocalDate.of(2026, 7, 23);
-    private static final Instant OPEN_SCAN = Instant.parse("2026-07-23T14:00:00Z");
-    private static final Instant DUE_SOON_SCAN = Instant.parse("2026-07-23T14:30:00Z");
-    private static final Instant DEADLINE_SCAN = Instant.parse("2026-07-23T15:30:00Z");
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final LocalDate BUSINESS_DATE = LocalDate.now(BUSINESS_ZONE);
+    private static final Instant OPEN_SCAN = atBusinessTime(22, 0);
+    private static final Instant DUE_SOON_SCAN = atBusinessTime(22, 30);
+    private static final Instant DEADLINE_SCAN = atBusinessTime(23, 30);
     private static final UUID GENERAL_MANAGER_ASSIGNMENT =
             UUID.fromString("19200000-0000-0000-0000-000000000001");
     private static final UUID FRONT_DESK_ASSIGNMENT =
@@ -59,6 +62,13 @@ class DailyReportDispatchIntegrationTest {
 
     @Test
     void materializesFiveHotelRolesOnceAndUsesFrozenPolicyForEligibleDraftReports() {
+        // This test isolates the current-business-day lifecycle. Production keeps
+        // the seeded one-day backfill policy, which is covered by the dispatcher itself.
+        jdbc.update("""
+                update daily_report_delivery_policy
+                set backfill_days = 0
+                where tenant_id = ?
+                """, TENANT);
         DailyReportDispatchService.ProcessResult first = service.processTenantAsSystem(
                 TENANT, 100, UUID.randomUUID(), OPEN_SCAN);
 
@@ -173,7 +183,7 @@ class DailyReportDispatchIntegrationTest {
         assertNoReminderEvents(mismatchedReportId);
 
         DailyReportDispatchService.ProcessResult frozenReplay = service.processTenantAsSystem(
-                TENANT, 100, UUID.randomUUID(), Instant.parse("2026-07-23T15:40:00Z"));
+                TENANT, 100, UUID.randomUUID(), atBusinessTime(23, 40));
         assertThat(frozenReplay.dueSoonEvents()).isZero();
         assertThat(frozenReplay.overdueEvents()).isZero();
         assertThat(count("""
@@ -254,6 +264,10 @@ class DailyReportDispatchIntegrationTest {
                 where tenant_id = ? and aggregate_id = ?
                   and event_type in ('DAILY_REPORT_DUE_SOON', 'DAILY_REPORT_OVERDUE')
                 """, TENANT, reportId)).isZero();
+    }
+
+    private static Instant atBusinessTime(int hour, int minute) {
+        return BUSINESS_DATE.atTime(LocalTime.of(hour, minute)).atZone(BUSINESS_ZONE).toInstant();
     }
 
     private int count(String sql, Object... args) {

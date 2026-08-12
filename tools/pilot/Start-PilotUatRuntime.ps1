@@ -22,14 +22,18 @@ $dataRoot = Join-Path $resolvedRuntimeRoot 'Data\PostgreSQL'
 $logRoot = Join-Path $resolvedRuntimeRoot 'Logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $databaseService = Get-Service -Name $DatabaseServiceName -ErrorAction SilentlyContinue
-if ($databaseService) {
-    if ($databaseService.Status -ne 'Running') {
-        Start-Service -Name $DatabaseServiceName
-        (Get-Service -Name $DatabaseServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
-    }
-} else {
-    & $pgCtl status -D $dataRoot | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+$databaseRunning = $false
+& $pgCtl status -D $dataRoot | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    $databaseRunning = $true
+}
+if (-not $databaseRunning) {
+    if ($databaseService -and $databaseService.StartType -ne 'Disabled') {
+        if ($databaseService.Status -ne 'Running') {
+            Start-Service -Name $DatabaseServiceName
+            (Get-Service -Name $DatabaseServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+        }
+    } else {
         & $pgCtl start -D $dataRoot -l (Join-Path $logRoot 'postgresql.log') -o "-p $($env:PILOT_DB_PORT)" -w
         if ($LASTEXITCODE -ne 0) { throw 'Unable to start Pilot PostgreSQL.' }
     }
@@ -46,14 +50,51 @@ if (-not $apiReady) {
         -RedirectStandardError (Join-Path $logRoot 'core-api-runner.stderr.log') -WindowStyle Hidden | Out-Null
 }
 
+$webIndex = Join-Path $repoRoot 'apps\web\dist\index.html'
+if (-not (Test-Path -LiteralPath $webIndex)) {
+    throw 'Pilot web build is missing. Run pnpm build:pilot in apps\web before starting the runtime.'
+}
+$webIndexContent = Get-Content -LiteralPath $webIndex -Raw -Encoding UTF8
+if ($webIndexContent -notmatch '<meta\s+name="hotel-ai-os-auth-mode"\s+content="bearer"\s*/?>') {
+    throw 'Pilot web build does not enforce bearer login. Run pnpm build:pilot in apps\web before starting the runtime.'
+}
+
+$webOrigin = 'http://127.0.0.1:4180/'
+$webReady = $false
+try { $webReady = (Invoke-WebRequest -UseBasicParsing -Uri $webOrigin -TimeoutSec 3).StatusCode -eq 200 } catch { }
+if (-not $webReady) {
+    $caddy = Join-Path $repoRoot '.tooling\caddy\bin\caddy.exe'
+    $caddyConfig = Join-Path $repoRoot 'infra\pilot\Caddyfile.windows-tunnel'
+    $caddyEnv = Join-Path $repoRoot '.uat-runtime\pilot\caddy.windows.env'
+    if (-not (Test-Path -LiteralPath $caddy) -or
+        -not (Test-Path -LiteralPath $caddyConfig) -or
+        -not (Test-Path -LiteralPath $caddyEnv)) {
+        throw 'Pilot local web runtime files are missing.'
+    }
+    Start-Process -FilePath $caddy `
+        -ArgumentList @('run', '--config', ('"{0}"' -f $caddyConfig), '--adapter', 'caddyfile', '--envfile', ('"{0}"' -f $caddyEnv)) `
+        -WorkingDirectory $repoRoot -RedirectStandardOutput (Join-Path $logRoot 'caddy-local.stdout.log') `
+        -RedirectStandardError (Join-Path $logRoot 'caddy-local.stderr.log') -WindowStyle Hidden | Out-Null
+}
+
 $deadline = (Get-Date).AddSeconds(120)
 do {
+    $apiReady = $false
+    $webReady = $false
     try {
-        if ((Invoke-WebRequest -UseBasicParsing -Uri $health -TimeoutSec 3).StatusCode -eq 200) {
-            [pscustomobject]@{ PostgreSQL = 'Running'; CoreApi = 'UP'; ApiOrigin = "127.0.0.1:$ApiPort" }
-            return
-        }
+        $apiReady = (Invoke-WebRequest -UseBasicParsing -Uri $health -TimeoutSec 3).StatusCode -eq 200
     } catch { }
+    try { $webReady = (Invoke-WebRequest -UseBasicParsing -Uri $webOrigin -TimeoutSec 3).StatusCode -eq 200 } catch { }
+    if ($apiReady -and $webReady) {
+        [pscustomobject]@{
+            PostgreSQL = 'Running'
+            CoreApi = 'UP'
+            ApiOrigin = "127.0.0.1:$ApiPort"
+            LocalWeb = 'UP'
+            WebOrigin = '127.0.0.1:4180'
+        }
+        return
+    }
     Start-Sleep -Milliseconds 750
 } while ((Get-Date) -lt $deadline)
-throw 'Pilot Core API did not become healthy within 120 seconds.'
+throw "Pilot UAT runtime did not become healthy within 120 seconds. CoreApi=$apiReady LocalWeb=$webReady"

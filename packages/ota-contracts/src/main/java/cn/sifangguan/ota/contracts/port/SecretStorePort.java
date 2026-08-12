@@ -18,6 +18,11 @@ public interface SecretStorePort {
             purpose = requireText(purpose, "purpose");
             opaqueRef = requireText(opaqueRef, "opaqueRef");
         }
+
+        @Override
+        public String toString() {
+            return "SecretReference[scope=<redacted>, purpose=" + purpose + ", opaqueRef=<redacted>]";
+        }
     }
 
     interface SecretLease extends AutoCloseable {

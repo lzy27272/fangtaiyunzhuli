@@ -5,7 +5,9 @@ param(
     [string]$Sprint2MigrationPath,
     [string]$Sprint2bMigrationPath,
     [string]$Sprint2cMigrationPath,
-    [string]$Sprint2dMigrationPath
+    [string]$Sprint2dMigrationPath,
+    [string]$Wp2MigrationPath,
+    [string]$FinalStageMigrationPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,8 +31,14 @@ if ([string]::IsNullOrWhiteSpace($Sprint2cMigrationPath)) {
 if ([string]::IsNullOrWhiteSpace($Sprint2dMigrationPath)) {
     $Sprint2dMigrationPath = Join-Path $scriptDirectory 'V6__sprint2d_offline_manual_authorization_rehearsal.sql'
 }
+if ([string]::IsNullOrWhiteSpace($Wp2MigrationPath)) {
+    $Wp2MigrationPath = Join-Path $scriptDirectory 'V7__wp2_store_source_binding_and_credential_migration_prep.sql'
+}
+if ([string]::IsNullOrWhiteSpace($FinalStageMigrationPath)) {
+    $FinalStageMigrationPath = Join-Path $scriptDirectory 'V8__wp3_to_wp8_final_stage_control_plane.sql'
+}
 
-foreach ($path in @($MigrationPath, $Sprint1MigrationPath, $Sprint2MigrationPath, $Sprint2bMigrationPath, $Sprint2cMigrationPath, $Sprint2dMigrationPath)) {
+foreach ($path in @($MigrationPath, $Sprint1MigrationPath, $Sprint2MigrationPath, $Sprint2bMigrationPath, $Sprint2cMigrationPath, $Sprint2dMigrationPath, $Wp2MigrationPath, $FinalStageMigrationPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Migration not found: $path"
     }
@@ -42,8 +50,10 @@ $v3Sql = Get-Content -LiteralPath $Sprint2MigrationPath -Raw -Encoding UTF8
 $v4Sql = Get-Content -LiteralPath $Sprint2bMigrationPath -Raw -Encoding UTF8
 $v5Sql = Get-Content -LiteralPath $Sprint2cMigrationPath -Raw -Encoding UTF8
 $v6Sql = Get-Content -LiteralPath $Sprint2dMigrationPath -Raw -Encoding UTF8
+$v7Sql = Get-Content -LiteralPath $Wp2MigrationPath -Raw -Encoding UTF8
+$v8Sql = Get-Content -LiteralPath $FinalStageMigrationPath -Raw -Encoding UTF8
 $grantSql = Get-Content -LiteralPath (Join-Path $scriptDirectory 'post-migration-grants.sql') -Raw -Encoding UTF8
-$sql = $v1Sql + "`n" + $v2Sql + "`n" + $v3Sql + "`n" + $v4Sql + "`n" + $v5Sql + "`n" + $v6Sql
+$sql = $v1Sql + "`n" + $v2Sql + "`n" + $v3Sql + "`n" + $v4Sql + "`n" + $v5Sql + "`n" + $v6Sql + "`n" + $v7Sql + "`n" + $v8Sql
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Assert-Contains {
@@ -149,6 +159,28 @@ $sprint2dTenantTables = @(
     'browser_authorization_command_receipt'
 )
 
+$wp2TenantTables = @(
+    'connector_access_authorization_draft',
+    'credential_migration_rehearsal'
+)
+
+$finalStageTenantTables = @(
+    'data_retention_policy_version',
+    'data_quality_event',
+    'safe_deep_link_policy_version',
+    'ota_platform_alert',
+    'ota_platform_alert_event',
+    'alert_notification_intent',
+    'hotel_ai_policy_version',
+    'ai_advice_evaluation',
+    'price_change_preview',
+    'price_change_request',
+    'price_change_event',
+    'all_store_uat_run',
+    'all_store_uat_daily_evidence',
+    'hotel_release_decision'
+)
+
 foreach ($table in $requiredControlTables) {
     Assert-Contains $sql "(?im)^CREATE TABLE control\.$([regex]::Escape($table))\s*\(" "Missing control.$table"
 }
@@ -227,9 +259,24 @@ foreach ($table in $sprint2dTenantTables) {
     Assert-Contains $v6Sql "(?ims)^CREATE POLICY\s+\w+\s+ON ota\.$escaped\s+USING \(tenant_id = control\.current_tenant_id\(\)\)\s+WITH CHECK \(tenant_id = control\.current_tenant_id\(\)\);" "ota.$table lacks fail-closed RLS"
 }
 
+foreach ($table in $wp2TenantTables) {
+    $escaped = [regex]::Escape($table)
+    Assert-Contains $v7Sql "(?im)^CREATE TABLE ota\.$escaped\s*\(" "Missing ota.$table"
+    Assert-Contains $v7Sql "(?im)^ALTER TABLE ota\.$escaped ENABLE ROW LEVEL SECURITY;" "ota.$table does not ENABLE RLS"
+    Assert-Contains $v7Sql "(?im)^ALTER TABLE ota\.$escaped FORCE ROW LEVEL SECURITY;" "ota.$table does not FORCE RLS"
+    Assert-Contains $v7Sql "(?ims)^CREATE POLICY\s+\w+\s+ON ota\.$escaped\s+USING \(tenant_id = control\.current_tenant_id\(\)\)\s+WITH CHECK \(tenant_id = control\.current_tenant_id\(\)\);" "ota.$table lacks fail-closed RLS"
+}
+
+foreach ($table in $finalStageTenantTables) {
+    $escaped = [regex]::Escape($table)
+    Assert-Contains $v8Sql "(?im)^CREATE TABLE ota\.$escaped\s*\(" "Missing ota.$table"
+    Assert-Contains $v8Sql "(?s)'$escaped'.*?ALTER TABLE ota\.%I ENABLE ROW LEVEL SECURITY" "ota.$table is absent from final-stage ENABLE RLS list"
+    Assert-Contains $v8Sql "(?s)'$escaped'.*?ALTER TABLE ota\.%I FORCE ROW LEVEL SECURITY" "ota.$table is absent from final-stage FORCE RLS list"
+}
+
 $createdTenantTables = [regex]::Matches($sql, '(?im)^CREATE TABLE ota\.(?<name>[a-z0-9_]+)\s*\(') |
     ForEach-Object { $_.Groups['name'].Value }
-$expectedTenantTables = @($sprint0TenantTables + $sprint1TenantTables + $sprint2bTenantTables + $sprint2cTenantTables + $sprint2dTenantTables)
+$expectedTenantTables = @($sprint0TenantTables + $sprint1TenantTables + $sprint2bTenantTables + $sprint2cTenantTables + $sprint2dTenantTables + $wp2TenantTables + $finalStageTenantTables)
 $untrackedTenantTables = @($createdTenantTables | Where-Object { $_ -notin $expectedTenantTables })
 $missingCreatedTables = @($expectedTenantTables | Where-Object { $_ -notin $createdTenantTables })
 if ($untrackedTenantTables.Count -gt 0) {
@@ -267,6 +314,17 @@ $sprint1AppendOnly = @(
     'ota_brief_adjustment',
     'notification_delivery_attempt'
 )
+$finalStageAppendOnly = @(
+    'data_retention_policy_version', 'data_quality_event',
+    'safe_deep_link_policy_version', 'ota_platform_alert',
+    'ota_platform_alert_event', 'alert_notification_intent',
+    'hotel_ai_policy_version', 'ai_advice_evaluation',
+    'price_change_preview', 'price_change_event',
+    'all_store_uat_daily_evidence', 'hotel_release_decision'
+)
+foreach ($table in $finalStageAppendOnly) {
+    Assert-Contains $v8Sql "(?s)'$([regex]::Escape($table))'.*?control\.reject_append_only_mutation\(\)" "ota.$table is absent from final-stage append-only list"
+}
 $appendBlock = [regex]::Match(
     $v2Sql,
     '(?ms)DO \$append_only_guards\$.*?immutable_tables CONSTANT TEXT\[\] := ARRAY\[(?<tables>.*?)\];.*?BEFORE UPDATE OR DELETE.*?control\.reject_append_only_mutation\(\).*?\$append_only_guards\$;'
@@ -291,6 +349,13 @@ foreach ($table in @(
     Assert-Contains $v5Sql "(?ims)BEFORE UPDATE OR DELETE ON $([regex]::Escape($table)).*?control\.reject_append_only_mutation\(\)" "$table must be append-only"
 }
 Assert-Contains $v6Sql '(?ims)BEFORE UPDATE OR DELETE ON ota\.browser_authorization_command_receipt.*?control\.reject_append_only_mutation\(\)' 'ota.browser_authorization_command_receipt must be append-only'
+foreach ($table in @(
+    'control.role_deprecation_event',
+    'ota.connector_access_authorization_draft',
+    'ota.credential_migration_rehearsal'
+)) {
+    Assert-Contains $v7Sql "(?ims)BEFORE UPDATE OR DELETE ON $([regex]::Escape($table)).*?control\.reject_append_only_mutation\(\)" "$table must be append-only"
+}
 
 $fixedRoles = @(
     'PLATFORM_ADMIN', 'OTA_OPERATION_ASSISTANT', 'OTA_OPERATION_MANAGER',
@@ -298,6 +363,13 @@ $fixedRoles = @(
 )
 foreach ($role in $fixedRoles) {
     Assert-Contains $v1Sql "'$role'" "Missing fixed role seed: $role"
+}
+foreach ($role in @(
+    'GENERAL_MANAGER',
+    'ASSISTANT_GENERAL_MANAGER',
+    'FRONT_OFFICE_SUPERVISOR'
+)) {
+    Assert-Contains $v7Sql "'$role'" "Missing WP2 role seed: $role"
 }
 
 Assert-Contains $v1Sql '(?im)^\s*refresh_token_hash\s+' 'auth_session must persist only a refresh-token hash'
@@ -407,6 +479,36 @@ Assert-NotContains $grantSql 'GRANT (SELECT|INSERT|UPDATE|DELETE).*ON TABLE ota\
 Assert-Contains $grantSql 'GRANT EXECUTE ON FUNCTION ota\.start_browser_authorization_rehearsal' 'API start rehearsal function grant is missing'
 Assert-Contains $grantSql 'GRANT EXECUTE ON FUNCTION ota\.transition_browser_authorization_rehearsal' 'API transition rehearsal function grant is missing'
 Assert-NotContains $v6Sql "(?im)(connector_mode\s+IN\s*\([^)]*'REAL'|connector_mode\s*=\s*'REAL'|external_delivery_allowed\s*=\s*TRUE|transport_mode\s*=\s*'REAL'|message_enabled\s*=\s*TRUE)" 'Sprint 2D must not enable real collection, delivery or messaging'
+
+Assert-Contains $v7Sql "(?ims)^CREATE TABLE control\.role_deprecation_event.*?role_code = 'REVENUE_MANAGER'.*?ROLE_REMOVED_FROM_ORG_MATRIX" 'WP2 legacy role deprecation evidence is missing'
+Assert-Contains $v7Sql "(?ims)^UPDATE control\.account_role.*?role\.role_code = 'REVENUE_MANAGER'.*?valid_until = CURRENT_TIMESTAMP" 'WP2 must expire active legacy account-role assignments'
+Assert-Contains $v7Sql "(?ims)^CREATE FUNCTION control\.reject_deprecated_account_role\(\).*?deprecated role cannot receive an active assignment" 'WP2 must fail closed against new active legacy role assignments'
+Assert-Contains $v7Sql "(?ims)^ALTER TABLE ota\.account_hotel_scope.*?PRICE_REQUEST_INITIATION.*?PRICE_APPROVAL.*?P1_HANDLING" 'WP2 hotel scope matrix is incomplete'
+Assert-NotContains $v7Sql "(?ims)^ALTER TABLE ota\.account_hotel_scope.*?REVENUE_MANAGER.*?scope_type" 'WP2 hotel scope matrix must not authorize the removed revenue role'
+Assert-Contains $v7Sql "(?ims)^CREATE TABLE ota\.connector_access_authorization_draft.*?authorization_state.*?CHECK \(authorization_state = 'UAT_REQUIRED'\).*?execution_allowed.*?CHECK \(NOT execution_allowed\).*?STANDARD_RETAIL_ONLY" 'WP2 authorization metadata must remain UAT-required and non-executable'
+Assert-Contains $v7Sql "(?ims)^CREATE TABLE ota\.credential_migration_rehearsal.*?migration_mode.*?METADATA_ONLY.*?rehearsal_state.*?METADATA_REHEARSAL_READY.*?raw_secret_received.*?CHECK \(NOT raw_secret_received\).*?execution_allowed.*?CHECK \(NOT execution_allowed\)" 'WP2 credential migration rehearsal must remain metadata-only and non-executable'
+Assert-Contains $v7Sql "(?ims)^CREATE FUNCTION control\.enforce_credential_migration_rehearsal\(\).*?CONFIGURATION_ONLY.*?target binding metadata mismatch" 'WP2 migration rehearsal must bind to an exact configuration-only Secret metadata record'
+Assert-NotContains $v7Sql '(?im)^\s*(password|refresh_token|access_token|cookie|webhook_url|secret_value|authorization_header|legacy_locator|source_locator)\s+(TEXT|VARCHAR|CHAR|JSONB?)\b' 'WP2 migration tables must not persist a raw credential or legacy locator'
+Assert-NotContains $v7Sql "(?im)(connector_mode\s+IN\s*\([^)]*'REAL'|connector_mode\s*=\s*'REAL'|external_delivery_allowed\s*=\s*TRUE|transport_mode\s*=\s*'REAL'|message_enabled\s*=\s*TRUE|execution_allowed\s*=\s*TRUE)" 'WP2 must not enable real collection, execution, delivery or messaging'
+Assert-Contains $v8Sql "(?s)data_class <> 'REDACTED_RAW_EVIDENCE'.*?retention_days = 365" 'WP3 operating, derived, brief, alert, task, price and audit data must retain exactly one year'
+Assert-Contains $v8Sql "(?s)data_class = 'REDACTED_RAW_EVIDENCE'.*?retention_days = 30" 'WP3 redacted raw evidence must retain exactly thirty days'
+Assert-Contains $v8Sql "(?s)severity IN \('P1', 'P2'\).*?route_code = 'IN_APP_AND_WECOM'" 'WP5 P1 and P2 must both route to in-app plus WeCom intents'
+Assert-Contains $v8Sql "(?s)severity = 'P3'.*?route_code = 'DAILY_WECOM_SUMMARY'" 'WP5 P3 must route to the daily WeCom summary'
+Assert-Contains $v8Sql "external_delivery_allowed\s+BOOLEAN NOT NULL DEFAULT FALSE CHECK \(NOT external_delivery_allowed\)" 'WP5 external delivery must remain fail-closed during UAT'
+Assert-Contains $v8Sql "deterministic_fallback_required\s+BOOLEAN NOT NULL DEFAULT TRUE CHECK \(deterministic_fallback_required\)" 'WP6 deterministic fallback is mandatory'
+Assert-Contains $v8Sql "rate_type\s+VARCHAR\(32\) NOT NULL DEFAULT 'STANDARD_RETAIL' CHECK \(rate_type = 'STANDARD_RETAIL'\)" 'WP7 must be constrained to standard retail rate only'
+Assert-Contains $v8Sql "approved_by_account_id IS NULL OR approved_by_account_id <> requested_by_account_id" 'WP7 requester and approver must use different accounts'
+Assert-Contains $v8Sql "external_execution_allowed\s+BOOLEAN NOT NULL DEFAULT FALSE CHECK \(NOT external_execution_allowed\)" 'WP7 external write must remain fail-closed before formal authorization and write UAT'
+Assert-Contains $v8Sql "planned_business_days\s+INTEGER NOT NULL DEFAULT 7 CHECK \(planned_business_days = 7\)" 'WP8 all-store UAT must require seven business days'
+Assert-Contains $v8Sql "success_rate_percent >= 99" 'WP8 release gate must require at least 99 percent collection success'
+Assert-Contains $v8Sql "(?s)CREATE VIEW ota\.anomaly_first_dashboard.*?WITH \(security_invoker = true\).*?CASE alert\.severity WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END" 'WP4 anomaly-first dashboard must be RLS-invoker and severity ordered'
+Assert-Contains $v8Sql "Missing operating facts are not synthesized as numeric zero" 'WP4 must preserve missing data rather than report zero'
+Assert-NotContains $v8Sql '(?im)^\s*(password|refresh_token|access_token|cookie|webhook_url|secret_value|authorization_header)\s+(TEXT|VARCHAR|CHAR|JSONB?|BYTEA)\b' 'Final-stage tables must not persist raw credential material'
+Assert-Contains $grantSql 'GRANT SELECT, INSERT ON TABLE ota\.connector_access_authorization_draft' 'API authorization-draft grant is missing'
+Assert-Contains $grantSql 'GRANT SELECT, INSERT ON TABLE ota\.credential_migration_rehearsal' 'API migration-rehearsal grant is missing'
+Assert-NotContains $grantSql 'GRANT (UPDATE|DELETE).*ON TABLE ota\.(connector_access_authorization_draft|credential_migration_rehearsal)' 'WP2 append-only metadata must not receive UPDATE/DELETE grants'
+Assert-NotContains $grantSql 'GRANT (SELECT|INSERT|UPDATE|DELETE).*ON TABLE ota\.(connector_access_authorization_draft|credential_migration_rehearsal) TO .*worker' 'Worker must not access WP2 preparation metadata'
+Assert-NotContains $grantSql 'GRANT (INSERT|UPDATE|DELETE).*ON TABLE ota\.(data_retention_policy_version|hotel_ai_policy_version|price_change_preview|price_change_request|price_change_event|all_store_uat_run|hotel_release_decision) TO .*worker' 'Worker must not control retention, AI policy, pricing approvals or release decisions'
 
 Assert-Contains $v3Sql "(?ims)^CREATE TABLE control\.service_principal_database_role_binding\s*\(.*?service_principal_id UUID PRIMARY KEY\s+REFERENCES control\.service_principal.*?database_role_name NAME NOT NULL UNIQUE" 'Sprint 2A database-role/service-principal one-to-one binding is missing'
 Assert-Contains $v3Sql "(?ims)^CREATE FUNCTION control\.current_bound_service_principal_id\(\).*?SECURITY DEFINER\s+SET search_path = pg_catalog.*?database_role_name = session_user::NAME.*?principal\.status = 'ACTIVE'" 'Current-session principal resolver must use session_user and require ACTIVE'
@@ -525,11 +627,13 @@ Assert-NotContains $v3Sql '(?im)^\s*CREATE\s+(USER|ROLE)\b' 'V3 must not create 
 Assert-NotContains $v4Sql '(?im)^\s*CREATE\s+(USER|ROLE)\b' 'V4 must not create production roles/users'
 Assert-NotContains $v5Sql '(?im)^\s*CREATE\s+(USER|ROLE)\b' 'V5 must not create production roles/users'
 Assert-NotContains $v6Sql '(?im)^\s*CREATE\s+(USER|ROLE)\b' 'V6 must not create production roles/users'
+Assert-NotContains $v7Sql '(?im)^\s*CREATE\s+(USER|ROLE)\b' 'V7 must not create production roles/users'
 Assert-NotContains $v2Sql '(?im)^\s*(DROP|TRUNCATE)\s+' 'V2 must be forward-only and non-destructive'
 Assert-NotContains $v3Sql '(?im)^\s*(DROP\s+(TABLE|SCHEMA|COLUMN)|TRUNCATE)\s+' 'V3 must be forward-only and must not remove stored data'
 Assert-NotContains $v4Sql '(?im)^\s*(DROP\s+(TABLE|SCHEMA|COLUMN)|TRUNCATE)\s+' 'V4 must be forward-only and must not remove stored data'
 Assert-NotContains $v5Sql '(?im)^\s*(DROP\s+(TABLE|SCHEMA|COLUMN)|TRUNCATE)\s+' 'V5 must be forward-only and must not remove stored data'
 Assert-NotContains $v6Sql '(?im)^\s*(DROP\s+(TABLE|SCHEMA|COLUMN)|TRUNCATE)\s+' 'V6 must be forward-only and must not remove stored data'
+Assert-NotContains $v7Sql '(?im)^\s*(DROP\s+(TABLE|SCHEMA|COLUMN)|TRUNCATE)\s+' 'V7 must be forward-only and must not remove stored data'
 
 if ($failures.Count -gt 0) {
     $formatted = $failures | ForEach-Object { " - $_" }
@@ -539,7 +643,7 @@ if ($failures.Count -gt 0) {
 Write-Output (
     "PASS: $($requiredControlTables.Count) control tables, " +
     "$($expectedTenantTables.Count) FORCE-RLS tenant tables, " +
-    "$($sprint0AppendOnly.Count + $sprint1AppendOnly.Count + 7) append-only guards, " +
+    "$($sprint0AppendOnly.Count + $sprint1AppendOnly.Count + 10) append-only guards, " +
     "session-bound job SECURITY DEFINER functions, exact-minute collection slots, " +
-    "configuration-only intake, trusted contract governance, offline authorization rehearsal, blue/green identity gates, and simulation-only delivery verified through Sprint 2D."
+        "configuration-only intake, trusted contract governance, offline authorization rehearsal, WP2 binding preparation, WP3-WP8 fail-closed final stage, blue/green identity gates, and UAT-only delivery verified through V8."
 )

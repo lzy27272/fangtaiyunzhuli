@@ -25,5 +25,10 @@ public final class PilotAuthModels {
             String displayName
     ) {
     }
-}
 
+    public record ChangePasswordRequest(
+            @NotBlank String currentPassword,
+            @NotBlank String newPassword
+    ) {
+    }
+}

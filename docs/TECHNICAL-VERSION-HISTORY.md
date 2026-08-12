@@ -3,13 +3,13 @@
 | 项目 | 当前值 |
 |---|---|
 | 当前技术发行 | TECH-V0.1 |
-| 当前状态 | TECH-V0.1已发布；TECH-V0.2-PILOT.7内部修复版运行中，真实PostgreSQL、角色任务API闭环、公网页面回归与公网UI任务闭环已PASS；TECH-V0.2正式发布门禁仍NO-GO；Sprint 3未启动 |
+| 当前状态 | TECH-V0.1已发布；TECH-V0.2-PILOT.7内部修复版运行中，行政人事KPI中心已完成本地Pilot部署；TECH-V0.2正式发布门禁仍NO-GO |
 | 当前产品蓝图 | PRODUCT-V1.2 |
 | 当前API主版本 | API-V1（/api/v1） |
 | 当前OpenAPI契约 | 已发布0.1.0-sprint1；Pilot运行0.2.4-pilot.7 |
-| 当前数据库迁移 | 已发布DB-V4；Pilot运行DB-V17（Flyway V17） |
+| 当前数据库迁移 | 已发布DB-V4；Pilot运行Flyway V27 |
 | 当前后端制品 | 0.2.0-pilot.7内部候选 |
-| 最后更新 | 2026-07-22 |
+| 最后更新 | 2026-08-12 |
 
 ## 0. 文档职责
 

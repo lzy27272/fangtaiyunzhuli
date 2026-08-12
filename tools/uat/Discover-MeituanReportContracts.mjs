@@ -53,6 +53,10 @@ const NEEDLES = [
   'lion/manager/workbench/room',
   'report/jy09',
   'report/JY09',
+  'estimatedRentRate',
+  'occupancyRate',
+  'rentRate',
+  '出租率',
 ]
 
 const readLimitedText = async (response, limit) => {

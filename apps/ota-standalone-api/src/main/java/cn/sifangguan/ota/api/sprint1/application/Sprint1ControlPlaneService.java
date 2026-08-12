@@ -256,8 +256,11 @@ public final class Sprint1ControlPlaneService {
             return port.hasHotelScope(account.id(), hotelId, "P1_HANDLING");
         }
         if (kind == ReadKind.REVENUE_CONFIGURATION
-                && account.roles().contains(OtaRole.REVENUE_MANAGER)) {
-            return port.hasHotelScope(account.id(), hotelId, "REVENUE_CONFIGURATION");
+                && account.roles().stream().anyMatch(role -> switch (role) {
+                    case GENERAL_MANAGER, ASSISTANT_GENERAL_MANAGER, FRONT_OFFICE_SUPERVISOR -> true;
+                    default -> false;
+                })) {
+            return port.hasHotelScope(account.id(), hotelId, "PRICE_PREVIEW");
         }
         return false;
     }

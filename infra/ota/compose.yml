@@ -77,6 +77,9 @@ services:
       - ../../database/ota-migrations/V3__sprint2_offline_safety_foundation.sql:/flyway/sql/V3__sprint2_offline_safety_foundation.sql:ro
       - ../../database/ota-migrations/V4__sprint2b_real_prep_control_plane.sql:/flyway/sql/V4__sprint2b_real_prep_control_plane.sql:ro
       - ../../database/ota-migrations/V5__sprint2c_contract_governance_and_principal_rotation.sql:/flyway/sql/V5__sprint2c_contract_governance_and_principal_rotation.sql:ro
+      - ../../database/ota-migrations/V6__sprint2d_offline_manual_authorization_rehearsal.sql:/flyway/sql/V6__sprint2d_offline_manual_authorization_rehearsal.sql:ro
+      - ../../database/ota-migrations/V7__wp2_store_source_binding_and_credential_migration_prep.sql:/flyway/sql/V7__wp2_store_source_binding_and_credential_migration_prep.sql:ro
+      - ../../database/ota-migrations/V8__wp3_to_wp8_final_stage_control_plane.sql:/flyway/sql/V8__wp3_to_wp8_final_stage_control_plane.sql:ro
     networks:
       - ota-sprint0
 

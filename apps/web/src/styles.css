@@ -334,6 +334,7 @@ dd { margin: 5px 0 0; color: #334f64; font-size: 10px; }
 .login-submit { min-height: 48px; justify-content: center; }
 .logout-button { min-width: 48px; min-height: 34px; flex: 0 0 auto; padding: 7px 10px; border: 1px solid #dce6eb; border-radius: 9px; color: #526f82; background: #fff; font-size: 10px; font-weight: 700; white-space: nowrap; cursor: pointer; }
 .logout-button:hover { border-color: #99bdd8; color: #1f648f; background: #f3f9fd; }
+.password-modal { width: min(440px,100%); }
 .wecom-entry-card { min-height: 330px; align-content: center; }
 .wecom-entry-progress { min-height: 116px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #8194a0; text-align: center; }
 .wecom-entry-progress strong { color: #345b73; font-size: 13px; }

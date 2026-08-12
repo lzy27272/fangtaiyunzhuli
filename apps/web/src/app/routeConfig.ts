@@ -16,9 +16,22 @@ export type DailyFeatureRouteId =
   | 'daily-operation-snapshots'
   | 'daily-operation-snapshot-detail'
   | 'daily-operation-exports'
+  | 'kpi-center'
+  | 'kpi-scorecards'
+  | 'kpi-scorecard-detail'
+  | 'kpi-templates'
+  | 'kpi-template-detail'
+  | 'kpi-relations'
+  | 'kpi-settlements'
+  | 'kpi-inspections'
 
-export type AppRouteId = ViewId | DailyFeatureRouteId
-export type AppSectionId = ViewId | 'daily-reports' | 'daily-report-templates' | 'daily-operations'
+export type InvestmentFeatureRouteId =
+  | 'investments'
+  | 'investment-project'
+  | 'investment-parameters'
+
+export type AppRouteId = ViewId | DailyFeatureRouteId | InvestmentFeatureRouteId
+export type AppSectionId = ViewId | 'daily-reports' | 'daily-report-templates' | 'daily-operations' | 'kpi' | 'investments'
 export type AppNavigate = (view: AppRouteId, params?: NavigationParams) => void
 
 export type AppRoute = {
@@ -29,9 +42,9 @@ export type AppRoute = {
 }
 
 type RouteDefinition = {
-  id: DailyFeatureRouteId
+  id: DailyFeatureRouteId | InvestmentFeatureRouteId
   pattern: string
-  sectionId: Extract<AppSectionId, 'daily-reports' | 'daily-report-templates' | 'daily-operations'>
+  sectionId: Extract<AppSectionId, 'daily-reports' | 'daily-report-templates' | 'daily-operations' | 'kpi' | 'investments'>
   requiredAny: readonly string[]
   requiredAll?: readonly string[]
 }
@@ -54,7 +67,55 @@ const legacyViews: readonly ViewId[] = [
 
 const legacyViewSet = new Set<string>(legacyViews)
 
-export const dailyFeatureRoutes: readonly RouteDefinition[] = [
+export const dailyFeatureRoutes: readonly (RouteDefinition & { id: DailyFeatureRouteId })[] = [
+  {
+    id: 'kpi-scorecard-detail',
+    pattern: '/kpi/scorecards/:scorecardId',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.scorecardReadOwn, permissions.kpi.scorecardReadTeam, permissions.kpi.scorecardReadAll],
+  },
+  {
+    id: 'kpi-scorecards',
+    pattern: '/kpi/scorecards',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.scorecardReadOwn, permissions.kpi.scorecardReadTeam, permissions.kpi.scorecardReadAll],
+  },
+  {
+    id: 'kpi-template-detail',
+    pattern: '/kpi/templates/:templateId',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.templateRead, permissions.kpi.templateManage],
+  },
+  {
+    id: 'kpi-templates',
+    pattern: '/kpi/templates',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.templateRead, permissions.kpi.templateManage],
+  },
+  {
+    id: 'kpi-relations',
+    pattern: '/kpi/relations',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.relationManage, permissions.kpi.scorecardReadTeam, permissions.kpi.scorecardReadAll],
+  },
+  {
+    id: 'kpi-settlements',
+    pattern: '/kpi/settlements',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.settlementRead, permissions.kpi.settlementManage],
+  },
+  {
+    id: 'kpi-inspections',
+    pattern: '/kpi/inspections',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.inspectionSubmit, permissions.kpi.inspectionReadTeam, permissions.kpi.inspectionVerify],
+  },
+  {
+    id: 'kpi-center',
+    pattern: '/kpi',
+    sectionId: 'kpi',
+    requiredAny: [permissions.kpi.scorecardReadOwn, permissions.kpi.scorecardReadTeam, permissions.kpi.scorecardReadAll, permissions.kpi.templateRead],
+  },
   {
     id: 'daily-report-correction',
     pattern: '/daily-reports/:reportId/corrections/:revisionId',
@@ -144,6 +205,31 @@ export const dailyFeatureRoutes: readonly RouteDefinition[] = [
 
 const featureById = new Map<DailyFeatureRouteId, RouteDefinition>(dailyFeatureRoutes.map((route) => [route.id, route]))
 
+export const investmentFeatureRoutes: readonly (RouteDefinition & { id: InvestmentFeatureRouteId })[] = [
+  {
+    id: 'investment-project',
+    pattern: '/investments/projects/:projectId',
+    sectionId: 'investments',
+    requiredAny: [permissions.investment.read],
+  },
+  {
+    id: 'investment-parameters',
+    pattern: '/investments/cost-parameters',
+    sectionId: 'investments',
+    requiredAny: [permissions.investment.read],
+  },
+  {
+    id: 'investments',
+    pattern: '/investments',
+    sectionId: 'investments',
+    requiredAny: [permissions.investment.read],
+  },
+] as const
+
+const investmentById = new Map<InvestmentFeatureRouteId, RouteDefinition>(
+  investmentFeatureRoutes.map((route) => [route.id, route]),
+)
+
 function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value)
@@ -181,6 +267,10 @@ export function parseHashRoute(hash: string): AppRoute {
     const pathParams = matchPattern(route.pattern, path)
     if (pathParams) return { view: route.id, params: { ...query, ...pathParams }, sectionId: route.sectionId, explicit }
   }
+  for (const route of investmentFeatureRoutes) {
+    const pathParams = matchPattern(route.pattern, path)
+    if (pathParams) return { view: route.id, params: { ...query, ...pathParams }, sectionId: route.sectionId, explicit }
+  }
 
   const legacy = splitPath(path)[0]
   const view = legacyViewSet.has(legacy) ? legacy as ViewId : 'workbench'
@@ -188,7 +278,7 @@ export function parseHashRoute(hash: string): AppRoute {
 }
 
 export function buildHashRoute(view: AppRouteId, params: NavigationParams = {}): string {
-  const definition = featureById.get(view as DailyFeatureRouteId)
+  const definition = featureById.get(view as DailyFeatureRouteId) ?? investmentById.get(view as InvestmentFeatureRouteId)
   let path = definition?.pattern ?? `/${view}`
   const query = new URLSearchParams()
   const consumed = new Set<string>()
@@ -208,12 +298,20 @@ export function isDailyFeatureRoute(view: AppRouteId): view is DailyFeatureRoute
   return featureById.has(view as DailyFeatureRouteId)
 }
 
+export function isInvestmentFeatureRoute(view: AppRouteId): view is InvestmentFeatureRouteId {
+  return investmentById.has(view as InvestmentFeatureRouteId)
+}
+
 export function requiredPermissionsForRoute(view: AppRouteId): readonly string[] {
-  return featureById.get(view as DailyFeatureRouteId)?.requiredAny ?? []
+  return featureById.get(view as DailyFeatureRouteId)?.requiredAny
+    ?? investmentById.get(view as InvestmentFeatureRouteId)?.requiredAny
+    ?? []
 }
 
 export function requiredAllPermissionsForRoute(view: AppRouteId, params: RouteParams = {}): readonly string[] {
-  const configured = featureById.get(view as DailyFeatureRouteId)?.requiredAll ?? []
+  const configured = featureById.get(view as DailyFeatureRouteId)?.requiredAll
+    ?? investmentById.get(view as InvestmentFeatureRouteId)?.requiredAll
+    ?? []
   if (view === 'daily-operations' && params.mode === 'SNAPSHOT') {
     return [...configured, permissions.snapshot.read]
   }

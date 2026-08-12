@@ -35,6 +35,12 @@ management:
         enabled: true
 
 app:
+  kpi:
+    ota-source:
+      snapshot-path: ${KPI_OTA_SNAPSHOT_PATH:}
+      hotel-directory-path: ${KPI_OTA_HOTEL_DIRECTORY_PATH:}
+      allowed-tenant-code: ${KPI_OTA_ALLOWED_TENANT_CODE:}
+      monthly-summary-path: ${KPI_PMS_MONTHLY_SUMMARY_PATH:}
   automation:
     worker:
       enabled: ${AUTOMATION_WORKER_ENABLED:false}

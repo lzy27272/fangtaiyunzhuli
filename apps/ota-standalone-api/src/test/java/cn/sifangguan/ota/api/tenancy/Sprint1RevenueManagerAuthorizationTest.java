@@ -21,12 +21,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class Sprint1RevenueManagerAuthorizationTest {
+class Sprint1OtaOperationManagerAuthorizationTest {
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-19T10:06:00Z"), ZoneOffset.UTC);
 
     @Test
-    void scopedRevenueManagerMayWriteMappingsButNotConnectorOrSimulationConfiguration() {
+    void scopedOtaOperationManagerMayWriteRevenueRulesButNotConnectorOrSimulationConfiguration() {
         UUID accountId = UUID.randomUUID();
         UUID tenantId = UUID.randomUUID();
         UUID hotelId = UUID.randomUUID();
@@ -44,7 +44,7 @@ class Sprint1RevenueManagerAuthorizationTest {
                                 && scopeType.equals("REVENUE_CONFIGURATION"),
                 audit,
                 CLOCK);
-        TrustedAuthorizationContext revenueManager = context(accountId, OtaRole.REVENUE_MANAGER);
+        TrustedAuthorizationContext revenueManager = context(accountId, OtaRole.OTA_OPERATION_MANAGER);
         Sprint1TenantCommand mapping = command(
                 accountId,
                 tenantId,
@@ -76,7 +76,7 @@ class Sprint1RevenueManagerAuthorizationTest {
     }
 
     @Test
-    void revenueManagerWithoutExactHotelScopeIsDeniedInsideTenantRlsTransaction() {
+    void otaOperationManagerWithoutExactHotelScopeIsDeniedInsideTenantRlsTransaction() {
         UUID accountId = UUID.randomUUID();
         UUID tenantId = UUID.randomUUID();
         UUID hotelId = UUID.randomUUID();
@@ -109,7 +109,7 @@ class Sprint1RevenueManagerAuthorizationTest {
                         hotelId, UUID.randomUUID(), "VIEW", "View", 10));
 
         assertThatThrownBy(() -> executor.execute(
-                context(accountId, OtaRole.REVENUE_MANAGER), command, "scope-denied"))
+                context(accountId, OtaRole.OTA_OPERATION_MANAGER), command, "scope-denied"))
                 .isInstanceOf(SecurityException.class)
                 .hasMessageContaining("hotel scope");
         assertThat(tenantTransactionEntered).isTrue();

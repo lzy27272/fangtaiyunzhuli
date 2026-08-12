@@ -1,0 +1,80 @@
+.page { display: grid; gap: 20px; color: #102f49; }
+.metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+.metric, .panel, .projectCard { background: #fff; border: 1px solid #d8e4ed; border-radius: 18px; box-shadow: 0 12px 30px rgba(20, 54, 78, .05); }
+.metric { padding: 20px; display: grid; gap: 7px; min-height: 112px; }
+.metric span, .metric small, .note { color: #71889a; }
+.metric strong { font-size: 25px; }
+.panel { padding: 22px; display: grid; gap: 18px; }
+.panel > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.panel > header span, .panel > header div > span { color: #1780b8; font-size: 11px; font-weight: 800; letter-spacing: .13em; }
+.panel h2 { margin: 4px 0 0; font-size: 20px; }
+.form { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 15px; }
+.form label { display: grid; gap: 7px; font-size: 13px; color: #506b7e; }
+.form input, .form select, .form textarea { width: 100%; box-sizing: border-box; border: 1px solid #cddce7; border-radius: 10px; padding: 11px 12px; color: #11334c; background: #fbfdff; }
+.form textarea { min-height: 88px; resize: vertical; }
+.full { grid-column: 1 / -1; }
+.toolbar, .exportRow, .compareSelector, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.toolbar { justify-content: space-between; }
+.success, .error { padding: 12px 16px; border-radius: 12px; }
+.success { background: #e8f8f1; color: #08704e; }
+.error { background: #fff0f0; color: #b82929; }
+.projectGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.projectCard { appearance: none; text-align: left; padding: 20px; color: inherit; cursor: pointer; display: grid; gap: 16px; }
+.projectCard:hover { border-color: #56a8d2; transform: translateY(-1px); }
+.projectCard header, .projectCard footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.projectCard header > span { color: #1984bd; font-size: 12px; font-weight: 800; }
+.projectCard h2 { margin: 0; font-size: 20px; }
+.projectNumbers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.projectNumbers div { background: #f5f9fc; border-radius: 12px; padding: 13px; display: grid; gap: 5px; }
+.projectNumbers small { color: #7890a1; }
+.projectNumbers strong { font-size: 18px; }
+.projectCard footer { color: #668094; font-size: 13px; }
+.versionBar { background: #123f5d; color: #fff; border-radius: 16px; padding: 14px 18px; display: flex; justify-content: space-between; gap: 14px; align-items: center; }
+.versionBar > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.versionBar button { border: 1px solid rgba(255,255,255,.28); background: transparent; color: #d9edf8; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.versionBar .activeVersion { background: #fff; color: #123f5d; }
+.snapshotGrid { margin: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.snapshotGrid div { padding: 14px; background: #f5f9fc; border-radius: 12px; }
+.snapshotGrid dt { color: #72899a; font-size: 12px; }
+.snapshotGrid dd { margin: 6px 0 0; font-weight: 800; }
+.twoColumns { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; }
+.analysis { margin: 0; line-height: 1.8; white-space: pre-wrap; }
+.pass, .block { border-radius: 999px; padding: 7px 11px; font-weight: 800; }
+.pass { color: #08704e !important; background: #e7f8f1; }
+.block { color: #b82929 !important; background: #fff0f0; }
+.warningList { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.warningList li { border-left: 3px solid #f0a53b; background: #fff8ea; padding: 11px 13px; display: grid; gap: 4px; }
+.warningList .blocking { border-left-color: #d84040; background: #fff0f0; }
+.tableWrap { overflow-x: auto; }
+.tableWrap table { width: 100%; border-collapse: collapse; min-width: 1120px; }
+.tableWrap th, .tableWrap td { padding: 12px 11px; border-bottom: 1px solid #e2ebf1; text-align: right; white-space: nowrap; }
+.tableWrap th:first-child, .tableWrap td:first-child { text-align: left; }
+.tableWrap th { background: #f2f7fa; color: #5a7386; font-size: 12px; }
+.tableWrap th small { display: block; font-weight: 400; }
+.negative { color: #c13232 !important; }
+.positive { color: #08704e; }
+.rating { display: inline-block; border-radius: 999px; padding: 5px 9px; background: #eef4f8; }
+.loss { background: #ffe9e9; color: #b82929; }
+.high_risk { background: #fff0dc; color: #a95b00; }
+.cautious { background: #fff8d9; color: #896a00; }
+.feasible { background: #e8f3ff; color: #1467a0; }
+.quality { background: #e5f7ed; color: #08704e; }
+.barChart, .costList { display: grid; gap: 14px; }
+.barGroup { display: grid; gap: 6px; }
+.barRow { display: grid; grid-template-columns: 34px 1fr 105px; gap: 10px; align-items: center; font-size: 12px; }
+.barRow > div, .costList > div > div { height: 9px; background: #edf3f7; border-radius: 99px; overflow: hidden; }
+.barRow i, .costList i { display: block; height: 100%; border-radius: inherit; }
+.revenue { background: #2185bd; }.cost { background: #e59430; }.profit { background: #1a9c70; }
+.costList > div { display: grid; gap: 6px; }
+.costList span { display: flex; justify-content: space-between; font-size: 13px; }
+.costList i { background: linear-gradient(90deg, #1a79ac, #4db3b3); }
+.compareSelector label, .exportRow label { display: inline-flex; gap: 6px; align-items: center; }
+.exportRow { justify-content: flex-end; }
+.exportRow > div { margin-right: auto; display: flex; flex-wrap: wrap; gap: 12px; }
+.auditList { display: grid; gap: 9px; }
+.auditList article { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid #e5edf2; }
+.auditList span { color: #71889a; font-size: 12px; }
+.parameterList { display: grid; gap: 16px; }
+
+@media (max-width: 1250px) { .metrics { grid-template-columns: repeat(3, 1fr); }.form { grid-template-columns: repeat(3, 1fr); }.snapshotGrid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 800px) { .metrics, .projectGrid, .twoColumns, .form, .snapshotGrid { grid-template-columns: 1fr; }.full { grid-column: auto; }.versionBar, .panel > header { align-items: stretch; flex-direction: column; }.auditList article { flex-direction: column; } }

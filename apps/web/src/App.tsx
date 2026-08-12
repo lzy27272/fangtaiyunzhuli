@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { apiCommand, apiRequest, authMode, clearAccessToken, demoFallbackEnabled, hasAccessToken, login } from './api/client'
+import { apiCommand, apiRequest, authMode, changePassword, clearAccessToken, demoFallbackEnabled, hasAccessToken, login } from './api/client'
 import { consumeLogoutEntry } from './app/logoutEntry'
 import {
   addWorkRecordSupplement,
@@ -50,6 +50,7 @@ import { useResource } from './useResource'
 import { permissions as permissionCodes } from './app/permissions'
 import {
   isDailyFeatureRoute,
+  isInvestmentFeatureRoute,
   requiredAllPermissionsForRoute,
   requiredPermissionsForRoute,
   type AppNavigate,
@@ -64,17 +65,21 @@ import { WecomStoreWebhookConfiguration } from './features/wecom/WecomStoreWebho
 const DailyReportFeature = lazy(() => import('./features/dailyReports/DailyReportRoutes').then((module) => ({ default: module.DailyReportRoutes })))
 const DailyReportTemplateFeature = lazy(() => import('./features/dailyReportTemplates/DailyReportTemplateRoutes').then((module) => ({ default: module.DailyReportTemplateRoutes })))
 const DailyOperationFeature = lazy(() => import('./features/dailyOperations/DailyOperationRoutes').then((module) => ({ default: module.DailyOperationRoutes })))
+const KpiFeature = lazy(() => import('./features/kpi/KpiRoutes').then((module) => ({ default: module.KpiRoutes })))
+const InvestmentFeature = lazy(() => import('./features/investments/InvestmentRoutes').then((module) => ({ default: module.InvestmentRoutes })))
 const initialWecomTaskEntry = consumeWecomTaskEntry()
 
 const navigation: Array<{ id: AppRouteId; sectionId?: string; label: string; icon: string; group?: string; permissions?: string[]; roles?: string[] }> = [
   { id: 'workbench', label: '角色工作台', icon: '⌂' },
   { id: 'hotel-dashboard', label: '门店驾驶舱', icon: '▤', group: '管理驾驶舱', permissions: ['dashboard.hotel'] },
   { id: 'operations-dashboard', label: '区域多门店', icon: '▥', group: '管理驾驶舱', permissions: ['dashboard.hotel'], roles: ['OTA_OPERATION_MANAGER'] },
+  { id: 'investments', label: '投资测算', icon: '¥', group: '投资决策', permissions: [permissionCodes.investment.read], roles: ['CEO', 'PLATFORM_ADMIN'] },
   { id: 'work-packages', label: '工作包中心', icon: '▦', group: '标准与工作', permissions: ['work-package.read', 'work-package.manage', 'standard.read'] },
   { id: 'my-work', label: '我的工作', icon: '✓', permissions: ['work-record.read', 'work-record.submit', 'work.submit'] },
   { id: 'team-work', label: '团队工作', icon: '◎', permissions: ['work-record.review', 'work-record.read-team'] },
   { id: 'daily-reports-my', sectionId: 'daily-reports', label: '日报中心', icon: '▣', group: '日报与运营', permissions: [permissionCodes.dailyReport.readOwn, permissionCodes.dailyReport.submit, permissionCodes.dailyReport.readTeam] },
   { id: 'daily-operations', label: '日运营中心', icon: '◫', permissions: [permissionCodes.dailyOperations.readHotel, permissionCodes.dailyOperations.readCrossHotel] },
+  { id: 'kpi-center', sectionId: 'kpi', label: 'KPI绩效中心', icon: '◎', group: '行政人事', permissions: [permissionCodes.kpi.scorecardReadOwn, permissionCodes.kpi.scorecardReadTeam, permissionCodes.kpi.scorecardReadAll, permissionCodes.kpi.templateRead] },
   { id: 'rules', label: '企业规则中心', icon: '◇', group: '管理闭环', permissions: ['rule.read', 'rule.manage'] },
   { id: 'tasks', label: '任务中心', icon: '↗', permissions: ['task.read', 'task.act', 'task.review'] },
   { id: 'evaluations', label: '标准评价', icon: '★', permissions: ['evaluation.read', 'evaluation.manual-review'] },
@@ -666,6 +671,38 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   </main>
 }
 
+function ChangePasswordDialog({ identity, onClose, onChanged }: { identity: RoleContext; onClose: () => void; onChanged: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError(undefined)
+    if (newPassword.length < 10) { setError('新密码至少10位'); return }
+    if (newPassword !== confirmation) { setError('两次输入的新密码不一致'); return }
+    setBusy(true)
+    try {
+      await changePassword(identity, currentPassword, newPassword)
+      onChanged()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '密码修改失败')
+    } finally { setBusy(false) }
+  }
+  return <div className="modal-backdrop" role="presentation"><form className="modal password-modal" role="dialog" aria-modal="true" onSubmit={submit}>
+    <header><div><span className="panel-kicker">ACCOUNT SECURITY</span><h2>修改登录密码</h2></div><button type="button" className="close" onClick={onClose}>×</button></header>
+    <div className="form-body">
+      <label>当前密码<input autoFocus type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+      <label>新密码<input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少10位" /></label>
+      <label>确认新密码<input type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
+      <div className="inline-warning">修改成功后当前浏览器会退出，请使用新密码重新登录。密码不会显示在日志或审计记录中。</div>
+      {error && <div className="inline-error">{error}</div>}
+    </div>
+    <footer><button type="button" className="secondary" onClick={onClose}>取消</button><button className="primary" disabled={busy || !currentPassword || !newPassword || !confirmation}>{busy ? '修改中…' : '确认修改'}</button></footer>
+  </form></div>
+}
+
 function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
   const [route, navigate] = useHashRoute()
   const { view, params: routeParams, sectionId } = route
@@ -693,6 +730,7 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
   }), [identity])
   const me = useResource(`${identity.key}:me`, () => loadIdentity(identity, fallbackIdentity), fallbackIdentity)
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(identity.assignmentId ?? '')
+  const [changingPassword, setChangingPassword] = useState(false)
   const compatibleAssignments = useMemo(() => me.data.assignments, [me.data.assignments])
   useEffect(() => {
     const preferred = compatibleAssignments.find((item) => item.primary) ?? compatibleAssignments[0]
@@ -701,23 +739,29 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
   const selectedAssignment = compatibleAssignments.find((item) => item.id === selectedAssignmentId)
     ?? compatibleAssignments.find((item) => item.primary)
     ?? compatibleAssignments[0]
+  const isPlatformAdmin = me.data.roleCodes.includes('PLATFORM_ADMIN')
   const accountRoleContext = roleContexts.find((role) => role.roleCode === me.data.primaryRoleCode)
-  const selectedRoleContext = roleContexts.find((role) => role.roleCode === selectedAssignment?.positionCode)
-  const resolvedRoleContext = selectedRoleContext ?? accountRoleContext
+  const selectedRoleContext = isPlatformAdmin ? undefined : roleContexts.find((role) => role.roleCode === selectedAssignment?.positionCode)
+  const resolvedRoleContext = isPlatformAdmin ? accountRoleContext : selectedRoleContext ?? accountRoleContext
   const activeIdentity: RoleContext = useMemo(() => ({
     ...(resolvedRoleContext ?? identity),
-    key: `${resolvedRoleContext?.key ?? identity.key}:${selectedAssignment?.id ?? 'account'}`,
+    key: `${resolvedRoleContext?.key ?? identity.key}:${isPlatformAdmin ? 'account' : selectedAssignment?.id ?? 'account'}`,
     actorId: me.data.accountId || identity.actorId,
     userName: me.data.displayName || identity.userName,
     employeeId: me.data.employeeId,
-    assignmentOrgUnitId: selectedAssignment?.orgUnitId,
-    roleCode: selectedRoleContext?.roleCode ?? (me.data.primaryRoleCode || identity.roleCode),
+    assignmentOrgUnitId: isPlatformAdmin ? undefined : selectedAssignment?.orgUnitId,
+    roleCode: isPlatformAdmin ? 'PLATFORM_ADMIN' : selectedRoleContext?.roleCode ?? (me.data.primaryRoleCode || identity.roleCode),
     orgScopes: authMode === 'bearer' ? me.data.orgScopes : me.data.orgScopes.length ? me.data.orgScopes : identity.orgScopes,
-    assignmentId: selectedAssignment?.id ?? (authMode === 'bearer' ? undefined : identity.assignmentId),
-    label: selectedAssignment?.positionName ?? resolvedRoleContext?.label ?? identity.label,
-    orgName: selectedAssignment?.orgName ?? resolvedRoleContext?.orgName ?? identity.orgName,
+    assignmentId: isPlatformAdmin ? undefined : selectedAssignment?.id ?? (authMode === 'bearer' ? undefined : identity.assignmentId),
+    label: isPlatformAdmin ? resolvedRoleContext?.label ?? identity.label : selectedAssignment?.positionName ?? resolvedRoleContext?.label ?? identity.label,
+    orgName: isPlatformAdmin ? resolvedRoleContext?.orgName ?? identity.orgName : selectedAssignment?.orgName ?? resolvedRoleContext?.orgName ?? identity.orgName,
     focus: resolvedRoleContext?.focus ?? identity.focus,
-  }), [identity, me.data, resolvedRoleContext, selectedAssignment])
+  }), [identity, isPlatformAdmin, me.data, resolvedRoleContext, selectedAssignment, selectedRoleContext])
+  useEffect(() => {
+    if (!me.loading && !me.error && isPlatformAdmin && !route.explicit && view === 'workbench') {
+      navigate('kpi-center')
+    }
+  }, [isPlatformAdmin, me.loading, me.error, route.explicit, view, navigate])
   const unreadResource = useResource(`${identity.key}:sidebar-notices`, () => loadNotifications(activeIdentity), [], 15_000)
   const unreadCount = unreadResource.data.filter((item) => !item.readAt).length
   const pilotDemoMode = demoFallbackEnabled && me.source === 'demo'
@@ -725,7 +769,7 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
     if (item.id === 'my-work' && !activeIdentity.assignmentId) return false
     if (item.roles?.length && !item.roles.includes(activeIdentity.roleCode)) return false
     return !item.permissions?.length ||
-      (demoFallbackEnabled && me.source === 'demo' && !isDailyFeatureRoute(item.id)) ||
+      (demoFallbackEnabled && me.source === 'demo' && !isDailyFeatureRoute(item.id) && !isInvestmentFeatureRoute(item.id)) ||
       me.data.permissions.includes('*') ||
       item.permissions.some((permission) => me.data.permissions.includes(permission))
   })
@@ -739,8 +783,21 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
     if (authMode === 'bearer' && (me.loading || me.error)) {
       return <section className="page-section"><div className="empty-state"><strong>{me.error ? '身份与权限读取失败' : '正在读取身份与权限'}</strong><span>{me.error ?? '系统将在权限解析完成后加载业务页面，避免使用错误的岗位或组织范围。'}</span></div></section>
     }
+    if (isInvestmentFeatureRoute(view)) {
+      return <PageAccessBoundary
+        permissions={me.data.permissions}
+        requiredAny={requiredPermissionsForRoute(view)}
+        requiredAll={requiredAllPermissionsForRoute(view, routeParams)}
+      >
+        <Suspense fallback={<div className="state-card"><div className="spinner" /><strong>正在加载投资测算模块</strong></div>}>
+          <InvestmentFeature view={view} params={routeParams} identity={activeIdentity} grantedPermissions={me.data.permissions} go={navigate} />
+        </Suspense>
+      </PageAccessBoundary>
+    }
     if (isDailyFeatureRoute(view)) {
-      const feature = view.startsWith('daily-report-template')
+      const feature = view.startsWith('kpi-') || view === 'kpi-center'
+        ? <KpiFeature view={view} params={routeParams} identity={activeIdentity} grantedPermissions={me.data.permissions} go={navigate} />
+        : view.startsWith('daily-report-template')
         ? <DailyReportTemplateFeature view={view} params={routeParams} identity={activeIdentity} grantedPermissions={me.data.permissions} go={navigate} />
         : view.startsWith('daily-report')
           ? <DailyReportFeature view={view} params={routeParams} identity={activeIdentity} grantedPermissions={me.data.permissions} go={navigate} />
@@ -796,13 +853,15 @@ function AuthenticatedApp({ onLogout }: { onLogout?: () => void }) {
     </aside>
     <main><header className="topbar"><div className={`connection ${me.error ? 'offline' : pilotDemoMode ? 'demo' : ''}`}><span className="live-dot" />{pilotDemoMode ? 'Pilot 演示数据' : me.error ? '身份接口异常' : '服务端权限已解析'}<small>{pilotDemoMode ? '仅用于界面与流程走查，不代表真实业务数据或权限' : authMode === 'dev-header' ? '本地验收账号 · 权限由数据库决定' : 'JWT/SSO 会话身份'}</small></div><span className="pilot-badge">{product.editionLabel}</span>
       {authMode === 'dev-header' && <label className="context-select"><span>验收账号</span><select value={identity.key} onChange={(event) => changeRole(event.target.value)}>{roleContexts.map((role) => <option value={role.key} key={role.key}>{role.label} · {role.userName}</option>)}</select></label>}
-      {!!compatibleAssignments.length && <label className="context-select"><span>当前任职</span><select value={selectedAssignment?.id ?? ''} onChange={(event) => setSelectedAssignmentId(event.target.value)}>{compatibleAssignments.map((assignment) => <option value={assignment.id} key={assignment.id}>{assignment.positionName} · {assignment.orgName}{assignment.primary ? '（主岗）' : ''}</option>)}</select></label>}
+      {!isPlatformAdmin && !!compatibleAssignments.length && <label className="context-select"><span>当前任职</span><select value={selectedAssignment?.id ?? ''} onChange={(event) => setSelectedAssignmentId(event.target.value)}>{compatibleAssignments.map((assignment) => <option value={assignment.id} key={assignment.id}>{assignment.positionName} · {assignment.orgName}{assignment.primary ? '（主岗）' : ''}</option>)}</select></label>}
       <button className="bell" onClick={() => navigate('notifications')} aria-label="通知">◉{unreadCount > 0 && <b>{unreadCount}</b>}</button>
       <div className="user"><span>{activeIdentity.userName.slice(-1)}</span><div><strong>{activeIdentity.userName}</strong><small>{activeIdentity.label}</small></div></div>
+      {authMode === 'bearer' && <button className="logout-button" onClick={() => setChangingPassword(true)}>修改密码</button>}
       {authMode === 'bearer' && <button className="logout-button" onClick={onLogout}>退出</button>}
     </header>
       {demoFallbackEnabled && <div className="demo-warning">已显式启用演示回退：仅当真实 API 请求失败时展示演示数据；API 返回空结果时仍显示空状态。</div>}
       <div className="canvas">{page}</div>
+      {changingPassword && <ChangePasswordDialog identity={activeIdentity} onClose={() => setChangingPassword(false)} onChanged={() => { setChangingPassword(false); onLogout?.() }} />}
     </main>
   </div>
 }

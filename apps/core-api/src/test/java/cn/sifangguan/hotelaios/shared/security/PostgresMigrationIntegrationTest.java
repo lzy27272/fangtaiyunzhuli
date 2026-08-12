@@ -30,7 +30,23 @@ class PostgresMigrationIntegrationTest {
                 statement.execute("CREATE ROLE hotel_ai_os_app LOGIN PASSWORD 'test-only-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT");
             }
 
-            int migrations = Flyway.configure()
+            Flyway foundationFlyway = Flyway.configure()
+                    .dataSource(ownerDataSource)
+                    .locations("classpath:db/migration")
+                    .cleanDisabled(true)
+                    .target("27")
+                    .load();
+            int migrations = foundationFlyway.migrate().migrationsExecuted;
+
+            try (Connection connection = ownerDataSource.getConnection();
+                 Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO app_role (tenant_id, code, name, role_type)
+                        VALUES ('%s'::uuid, 'PLATFORM_ADMIN', '平台管理员', 'SYSTEM')
+                        """.formatted(DEMO_TENANT));
+            }
+
+            migrations += Flyway.configure()
                     .dataSource(ownerDataSource)
                     .locations("classpath:db/migration")
                     .cleanDisabled(true)
@@ -38,7 +54,7 @@ class PostgresMigrationIntegrationTest {
                     .migrate()
                     .migrationsExecuted;
 
-            assertEquals(23, migrations);
+            assertEquals(28, migrations);
 
             try (Connection owner = ownerDataSource.getConnection();
                  Statement statement = owner.createStatement()) {
@@ -51,8 +67,19 @@ class PostgresMigrationIntegrationTest {
                 }
                 assertEquals(1, scalarInt(statement,
                         "SELECT count(*) FROM tenant WHERE id = '" + DEMO_TENANT + "'::uuid"));
-                assertEquals(8, scalarInt(statement,
+                assertEquals(12, scalarInt(statement,
                         "SELECT count(*) FROM app_role WHERE tenant_id = '" + DEMO_TENANT + "'::uuid"));
+                assertEquals(1, scalarInt(statement, """
+                        SELECT count(*) FROM kpi_template_definition
+                        WHERE tenant_id = '%s'::uuid AND code = 'KPI-OTA-OPERATION-MANAGER'
+                        """.formatted(DEMO_TENANT)));
+                assertEquals(1, scalarInt(statement, """
+                        SELECT count(*) FROM kpi_template_version version
+                        JOIN standard_version standard ON standard.tenant_id = version.tenant_id
+                          AND standard.id = version.standard_version_id
+                        WHERE version.tenant_id = '%s'::uuid AND standard.lifecycle_status = 'PUBLISHED'
+                          AND version.base_full_score = 100
+                        """.formatted(DEMO_TENANT)));
                 assertTrue(scalarBoolean(statement,
                         "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'work_record'::regclass"));
                 for (String table : TENANT_RLS_TABLES) {
@@ -72,6 +99,7 @@ class PostgresMigrationIntegrationTest {
                 verifyEventNormalizationAndFrozenRule(statement);
                 verifyWorkPackageChildCannotMoveFromPublishedParent(statement);
                 verifyDailyOperationsFoundationAndImmutability(statement);
+                verifyInvestmentFoundationPermissionsAndImmutability(statement);
                 statement.executeUpdate("INSERT INTO tenant (id, code, name) VALUES ('" + OTHER_TENANT + "', 'OTHER', 'Other tenant')");
                 statement.executeUpdate("INSERT INTO org_unit (id, tenant_id, code, name, unit_type) VALUES ('22000000-0000-0000-0000-000000000001', '" + OTHER_TENANT + "', 'OTHER-GROUP', 'Other group', 'GROUP')");
             }
@@ -92,6 +120,78 @@ class PostgresMigrationIntegrationTest {
                 runtime.rollback();
             }
         }
+    }
+
+    private static void verifyInvestmentFoundationPermissionsAndImmutability(Statement statement) throws Exception {
+        assertEquals(1, scalarInt(statement, """
+                SELECT count(*) FROM investment_cost_parameter_version
+                WHERE tenant_id = '%s'::uuid AND lifecycle_status = 'ACTIVE'
+                """.formatted(DEMO_TENANT)));
+        assertEquals(6, scalarInt(statement, """
+                SELECT count(*)
+                FROM role_permission grant_item
+                JOIN app_role role ON role.tenant_id = grant_item.tenant_id AND role.id = grant_item.role_id
+                JOIN permission permission_item ON permission_item.id = grant_item.permission_id
+                WHERE grant_item.tenant_id = '%s'::uuid
+                  AND role.code = 'CEO' AND permission_item.code LIKE 'investment.%%'
+                """.formatted(DEMO_TENANT)));
+        assertEquals(7, scalarInt(statement, """
+                SELECT count(*)
+                FROM role_permission grant_item
+                JOIN app_role role ON role.tenant_id = grant_item.tenant_id AND role.id = grant_item.role_id
+                JOIN permission permission_item ON permission_item.id = grant_item.permission_id
+                WHERE grant_item.tenant_id = '%s'::uuid
+                  AND role.code = 'PLATFORM_ADMIN' AND permission_item.code LIKE 'investment.%%'
+                """.formatted(DEMO_TENANT)));
+        assertEquals(0, scalarInt(statement, """
+                SELECT count(*)
+                FROM role_permission grant_item
+                JOIN app_role role ON role.tenant_id = grant_item.tenant_id AND role.id = grant_item.role_id
+                JOIN permission permission_item ON permission_item.id = grant_item.permission_id
+                WHERE grant_item.tenant_id = '%s'::uuid
+                  AND role.code NOT IN ('CEO', 'PLATFORM_ADMIN')
+                  AND permission_item.code LIKE 'investment.%%'
+                """.formatted(DEMO_TENANT)));
+
+        assertThrows(SQLException.class, () -> statement.executeUpdate("""
+                UPDATE investment_cost_parameter_version
+                SET salary_per_person_month = 5501
+                WHERE tenant_id = '%s'::uuid AND lifecycle_status = 'ACTIVE'
+                """.formatted(DEMO_TENANT)));
+
+        String projectId = "50000000-0000-0000-0000-000000000001";
+        String versionId = "50000000-0000-0000-0000-000000000002";
+        statement.executeUpdate("""
+                INSERT INTO investment_project
+                    (id, tenant_id, project_no, name, created_by, updated_by)
+                SELECT '%s'::uuid, '%s'::uuid, 'TZ-202608-TEST', '迁移测试项目', activated_by, activated_by
+                FROM investment_cost_parameter_version
+                WHERE tenant_id = '%s'::uuid AND lifecycle_status = 'ACTIVE'
+                """.formatted(projectId, DEMO_TENANT, DEMO_TENANT));
+        statement.executeUpdate("""
+                INSERT INTO investment_plan_version (
+                    id, tenant_id, project_id, version_no, lifecycle_status, project_name_snapshot,
+                    rent_per_sqm_month, property_area_sqm, property_fee_per_sqm_month,
+                    room_count, staff_count, positioning, management_fee_rate, selling_room_rate,
+                    investment_total, cost_parameter_version_id, calculation_snapshot,
+                    content_hash, created_by, updated_by, confirmed_by, confirmed_at
+                )
+                SELECT '%s'::uuid, '%s'::uuid, '%s'::uuid, 1, 'FORMAL', '迁移测试项目',
+                       50, 1000, 10, 100, 10, 'FOUR_DIAMOND', 0.05, 300,
+                       20000000, id, '{}'::jsonb, repeat('f', 64),
+                       activated_by, activated_by, activated_by, now()
+                FROM investment_cost_parameter_version
+                WHERE tenant_id = '%s'::uuid AND lifecycle_status = 'ACTIVE'
+                """.formatted(versionId, DEMO_TENANT, projectId, DEMO_TENANT));
+
+        assertThrows(SQLException.class, () -> statement.executeUpdate(
+                "UPDATE investment_plan_version SET selling_room_rate = 301 WHERE id = '" + versionId + "'::uuid"));
+        assertThrows(SQLException.class, () -> statement.executeUpdate(
+                "DELETE FROM investment_plan_version WHERE id = '" + versionId + "'::uuid"));
+        assertEquals(1, statement.executeUpdate(
+                "UPDATE investment_plan_version SET lifecycle_status = 'HISTORICAL' WHERE id = '" + versionId + "'::uuid"));
+        assertThrows(SQLException.class, () -> statement.executeUpdate(
+                "UPDATE investment_plan_version SET lifecycle_status = 'FORMAL' WHERE id = '" + versionId + "'::uuid"));
     }
 
     private static void verifyEventNormalizationAndFrozenRule(Statement statement) throws Exception {
@@ -296,6 +396,17 @@ class PostgresMigrationIntegrationTest {
             "wecom_user_binding", "wecom_chat_binding", "wecom_inbound_receipt",
             "wecom_task_card_binding", "wecom_oauth_attempt",
             "daily_report_delivery_policy"
+            , "metric_definition_version", "kpi_compensation_policy_definition",
+            "kpi_compensation_policy_version", "kpi_template_definition", "kpi_template_version",
+            "kpi_template_section", "kpi_indicator_rule", "kpi_template_approval", "kpi_template_binding",
+            "kpi_assessment_relation", "kpi_relation_scope", "kpi_period", "kpi_responsibility_snapshot",
+            "kpi_metric_fact", "kpi_scorecard", "kpi_scorecard_revision", "kpi_indicator_result",
+            "kpi_manual_score", "kpi_evidence", "kpi_review", "kpi_dispute", "kpi_correction",
+            "kpi_bonus_adjustment", "kpi_employee_bonus_base", "kpi_settlement", "kpi_template_import_job",
+            "kpi_inspection_schedule", "kpi_inspection_submission", "kpi_inspection_abnormality_event",
+            "kpi_inspection_verification", "kpi_inspection_sla_breach", "kpi_automation_run",
+            "investment_cost_parameter_version", "investment_project_number_counter",
+            "investment_project", "investment_plan_version"
     };
 
     private static final String[] TENANT_RLS_TABLES = {
@@ -320,7 +431,9 @@ class PostgresMigrationIntegrationTest {
             "ai_recommendation_source", "ai_decision", "operation_export_job",
             "wecom_user_binding", "wecom_chat_binding", "wecom_inbound_receipt",
             "wecom_task_card_binding", "wecom_oauth_attempt",
-            "daily_report_delivery_policy"
+            "daily_report_delivery_policy",
+            "investment_cost_parameter_version", "investment_project_number_counter",
+            "investment_project", "investment_plan_version"
     };
 
     private static int scalarInt(Statement statement, String sql) throws Exception {

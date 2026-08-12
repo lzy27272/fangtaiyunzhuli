@@ -311,6 +311,9 @@ components:
         - OTA_OPERATION_MANAGER
         - CEO
         - REGIONAL_MANAGER
+        - GENERAL_MANAGER
+        - ASSISTANT_GENERAL_MANAGER
+        - FRONT_OFFICE_SUPERVISOR
         - REVENUE_MANAGER
         - HOTEL_P1_HANDLER
     ProblemDetails:

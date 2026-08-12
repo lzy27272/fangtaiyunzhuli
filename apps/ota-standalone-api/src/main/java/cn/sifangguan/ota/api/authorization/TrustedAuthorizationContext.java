@@ -29,6 +29,15 @@ public final class TrustedAuthorizationContext {
         return fromAuthenticatedAccount(account.id(), account.roles());
     }
 
+    public static TrustedAuthorizationContext fromMappedPlatformIdentity(
+            UUID accountId,
+            Set<OtaRole> roles
+    ) {
+        Objects.requireNonNull(accountId, "accountId");
+        Objects.requireNonNull(roles, "roles");
+        return fromAuthenticatedAccount(accountId, roles);
+    }
+
     private static TrustedAuthorizationContext fromAuthenticatedAccount(
             UUID accountId,
             Set<OtaRole> roles
@@ -36,6 +45,9 @@ public final class TrustedAuthorizationContext {
         EnumSet<OtaPermission> permissions = EnumSet.noneOf(OtaPermission.class);
         if (roles.stream().anyMatch(OtaRole::hasGlobalReadAccess)) {
             permissions.add(OtaPermission.CROSS_TENANT_READ);
+        }
+        if (roles.stream().anyMatch(role -> !role.isUnsupportedLegacyRole())) {
+            permissions.add(OtaPermission.HOTEL_READ);
         }
         if (roles.contains(OtaRole.PLATFORM_ADMIN)) {
             permissions.add(OtaPermission.TENANT_CONFIG_MANAGE);
@@ -45,12 +57,21 @@ public final class TrustedAuthorizationContext {
             permissions.add(OtaPermission.ROOM_MAPPING_MANAGE);
             permissions.add(OtaPermission.REVENUE_TARGET_MANAGE);
             permissions.add(OtaPermission.PACE_CURVE_MANAGE);
+            permissions.add(OtaPermission.SECRET_REFERENCE_MANAGE);
             permissions.add(OtaPermission.SIMULATION_RUN_TRIGGER);
         }
-        if (roles.contains(OtaRole.REVENUE_MANAGER)) {
+        if (roles.contains(OtaRole.OTA_OPERATION_MANAGER)) {
             permissions.add(OtaPermission.ROOM_MAPPING_MANAGE);
             permissions.add(OtaPermission.REVENUE_TARGET_MANAGE);
             permissions.add(OtaPermission.PACE_CURVE_MANAGE);
+            permissions.add(OtaPermission.PRICE_APPROVE_AND_SYNC);
+            permissions.add(OtaPermission.SECRET_REFERENCE_MANAGE);
+            permissions.add(OtaPermission.ALERT_POLICY_MANAGE);
+            permissions.add(OtaPermission.AI_POLICY_MANAGE);
+        }
+        if (roles.stream().anyMatch(OtaRole::mayInitiatePriceRequest)) {
+            permissions.add(OtaPermission.PRICE_PREVIEW);
+            permissions.add(OtaPermission.PRICE_REQUEST_CREATE);
         }
         return new TrustedAuthorizationContext(accountId, roles, permissions);
     }

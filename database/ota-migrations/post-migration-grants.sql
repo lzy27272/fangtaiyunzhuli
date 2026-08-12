@@ -204,6 +204,7 @@ DECLARE
         'control.service_principal',
         'control.service_principal_database_role_binding',
         'control.service_principal_rotation_event',
+        'control.role_deprecation_event',
         'control.audit_event',
         'control.connector_adapter_registry',
         'control.connector_contract_candidate_manifest',
@@ -231,6 +232,8 @@ DECLARE
         'ota.connector_authorization_state',
         'ota.browser_authorization_attempt',
         'ota.browser_authorization_command_receipt',
+        'ota.connector_access_authorization_draft',
+        'ota.credential_migration_rehearsal',
         'ota.hotel_message_endpoint',
         'ota.connector_collection_schedule',
         'ota.hotel_revenue_target_version',
@@ -377,6 +380,18 @@ BEGIN
             role_name
         );
         EXECUTE format(
+            'REVOKE ALL PRIVILEGES ON FUNCTION control.reject_deprecated_account_role() FROM %I',
+            role_name
+        );
+        EXECUTE format(
+            'REVOKE ALL PRIVILEGES ON FUNCTION control.reject_deprecated_hotel_scope() FROM %I',
+            role_name
+        );
+        EXECUTE format(
+            'REVOKE ALL PRIVILEGES ON FUNCTION control.enforce_credential_migration_rehearsal() FROM %I',
+            role_name
+        );
+        EXECUTE format(
             'REVOKE ALL PRIVILEGES ON FUNCTION ota.start_browser_authorization_rehearsal(uuid,uuid,uuid,uuid,uuid,uuid,bigint,text,text,text,timestamptz,uuid,text,text,text,uuid,bigint) FROM %I',
             role_name
         );
@@ -395,6 +410,7 @@ BEGIN
     EXECUTE format('GRANT SELECT ON TABLE control.permission_definition TO %I', api_name);
     EXECUTE format('GRANT SELECT ON TABLE control.role_permission TO %I', api_name);
     EXECUTE format('GRANT SELECT, INSERT ON TABLE control.account_role TO %I', api_name);
+    EXECUTE format('GRANT SELECT ON TABLE control.role_deprecation_event TO %I', api_name);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE control.auth_session TO %I', api_name);
     EXECUTE format('GRANT SELECT ON TABLE control.connector_adapter_registry TO %I', api_name);
     EXECUTE format('GRANT INSERT ON TABLE control.audit_event TO %I', api_name);
@@ -427,6 +443,23 @@ BEGIN
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.connector_authorization_state TO %I', api_name);
     EXECUTE format('GRANT SELECT ON TABLE ota.browser_authorization_attempt TO %I', api_name);
     EXECUTE format('GRANT SELECT ON TABLE ota.browser_authorization_command_receipt TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.connector_access_authorization_draft TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.credential_migration_rehearsal TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.data_retention_policy_version TO %I', api_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.data_quality_event TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.safe_deep_link_policy_version TO %I', api_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.ota_platform_alert TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.ota_platform_alert_event TO %I', api_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.alert_notification_intent TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.hotel_ai_policy_version TO %I', api_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.ai_advice_evaluation TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.price_change_preview TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.price_change_request TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.price_change_event TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.all_store_uat_run TO %I', api_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.all_store_uat_daily_evidence TO %I', api_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.hotel_release_decision TO %I', api_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.anomaly_first_dashboard TO %I', api_name);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.hotel_message_endpoint TO %I', api_name);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.connector_collection_schedule TO %I', api_name);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.hotel_revenue_target_version TO %I', api_name);
@@ -575,6 +608,15 @@ BEGIN
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.ota_outbox_publish_state TO %I', worker_name);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE ota.notification_delivery TO %I', worker_name);
     EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.notification_delivery_attempt TO %I', worker_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.data_retention_policy_version TO %I', worker_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.data_quality_event TO %I', worker_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.safe_deep_link_policy_version TO %I', worker_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.ota_platform_alert TO %I', worker_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.ota_platform_alert_event TO %I', worker_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.alert_notification_intent TO %I', worker_name);
+    EXECUTE format('GRANT SELECT ON TABLE ota.hotel_ai_policy_version TO %I', worker_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.ai_advice_evaluation TO %I', worker_name);
+    EXECUTE format('GRANT SELECT, INSERT ON TABLE ota.all_store_uat_daily_evidence TO %I', worker_name);
 
     -- Independent audit sink stays write-only.
     EXECUTE format('GRANT USAGE ON SCHEMA control TO %I', audit_name);
@@ -582,4 +624,4 @@ BEGIN
 END
 $grants$;
 
-\echo 'PASS: Sprint 2D runtime grants, offline rehearsal command functions, explicit Worker principal/slot binding and narrow contract read applied.'
+\echo 'PASS: WP2 runtime grants, append-only preparation metadata, offline rehearsal commands, explicit Worker principal/slot binding and narrow contract read applied.'

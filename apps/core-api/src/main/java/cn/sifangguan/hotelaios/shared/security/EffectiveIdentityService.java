@@ -92,6 +92,9 @@ public class EffectiveIdentityService {
                   and (ra.valid_to is null or ra.valid_to > now())
                 order by p.code
                 """, params, String.class));
+        if (roles.contains("PLATFORM_ADMIN")) {
+            permissions.add("*");
+        }
 
         List<AssignmentScope> activeAssignments = jdbc.query("""
                 select epa.id, epa.org_unit_id

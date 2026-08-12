@@ -1,4 +1,4 @@
--- Run after V1 through V6 against a disposable OTA database using psql with ON_ERROR_STOP=1.
+-- Run after V1 through V8 against a disposable OTA database using psql with ON_ERROR_STOP=1.
 -- Catalog assertions are followed by rollback-only negative-control data checks.
 
 DO $$
@@ -27,6 +27,8 @@ DECLARE
         'connector_authorization_state',
         'browser_authorization_attempt',
         'browser_authorization_command_receipt',
+        'connector_access_authorization_draft',
+        'credential_migration_rehearsal',
         'hotel_message_endpoint',
         'connector_collection_schedule',
         'hotel_revenue_target_version',
@@ -61,7 +63,21 @@ DECLARE
         'ota_brief_adjustment',
         'notification_target',
         'notification_delivery',
-        'notification_delivery_attempt'
+        'notification_delivery_attempt',
+        'data_retention_policy_version',
+        'data_quality_event',
+        'safe_deep_link_policy_version',
+        'ota_platform_alert',
+        'ota_platform_alert_event',
+        'alert_notification_intent',
+        'hotel_ai_policy_version',
+        'ai_advice_evaluation',
+        'price_change_preview',
+        'price_change_request',
+        'price_change_event',
+        'all_store_uat_run',
+        'all_store_uat_daily_evidence',
+        'hotel_release_decision'
     ];
 BEGIN
     FOREACH table_name IN ARRAY required_tenant_tables
@@ -135,6 +151,21 @@ DECLARE
         'ota.connector_contract_baseline_revocation',
         'ota.connector_contract_command_receipt',
         'ota.browser_authorization_command_receipt',
+        'control.role_deprecation_event',
+        'ota.connector_access_authorization_draft',
+        'ota.credential_migration_rehearsal',
+        'ota.data_retention_policy_version',
+        'ota.data_quality_event',
+        'ota.safe_deep_link_policy_version',
+        'ota.ota_platform_alert',
+        'ota.ota_platform_alert_event',
+        'ota.alert_notification_intent',
+        'ota.hotel_ai_policy_version',
+        'ota.ai_advice_evaluation',
+        'ota.price_change_preview',
+        'ota.price_change_event',
+        'ota.all_store_uat_daily_evidence',
+        'ota.hotel_release_decision',
         'control.connector_contract_candidate_manifest',
         'control.service_principal_rotation_event'
     ];
@@ -160,11 +191,60 @@ END;
 $$;
 
 DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = 'ota'
+           AND table_name IN (
+               'data_retention_policy_version', 'data_quality_event',
+               'safe_deep_link_policy_version', 'ota_platform_alert',
+               'ota_platform_alert_event', 'alert_notification_intent',
+               'hotel_ai_policy_version', 'ai_advice_evaluation',
+               'price_change_preview', 'price_change_request',
+               'price_change_event', 'all_store_uat_run',
+               'all_store_uat_daily_evidence', 'hotel_release_decision'
+           )
+           AND lower(column_name) IN (
+               'password', 'cookie', 'token', 'webhook_url', 'secret_value',
+               'secret_ref', 'authorization_header', 'guest_name', 'guest_phone'
+           )
+    ) THEN
+        RAISE EXCEPTION 'WP3-WP8 final-stage tables contain forbidden secret or guest PII columns';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_constraint c
+        JOIN pg_catalog.pg_class r ON r.oid = c.conrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace
+        WHERE n.nspname = 'ota'
+          AND r.relname = 'alert_notification_intent'
+          AND pg_get_constraintdef(c.oid) LIKE '%P1%P2%IN_APP_AND_WECOM%'
+    ) THEN
+        RAISE EXCEPTION 'P1/P2 WeCom routing hard constraint is absent';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_constraint c
+        JOIN pg_catalog.pg_class r ON r.oid = c.conrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace
+        WHERE n.nspname = 'ota'
+          AND r.relname = 'price_change_preview'
+          AND pg_get_constraintdef(c.oid) LIKE '%NOT external_execution_allowed%'
+    ) THEN
+        RAISE EXCEPTION 'Price write execution is not fail-closed';
+    END IF;
+END;
+$$;
+
+DO $$
 DECLARE
     actual_roles TEXT[];
     expected_roles CONSTANT TEXT[] := ARRAY[
-        'CEO', 'HOTEL_P1_HANDLER', 'OTA_OPERATION_ASSISTANT',
-        'OTA_OPERATION_MANAGER', 'PLATFORM_ADMIN', 'REGIONAL_MANAGER', 'REVENUE_MANAGER'
+        'ASSISTANT_GENERAL_MANAGER', 'CEO', 'FRONT_OFFICE_SUPERVISOR',
+        'GENERAL_MANAGER', 'HOTEL_P1_HANDLER', 'OTA_OPERATION_ASSISTANT',
+        'OTA_OPERATION_MANAGER', 'PLATFORM_ADMIN', 'REGIONAL_MANAGER',
+        'REVENUE_MANAGER'
     ];
 BEGIN
     SELECT array_agg(role_code ORDER BY role_code)
@@ -173,6 +253,74 @@ BEGIN
 
     IF actual_roles IS DISTINCT FROM expected_roles THEN
         RAISE EXCEPTION 'Fixed role seed mismatch: %', actual_roles;
+    END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+          FROM control.role_deprecation_event
+         WHERE role_code = 'REVENUE_MANAGER'
+           AND reason_code = 'ROLE_REMOVED_FROM_ORG_MATRIX'
+    ) THEN
+        RAISE EXCEPTION 'Legacy revenue role deprecation evidence is absent';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM control.account_role AS assignment
+          JOIN control.role_definition AS role
+            ON role.role_id = assignment.role_id
+         WHERE role.role_code = 'REVENUE_MANAGER'
+           AND assignment.valid_from <= CURRENT_TIMESTAMP
+           AND (
+               assignment.valid_until IS NULL
+               OR assignment.valid_until > CURRENT_TIMESTAMP
+           )
+    ) THEN
+        RAISE EXCEPTION 'Legacy revenue role still has an active account assignment';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = 'ota'
+           AND table_name IN (
+               'connector_access_authorization_draft',
+               'credential_migration_rehearsal'
+           )
+           AND lower(column_name) IN (
+               'password', 'cookie', 'token', 'secret_value',
+               'secret_ref', 'source_locator', 'legacy_locator'
+           )
+    ) THEN
+        RAISE EXCEPTION 'WP2 preparation metadata contains a forbidden secret/locator column';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_constraint constraint_row
+          JOIN pg_catalog.pg_class relation
+            ON relation.oid = constraint_row.conrelid
+          JOIN pg_catalog.pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+         WHERE namespace.nspname = 'ota'
+           AND relation.relname = 'credential_migration_rehearsal'
+           AND pg_get_constraintdef(constraint_row.oid) LIKE '%NOT raw_secret_received%'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_constraint constraint_row
+          JOIN pg_catalog.pg_class relation
+            ON relation.oid = constraint_row.conrelid
+          JOIN pg_catalog.pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+         WHERE namespace.nspname = 'ota'
+           AND relation.relname = 'credential_migration_rehearsal'
+           AND pg_get_constraintdef(constraint_row.oid) LIKE '%NOT execution_allowed%'
+    ) THEN
+        RAISE EXCEPTION 'WP2 migration rehearsal is not fail-closed';
     END IF;
 END;
 $$;

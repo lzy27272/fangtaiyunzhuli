@@ -3,6 +3,9 @@ package cn.sifangguan.hotelaios.auth;
 import cn.sifangguan.hotelaios.shared.db.TenantDatabaseContext;
 import cn.sifangguan.hotelaios.shared.security.IdentityAuthenticationException;
 import cn.sifangguan.hotelaios.shared.security.PilotPasswordHasher;
+import cn.sifangguan.hotelaios.shared.context.TenantContext;
+import cn.sifangguan.hotelaios.shared.context.TenantPrincipal;
+import cn.sifangguan.hotelaios.shared.audit.AuditWriter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -35,12 +38,14 @@ public class PilotAuthService {
     private final String issuer;
     private final String audience;
     private final Duration tokenTtl;
+    private final AuditWriter auditWriter;
 
     public PilotAuthService(
             NamedParameterJdbcTemplate jdbc,
             TenantDatabaseContext databaseContext,
             PilotPasswordHasher passwordHasher,
             JwtEncoder jwtEncoder,
+            AuditWriter auditWriter,
             @Value("${app.security.local-login.issuer:hotel-ai-os-pilot}") String issuer,
             @Value("${app.security.jwt.audience:hotel-ai-os-api}") String audience,
             @Value("${app.security.local-login.token-ttl-hours:8}") long tokenTtlHours
@@ -49,9 +54,48 @@ public class PilotAuthService {
         this.databaseContext = databaseContext;
         this.passwordHasher = passwordHasher;
         this.jwtEncoder = jwtEncoder;
+        this.auditWriter = auditWriter;
         this.issuer = issuer;
         this.audience = audience;
         this.tokenTtl = Duration.ofHours(Math.max(1, Math.min(tokenTtlHours, 24)));
+    }
+
+    @Transactional
+    public void changePassword(PilotAuthModels.ChangePasswordRequest request) {
+        TenantPrincipal principal = TenantContext.require();
+        databaseContext.apply(principal.tenantId());
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("tenantId", principal.tenantId())
+                .addValue("accountId", principal.actorId());
+        String currentHash;
+        try {
+            currentHash = jdbc.queryForObject("""
+                    select password_hash
+                    from user_account
+                    where tenant_id = :tenantId and id = :accountId and status = 'ACTIVE'
+                    for update
+                    """, parameters, String.class);
+        } catch (org.springframework.dao.EmptyResultDataAccessException exception) {
+            throw new IdentityAuthenticationException("账号不存在或已停用");
+        }
+        if (!passwordHasher.matches(request.currentPassword(), currentHash)) {
+            throw new IdentityAuthenticationException("当前密码错误");
+        }
+        passwordHasher.requirePassword(request.newPassword());
+        if (passwordHasher.matches(request.newPassword(), currentHash)) {
+            throw new IllegalArgumentException("新密码不能与当前密码相同");
+        }
+        jdbc.update("""
+                update user_account
+                set password_hash = :passwordHash,
+                    password_changed_at = now(),
+                    failed_login_attempts = 0,
+                    locked_until = null,
+                    updated_at = now()
+                where tenant_id = :tenantId and id = :accountId
+                """, parameters.addValue("passwordHash", passwordHasher.hash(request.newPassword())));
+        auditWriter.record("PASSWORD_CHANGED", "USER_ACCOUNT", principal.actorId(),
+                "{\"passwordChanged\":true,\"sessionRevocation\":\"CURRENT_CLIENT_LOGOUT\"}");
     }
 
     @Transactional(noRollbackFor = IdentityAuthenticationException.class)

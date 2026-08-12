@@ -62,7 +62,7 @@ class ApiRuntimeIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hotelCount").value(2))
                 .andExpect(jsonPath("$.employeeCount").value(7))
-                .andExpect(jsonPath("$.publishedStandardCount").value(2))
+                .andExpect(jsonPath("$.publishedStandardCount").value(3))
                 .andExpect(jsonPath("$.todayWorkSubmissionCount").value(3))
                 .andExpect(jsonPath("$.latestMetrics.length()").value(5));
     }

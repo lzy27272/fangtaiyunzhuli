@@ -2,6 +2,7 @@ package cn.sifangguan.hotelaios.shared.api;
 
 import cn.sifangguan.hotelaios.shared.context.TenantContext;
 import cn.sifangguan.hotelaios.shared.security.AccessDeniedException;
+import cn.sifangguan.hotelaios.shared.security.IdentityAuthenticationException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler({AccessDeniedException.class})
     ProblemDetail forbidden(RuntimeException exception) {
         return problem(HttpStatus.FORBIDDEN, "访问被拒绝", exception.getMessage());
+    }
+
+    @ExceptionHandler(IdentityAuthenticationException.class)
+    ProblemDetail unauthorized(IdentityAuthenticationException exception) {
+        return problem(HttpStatus.UNAUTHORIZED, "身份认证失败", exception.getMessage());
     }
 
     @ExceptionHandler({EmptyResultDataAccessException.class})
@@ -38,4 +44,3 @@ public class ApiExceptionHandler {
         return problem;
     }
 }
-

@@ -77,6 +77,7 @@ $runtimeSourcePaths = @(
     'tools/uat/wecom/src/future-demand-risk.mjs',
     'tools/uat/wecom/src/hot-selling-sold-out-alert.mjs',
     'tools/uat/wecom/src/hourly-delivery-candidates.mjs',
+    'tools/uat/wecom/src/ota-alert-notification-policy.mjs',
     'tools/uat/wecom/src/briefing-delivery-audit.mjs',
     'tools/uat/wecom/src/pms-json-summary.mjs',
     'tools/uat/wecom/src/report-monitor-brief.mjs',

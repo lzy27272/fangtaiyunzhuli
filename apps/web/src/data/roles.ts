@@ -8,6 +8,7 @@ const housekeeping = '12000000-0000-0000-0000-000000000006'
 
 // These are local acceptance accounts only. Roles, permissions and scopes are always re-resolved by /iam/me.
 export const roleContexts: RoleContext[] = [
+  { key: 'platform-admin', label: '平台管理员', userName: '系统管理员', orgName: '四方馆AI中台', focus: '全租户配置、权限、KPI与系统调试', tenantId, actorId: 'a3e1746e-3356-434f-a843-29ae8175c616', roleCode: 'PLATFORM_ADMIN', orgScopes: [] },
   { key: 'ceo', label: '集团CEO', userName: '集团CEO', orgName: '贵州四方馆酒店管理有限公司', focus: '集团规则、重大风险、跨区域任务与经营决策事项', tenantId, actorId: '19000000-0000-0000-0000-000000000001', roleCode: 'CEO', orgScopes: [] },
   { key: 'front-desk', label: '前台员工', userName: '林悦', orgName: '杭州中心店 · 前厅部', focus: '当前班次工作、VIP、客诉与待整改事项', tenantId, actorId: '19000000-0000-0000-0000-000000000003', assignmentId: '19200000-0000-0000-0000-000000000002', roleCode: 'FRONT_DESK', orgScopes: [frontOffice] },
   { key: 'front-supervisor', label: '前厅主管', userName: '陈航', orgName: '杭州中心店 · 前厅部', focus: '班组完成率、漏交、客诉与待验收事项', tenantId, actorId: '19000000-0000-0000-0000-000000000005', assignmentId: '19200000-0000-0000-0000-000000000004', roleCode: 'FRONT_OFFICE_SUPERVISOR', orgScopes: [frontOffice] },

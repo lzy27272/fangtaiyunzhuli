@@ -51,7 +51,10 @@ export type LoginResponse = {
 }
 
 export function hasAccessToken(): boolean {
-  if (ephemeralAccessToken || window.localStorage.getItem(UAT_ACCESS_TOKEN_STORAGE_KEY)) return true
+  // Internal account/password sessions intentionally live only in memory. A refresh,
+  // reopened tab, or new browser session must always return to the login screen.
+  window.localStorage.removeItem(UAT_ACCESS_TOKEN_STORAGE_KEY)
+  if (ephemeralAccessToken) return true
   try { return window.sessionStorage.getItem(FEDERATED_SESSION_STORAGE_KEY) === 'wecom' } catch { return false }
 }
 
@@ -79,10 +82,21 @@ export async function login(loginName: string, password: string): Promise<LoginR
     throw new ApiError(response.status, String(problem.detail ?? problem.message ?? '登录失败'), problem)
   }
   const session = await response.json() as LoginResponse
-  ephemeralAccessToken = undefined
+  ephemeralAccessToken = session.accessToken
   try { window.sessionStorage.removeItem(FEDERATED_SESSION_STORAGE_KEY) } catch { /* storage may be disabled */ }
-  window.localStorage.setItem(UAT_ACCESS_TOKEN_STORAGE_KEY, session.accessToken)
+  window.localStorage.removeItem(UAT_ACCESS_TOKEN_STORAGE_KEY)
   return session
+}
+
+export async function changePassword(
+  identity: ApiIdentity,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await apiRequest<void>('/auth/password', identity, {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
 }
 
 export function createIdempotencyKey(prefix = 'web'): string {
@@ -97,7 +111,7 @@ function authenticationHeaders(identity: ApiIdentity): HeadersInit {
     }
   }
   if (AUTH_MODE === 'bearer') {
-    const accessToken = ephemeralAccessToken ?? window.localStorage.getItem(UAT_ACCESS_TOKEN_STORAGE_KEY)
+    const accessToken = ephemeralAccessToken
     return accessToken ? { [BEARER_HEADER]: `Bearer ${accessToken}` } : {}
   }
   return {}

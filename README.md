@@ -95,6 +95,13 @@ TECH-V0.3技术冻结草案见`docs/TECH-V0.3-TECHNICAL-FREEZE-DRAFT.md`。草�
 
 ## 独立 OTA 自动化项目
 
+## 行政人事 KPI 绩效考核中心
+
+- 技术冻结：`docs/KPI-PERFORMANCE-CENTER-TECHNICAL-FREEZE.md`
+- 实施与本地部署报告：`docs/tasks/KPI-PERFORMANCE-CENTER-V1-IMPLEMENTATION-REPORT.md`
+- 数据库迁移：`database/migrations/V25__kpi_performance_center.sql`至`V27__kpi_inspection_and_automation.sql`
+- 本地Pilot已迁移至Flyway V27；真实PMS/OTA/Cookie与外部通知仍保持关闭。
+
 - OTA自动化房态对账与小时经营简报：`docs/tasks/OTA-AUTOMATION-V0.1-DESIGN-DISCUSSION.md`
 - OTA自动化技术设计：`docs/tasks/OTA-AUTOMATION-V0.1-TECH-DESIGN.md`
 - OTA自动化编码就绪报告：`docs/tasks/OTA-AUTOMATION-V0.1-CODING-READINESS.md`

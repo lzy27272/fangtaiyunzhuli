@@ -71,6 +71,7 @@ DECLARE
         'control.service_principal',
         'control.service_principal_database_role_binding',
         'control.service_principal_rotation_event',
+        'control.role_deprecation_event',
         'control.audit_event',
         'control.connector_adapter_registry',
         'control.connector_contract_candidate_manifest',
@@ -98,6 +99,8 @@ DECLARE
         'ota.connector_authorization_state',
         'ota.browser_authorization_attempt',
         'ota.browser_authorization_command_receipt',
+        'ota.connector_access_authorization_draft',
+        'ota.credential_migration_rehearsal',
         'ota.hotel_message_endpoint',
         'ota.connector_collection_schedule',
         'ota.hotel_revenue_target_version',
@@ -132,7 +135,21 @@ DECLARE
         'ota.ota_brief_adjustment',
         'ota.notification_target',
         'ota.notification_delivery',
-        'ota.notification_delivery_attempt'
+        'ota.notification_delivery_attempt',
+        'ota.data_retention_policy_version',
+        'ota.data_quality_event',
+        'ota.safe_deep_link_policy_version',
+        'ota.ota_platform_alert',
+        'ota.ota_platform_alert_event',
+        'ota.alert_notification_intent',
+        'ota.hotel_ai_policy_version',
+        'ota.ai_advice_evaluation',
+        'ota.price_change_preview',
+        'ota.price_change_request',
+        'ota.price_change_event',
+        'ota.all_store_uat_run',
+        'ota.all_store_uat_daily_evidence',
+        'ota.hotel_release_decision'
     ];
     api_control_select CONSTANT TEXT[] := ARRAY[
         'flyway.flyway_schema_history',
@@ -144,6 +161,7 @@ DECLARE
         'control.permission_definition',
         'control.role_permission',
         'control.account_role',
+        'control.role_deprecation_event',
         'control.connector_adapter_registry'
     ];
     api_denied_select CONSTANT TEXT[] := ARRAY[
@@ -168,6 +186,8 @@ DECLARE
         'ota.hotel_source_connector_version',
         'ota.connector_secret_binding',
         'ota.connector_authorization_state',
+        'ota.connector_access_authorization_draft',
+        'ota.credential_migration_rehearsal',
         'ota.hotel_message_endpoint',
         'ota.connector_collection_schedule',
         'ota.hotel_revenue_target_version',
@@ -187,7 +207,16 @@ DECLARE
         'ota.ota_task',
         'ota.ota_task_event',
         'ota.ota_outbox_event',
-        'ota.ota_outbox_publish_state'
+        'ota.ota_outbox_publish_state',
+        'ota.data_retention_policy_version',
+        'ota.safe_deep_link_policy_version',
+        'ota.ota_platform_alert_event',
+        'ota.hotel_ai_policy_version',
+        'ota.price_change_preview',
+        'ota.price_change_request',
+        'ota.price_change_event',
+        'ota.all_store_uat_run',
+        'ota.hotel_release_decision'
     ];
     api_update CONSTANT TEXT[] := ARRAY[
         'control.auth_credential',
@@ -218,7 +247,9 @@ DECLARE
         'ota.notification_target',
         'ota.ota_incident',
         'ota.ota_task',
-        'ota.ota_outbox_publish_state'
+        'ota.ota_outbox_publish_state',
+        'ota.price_change_request',
+        'ota.all_store_uat_run'
     ];
     worker_select CONSTANT TEXT[] := ARRAY[
         'ota.hotel',
@@ -269,7 +300,16 @@ DECLARE
         'ota.hotel_message_endpoint',
         'ota.notification_target',
         'ota.notification_delivery',
-        'ota.notification_delivery_attempt'
+        'ota.notification_delivery_attempt',
+        'ota.data_retention_policy_version',
+        'ota.data_quality_event',
+        'ota.safe_deep_link_policy_version',
+        'ota.ota_platform_alert',
+        'ota.ota_platform_alert_event',
+        'ota.alert_notification_intent',
+        'ota.hotel_ai_policy_version',
+        'ota.ai_advice_evaluation',
+        'ota.all_store_uat_daily_evidence'
     ];
     worker_insert CONSTANT TEXT[] := ARRAY[
         'ota.connector_authorization_state',
@@ -300,7 +340,13 @@ DECLARE
         'ota.ota_outbox_event',
         'ota.ota_outbox_publish_state',
         'ota.notification_delivery',
-        'ota.notification_delivery_attempt'
+        'ota.notification_delivery_attempt',
+        'ota.data_quality_event',
+        'ota.ota_platform_alert',
+        'ota.ota_platform_alert_event',
+        'ota.alert_notification_intent',
+        'ota.ai_advice_evaluation',
+        'ota.all_store_uat_daily_evidence'
     ];
     worker_update CONSTANT TEXT[] := ARRAY[
         'ota.simulation_run',
@@ -338,6 +384,9 @@ DECLARE
         'control.enforce_service_principal_disable_after_retirement()',
         'control.enforce_live_worker_write_session()',
         'control.enforce_browser_authorization_rehearsal_insert()',
+        'control.reject_deprecated_account_role()',
+        'control.reject_deprecated_hotel_scope()',
+        'control.enforce_credential_migration_rehearsal()',
         'control.assert_session_active_service_principal(uuid,text[])',
         'control.approve_connector_contract_candidate(uuid,uuid,uuid,uuid,uuid,uuid,text,bigint,uuid,text,text,text)',
         'control.revoke_connector_contract_baseline(uuid,uuid,uuid,uuid,bigint,uuid,text,text,text)',

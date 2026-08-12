@@ -1,0 +1,14 @@
+package cn.sifangguan.ota.contracts.gateway;
+
+public enum GatewayErrorCode {
+    FORBIDDEN_SCOPE,
+    VERSION_CONFLICT,
+    IDEMPOTENCY_CONFLICT,
+    INVALID_COMMAND_ENVELOPE,
+    SOURCE_STALE,
+    AUTHORIZATION_MISSING,
+    UAT_NOT_PASSED,
+    MAPPING_CHANGED,
+    CHANNEL_REJECTED,
+    EXECUTION_UNKNOWN
+}

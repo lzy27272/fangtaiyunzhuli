@@ -15,6 +15,9 @@ $sprint1Migration = Get-Content -LiteralPath (Join-Path $databaseDirectory 'V2__
 $sprint2Migration = Get-Content -LiteralPath (Join-Path $databaseDirectory 'V3__sprint2_offline_safety_foundation.sql') -Raw -Encoding UTF8
 $sprint2bMigration = Get-Content -LiteralPath (Join-Path $databaseDirectory 'V4__sprint2b_real_prep_control_plane.sql') -Raw -Encoding UTF8
 $sprint2cMigration = Get-Content -LiteralPath (Join-Path $databaseDirectory 'V5__sprint2c_contract_governance_and_principal_rotation.sql') -Raw -Encoding UTF8
+$sprint2dMigration = Get-Content -LiteralPath (Join-Path $databaseDirectory 'V6__sprint2d_offline_manual_authorization_rehearsal.sql') -Raw -Encoding UTF8
+$wp2Migration = Get-Content -LiteralPath (Join-Path $databaseDirectory 'V7__wp2_store_source_binding_and_credential_migration_prep.sql') -Raw -Encoding UTF8
+$finalStageMigration = Get-Content -LiteralPath (Join-Path $databaseDirectory 'V8__wp3_to_wp8_final_stage_control_plane.sql') -Raw -Encoding UTF8
 $workerPrincipalSeed = Get-Content -LiteralPath (Join-Path $databaseDirectory 'seed-sprint1-simulation-worker-principal.sql') -Raw -Encoding UTF8
 
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -66,6 +69,9 @@ Assert-Contains $compose '\.\./\.\./database/ota-migrations/V2__sprint1_simulati
 Assert-Contains $compose '\.\./\.\./database/ota-migrations/V3__sprint2_offline_safety_foundation\.sql:/flyway/sql/V3__sprint2_offline_safety_foundation\.sql:ro' 'Flyway must mount the Sprint 2A migration read-only'
 Assert-Contains $compose '\.\./\.\./database/ota-migrations/V4__sprint2b_real_prep_control_plane\.sql:/flyway/sql/V4__sprint2b_real_prep_control_plane\.sql:ro' 'Flyway must mount the Sprint 2B configuration-only migration read-only'
 Assert-Contains $compose '\.\./\.\./database/ota-migrations/V5__sprint2c_contract_governance_and_principal_rotation\.sql:/flyway/sql/V5__sprint2c_contract_governance_and_principal_rotation\.sql:ro' 'Flyway must mount the Sprint 2C governance migration read-only'
+Assert-Contains $compose '\.\./\.\./database/ota-migrations/V6__sprint2d_offline_manual_authorization_rehearsal\.sql:/flyway/sql/V6__sprint2d_offline_manual_authorization_rehearsal\.sql:ro' 'Flyway must mount the Sprint 2D authorization rehearsal migration read-only'
+Assert-Contains $compose '\.\./\.\./database/ota-migrations/V7__wp2_store_source_binding_and_credential_migration_prep\.sql:/flyway/sql/V7__wp2_store_source_binding_and_credential_migration_prep\.sql:ro' 'Flyway must mount the WP2 migration read-only'
+Assert-Contains $compose '\.\./\.\./database/ota-migrations/V8__wp3_to_wp8_final_stage_control_plane\.sql:/flyway/sql/V8__wp3_to_wp8_final_stage_control_plane\.sql:ro' 'Flyway must mount the WP3-WP8 final-stage migration read-only'
 Assert-NotContains $compose '\.\./\.\./database/ota-migrations:/flyway/sql:ro' 'Flyway location must not include post-migration and verification SQL files'
 Assert-Contains $compose '(?ms)^  ota-db-worker-principal-seed:.*?depends_on:.*?ota-postgres:\s*\r?\n\s+condition:\s*service_healthy.*?ota-db-migrator:\s*\r?\n\s+condition:\s*service_completed_successfully' 'Worker principal seed must wait for healthy PostgreSQL and successful Flyway migration'
 Assert-Contains $compose '(?ms)^  ota-db-worker-principal-seed:.*?PGUSER:\s*\$\{OTA_DB_MIGRATION_USER.*?PGPASSWORD:\s*\$\{OTA_DB_MIGRATION_PASSWORD' 'Worker principal seed must execute as the migration owner'
@@ -197,10 +203,23 @@ Assert-Contains $runtimeParentGateFunction "(?ims)TG_TABLE_SCHEMA = 'control'.*?
 Assert-Contains $runtimeParentGateFunction "(?ims)connector\.tenant_id = NEW\.tenant_id.*?connector\.hotel_id = NEW\.hotel_id.*?connector\.connector_id = NEW\.connector_id" 'Runtime parent lookup must use the explicit tenant/hotel/connector key'
 Assert-Contains $sprint2cMigration "ADD CONSTRAINT hotel_message_delivery_disabled\s+CHECK \(NOT message_enabled\)" 'Database message_enabled=false hard freeze is missing'
 Assert-NotContains $sprint2cMigration "(connector_mode\s+IN\s*\([^)]*'REAL'|connector_mode\s*=\s*'REAL'|transport_mode\s*=\s*'REAL'|external_delivery_allowed\s*=\s*TRUE|message_enabled\s*=\s*TRUE)" 'Sprint 2C must not add real runtime, network or message switches'
+Assert-Contains $wp2Migration "CREATE TABLE ota\.credential_migration_rehearsal" 'WP2 metadata-only credential migration rehearsal is missing'
+Assert-Contains $wp2Migration "raw_secret_received\s+BOOLEAN NOT NULL DEFAULT FALSE CHECK \(NOT raw_secret_received\)" 'WP2 must reject raw secret material at the database boundary'
+Assert-Contains $wp2Migration "execution_allowed\s+BOOLEAN NOT NULL DEFAULT FALSE CHECK \(NOT execution_allowed\)" 'WP2 migration preparation must remain non-executable'
+Assert-Contains $wp2Migration "authorization_state\s+VARCHAR\(32\) NOT NULL DEFAULT 'UAT_REQUIRED'" 'WP2 connector authorization must remain UAT-required'
+Assert-NotContains $wp2Migration "(connector_mode\s+IN\s*\([^)]*'REAL'|connector_mode\s*=\s*'REAL'|transport_mode\s*=\s*'REAL'|external_delivery_allowed\s*=\s*TRUE|message_enabled\s*=\s*TRUE|execution_allowed\s*=\s*TRUE)" 'WP2 must not enable real runtime, execution, network or message switches'
+Assert-Contains $finalStageMigration "retention_days\s*=\s*365" 'Final-stage operating and audit retention must be exactly one year'
+Assert-Contains $finalStageMigration "severity IN \('P1', 'P2'\).*?route_code = 'IN_APP_AND_WECOM'" 'P1 and P2 must both create in-app plus WeCom intents'
+Assert-Contains $finalStageMigration "severity = 'P3'.*?route_code = 'DAILY_WECOM_SUMMARY'" 'P3 must use the daily WeCom summary route'
+Assert-Contains $finalStageMigration "external_delivery_allowed\s+BOOLEAN NOT NULL DEFAULT FALSE CHECK \(NOT external_delivery_allowed\)" 'Final-stage notification intent must remain UAT fail-closed'
+Assert-Contains $finalStageMigration "external_execution_allowed\s+BOOLEAN NOT NULL DEFAULT FALSE CHECK \(NOT external_execution_allowed\)" 'Final-stage channel execution must remain fail-closed'
+Assert-Contains $finalStageMigration "planned_business_days\s+INTEGER NOT NULL DEFAULT 7 CHECK \(planned_business_days = 7\)" 'All-store UAT must require seven business days'
+Assert-Contains $finalStageMigration "(?s)CREATE VIEW ota\.anomaly_first_dashboard.*?WITH \(security_invoker = true\)" 'Final-stage dashboard must honor invoker RLS'
+Assert-NotContains $finalStageMigration "(?i)(password|cookie|token|webhook)(_value|_text|_body)?\s+(TEXT|VARCHAR|JSONB|BYTEA)" 'Final-stage schema must not persist secret material'
 
 if ($failures.Count -gt 0) {
     $formatted = $failures | ForEach-Object { " - $_" }
     throw "OTA deployment structure verification failed:`n$($formatted -join "`n")"
 }
 
-Write-Output 'PASS: one-shot V1-V5 migration, trusted contract governance, blue/green Worker gates, runtime Flyway-off default and exact grant matrix verified.'
+Write-Output 'PASS: one-shot V1-V8 migration, WP3-WP8 fail-closed final stage, trusted contract governance, blue/green Worker gates, runtime Flyway-off default and exact grant matrix verified.'

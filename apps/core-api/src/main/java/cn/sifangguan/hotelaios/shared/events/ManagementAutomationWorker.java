@@ -3,6 +3,7 @@ package cn.sifangguan.hotelaios.shared.events;
 import cn.sifangguan.hotelaios.dailyoperations.OperationExportProcessor;
 import cn.sifangguan.hotelaios.dailyoperations.TaskCandidateRecoveryService;
 import cn.sifangguan.hotelaios.dailyreports.DailyReportDispatchService;
+import cn.sifangguan.hotelaios.performance.KpiAutomationService;
 import cn.sifangguan.hotelaios.tasks.TaskService;
 import cn.sifangguan.hotelaios.workpackage.WorkPackageModels;
 import cn.sifangguan.hotelaios.workpackage.WorkExpectationSlaService;
@@ -41,6 +42,7 @@ public class ManagementAutomationWorker {
     private final TaskCandidateRecoveryService taskCandidateRecoveryService;
     private final OperationExportProcessor operationExportProcessor;
     private final TaskService taskService;
+    private final KpiAutomationService kpiAutomationService;
     private final AutomationWorkerMetrics metrics;
     private final List<UUID> tenantIds;
     private final int batchSize;
@@ -53,6 +55,7 @@ public class ManagementAutomationWorker {
             TaskCandidateRecoveryService taskCandidateRecoveryService,
             OperationExportProcessor operationExportProcessor,
             TaskService taskService,
+            KpiAutomationService kpiAutomationService,
             AutomationWorkerMetrics metrics,
             @Value("${app.automation.worker.tenant-ids:}") String tenantIds,
             @Value("${app.automation.worker.batch-size:100}") int batchSize
@@ -63,6 +66,7 @@ public class ManagementAutomationWorker {
         this.taskCandidateRecoveryService = taskCandidateRecoveryService;
         this.operationExportProcessor = operationExportProcessor;
         this.taskService = taskService;
+        this.kpiAutomationService = kpiAutomationService;
         this.metrics = metrics;
         this.tenantIds = parseTenantIds(tenantIds);
         if (this.tenantIds.isEmpty()) {
@@ -88,6 +92,18 @@ public class ManagementAutomationWorker {
             processTaskCandidateSync(tenantId, correlationId);
             processOperationExports(tenantId, correlationId);
             processTaskSla(tenantId, correlationId);
+            processKpi(tenantId, correlationId);
+        }
+    }
+
+    private void processKpi(UUID tenantId, UUID correlationId) {
+        String pipeline = "kpi_automation";
+        Instant startedAt = Instant.now();
+        try {
+            kpiAutomationService.processTenant(tenantId, correlationId);
+            metrics.success(pipeline, 1, Duration.between(startedAt, Instant.now()));
+        } catch (RuntimeException exception) {
+            pipelineFailure(pipeline, tenantId, correlationId, startedAt, exception);
         }
     }
 
