@@ -4,6 +4,11 @@ import { isIP } from 'node:net'
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_SCAN_ROWS = 200
 const MAX_FIELDS = 60
+const MEITUAN_EBOOKING_HOST = 'eb.meituan.com'
+const MEITUAN_EBOOKING_REFERER = 'https://eb.meituan.com/'
+const CONTROLLED_BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+  + 'AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36'
 
 const privateIpv4 = (address) => {
   const octets = String(address).split('.').map(Number)
@@ -156,6 +161,15 @@ const dimensionMatchers = Object.freeze({
   PEER_SET_SIZE: /(?:peer|competitor).*(?:count|size|total)/i,
 })
 
+const providerRequestHeaders = ({ source, endpoint }) =>
+  source.platformCode === 'MEITUAN'
+  && endpoint.hostname.toLowerCase() === MEITUAN_EBOOKING_HOST
+    ? {
+        Referer: MEITUAN_EBOOKING_REFERER,
+        'User-Agent': CONTROLLED_BROWSER_USER_AGENT,
+      }
+    : {}
+
 export const summarizeOtaJson = (root) => {
   const candidates = objectRows(root)
     .sort((left, right) => right.rows.length - left.rows.length)
@@ -227,6 +241,7 @@ export const collectOtaSource = async ({
         Accept: 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         Cookie: cookie,
+        ...providerRequestHeaders({ source, endpoint }),
         ...(source.requestMethod === 'POST'
           ? { 'Content-Type': 'application/json;charset=UTF-8' }
           : {}),
@@ -240,7 +255,12 @@ export const collectOtaSource = async ({
     clearTimeout(timer)
   }
   if (!response.ok) {
-    const error = new Error('OTA_HTTP_ERROR')
+    const status = Number(response.status)
+    const error = new Error(
+      Number.isInteger(status) && status >= 400 && status <= 599
+        ? `OTA_HTTP_${status}`
+        : 'OTA_HTTP_ERROR',
+    )
     error.httpStatus = response.status
     throw error
   }

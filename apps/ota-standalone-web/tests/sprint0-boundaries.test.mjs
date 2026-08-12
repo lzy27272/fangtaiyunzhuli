@@ -13,6 +13,10 @@ const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
 const otaSourceConfigSource = await readFile(new URL('../src/pages/OtaSourceConfigPanel.tsx', import.meta.url), 'utf8')
 const otaSourceGuidanceSource = await readFile(new URL('../src/pages/otaSourceGuidance.ts', import.meta.url), 'utf8')
+const otaSourceCollectorSource = await readFile(
+  new URL('../../../tools/uat/ota-source-collector.mjs', import.meta.url),
+  'utf8',
+)
 const luopanBrowserConfigSource = await readFile(new URL('../src/pages/LuopanBrowserConfigPanel.tsx', import.meta.url), 'utf8')
 const dataAccessOverviewSource = await readFile(
   new URL('../src/pages/DataAccessOverviewPanel.tsx', import.meta.url),
@@ -242,6 +246,9 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(otaSourceConfigSource, /triggerLiveCollection/)
   assert.match(otaSourceConfigSource, /打开OTA后台/)
   assert.match(otaSourceGuidanceSource, /OTA_RESPONSE_NOT_JSON/)
+  assert.match(otaSourceGuidanceSource, /OTA_HTTP_403/)
+  assert.match(reviewApiSource, /safeOtaRefreshErrorCode/)
+  assert.match(otaSourceCollectorSource, /MEITUAN_EBOOKING_REFERER/)
   assert.match(monitorSource, /OTA多维度对比来源/)
   assert.match(monitorSource, /直达修改/)
   assert.match(appSource, /onOpenOtaSource/)

@@ -16,6 +16,8 @@ test('OTA JSON refresh stores only data-shape summary and detected dimensions', 
     lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
     fetchImpl: async (_url, options) => {
       assert.equal(options.headers.Cookie, 'session=secret-cookie-value')
+      assert.equal(options.headers.Referer, undefined)
+      assert.equal(options.headers['User-Agent'], undefined)
       return new Response(JSON.stringify({
         data: [{
           stayDate: '2026-07-29',
@@ -40,6 +42,50 @@ test('OTA JSON refresh stores only data-shape summary and detected dimensions', 
   )
   assert.equal(JSON.stringify(result).includes('secret-cookie-value'), false)
   assert.equal(JSON.stringify(result).includes('大床房'), false)
+})
+
+test('Meituan e-booking refresh adds only its fixed browser context', async () => {
+  const result = await collectOtaSource({
+    source: {
+      platformCode: 'MEITUAN',
+      requestMethod: 'GET',
+      dataEndpointUrl:
+        'https://eb.meituan.com/api/v1/ebooking/business/peer/rank/data/result',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-meituan-cookie',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async (url, options) => {
+      assert.equal(url.hostname, 'eb.meituan.com')
+      assert.equal(options.headers.Cookie, 'session=synthetic-meituan-cookie')
+      assert.equal(options.headers.Referer, 'https://eb.meituan.com/')
+      assert.match(options.headers['User-Agent'], /^Mozilla\/5\.0/)
+      assert.equal(options.headers.Origin, undefined)
+      return new Response(JSON.stringify({ data: [{ orderRank: 7 }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    },
+  })
+  assert.equal(result.httpStatus, 200)
+  assert.deepEqual(result.detectedDimensions, ['SALES', 'RANK'])
+})
+
+test('OTA HTTP failures retain the safe status code', async () => {
+  await assert.rejects(
+    collectOtaSource({
+      source: {
+        platformCode: 'MEITUAN',
+        requestMethod: 'GET',
+        dataEndpointUrl: 'https://eb.meituan.com/api/forbidden',
+        requestPayloadJson: '',
+      },
+      cookie: 'session=synthetic-meituan-cookie',
+      lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+      fetchImpl: async () => new Response('', { status: 403 }),
+    }),
+    /OTA_HTTP_403/,
+  )
 })
 
 test('OTA refresh blocks private-network endpoints before fetch', async () => {

@@ -15,6 +15,21 @@ const GUIDANCE: Record<string, OtaSourceGuidance> = {
     fields: ['Cookie', 'OTA数据接口网址'],
     action: '优先更新Cookie；仍失败时核对数据接口网址和当前账号权限。',
   },
+  OTA_HTTP_401: {
+    reason: 'OTA数据接口未认可当前登录身份（HTTP 401）',
+    fields: ['Cookie'],
+    action: '重新登录对应OTA门店，并从该数据请求中更新完整Cookie。',
+  },
+  OTA_HTTP_403: {
+    reason: 'OTA平台拒绝当前数据请求（HTTP 403）',
+    fields: ['Cookie', 'OTA账号权限', '门店与接口参数'],
+    action: '更新该接口请求使用的完整Cookie，并核对账号是否有权查看当前门店。',
+  },
+  OTA_HTTP_429: {
+    reason: 'OTA平台限制了当前请求频率（HTTP 429）',
+    fields: ['轮询间隔'],
+    action: '暂停手动重试并调大轮询间隔，等待平台限流窗口恢复。',
+  },
   OTA_RESPONSE_NOT_JSON: {
     reason: 'OTA接口未返回JSON，可能填写了后台页面网址或已跳转登录页',
     fields: ['OTA数据接口网址', 'Cookie'],
