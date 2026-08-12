@@ -38,7 +38,24 @@ const DIMENSION_LABELS: Record<string, string> = {
   SALES: '销量/间夜',
   CHANNEL: '渠道',
   CANCELLATION: '取消',
+  RANK: '同行排名',
+  EXPOSURE: '曝光',
+  TRAFFIC: '访问流量',
+  CONVERSION: '转化率',
+  PEER_SET_SIZE: '竞争圈规模',
 }
+
+const OTA_DEFAULT_POLL_INTERVAL_MINUTES = 120
+const OTA_POLL_INTERVAL_OPTIONS = [
+  { minutes: 30, label: '每30分钟' },
+  { minutes: 60, label: '每1小时' },
+  { minutes: 120, label: '每2小时' },
+  { minutes: 180, label: '每3小时' },
+  { minutes: 240, label: '每4小时' },
+  { minutes: 360, label: '每6小时' },
+  { minutes: 720, label: '每12小时' },
+  { minutes: 1_440, label: '每24小时' },
+] as const
 
 const SENSITIVE_QUERY_KEY =
   /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
@@ -68,7 +85,7 @@ const emptyOtaSource = (): OtaSourceView => ({
   dataEndpointUrl: '',
   requestMethod: 'GET',
   requestPayloadJson: '',
-  pollIntervalMinutes: 30,
+  pollIntervalMinutes: OTA_DEFAULT_POLL_INTERVAL_MINUTES,
   enabled: true,
   cookieConfigured: false,
   cookieUpdatedAt: null,
@@ -179,6 +196,11 @@ export function OtaSourceConfigPanel({
       if (source.requestMethod === 'GET' && source.requestPayloadJson.trim()) {
         return `${source.displayName}使用GET时不能填写POST请求载荷。`
       }
+      if (!OTA_POLL_INTERVAL_OPTIONS.some(
+        (option) => option.minutes === source.pollIntervalMinutes,
+      )) {
+        return `${source.displayName}的轮询间隔不受支持。`
+      }
       if (source.requestMethod === 'POST') {
         try {
           const payload = JSON.parse(source.requestPayloadJson || '{}')
@@ -235,7 +257,7 @@ export function OtaSourceConfigPanel({
       dataEndpointUrl: source.dataEndpointUrl.trim(),
       requestMethod: source.requestMethod,
       requestPayloadJson: source.requestPayloadJson.trim(),
-      pollIntervalMinutes: 30,
+      pollIntervalMinutes: source.pollIntervalMinutes,
       enabled: source.enabled,
       cookieUpdate,
       credentialUpdate,
@@ -491,8 +513,22 @@ export function OtaSourceConfigPanel({
                 </label>
                 <label>
                   轮询间隔
-                  <select disabled value={30}>
-                    <option value={30}>30分钟</option>
+                  <select
+                    disabled={!canConfigure}
+                    value={source.pollIntervalMinutes}
+                    onChange={(event) =>
+                      updateSource(source.sourceId, {
+                        pollIntervalMinutes: Number(event.target.value),
+                      })}
+                  >
+                    {OTA_POLL_INTERVAL_OPTIONS.map((option) => (
+                      <option
+                        key={option.minutes}
+                        value={option.minutes}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 {source.requestMethod === 'POST' ? (

@@ -17,6 +17,12 @@ import {
 import { createReviewAuthStore } from './review-auth-store.mjs'
 import { collectOtaSource } from './ota-source-collector.mjs'
 import {
+  OTA_DEFAULT_POLL_INTERVAL_MINUTES,
+  OTA_POLL_INTERVAL_OPTIONS_MINUTES,
+  otaSourcePollingDue,
+  otaSourceSchedulerReady,
+} from './ota-source-schedule.mjs'
+import {
   collectLuopanControlledBrowser,
   validateLuopanBrowserSession,
 } from './luopan-controlled-browser-collector.mjs'
@@ -668,7 +674,10 @@ const allowedCalculationRoles = new Set([
   'PRIMARY_CALCULATION',
   'AUXILIARY_CALCULATION',
 ])
-const allowedPollIntervals = new Set([5, 10, 15, 30, 60])
+const allowedReportPollIntervals = new Set([5, 10, 15, 30, 60])
+const allowedOtaPollIntervals = new Set(
+  OTA_POLL_INTERVAL_OPTIONS_MINUTES,
+)
 const sensitiveQueryKey =
   /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
 const requestPayloadContainsSensitiveKey = (value, depth = 0) => {
@@ -725,7 +734,7 @@ const normalizeReportSources = (input) => {
       || source.endpointUrl.length > 500
       || !allowedReportTypes.has(source.reportType)
       || !allowedCalculationRoles.has(source.calculationRole)
-      || !allowedPollIntervals.has(source.pollIntervalMinutes)
+      || !allowedReportPollIntervals.has(source.pollIntervalMinutes)
       || typeof source.credentialAlias !== 'string'
       || (
         source.credentialAlias.length > 0
@@ -1186,7 +1195,14 @@ const normalizeOtaSources = (
         source.requestMethod === 'GET'
         && requestPayload !== null
       )
-      || !allowedPollIntervals.has(source.pollIntervalMinutes)
+      || (
+        !allowedOtaPollIntervals.has(source.pollIntervalMinutes)
+        && !(
+          persisted
+          && source.pollIntervalPolicyVersion !== 1
+          && [5, 10, 15].includes(source.pollIntervalMinutes)
+        )
+      )
       || typeof source.enabled !== 'boolean'
       || !Number.isInteger(source.rowVersion)
       || source.rowVersion < 0
@@ -1197,6 +1213,10 @@ const normalizeOtaSources = (
     }
     const previous = previousById.get(source.sourceId)
     const lastState = persisted ? source : previous
+    const pollIntervalMinutes =
+      persisted && source.pollIntervalPolicyVersion !== 1
+        ? OTA_DEFAULT_POLL_INTERVAL_MINUTES
+        : source.pollIntervalMinutes
     return {
       sourceId: source.sourceId,
       displayName: source.displayName.trim(),
@@ -1206,7 +1226,8 @@ const normalizeOtaSources = (
       requestMethod: source.requestMethod,
       requestPayloadJson:
         requestPayload === null ? '' : JSON.stringify(requestPayload),
-      pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
+      pollIntervalMinutes,
+      pollIntervalPolicyVersion: 1,
       enabled: source.enabled,
       lastRefreshStatus:
         ['NEVER', 'COMPLETE', 'FAILED'].includes(
@@ -1298,18 +1319,21 @@ const applyOtaSecretUpdates = (hotelId, input) => {
 
 const decorateOtaSources = (hotelId, sources) => {
   const secrets = otaSecretsForHotel(hotelId)
-  return sources.map((source) => ({
-    ...source,
-    cookieConfigured: Boolean(secrets[source.sourceId]?.cookie),
-    cookieUpdatedAt:
-      secrets[source.sourceId]?.cookie?.updatedAt ?? null,
-    credentialsConfigured:
-      Boolean(secrets[source.sourceId]?.credentials),
-    credentialsUpdatedAt:
-      secrets[source.sourceId]?.credentials?.updatedAt ?? null,
-    loginMode: 'CONTROLLED_LOGIN_PENDING',
-    loginExecutionEnabled: false,
-  }))
+  return sources.map((source) => {
+    const { pollIntervalPolicyVersion: _policyVersion, ...view } = source
+    return {
+      ...view,
+      cookieConfigured: Boolean(secrets[source.sourceId]?.cookie),
+      cookieUpdatedAt:
+        secrets[source.sourceId]?.cookie?.updatedAt ?? null,
+      credentialsConfigured:
+        Boolean(secrets[source.sourceId]?.credentials),
+      credentialsUpdatedAt:
+        secrets[source.sourceId]?.credentials?.updatedAt ?? null,
+      loginMode: 'CONTROLLED_LOGIN_PENDING',
+      loginExecutionEnabled: false,
+    }
+  })
 }
 
 const persistOtaSources = () => {
@@ -2467,9 +2491,13 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
   }
 }
 
-const refreshEnabledOtaSourcesFor = async (hotelId) => {
+const refreshEnabledOtaSourcesFor = async (
+  hotelId,
+  { dueOnly = false, now = new Date() } = {},
+) => {
   const enabled = (otaSourcesByHotel.get(hotelId) ?? [])
-    .filter((source) => source.enabled)
+    .filter((source) =>
+      source.enabled && (!dueOnly || otaSourcePollingDue(source, now)))
   const results = []
   for (const source of enabled) {
     try {
@@ -2485,7 +2513,11 @@ const refreshEnabledOtaSourcesFor = async (hotelId) => {
   return results
 }
 
-const collectLuopanLiveFor = async (hotelId, config) => {
+const collectLuopanLiveFor = async (
+  hotelId,
+  config,
+  { otaRefreshDueOnly = false } = {},
+) => {
   const hotel = selectedHotel(hotelId)
   try {
     const result = await collectLuopanControlledBrowser({
@@ -2522,7 +2554,10 @@ const collectLuopanLiveFor = async (hotelId, config) => {
       updatedAt,
     })
     persistBusinessDayControls()
-    const otaRefreshes = await refreshEnabledOtaSourcesFor(hotelId)
+    const otaRefreshes = await refreshEnabledOtaSourcesFor(
+      hotelId,
+      { dueOnly: otaRefreshDueOnly },
+    )
     return {
       ...result,
       otaRefreshes,
@@ -2551,7 +2586,10 @@ const collectLuopanLiveFor = async (hotelId, config) => {
   }
 }
 
-const collectLiveFor = async (hotelId) => {
+const collectLiveFor = async (
+  hotelId,
+  { otaRefreshDueOnly = false } = {},
+) => {
   if (activeLuopanRepairsByHotel.has(hotelId)) {
     throw new Error('LUOPAN_REAUTH_IN_PROGRESS')
   }
@@ -2561,7 +2599,11 @@ const collectLiveFor = async (hotelId) => {
   const operation = (async () => {
     const luopanConfig = luopanBrowserConfigRecordFor(hotelId)
     if (luopanConfig.enabled) {
-      return collectLuopanLiveFor(hotelId, luopanConfig)
+      return collectLuopanLiveFor(
+        hotelId,
+        luopanConfig,
+        { otaRefreshDueOnly },
+      )
     }
     const hotel = selectedHotel(hotelId)
     const businessDayControl = businessDayControlFor(hotelId)
@@ -2630,7 +2672,10 @@ const collectLiveFor = async (hotelId) => {
       liveSnapshotPath,
       result.snapshot,
     )
-    const otaRefreshes = await refreshEnabledOtaSourcesFor(hotelId)
+    const otaRefreshes = await refreshEnabledOtaSourcesFor(
+      hotelId,
+      { dueOnly: otaRefreshDueOnly },
+    )
     return {
       ...result,
       otaRefreshes,
@@ -2670,7 +2715,10 @@ const scheduledCollectionTick = async () => {
     }
     lastScheduledCollectionSlotByHotel.set(hotel.hotelId, slot.slotKey)
     try {
-      const result = await collectLiveFor(hotel.hotelId)
+      const result = await collectLiveFor(
+        hotel.hotelId,
+        { otaRefreshDueOnly: true },
+      )
       try {
         await deliverFutureDemandRisks(hotel.hotelId, result.snapshot)
       } catch (error) {
@@ -2700,6 +2748,31 @@ const scheduledCollectionTick = async () => {
         })}\n`,
       )
     }
+  }
+}
+
+const scheduledOtaSourceTick = async () => {
+  if (!automaticHourlyCollectionEnabled) return
+  const now = new Date()
+  if (!otaSourceSchedulerReady(schedulerStartedAt, now)) return
+  for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+    const dueSources = (otaSourcesByHotel.get(hotel.hotelId) ?? [])
+      .filter((source) => otaSourcePollingDue(source, now))
+    if (dueSources.length === 0) continue
+    const results = await refreshEnabledOtaSourcesFor(
+      hotel.hotelId,
+      { dueOnly: true, now },
+    )
+    process.stdout.write(
+      `${JSON.stringify({
+        event: 'SCHEDULED_OTA_SOURCE_POLL_COMPLETED',
+        hotelId: hotel.hotelId,
+        dueSourceCount: dueSources.length,
+        completedSourceCount: results.filter(
+          (source) => source.lastRefreshStatus === 'COMPLETE',
+        ).length,
+      })}\n`,
+    )
   }
 }
 
@@ -4944,6 +5017,7 @@ server.listen(port, host, () => {
   )
   const scheduler = setInterval(() => {
     void scheduledCollectionTick()
+    void scheduledOtaSourceTick()
     void scheduledWeComDeliveryTick()
     void scheduledFutureBookingDeliveryTick()
     void scheduledHotSellingSoldOutDeliveryTick()

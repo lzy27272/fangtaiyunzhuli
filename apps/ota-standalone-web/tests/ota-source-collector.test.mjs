@@ -72,3 +72,21 @@ test('OTA summary never keeps record values', () => {
   assert.ok(result.detectedFields.includes('guestName'))
   assert.equal(JSON.stringify(result).includes('不应保存'), false)
 })
+
+test('OTA summary detects peer ranking dimensions without retaining values', () => {
+  const result = summarizeOtaJson({
+    data: [{
+      exposureCount: 1_200,
+      visitorCount: 80,
+      bookingConversionRate: 0.08,
+      orderRank: 7,
+      peerHotelCount: 30,
+    }],
+  })
+  assert.deepEqual(
+    result.detectedDimensions,
+    ['SALES', 'RANK', 'EXPOSURE', 'TRAFFIC', 'CONVERSION', 'PEER_SET_SIZE'],
+  )
+  assert.equal(JSON.stringify(result).includes('1200'), false)
+  assert.equal(JSON.stringify(result).includes('0.08'), false)
+})

@@ -145,10 +145,15 @@ const dimensionMatchers = Object.freeze({
   DATE: /(?:^|_)(?:date|day|staydate|bizdate|arrivaldate|checkindate)(?:$|_)/i,
   ROOM_TYPE: /room.*(?:type|name)|(?:type|name).*room/i,
   INVENTORY: /inventory|available|remaining|stock|quota/i,
-  PRICE: /price|rate|adr|amount|revenue/i,
+  PRICE: /price|adr|amount|revenue|room.*rate|rate.*(?:price|amount)|(?:^|_)rate(?:$|_)/i,
   SALES: /sold|booked|booking|roomnights?|orders?/i,
   CHANNEL: /channel|source|ota|platform/i,
   CANCELLATION: /cancel/i,
+  RANK: /rank|ranking|position|place/i,
+  EXPOSURE: /exposure|impression|show(?:count|num)?/i,
+  TRAFFIC: /traffic|visitors?|views?|clicks?|(?:^|_)uv(?:$|_)/i,
+  CONVERSION: /conversion|convert|cvr/i,
+  PEER_SET_SIZE: /(?:peer|competitor).*(?:count|size|total)/i,
 })
 
 export const summarizeOtaJson = (root) => {
