@@ -103,6 +103,7 @@ export const summarizeMeituanCommentPages = ({
   pages,
   businessDate,
   businessDateBasis = 'SYSTEM_DATE_FALLBACK',
+  validStayedOrderCountThroughPreviousBusinessDate = null,
 }) => {
   const effectiveBusinessDate = canonicalDate(businessDate)
   if (!effectiveBusinessDate) {
@@ -150,6 +151,11 @@ export const summarizeMeituanCommentPages = ({
   const exhausted =
     totalAllTime !== null
     && rowCount >= totalAllTime
+  const denominator = Number.isSafeInteger(
+    validStayedOrderCountThroughPreviousBusinessDate,
+  ) && validStayedOrderCountThroughPreviousBusinessDate > 0
+    ? validStayedOrderCountThroughPreviousBusinessDate
+    : null
 
   return {
     provider: 'MEITUAN',
@@ -162,10 +168,18 @@ export const summarizeMeituanCommentPages = ({
     yesterdayNegativeCount,
     goodCountThroughPreviousBusinessDate,
     negativeCountThroughPreviousBusinessDate,
-    validStayedOrderCountThroughPreviousBusinessDate: null,
-    goodRatePercent: null,
-    negativeRatePermille: null,
-    denominatorStatus: 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE',
+    validStayedOrderCountThroughPreviousBusinessDate: denominator,
+    goodRatePercent: denominator === null
+      ? null
+      : Number((goodCountThroughPreviousBusinessDate / denominator * 100)
+        .toFixed(2)),
+    negativeRatePermille: denominator === null
+      ? null
+      : Number((negativeCountThroughPreviousBusinessDate / denominator * 1000)
+        .toFixed(2)),
+    denominatorStatus: denominator === null
+      ? 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE'
+      : 'AVAILABLE',
     totalAllTime,
     fetchedRowCount: rowCount,
     fetchedPageCount: pages.length,
@@ -216,6 +230,7 @@ export const collectMeituanCommentSummary = async ({
   endpoint,
   cookie,
   businessDate,
+  validStayedOrderCountThroughPreviousBusinessDate = null,
   now = () => new Date(),
   chromium = chromiumFor(),
   browserExecutable = browserExecutableFor(),
@@ -291,6 +306,7 @@ export const collectMeituanCommentSummary = async ({
         pages,
         businessDate: effectiveBusinessDate,
         businessDateBasis,
+        validStayedOrderCountThroughPreviousBusinessDate,
       })
       if (!reviewMetrics.paginationComplete && !crossedMonthBoundary) {
         throw new Error('OTA_MEITUAN_COMMENT_PAGINATION_INCOMPLETE')

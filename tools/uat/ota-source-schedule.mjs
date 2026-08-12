@@ -13,7 +13,11 @@ export const OTA_POLL_INTERVAL_OPTIONS_MINUTES = Object.freeze([
   1_440,
 ])
 
-export const otaSourcePollingDue = (source, now = new Date()) => {
+export const otaSourcePollingDue = (
+  source,
+  now = new Date(),
+  { validStayedOrderCountThroughPreviousBusinessDate = null } = {},
+) => {
   if (!source?.enabled) return false
   if (!OTA_POLL_INTERVAL_OPTIONS_MINUTES.includes(
     source.pollIntervalMinutes,
@@ -43,9 +47,16 @@ export const otaSourcePollingDue = (source, now = new Date()) => {
     source.platformCode === 'MEITUAN'
     && source.lastRefreshStatus === 'COMPLETE'
     && source.lastSummary?.recordPath === '$.data.commentList'
-    && !source.lastSummary?.reviewMetrics
   ) {
-    return true
+    if (!source.lastSummary?.reviewMetrics) return true
+    if (
+      source.lastSummary.reviewMetrics.denominatorStatus
+        === 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE'
+      && Number.isSafeInteger(
+        validStayedOrderCountThroughPreviousBusinessDate,
+      )
+      && validStayedOrderCountThroughPreviousBusinessDate > 0
+    ) return true
   }
   return currentTime - observedAt
     >= source.pollIntervalMinutes * 60_000

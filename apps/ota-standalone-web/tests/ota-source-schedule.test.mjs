@@ -132,6 +132,32 @@ test('existing Meituan comment source is due once to backfill review metrics', (
   )
 })
 
+test('Meituan review source refreshes once when the PMS denominator becomes available', () => {
+  const source = {
+    enabled: true,
+    platformCode: 'MEITUAN',
+    pollIntervalMinutes: 360,
+    lastRefreshStatus: 'COMPLETE',
+    lastRefreshAt: '2026-08-12T02:00:00.000Z',
+    lastSummary: {
+      recordPath: '$.data.commentList',
+      reviewMetrics: {
+        denominatorStatus: 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE',
+      },
+    },
+  }
+  assert.equal(otaSourcePollingDue(
+    source,
+    new Date('2026-08-12T02:00:01.000Z'),
+    { validStayedOrderCountThroughPreviousBusinessDate: 535 },
+  ), true)
+  assert.equal(otaSourcePollingDue(
+    source,
+    new Date('2026-08-12T02:00:01.000Z'),
+    { validStayedOrderCountThroughPreviousBusinessDate: null },
+  ), false)
+})
+
 test('automatic OTA polling waits through the deployment startup grace', () => {
   const startedAt = new Date('2026-08-12T00:00:00.000Z')
   assert.equal(

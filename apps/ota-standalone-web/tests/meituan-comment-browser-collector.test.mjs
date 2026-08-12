@@ -32,6 +32,7 @@ test('Meituan review summary applies frozen score thresholds and yesterday cutof
   const summary = summarizeMeituanCommentPages({
     businessDate: '2026-08-12',
     businessDateBasis: 'PMS_CONFIRMED',
+    validStayedOrderCountThroughPreviousBusinessDate: 4,
     pages: [
       {
         total: 2_952,
@@ -58,11 +59,12 @@ test('Meituan review summary applies frozen score thresholds and yesterday cutof
   assert.equal(summary.yesterdayNegativeCount, 1)
   assert.equal(summary.goodCountThroughPreviousBusinessDate, 2)
   assert.equal(summary.negativeCountThroughPreviousBusinessDate, 1)
-  assert.equal(summary.goodRatePercent, null)
-  assert.equal(summary.negativeRatePermille, null)
+  assert.equal(summary.validStayedOrderCountThroughPreviousBusinessDate, 4)
+  assert.equal(summary.goodRatePercent, 50)
+  assert.equal(summary.negativeRatePermille, 250)
   assert.equal(
     summary.denominatorStatus,
-    'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE',
+    'AVAILABLE',
   )
   assert.equal(summary.paginationComplete, true)
   assert.equal(summary.fetchedRowCount, 7)
@@ -82,4 +84,9 @@ test('Meituan review summary stays incomplete until pagination crosses month sta
     }],
   })
   assert.equal(summary.paginationComplete, false)
+  assert.equal(summary.goodRatePercent, null)
+  assert.equal(
+    summary.denominatorStatus,
+    'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE',
+  )
 })

@@ -253,6 +253,7 @@ export const collectOtaSource = async ({
   source,
   cookie,
   businessDate,
+  validStayedOrderCountThroughPreviousBusinessDate = null,
   fetchImpl = globalThis.fetch,
   lookupImpl = lookup,
   now = () => new Date(),
@@ -278,6 +279,7 @@ export const collectOtaSource = async ({
       endpoint,
       cookie,
       businessDate,
+      validStayedOrderCountThroughPreviousBusinessDate,
       now,
     })
   }

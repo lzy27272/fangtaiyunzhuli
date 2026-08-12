@@ -2443,6 +2443,19 @@ const safeOtaRefreshErrorCode = (error) => {
   return code.startsWith('OTA_') ? code : 'OTA_REFRESH_FAILED'
 }
 
+const hasEnabledMeituanReviewSource = (hotelId) =>
+  (otaSourcesByHotel.get(hotelId) ?? []).some((source) => {
+    if (!source.enabled || source.platformCode !== 'MEITUAN') return false
+    try {
+      const endpoint = new URL(source.dataEndpointUrl)
+      return endpoint.hostname.toLowerCase() === 'me.meituan.com'
+        && endpoint.pathname
+          === '/api/gw/v1/base/comments/queryGeneralCommentInfo'
+    } catch {
+      return false
+    }
+  })
+
 const refreshOtaSourceFor = async (hotelId, sourceId) => {
   const lockKey = `${hotelId}:${sourceId}`
   const running = otaSourceRefreshLocks.get(lockKey)
@@ -2462,6 +2475,9 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
         source,
         cookie,
         businessDate: latestSnapshot?.businessDate,
+        validStayedOrderCountThroughPreviousBusinessDate:
+          latestSnapshot?.validStayedOrderSummary
+            ?.validStayedOrderCount ?? null,
       })
       const updated = {
         ...source,
@@ -2509,9 +2525,14 @@ const refreshEnabledOtaSourcesFor = async (
   hotelId,
   { dueOnly = false, now = new Date() } = {},
 ) => {
+  const validStayedOrderCountThroughPreviousBusinessDate =
+    (liveSnapshotStore[hotelId] ?? []).at(-1)
+      ?.validStayedOrderSummary?.validStayedOrderCount ?? null
   const enabled = (otaSourcesByHotel.get(hotelId) ?? [])
     .filter((source) =>
-      source.enabled && (!dueOnly || otaSourcePollingDue(source, now)))
+      source.enabled && (!dueOnly || otaSourcePollingDue(source, now, {
+        validStayedOrderCountThroughPreviousBusinessDate,
+      })))
   const results = []
   for (const source of enabled) {
     try {
@@ -2544,6 +2565,7 @@ const collectLuopanLiveFor = async (
       target: null,
       hotSellingRoomTypeCodes:
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+      collectValidStayedOrders: hasEnabledMeituanReviewSource(hotelId),
     })
     appendAndPersistSnapshot(
       liveSnapshotStore,
@@ -2770,8 +2792,13 @@ const scheduledOtaSourceTick = async () => {
   const now = new Date()
   if (!otaSourceSchedulerReady(schedulerStartedAt, now)) return
   for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+    const validStayedOrderCountThroughPreviousBusinessDate =
+      (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
+        ?.validStayedOrderSummary?.validStayedOrderCount ?? null
     const dueSources = (otaSourcesByHotel.get(hotel.hotelId) ?? [])
-      .filter((source) => otaSourcePollingDue(source, now))
+      .filter((source) => otaSourcePollingDue(source, now, {
+        validStayedOrderCountThroughPreviousBusinessDate,
+      }))
     if (dueSources.length === 0) continue
     const results = await refreshEnabledOtaSourcesFor(
       hotel.hotelId,

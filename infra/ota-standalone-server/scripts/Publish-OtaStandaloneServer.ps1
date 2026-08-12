@@ -57,6 +57,7 @@ $runtimeSourcePaths = @(
     'tools/uat/review-auth-store.mjs',
     'tools/uat/ota-source-collector.mjs',
     'tools/uat/luopan-controlled-browser-collector.mjs',
+    'tools/uat/luopan-stayed-order-collector.mjs',
     'tools/uat/luopan-assisted-login.mjs',
     'tools/uat/luopan-forecast-parser.mjs',
     'tools/uat/luopan-network-sanitizer.mjs',

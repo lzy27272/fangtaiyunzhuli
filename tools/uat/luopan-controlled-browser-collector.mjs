@@ -12,6 +12,7 @@ import {
 } from './luopan-profile.mjs'
 import { isAuthenticationUrl } from './luopan-network-sanitizer.mjs'
 import { applyLuopanSessionState } from './luopan-session-state.mjs'
+import { collectLuopanStayedOrderSummary } from './luopan-stayed-order-collector.mjs'
 import { briefingCycleStart } from './report-schedule.mjs'
 
 const require = createRequire(import.meta.url)
@@ -499,6 +500,7 @@ export const collectLuopanControlledBrowser = async ({
   sessionState = null,
   target = null,
   hotSellingRoomTypeCodes = [],
+  collectValidStayedOrders = false,
   now = new Date(),
 }) => {
   if (
@@ -556,6 +558,29 @@ export const collectLuopanControlledBrowser = async ({
     const observedAt = localIso(now)
     const collectionRunId = randomUUID()
     const ingestedAt = localIso(new Date())
+    let validStayedOrderSummary = null
+    let stayedOrderErrorCode = collectValidStayedOrders
+      ? 'LUOPAN_STAYED_ORDER_COLLECTION_FAILED'
+      : 'LUOPAN_ORDER_DETAIL_NOT_CONFIGURED'
+    if (collectValidStayedOrders) {
+      try {
+        validStayedOrderSummary = await collectLuopanStayedOrderSummary({
+          page,
+          hotelId: hotel.hotelId,
+          businessDate: parsed.businessDate,
+          secretKey,
+        })
+        stayedOrderErrorCode = null
+      } catch (error) {
+        const code = String(error?.message ?? '')
+        stayedOrderErrorCode = code.startsWith('LUOPAN_STAYED_ORDER_')
+          ? code
+          : 'LUOPAN_STAYED_ORDER_COLLECTION_FAILED'
+      }
+    }
+    const snapshotCompleteness = validStayedOrderSummary
+      ? 'COMPLETE'
+      : 'PARTIAL'
     const snapshot = {
       schemaVersion: 1,
       sourceSystem: 'LUOPAN_CLOUD',
@@ -570,7 +595,7 @@ export const collectLuopanControlledBrowser = async ({
       previousBusinessDate: null,
       businessDateChanged: false,
       observedAt,
-      completeness: 'PARTIAL',
+      completeness: snapshotCompleteness,
       sources: [
         {
           sourceId: 'LUOPAN_BUSINESS_DATE',
@@ -602,14 +627,19 @@ export const collectLuopanControlledBrowser = async ({
         {
           sourceId: 'LUOPAN_ORDER_DETAIL',
           sourceCode: 'LUOPAN_ORDER_DETAIL',
-          reportType: 'ORDER_DETAIL',
-          completeness: 'UNAVAILABLE',
+          reportType: validStayedOrderSummary
+            ? 'STAYED_ORDER_AGGREGATE'
+            : 'ORDER_DETAIL',
+          completeness: validStayedOrderSummary
+            ? 'COMPLETE'
+            : 'UNAVAILABLE',
           observedAt,
           ingestedAt,
-          errorCode: 'LUOPAN_ORDER_DETAIL_NOT_CONFIGURED',
+          errorCode: stayedOrderErrorCode,
         },
       ],
       orders: null,
+      validStayedOrderSummary,
       overview: parsed.current,
       futureDaily,
       physicalInventory: parsed.physicalInventory,
@@ -628,7 +658,7 @@ export const collectLuopanControlledBrowser = async ({
     return {
       run: {
         runId: collectionRunId,
-        status: 'PARTIAL',
+        status: snapshotCompleteness,
         requestedAt: observedAt,
         completedAt: localIso(new Date()),
         businessDate: parsed.businessDate,
@@ -637,7 +667,7 @@ export const collectLuopanControlledBrowser = async ({
         businessDateSource: 'LUOPAN_CLOUD',
         businessDateStartedAt: null,
         sourceCount: 4,
-        successfulSourceCount: 3,
+        successfulSourceCount: validStayedOrderSummary ? 4 : 3,
         outboundDeliveryAttempted: false,
       },
       snapshot,
