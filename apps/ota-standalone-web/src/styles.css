@@ -595,6 +595,12 @@ details.history-card { display: block; }
   color: #153f34;
   font-size: 1.05rem;
 }
+.ota-review-board .ota-peer-rank-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+}
+.ota-review-board .ota-peer-rank-metrics strong {
+  font-size: .95rem;
+}
 .ota-monitor-error {
   display: grid;
   gap: .2rem;

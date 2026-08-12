@@ -1,5 +1,9 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
+import {
+  collectMeituanCommentSummary,
+  isMeituanCommentSource,
+} from './meituan-comment-browser-collector.mjs'
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_SCAN_ROWS = 200
@@ -248,6 +252,7 @@ export const summarizeOtaJson = (root) => {
 export const collectOtaSource = async ({
   source,
   cookie,
+  businessDate,
   fetchImpl = globalThis.fetch,
   lookupImpl = lookup,
   now = () => new Date(),
@@ -267,6 +272,15 @@ export const collectOtaSource = async ({
     source.dataEndpointUrl,
     lookupImpl,
   )
+  if (isMeituanCommentSource({ source, endpoint })) {
+    return collectMeituanCommentSummary({
+      source,
+      endpoint,
+      cookie,
+      businessDate,
+      now,
+    })
+  }
   let body
   if (source.requestMethod === 'POST') {
     try {

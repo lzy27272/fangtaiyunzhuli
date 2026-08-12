@@ -241,6 +241,27 @@ export interface OtaPeerRankingSummary {
   metrics: OtaPeerRankMetric[]
 }
 
+export interface OtaReviewMetricsSummary {
+  provider: 'MEITUAN'
+  businessDate: string
+  businessDateBasis: 'PMS_CONFIRMED' | 'SYSTEM_DATE_FALLBACK'
+  previousBusinessDate: string
+  monthStart: string
+  monthlyGoodCount: number
+  monthlyNegativeCount: number
+  yesterdayNegativeCount: number
+  goodCountThroughPreviousBusinessDate: number
+  negativeCountThroughPreviousBusinessDate: number
+  validStayedOrderCountThroughPreviousBusinessDate: number | null
+  goodRatePercent: number | null
+  negativeRatePermille: number | null
+  denominatorStatus: 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE' | 'AVAILABLE'
+  totalAllTime: number | null
+  fetchedRowCount: number
+  fetchedPageCount: number
+  paginationComplete: boolean
+}
+
 export interface OtaRefreshSummary {
   observedAt: string
   httpStatus: number
@@ -250,6 +271,7 @@ export interface OtaRefreshSummary {
   detectedDimensions: string[]
   detectedFields: string[]
   peerRanking?: OtaPeerRankingSummary
+  reviewMetrics?: OtaReviewMetricsSummary
 }
 
 export interface OtaSourceView {

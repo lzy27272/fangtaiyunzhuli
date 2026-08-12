@@ -45,6 +45,7 @@ const OTA_DIMENSION_LABELS: Record<string, string> = {
   SALES: '销量/间夜',
   CHANNEL: '渠道',
   CANCELLATION: '取消',
+  REVIEW: '评价',
 }
 
 const OTA_PEER_RANK_LABELS: Record<string, string> = {
@@ -497,6 +498,66 @@ export function MonitorPage({
                             <small>
                               平台口径为美团同行排名；当前接口未返回竞争圈总数和上期名次，
                               暂不计算前30%或升降趋势；遇到排名空值将在10分钟后补采。
+                            </small>
+                          </section>
+                        ) : null}
+                        {source.lastSummary.reviewMetrics ? (
+                          <section className="ota-peer-rank-board ota-review-board">
+                            <header>
+                              <div>
+                                <strong>美团评价经营看板</strong>
+                                <small>
+                                  本月 {source.lastSummary.reviewMetrics.monthStart} 起
+                                  {' · '}
+                                  {pollingIntervalLabel(source.pollIntervalMinutes)}更新
+                                </small>
+                              </div>
+                              <span>{observedAtLabel(source.lastSummary.observedAt)}</span>
+                            </header>
+                            <div className="ota-peer-rank-metrics">
+                              <div>
+                                <span>本月新增 ≥4.8分</span>
+                                <strong>
+                                  {source.lastSummary.reviewMetrics.monthlyGoodCount} 条
+                                </strong>
+                              </div>
+                              <div>
+                                <span>本月截止昨日好评率</span>
+                                <strong>
+                                  {source.lastSummary.reviewMetrics.goodRatePercent === null
+                                    ? '待入住订单分母'
+                                    : `${source.lastSummary.reviewMetrics.goodRatePercent}%`}
+                                </strong>
+                              </div>
+                              <div>
+                                <span>本月差评 &lt;3.0分</span>
+                                <strong>
+                                  {source.lastSummary.reviewMetrics.monthlyNegativeCount} 条
+                                </strong>
+                              </div>
+                              <div>
+                                <span>昨日新增差评</span>
+                                <strong>
+                                  {source.lastSummary.reviewMetrics.yesterdayNegativeCount} 条
+                                </strong>
+                              </div>
+                              <div>
+                                <span>本月截止昨日差评率</span>
+                                <strong>
+                                  {source.lastSummary.reviewMetrics.negativeRatePermille === null
+                                    ? '待入住订单分母'
+                                    : `${source.lastSummary.reviewMetrics.negativeRatePermille}‰`}
+                                </strong>
+                              </div>
+                            </div>
+                            <small>
+                              已通过美团官方页面安全分页采集
+                              {' '}{source.lastSummary.reviewMetrics.fetchedPageCount} 页；
+                              仅保存日期和评分汇总，不保存评价正文、用户名或订单号。
+                              {source.lastSummary.reviewMetrics.denominatorStatus
+                                === 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE'
+                                ? ' 两项比率将在PMS提供全渠道有效入住订单分母后自动计算。'
+                                : ''}
                             </small>
                           </section>
                         ) : null}

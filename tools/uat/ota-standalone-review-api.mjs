@@ -2457,7 +2457,12 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
     let cookie
     try {
       cookie = otaSecretValuesFor(hotelId, sourceId).cookie
-      const summary = await collectOtaSource({ source, cookie })
+      const latestSnapshot = (liveSnapshotStore[hotelId] ?? []).at(-1)
+      const summary = await collectOtaSource({
+        source,
+        cookie,
+        businessDate: latestSnapshot?.businessDate,
+      })
       const updated = {
         ...source,
         lastRefreshStatus: 'COMPLETE',

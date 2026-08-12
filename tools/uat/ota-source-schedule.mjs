@@ -36,8 +36,16 @@ export const otaSourcePollingDue = (source, now = new Date()) => {
       ?.some((metric) => metric?.rank === null)
     if (hasIncompleteRank) {
       return currentTime - observedAt
-        >= OTA_INCOMPLETE_RANK_RETRY_MINUTES * 60_000
+      >= OTA_INCOMPLETE_RANK_RETRY_MINUTES * 60_000
     }
+  }
+  if (
+    source.platformCode === 'MEITUAN'
+    && source.lastRefreshStatus === 'COMPLETE'
+    && source.lastSummary?.recordPath === '$.data.commentList'
+    && !source.lastSummary?.reviewMetrics
+  ) {
+    return true
   }
   return currentTime - observedAt
     >= source.pollIntervalMinutes * 60_000
