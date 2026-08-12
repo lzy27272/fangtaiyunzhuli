@@ -56,6 +56,7 @@ $runtimeSourcePaths = @(
     'tools/uat/report-source-cookie-crypto.mjs',
     'tools/uat/review-auth-store.mjs',
     'tools/uat/ota-source-collector.mjs',
+    'tools/uat/meituan-comment-browser-collector.mjs',
     'tools/uat/luopan-controlled-browser-collector.mjs',
     'tools/uat/luopan-stayed-order-collector.mjs',
     'tools/uat/luopan-assisted-login.mjs',
