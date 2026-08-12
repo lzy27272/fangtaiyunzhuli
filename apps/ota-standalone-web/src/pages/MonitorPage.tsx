@@ -489,14 +489,14 @@ export function MonitorPage({
                                 <div key={metric.code}>
                                   <span>{OTA_PEER_RANK_LABELS[metric.code] ?? metric.code}</span>
                                   <strong>
-                                    {metric.rank === null ? '待核验' : `第 ${metric.rank} 名`}
+                                    {metric.rank === null ? '平台暂未返回' : `第 ${metric.rank} 名`}
                                   </strong>
                                 </div>
                               ))}
                             </div>
                             <small>
                               平台口径为美团同行排名；当前接口未返回竞争圈总数和上期名次，
-                              暂不计算前30%或升降趋势。
+                              暂不计算前30%或升降趋势；遇到排名空值将在10分钟后补采。
                             </small>
                           </section>
                         ) : null}

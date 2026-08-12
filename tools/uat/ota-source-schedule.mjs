@@ -1,4 +1,5 @@
 export const OTA_DEFAULT_POLL_INTERVAL_MINUTES = 120
+export const OTA_INCOMPLETE_RANK_RETRY_MINUTES = 10
 export const OTA_SCHEDULER_STARTUP_GRACE_MILLISECONDS = 90_000
 
 export const OTA_POLL_INTERVAL_OPTIONS_MINUTES = Object.freeze([
@@ -19,20 +20,25 @@ export const otaSourcePollingDue = (source, now = new Date()) => {
   )) {
     return false
   }
-  if (
-    source.platformCode === 'MEITUAN'
-    && source.lastRefreshStatus === 'COMPLETE'
-    && source.lastSummary?.recordPath === '$.data.peerRankResult'
-    && !source.lastSummary?.peerRanking
-  ) {
-    return true
-  }
   const observedAt = new Date(source.lastRefreshAt ?? '').getTime()
   if (!Number.isFinite(observedAt)) return true
   const currentTime = now instanceof Date
     ? now.getTime()
     : new Date(now).getTime()
   if (!Number.isFinite(currentTime)) return false
+  if (
+    source.platformCode === 'MEITUAN'
+    && source.lastRefreshStatus === 'COMPLETE'
+    && source.lastSummary?.recordPath === '$.data.peerRankResult'
+  ) {
+    if (!source.lastSummary?.peerRanking) return true
+    const hasIncompleteRank = source.lastSummary.peerRanking.metrics
+      ?.some((metric) => metric?.rank === null)
+    if (hasIncompleteRank) {
+      return currentTime - observedAt
+        >= OTA_INCOMPLETE_RANK_RETRY_MINUTES * 60_000
+    }
+  }
   return currentTime - observedAt
     >= source.pollIntervalMinutes * 60_000
 }

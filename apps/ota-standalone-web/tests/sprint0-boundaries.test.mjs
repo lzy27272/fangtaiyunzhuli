@@ -252,6 +252,8 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(monitorSource, /OTA多维度对比来源/)
   assert.match(monitorSource, /美团排名实时看板/)
   assert.match(monitorSource, /当前接口未返回竞争圈总数和上期名次/)
+  assert.match(monitorSource, /遇到排名空值将在10分钟后补采/)
+  assert.match(monitorSource, /平台暂未返回/)
   assert.match(otaSourceCollectorSource, /MEITUAN_PEER_RANK_METRICS/)
   assert.doesNotMatch(monitorSource, /bestPeerPoiId/)
   assert.match(monitorSource, /直达修改/)

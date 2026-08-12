@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   OTA_DEFAULT_POLL_INTERVAL_MINUTES,
+  OTA_INCOMPLETE_RANK_RETRY_MINUTES,
   OTA_POLL_INTERVAL_OPTIONS_MINUTES,
   otaSourcePollingDue,
   otaSourceSchedulerReady,
@@ -9,6 +10,7 @@ import {
 
 test('OTA polling defaults to two hours and exposes approved intervals', () => {
   assert.equal(OTA_DEFAULT_POLL_INTERVAL_MINUTES, 120)
+  assert.equal(OTA_INCOMPLETE_RANK_RETRY_MINUTES, 10)
   assert.deepEqual(
     OTA_POLL_INTERVAL_OPTIONS_MINUTES,
     [30, 60, 120, 180, 240, 360, 720, 1_440],
@@ -71,6 +73,36 @@ test('existing Meituan rank source is due once to backfill the safe dashboard pr
   }
   assert.equal(
     otaSourcePollingDue(source, new Date('2026-08-12T02:00:00.000Z')),
+    false,
+  )
+})
+
+test('transiently incomplete Meituan ranking retries after ten minutes', () => {
+  const source = {
+    enabled: true,
+    platformCode: 'MEITUAN',
+    pollIntervalMinutes: 120,
+    lastRefreshStatus: 'COMPLETE',
+    lastRefreshAt: '2026-08-12T02:00:00.000Z',
+    lastSummary: {
+      recordPath: '$.data.peerRankResult',
+      peerRanking: {
+        provider: 'MEITUAN',
+        metrics: [{ code: 'ROOM_REVENUE', rank: null }],
+      },
+    },
+  }
+  assert.equal(
+    otaSourcePollingDue(source, new Date('2026-08-12T02:09:59.999Z')),
+    false,
+  )
+  assert.equal(
+    otaSourcePollingDue(source, new Date('2026-08-12T02:10:00.000Z')),
+    true,
+  )
+  source.lastSummary.peerRanking.metrics[0].rank = 3
+  assert.equal(
+    otaSourcePollingDue(source, new Date('2026-08-12T02:10:00.000Z')),
     false,
   )
 })
