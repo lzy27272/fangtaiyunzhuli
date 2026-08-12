@@ -546,6 +546,55 @@ details.history-card { display: block; }
   color: #5f6c67;
   font-size: .76rem;
 }
+.ota-peer-rank-board {
+  display: grid;
+  gap: .8rem;
+  margin-top: .35rem;
+  padding: .9rem;
+  border: 1px solid #bfd2c9;
+  border-radius: .75rem;
+  background: linear-gradient(145deg, #f7fbf9, #eef6f2);
+}
+.ota-peer-rank-board > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .8rem;
+}
+.ota-peer-rank-board > header div {
+  display: grid;
+  gap: .18rem;
+}
+.ota-peer-rank-board > header small,
+.ota-peer-rank-board > header span,
+.ota-peer-rank-board > small {
+  color: #60716a;
+  font-size: .7rem;
+}
+.ota-peer-rank-board > header span {
+  text-align: right;
+}
+.ota-peer-rank-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: .55rem;
+}
+.ota-peer-rank-metrics > div {
+  display: grid;
+  gap: .15rem;
+  padding: .65rem;
+  border: 1px solid #d5e2dc;
+  border-radius: .6rem;
+  background: rgba(255, 255, 255, .86);
+}
+.ota-peer-rank-metrics span {
+  color: #5f6c67;
+  font-size: .7rem;
+}
+.ota-peer-rank-metrics strong {
+  color: #153f34;
+  font-size: 1.05rem;
+}
 .ota-monitor-error {
   display: grid;
   gap: .2rem;

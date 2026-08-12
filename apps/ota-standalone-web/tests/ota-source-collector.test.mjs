@@ -61,14 +61,52 @@ test('Meituan e-booking refresh adds only its fixed browser context', async () =
       assert.equal(options.headers.Referer, 'https://eb.meituan.com/')
       assert.match(options.headers['User-Agent'], /^Mozilla\/5\.0/)
       assert.equal(options.headers.Origin, undefined)
-      return new Response(JSON.stringify({ data: [{ orderRank: 7 }] }), {
+      return new Response(JSON.stringify({
+        data: {
+          peerRankResult: [
+            {
+              metric: '入住间夜',
+              rank: '1',
+              bestPeerPoiId: 'must-not-be-retained',
+            },
+            { metric: '曝光', rank: null },
+            { metric: '未知指标', rank: '2' },
+          ],
+        },
+      }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     },
   })
   assert.equal(result.httpStatus, 200)
-  assert.deepEqual(result.detectedDimensions, ['SALES', 'RANK'])
+  assert.deepEqual(result.detectedDimensions, ['RANK'])
+  assert.deepEqual(result.peerRanking, {
+    provider: 'MEITUAN',
+    metrics: [
+      { code: 'STAY_ROOM_NIGHTS', rank: 1 },
+      { code: 'EXPOSURE', rank: null },
+    ],
+  })
+  assert.equal(JSON.stringify(result).includes('must-not-be-retained'), false)
+  assert.equal(JSON.stringify(result).includes('未知指标'), false)
+})
+
+test('Meituan peer ranking projection is closed for unapproved endpoints', async () => {
+  const result = await collectOtaSource({
+    source: {
+      platformCode: 'MEITUAN',
+      requestMethod: 'GET',
+      dataEndpointUrl: 'https://eb.meituan.com/api/other/rank',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-meituan-cookie',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async () => new Response(JSON.stringify({
+      data: { peerRankResult: [{ metric: '销售额', rank: '8' }] },
+    }), { status: 200 }),
+  })
+  assert.equal(result.peerRanking, undefined)
 })
 
 test('OTA HTTP failures retain the safe status code', async () => {

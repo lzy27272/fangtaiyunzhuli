@@ -19,6 +19,14 @@ export const otaSourcePollingDue = (source, now = new Date()) => {
   )) {
     return false
   }
+  if (
+    source.platformCode === 'MEITUAN'
+    && source.lastRefreshStatus === 'COMPLETE'
+    && source.lastSummary?.recordPath === '$.data.peerRankResult'
+    && !source.lastSummary?.peerRanking
+  ) {
+    return true
+  }
   const observedAt = new Date(source.lastRefreshAt ?? '').getTime()
   if (!Number.isFinite(observedAt)) return true
   const currentTime = now instanceof Date

@@ -49,6 +49,32 @@ test('new sources are due while disabled or invalid sources stay closed', () => 
   }), false)
 })
 
+test('existing Meituan rank source is due once to backfill the safe dashboard projection', () => {
+  const source = {
+    enabled: true,
+    platformCode: 'MEITUAN',
+    pollIntervalMinutes: 120,
+    lastRefreshStatus: 'COMPLETE',
+    lastRefreshAt: '2026-08-12T01:59:59.999Z',
+    lastSummary: {
+      recordPath: '$.data.peerRankResult',
+      detectedDimensions: ['RANK'],
+    },
+  }
+  assert.equal(
+    otaSourcePollingDue(source, new Date('2026-08-12T02:00:00.000Z')),
+    true,
+  )
+  source.lastSummary.peerRanking = {
+    provider: 'MEITUAN',
+    metrics: [],
+  }
+  assert.equal(
+    otaSourcePollingDue(source, new Date('2026-08-12T02:00:00.000Z')),
+    false,
+  )
+})
+
 test('automatic OTA polling waits through the deployment startup grace', () => {
   const startedAt = new Date('2026-08-12T00:00:00.000Z')
   assert.equal(

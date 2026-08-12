@@ -221,6 +221,26 @@ export type OtaPlatformCode =
   | 'TONGCHENG'
   | 'OTHER'
 
+export type OtaPeerRankMetricCode =
+  | 'STAY_ROOM_NIGHTS'
+  | 'ROOM_REVENUE'
+  | 'SOLD_ROOM_NIGHTS'
+  | 'GMV'
+  | 'EXPOSURE'
+  | 'VIEWS'
+  | 'VIEW_CONVERSION'
+  | 'PAYMENT_CONVERSION'
+
+export interface OtaPeerRankMetric {
+  code: OtaPeerRankMetricCode
+  rank: number | null
+}
+
+export interface OtaPeerRankingSummary {
+  provider: 'MEITUAN'
+  metrics: OtaPeerRankMetric[]
+}
+
 export interface OtaRefreshSummary {
   observedAt: string
   httpStatus: number
@@ -229,6 +249,7 @@ export interface OtaRefreshSummary {
   recordCount: number
   detectedDimensions: string[]
   detectedFields: string[]
+  peerRanking?: OtaPeerRankingSummary
 }
 
 export interface OtaSourceView {

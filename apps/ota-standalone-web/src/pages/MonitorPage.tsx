@@ -47,6 +47,31 @@ const OTA_DIMENSION_LABELS: Record<string, string> = {
   CANCELLATION: '取消',
 }
 
+const OTA_PEER_RANK_LABELS: Record<string, string> = {
+  STAY_ROOM_NIGHTS: '入住间夜',
+  ROOM_REVENUE: '房费收入',
+  SOLD_ROOM_NIGHTS: '销售间夜',
+  GMV: '销售额',
+  EXPOSURE: '曝光',
+  VIEWS: '浏览',
+  VIEW_CONVERSION: '浏览转化',
+  PAYMENT_CONVERSION: '支付转化',
+}
+
+function pollingIntervalLabel(minutes: number): string {
+  if (minutes === 30) return '每30分钟'
+  if (minutes % 1_440 === 0) return `每${minutes / 1_440}天`
+  if (minutes % 60 === 0) return `每${minutes / 60}小时`
+  return `每${minutes}分钟`
+}
+
+function observedAtLabel(value: string): string {
+  const observedAt = new Date(value)
+  return Number.isNaN(observedAt.getTime())
+    ? '采集时间待核验'
+    : `采集于 ${observedAt.toLocaleString('zh-CN', { hour12: false })}`
+}
+
 function displayMetric(value: string | number | null | undefined, unit: string, state: string): string {
   if (state === 'UNAVAILABLE') return '无法判断'
   if (state === 'NOT_CONFIGURED') return '暂未配置标准'
@@ -448,6 +473,33 @@ export function MonitorPage({
                             .join('、')
                             || '尚未识别'}
                         </span>
+                        {source.lastSummary.peerRanking ? (
+                          <section className="ota-peer-rank-board">
+                            <header>
+                              <div>
+                                <strong>美团排名实时看板</strong>
+                                <small>
+                                  最近一次采集 · {pollingIntervalLabel(source.pollIntervalMinutes)}更新
+                                </small>
+                              </div>
+                              <span>{observedAtLabel(source.lastSummary.observedAt)}</span>
+                            </header>
+                            <div className="ota-peer-rank-metrics">
+                              {source.lastSummary.peerRanking.metrics.map((metric) => (
+                                <div key={metric.code}>
+                                  <span>{OTA_PEER_RANK_LABELS[metric.code] ?? metric.code}</span>
+                                  <strong>
+                                    {metric.rank === null ? '待核验' : `第 ${metric.rank} 名`}
+                                  </strong>
+                                </div>
+                              ))}
+                            </div>
+                            <small>
+                              平台口径为美团同行排名；当前接口未返回竞争圈总数和上期名次，
+                              暂不计算前30%或升降趋势。
+                            </small>
+                          </section>
+                        ) : null}
                       </>
                     ) : null}
                     {guidance ? (

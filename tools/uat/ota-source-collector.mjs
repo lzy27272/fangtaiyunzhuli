@@ -6,6 +6,18 @@ const MAX_SCAN_ROWS = 200
 const MAX_FIELDS = 60
 const MEITUAN_EBOOKING_HOST = 'eb.meituan.com'
 const MEITUAN_EBOOKING_REFERER = 'https://eb.meituan.com/'
+const MEITUAN_PEER_RANK_PATH =
+  '/api/v1/ebooking/business/peer/rank/data/result'
+const MEITUAN_PEER_RANK_METRICS = Object.freeze({
+  '入住间夜': 'STAY_ROOM_NIGHTS',
+  '房费收入': 'ROOM_REVENUE',
+  '销售间夜': 'SOLD_ROOM_NIGHTS',
+  '销售额': 'GMV',
+  '曝光': 'EXPOSURE',
+  '浏览': 'VIEWS',
+  '浏览转化': 'VIEW_CONVERSION',
+  '支付转化': 'PAYMENT_CONVERSION',
+})
 const CONTROLLED_BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
   + 'AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36'
@@ -170,6 +182,42 @@ const providerRequestHeaders = ({ source, endpoint }) =>
       }
     : {}
 
+const safeRank = (value) => {
+  const normalized = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && /^\d+$/.test(value.trim())
+      ? Number(value.trim())
+      : Number.NaN
+  return Number.isSafeInteger(normalized) && normalized > 0
+    ? normalized
+    : null
+}
+
+const summarizeMeituanPeerRanking = ({ root, source, endpoint }) => {
+  if (
+    source.platformCode !== 'MEITUAN'
+    || endpoint.hostname.toLowerCase() !== MEITUAN_EBOOKING_HOST
+    || endpoint.pathname !== MEITUAN_PEER_RANK_PATH
+    || !Array.isArray(root?.data?.peerRankResult)
+  ) {
+    return null
+  }
+  const ranksByCode = new Map()
+  for (const row of root.data.peerRankResult.slice(0, MAX_SCAN_ROWS)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const code = MEITUAN_PEER_RANK_METRICS[row.metric]
+    if (!code || ranksByCode.has(code)) continue
+    ranksByCode.set(code, safeRank(row.rank))
+  }
+  if (ranksByCode.size < 1) return null
+  return {
+    provider: 'MEITUAN',
+    metrics: Object.values(MEITUAN_PEER_RANK_METRICS)
+      .filter((code) => ranksByCode.has(code))
+      .map((code) => ({ code, rank: ranksByCode.get(code) })),
+  }
+}
+
 export const summarizeOtaJson = (root) => {
   const candidates = objectRows(root)
     .sort((left, right) => right.rows.length - left.rows.length)
@@ -272,10 +320,16 @@ export const collectOtaSource = async ({
     throw new Error('OTA_RESPONSE_NOT_JSON')
   }
   const summary = summarizeOtaJson(root)
+  const peerRanking = summarizeMeituanPeerRanking({
+    root,
+    source,
+    endpoint,
+  })
   return {
     observedAt: now().toISOString(),
     httpStatus: response.status,
     ...summary,
+    ...(peerRanking ? { peerRanking } : {}),
   }
 }
 
