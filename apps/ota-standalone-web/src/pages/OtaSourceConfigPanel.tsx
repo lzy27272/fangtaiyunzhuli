@@ -120,6 +120,8 @@ export function OtaSourceConfigPanel({
     useState<Record<string, boolean>>({})
   const [clearCredentials, setClearCredentials] =
     useState<Record<string, boolean>>({})
+  const [portalUrlEnabled, setPortalUrlEnabled] =
+    useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [refreshingId, setRefreshingId] = useState<string | null>(null)
@@ -129,6 +131,9 @@ export function OtaSourceConfigPanel({
   const reload = async () => {
     const rows = await loadOtaSources(context)
     setSources(rows)
+    setPortalUrlEnabled(Object.fromEntries(
+      rows.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
+    ))
     return rows
   }
 
@@ -146,6 +151,9 @@ export function OtaSourceConfigPanel({
           setPasswordDrafts({})
           setClearCookies({})
           setClearCredentials({})
+          setPortalUrlEnabled(Object.fromEntries(
+            rows.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
+          ))
         }
       })
       .catch((cause) => {
@@ -189,8 +197,12 @@ export function OtaSourceConfigPanel({
   const validate = (): string | null => {
     for (const source of sources) {
       if (!source.displayName.trim()) return '请填写所有OTA来源名称。'
-      const portalError = validateUrl(source.portalUrl)
-      if (portalError) return `${source.displayName || 'OTA来源'}后台网址：${portalError}`
+      const usesPortalUrl = portalUrlEnabled[source.sourceId]
+        ?? Boolean(source.portalUrl)
+      if (usesPortalUrl) {
+        const portalError = validateUrl(source.portalUrl)
+        if (portalError) return `${source.displayName || 'OTA来源'}后台网址：${portalError}`
+      }
       const endpointError = validateUrl(source.dataEndpointUrl)
       if (endpointError) return `${source.displayName || 'OTA来源'}数据接口：${endpointError}`
       if (source.requestMethod === 'GET' && source.requestPayloadJson.trim()) {
@@ -253,7 +265,10 @@ export function OtaSourceConfigPanel({
       sourceId: source.sourceId,
       displayName: source.displayName.trim(),
       platformCode: source.platformCode,
-      portalUrl: source.portalUrl.trim(),
+      portalUrl:
+        (portalUrlEnabled[source.sourceId] ?? Boolean(source.portalUrl))
+          ? source.portalUrl.trim()
+          : '',
       dataEndpointUrl: source.dataEndpointUrl.trim(),
       requestMethod: source.requestMethod,
       requestPayloadJson: source.requestPayloadJson.trim(),
@@ -281,6 +296,9 @@ export function OtaSourceConfigPanel({
         sources.map(inputFor),
       )
       setSources(saved)
+      setPortalUrlEnabled(Object.fromEntries(
+        saved.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
+      ))
       setCookieDrafts({})
       setAccountDrafts({})
       setPasswordDrafts({})
@@ -371,7 +389,8 @@ export function OtaSourceConfigPanel({
           <h3>OTA后台与数据接口</h3>
           <p>
             每个门店可配置多个OTA来源。Cookie和账号密码分别加密保存且不回显；
-            立即刷新仅使用Cookie只读访问HTTPS JSON接口，不会自动调价或修改库存。
+            后台登录网址为可选补充项；立即刷新仅使用Cookie只读访问HTTPS JSON接口，
+            不会自动调价或修改库存。
           </p>
         </div>
         <span className="mode-chip">
@@ -462,21 +481,41 @@ export function OtaSourceConfigPanel({
                     ))}
                   </select>
                 </label>
-                <label className="wide-field">
-                  OTA后台登录网址
+                <label className="cookie-clear-option wide-field">
                   <input
+                    checked={
+                      portalUrlEnabled[source.sourceId]
+                      ?? Boolean(source.portalUrl)
+                    }
                     disabled={!canConfigure}
-                    placeholder="https://..."
-                    value={source.portalUrl}
+                    type="checkbox"
                     onChange={(event) =>
-                      updateSource(source.sourceId, {
-                        portalUrl: event.target.value,
-                      })}
+                      setPortalUrlEnabled((current) => ({
+                        ...current,
+                        [source.sourceId]: event.target.checked,
+                      }))}
                   />
-                  {source.portalUrl && validateUrl(source.portalUrl)
-                    ? <small className="field-error">{validateUrl(source.portalUrl)}</small>
-                    : null}
+                  填写OTA后台登录网址（可选）
+                  <small>仅用于后台快捷跳转，不参与数据采集。</small>
                 </label>
+                {(portalUrlEnabled[source.sourceId]
+                  ?? Boolean(source.portalUrl)) ? (
+                  <label className="wide-field">
+                    OTA后台登录网址（补充）
+                    <input
+                      disabled={!canConfigure}
+                      placeholder="https://..."
+                      value={source.portalUrl}
+                      onChange={(event) =>
+                        updateSource(source.sourceId, {
+                          portalUrl: event.target.value,
+                        })}
+                    />
+                    {source.portalUrl && validateUrl(source.portalUrl)
+                      ? <small className="field-error">{validateUrl(source.portalUrl)}</small>
+                      : null}
+                  </label>
+                ) : null}
                 <label className="wide-field">
                   OTA数据接口网址（返回JSON）
                   <input
@@ -674,7 +713,10 @@ export function OtaSourceConfigPanel({
 
               <footer>
                 <div className="heading-actions">
-                  {source.portalUrl && !validateUrl(source.portalUrl) ? (
+                  {(portalUrlEnabled[source.sourceId]
+                    ?? Boolean(source.portalUrl))
+                    && source.portalUrl
+                    && !validateUrl(source.portalUrl) ? (
                     <a
                       className="secondary button-link"
                       href={source.portalUrl}
@@ -717,7 +759,7 @@ export function OtaSourceConfigPanel({
 
       {sources.length === 0 && !loading ? (
         <div className="state-panel">
-          尚未配置OTA来源。新增后填写后台网址、JSON数据接口及Cookie。
+          尚未配置OTA来源。新增后填写JSON数据接口及Cookie；后台登录网址可选。
         </div>
       ) : null}
 
@@ -727,8 +769,14 @@ export function OtaSourceConfigPanel({
             className="secondary"
             disabled={saving}
             type="button"
-            onClick={() =>
-              setSources((current) => [...current, emptyOtaSource()])}
+              onClick={() => {
+                const source = emptyOtaSource()
+                setSources((current) => [...current, source])
+                setPortalUrlEnabled((current) => ({
+                  ...current,
+                  [source.sourceId]: false,
+                }))
+              }}
           >
             新增OTA数据源
           </button>

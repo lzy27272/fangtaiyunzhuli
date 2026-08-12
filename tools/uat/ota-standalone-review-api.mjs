@@ -1123,6 +1123,15 @@ const normalizeOtaUrl = (value) => {
   return url.toString()
 }
 
+const normalizeOptionalOtaUrl = (value) => {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'string') {
+    throw new Error('OTA_SOURCE_URL_INVALID')
+  }
+  const normalized = value.trim()
+  return normalized ? normalizeOtaUrl(normalized) : ''
+}
+
 const otaUpdateValid = (update, kind) => {
   if (
     !update
@@ -1221,7 +1230,7 @@ const normalizeOtaSources = (
       sourceId: source.sourceId,
       displayName: source.displayName.trim(),
       platformCode: source.platformCode,
-      portalUrl: normalizeOtaUrl(source.portalUrl),
+      portalUrl: normalizeOptionalOtaUrl(source.portalUrl),
       dataEndpointUrl: normalizeOtaUrl(source.dataEndpointUrl),
       requestMethod: source.requestMethod,
       requestPayloadJson:

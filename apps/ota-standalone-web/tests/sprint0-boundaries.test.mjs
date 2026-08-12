@@ -230,6 +230,10 @@ test('Luopan stores can disable legacy reports without editing interfaces or cre
 test('OTA sources support encrypted configuration, immediate read-only refresh and direct correction', () => {
   assert.match(reportSourceSource, /OtaSourceConfigPanel/)
   assert.match(otaSourceConfigSource, /OTA后台登录网址/)
+  assert.match(otaSourceConfigSource, /填写OTA后台登录网址（可选）/)
+  assert.match(otaSourceConfigSource, /仅用于后台快捷跳转，不参与数据采集/)
+  assert.match(reviewApiSource, /normalizeOptionalOtaUrl/)
+  assert.match(reviewApiSource, /portalUrl: normalizeOptionalOtaUrl/)
   assert.match(otaSourceConfigSource, /OTA数据接口网址（返回JSON）/)
   assert.match(otaSourceConfigSource, /OTA Cookie/)
   assert.match(otaSourceConfigSource, /OTA账号/)

@@ -499,6 +499,42 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.equal(saveCreatedLogin.status, 200)
     assert.doesNotMatch(savedCreatedLoginText, /synthetic-created-(?:user|password)/)
     assert.equal(JSON.parse(savedCreatedLoginText).data.configured, true)
+    const optionalPortalSourceId = '46000000-0000-4000-8000-000000000001'
+    const saveOptionalPortalOta = await fetch(
+      `${createdPath}/ota-sources`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'review-optional-ota-portal-001',
+        },
+        body: JSON.stringify({
+          reasonCode: 'UPDATE_OTA_SOURCE_CONFIG',
+          sources: [{
+            sourceId: optionalPortalSourceId,
+            displayName: 'Synthetic Review Source',
+            platformCode: 'MEITUAN',
+            portalUrl: '',
+            dataEndpointUrl: 'https://ota.example.test/api/comments',
+            requestMethod: 'GET',
+            requestPayloadJson: '',
+            pollIntervalMinutes: 120,
+            enabled: false,
+            cookieUpdate: { action: 'KEEP' },
+            credentialUpdate: { action: 'KEEP' },
+            rowVersion: 0,
+          }],
+        }),
+      },
+    )
+    assert.equal(saveOptionalPortalOta.status, 200)
+    const optionalPortalOtaBody = await saveOptionalPortalOta.json()
+    assert.equal(optionalPortalOtaBody.data[0].portalUrl, '')
+    assert.equal(
+      optionalPortalOtaBody.data[0].dataEndpointUrl,
+      'https://ota.example.test/api/comments',
+    )
     assert.equal(
       firstBody.data.hotels.some(
         (hotel) =>
@@ -572,6 +608,17 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.equal(
       (await restartedLoginConfig.json()).data.configured,
       true,
+    )
+    const restartedOptionalPortalOta = await fetch(
+      `${restartedCreatedPath}/ota-sources`,
+      { headers: { Authorization: `Bearer ${restartedToken}` } },
+    )
+    const restartedOptionalPortalOtaBody =
+      await restartedOptionalPortalOta.json()
+    assert.equal(restartedOptionalPortalOtaBody.data[0].portalUrl, '')
+    assert.equal(
+      restartedOptionalPortalOtaBody.data[0].sourceId,
+      optionalPortalSourceId,
     )
     const restartedManagedPath =
       `http://127.0.0.1:${second.port}/api/v1/ota/tenants/`
