@@ -420,7 +420,7 @@ public class InvestmentService {
         byte[] bytes = exportRenderer.renderXlsx(project.projectNo(), version, audit);
         audit("INVESTMENT_EXCEL_EXPORTED", "INVESTMENT_PLAN_VERSION", versionId,
                 projectAudit(project.id(), versionId, null, null, "XLSX"));
-        return new DownloadFile(fileBase(project.projectNo(), version.versionNo()) + ".xlsx",
+        return new DownloadFile(investmentReportFileName(version.projectName(), "xlsx"),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
     }
 
@@ -433,7 +433,7 @@ public class InvestmentService {
         byte[] bytes = exportRenderer.renderPdf(project.projectNo(), version, selected);
         audit("INVESTMENT_PDF_EXPORTED", "INVESTMENT_PLAN_VERSION", versionId,
                 projectAudit(project.id(), versionId, null, selected, "PDF"));
-        return new DownloadFile(fileBase(project.projectNo(), version.versionNo()) + "-" + selectedLabel(selected) + ".pdf",
+        return new DownloadFile(investmentReportFileName(version.projectName(), "pdf"),
                 "application/pdf", bytes);
     }
 
@@ -525,6 +525,16 @@ public class InvestmentService {
                 instant(rs, "confirmed_at"),
                 rs.getBoolean("current_formal")
         );
+    }
+
+    /**
+     * Read-only access for the professional calculator. It intentionally
+     * resolves the same active tenant parameter version as formal plans.
+     */
+    @Transactional(readOnly = true)
+    public CostParameterView activeCostParametersForProfessionalCalculator() {
+        TenantPrincipal principal = requireInvestmentAccess("investment.manage");
+        return activeCostParameters(principal);
     }
 
     private CostParameterView activeCostParameters(TenantPrincipal principal) {
@@ -896,14 +906,15 @@ public class InvestmentService {
         return selected;
     }
 
-    private static String selectedLabel(List<Integer> selected) {
-        return selected.size() == ALLOWED_OCCUPANCIES.size()
-                ? "all-models"
-                : selected.stream().map(String::valueOf).reduce((a, b) -> a + "-" + b).orElse("models");
-    }
-
-    private static String fileBase(String projectNo, int versionNo) {
-        return projectNo + "-V" + String.format(Locale.ROOT, "%03d", versionNo);
+    static String investmentReportFileName(String projectName, String extension) {
+        String cleaned = projectName == null ? "" : projectName.trim()
+                .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "")
+                .replaceAll("[. ]+$", "");
+        if (cleaned.isBlank()) cleaned = "投资项目";
+        String baseName = cleaned.endsWith("投资测算")
+                ? cleaned
+                : cleaned + (cleaned.endsWith("项目") ? "" : "项目") + "投资测算";
+        return baseName + "." + extension;
     }
 
     private static Integer numberOrNull(ResultSet rs, String column) throws SQLException {

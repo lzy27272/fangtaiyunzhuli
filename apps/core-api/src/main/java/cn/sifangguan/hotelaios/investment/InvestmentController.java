@@ -25,9 +25,11 @@ import java.util.UUID;
 @RequestMapping("/api/v1/investments")
 public class InvestmentController {
     private final InvestmentService service;
+    private final ProfessionalInvestmentReportService professionalReportService;
 
-    public InvestmentController(InvestmentService service) {
+    public InvestmentController(InvestmentService service, ProfessionalInvestmentReportService professionalReportService) {
         this.service = service;
+        this.professionalReportService = professionalReportService;
     }
 
     @GetMapping("/projects")
@@ -133,6 +135,60 @@ public class InvestmentController {
             @RequestParam(required = false) List<Integer> occupancies
     ) {
         return download(service.exportPdf(versionId, occupancies));
+    }
+
+    @PostMapping("/professional/calculate")
+    public ProfessionalInvestmentModels.ProfessionalCalculationResult calculateProfessional(
+            @Valid @RequestBody ProfessionalInvestmentModels.ProfessionalReportRequest request
+    ) {
+        return professionalReportService.calculate(request);
+    }
+
+    @PostMapping("/professional/exports/pdf")
+    public ResponseEntity<ByteArrayResource> exportProfessionalPdf(
+            @Valid @RequestBody ProfessionalInvestmentModels.ProfessionalReportRequest request
+    ) {
+        return download(professionalReportService.exportPdf(request));
+    }
+
+    @GetMapping("/professional/reports")
+    public List<ProfessionalInvestmentModels.ProfessionalReportHistorySummary> professionalReportHistories() {
+        return professionalReportService.histories();
+    }
+
+    @GetMapping("/professional/reports/{reportId}")
+    public ProfessionalInvestmentModels.ProfessionalReportHistoryRecord professionalReportHistory(@PathVariable UUID reportId) {
+        return professionalReportService.history(reportId);
+    }
+
+    @PostMapping("/professional/reports")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProfessionalInvestmentModels.ProfessionalReportHistoryRecord createProfessionalReportHistory(
+            @Valid @RequestBody ProfessionalInvestmentModels.ProfessionalReportRequest request
+    ) {
+        return professionalReportService.createHistory(request);
+    }
+
+    @PutMapping("/professional/reports/{reportId}")
+    public ProfessionalInvestmentModels.ProfessionalReportHistoryRecord updateProfessionalReportHistory(
+            @PathVariable UUID reportId,
+            @Valid @RequestBody ProfessionalInvestmentModels.UpdateProfessionalReportRequest request
+    ) {
+        return professionalReportService.updateHistory(reportId, request);
+    }
+
+    @PostMapping("/professional/reports/{reportId}/actions/delete")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteProfessionalReportHistory(
+            @PathVariable UUID reportId,
+            @Valid @RequestBody InvestmentModels.VersionCommand request
+    ) {
+        professionalReportService.deleteHistory(reportId, request.expectedVersion());
+    }
+
+    @GetMapping("/professional/reports/{reportId}/exports/pdf")
+    public ResponseEntity<ByteArrayResource> exportProfessionalReportHistoryPdf(@PathVariable UUID reportId) {
+        return download(professionalReportService.exportHistoryPdf(reportId));
     }
 
     private ResponseEntity<ByteArrayResource> download(InvestmentModels.DownloadFile file) {

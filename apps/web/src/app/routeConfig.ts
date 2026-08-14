@@ -29,6 +29,7 @@ export type InvestmentFeatureRouteId =
   | 'investments'
   | 'investment-project'
   | 'investment-parameters'
+  | 'investment-professional'
 
 export type AppRouteId = ViewId | DailyFeatureRouteId | InvestmentFeatureRouteId
 export type AppSectionId = ViewId | 'daily-reports' | 'daily-report-templates' | 'daily-operations' | 'kpi' | 'investments'
@@ -206,6 +207,12 @@ export const dailyFeatureRoutes: readonly (RouteDefinition & { id: DailyFeatureR
 const featureById = new Map<DailyFeatureRouteId, RouteDefinition>(dailyFeatureRoutes.map((route) => [route.id, route]))
 
 export const investmentFeatureRoutes: readonly (RouteDefinition & { id: InvestmentFeatureRouteId })[] = [
+  {
+    id: 'investment-professional',
+    pattern: '/investments/professional',
+    sectionId: 'investments',
+    requiredAny: [permissions.investment.read],
+  },
   {
     id: 'investment-project',
     pattern: '/investments/projects/:projectId',

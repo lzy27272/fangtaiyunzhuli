@@ -128,3 +128,111 @@ export type InvestmentAuditEntry = {
   details: string
   createdAt: string
 }
+
+export type ProfessionalAdrPlan = {
+  year: number
+  adr: number
+}
+
+export type ProfessionalMaintenanceUpgrade = {
+  year: number
+  amount: number
+  purpose?: string
+}
+
+export type ProfessionalReportNarrative = {
+  projectStatus?: string
+  marketContext?: string
+  sameScaleNewHotelInvestment?: number
+  marketRentLow?: number
+  marketRentHigh?: number
+  localOperatingHotelCount?: number
+  operationEvidence?: string
+  productPositioning?: string
+  upgradeStrategy?: string
+  totalShares?: number
+  minimumSubscriptionShares?: number
+  distributionFrequency?: string
+  lockupYears?: number
+  exitStartYear?: number
+  annualExitDepreciationRate?: number
+}
+
+export type ProfessionalPlanInput = {
+  projectName: string
+  projectLocation?: string
+  brandName?: string
+  operatorName?: string
+  roomCount: number
+  propertyAreaSqm: number
+  rentPerSqmMonth: number
+  propertyFeePerSqmMonth: number
+  leaseTermYears: number
+  occupancyRate: number
+  managementFeeRate: number
+  staffCount: number
+  projectPositioning: 'THREE_DIAMOND' | 'FOUR_DIAMOND'
+  initialInvestment: number
+  prepaidRentMonths: number
+  depositMonths: number
+  discountRate: number
+  adrPlan: ProfessionalAdrPlan[]
+  maintenanceUpgrades: ProfessionalMaintenanceUpgrade[]
+  reportNarrative?: ProfessionalReportNarrative
+}
+
+export type ProfessionalYearlyResult = {
+  year: number
+  adr: number
+  annualRevenue: number
+  annualManagementFee: number
+  annualOperatingAndFixedCost: number
+  maintenanceUpgrade: number
+  annualProfit: number
+  cashFlow: number
+  cumulativeCashFlow: number
+}
+
+export type ProfessionalCalculationResult = {
+  annualRentAndPropertyCost: number
+  quarterlyRentAndPropertyCost: number
+  leaseDeposit: number
+  annualLaborCost: number
+  annualVariableCost: number
+  unitVariableCost: number
+  annualOperatingAndFixedCost: number
+  availableRoomNights: number
+  soldRoomNights: number
+  totalRevenue: number
+  totalManagementFee: number
+  totalMaintenanceUpgrade: number
+  totalAnnualProfit: number
+  netCashGain: number
+  roi: number
+  paybackYears?: number
+  irr?: number
+  npv: number
+  discountRate: number
+  yearlyResults: ProfessionalYearlyResult[]
+  warnings: string[]
+}
+
+export type ProfessionalReportHistorySummary = {
+  id: string
+  projectName: string
+  roomCount: number
+  initialInvestment: number
+  irr?: number
+  npv: number
+  costParameterVersionNo: number
+  generationCount: number
+  rowVersion: number
+  createdAt: string
+  updatedAt: string
+  lastGeneratedAt: string
+}
+
+export type ProfessionalReportHistoryRecord = ProfessionalReportHistorySummary & {
+  input: ProfessionalPlanInput
+  calculation: ProfessionalCalculationResult
+}

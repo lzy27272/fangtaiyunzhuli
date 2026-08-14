@@ -6,6 +6,7 @@ import { AsyncState } from '../../shared/AsyncState'
 import { useScopedResource } from '../../shared/useScopedResource'
 import { useStableCommand } from '../../shared/useStableCommand'
 import { FeatureHeader, StatusBadge, formatLocalDateTime } from '../shared/FeatureUI'
+import { ProfessionalInvestmentPage } from './ProfessionalInvestmentPage'
 import {
   activateInvestmentCostParameters,
   confirmInvestmentVersion,
@@ -47,6 +48,9 @@ export function InvestmentRoutes({ view, params, identity, grantedPermissions, g
   if (view === 'investment-parameters') {
     return <CostParameterPage identity={identity} grantedPermissions={grantedPermissions} go={go}/>
   }
+  if (view === 'investment-professional') {
+    return <ProfessionalInvestmentPage identity={identity} go={go}/>
+  }
   return <InvestmentOverview identity={identity} grantedPermissions={grantedPermissions} go={go}/>
 }
 
@@ -74,6 +78,7 @@ function InvestmentOverview({ identity, grantedPermissions, go }: {
       title="投资测算"
       description="以版本化成本参数和后端确定性公式，测算80%、85%、90%、95%出租率下的经营利润与静态投资回收期。"
       actions={<>
+        {canManage && <button className="primary" onClick={() => go('investment-professional')}>投资测算专业版</button>}
         {canConfigure && <button className="secondary" onClick={() => go('investment-parameters')}>成本参数配置</button>}
         {canManage && <button className="primary" onClick={() => setCreating((value) => !value)}>{creating ? '收起新建' : '新建投资测算'}</button>}
       </>}
@@ -200,7 +205,7 @@ function ProjectDetailPage({ identity, grantedPermissions, projectId, go }: {
       <article className={styles.panel}><header><div><span>MODEL CHECKS</span><h2>风险与校验</h2></div><span className={version.calculation.formalConfirmationAllowed ? styles.pass : styles.block}>{version.calculation.formalConfirmationAllowed ? '可确认' : '禁止确认'}</span></header>{version.calculation.warnings.length ? <ul className={styles.warningList}>{version.calculation.warnings.map((item) => <li key={item.code} className={item.blocksFormalConfirmation ? styles.blocking : ''}><strong>{item.blocksFormalConfirmation ? '阻断' : '提示'}</strong>{item.message}</li>)}</ul> : <p>当前参数未发现校验异常。</p>}</article>
     </section>
     <section className={styles.panel}><header><div><span>VERSION COMPARISON</span><h2>历史版本对比</h2></div><span>选择2～3个版本</span></header><div className={styles.compareSelector}>{project.data.versions.map((item) => <label key={item.id}><input type="checkbox" checked={compareIds.includes(item.id)} onChange={() => toggleCompare(item.id)}/>V{String(item.versionNo).padStart(3, '0')} · {statusLabel(item.lifecycleStatus)}</label>)}</div>{compareIds.length >= 2 && <VersionComparison versions={project.data.versions.filter((item) => compareIds.includes(item.id))}/>}</section>
-    {canExport && <section className={styles.panel}><header><div><span>REPORT EXPORT</span><h2>报告导出</h2></div></header><div className={styles.exportRow}><div>{[80, 85, 90, 95].map((value) => <label key={value}><input type="checkbox" checked={selectedOccupancies.includes(value)} onChange={() => toggleOccupancy(value)}/>{value}%</label>)}</div><button className="secondary" disabled={command.busy} onClick={() => void downloadInvestmentExcel(identity, project.data!.projectNo, version)}>导出完整Excel</button><button className="primary" disabled={command.busy || !selectedOccupancies.length} onClick={() => void downloadInvestmentPdf(identity, project.data!.projectNo, version, selectedOccupancies)}>导出所选PDF</button></div><p className={styles.note}>PDF可选择一个、多个或全部出租率；选择仅影响报告内容，不生成新版本。</p></section>}
+    {canExport && <section className={styles.panel}><header><div><span>REPORT EXPORT</span><h2>报告导出</h2></div></header><div className={styles.exportRow}><div>{[80, 85, 90, 95].map((value) => <label key={value}><input type="checkbox" checked={selectedOccupancies.includes(value)} onChange={() => toggleOccupancy(value)}/>{value}%</label>)}</div><button className="secondary" disabled={command.busy} onClick={() => void downloadInvestmentExcel(identity, version)}>导出完整Excel</button><button className="primary" disabled={command.busy || !selectedOccupancies.length} onClick={() => void downloadInvestmentPdf(identity, version, selectedOccupancies)}>导出所选PDF</button></div><p className={styles.note}>PDF可选择一个、多个或全部出租率；选择仅影响报告内容，不生成新版本。导出文件名统一为“项目名称+投资测算”。</p></section>}
     <section className={styles.panel}><header><div><span>AUDIT TRAIL</span><h2>操作审计</h2></div><button className="secondary" onClick={() => void audit.reload()}>刷新</button></header><AsyncState loading={audit.loading} error={audit.error} empty={!audit.data.length} onRetry={audit.reload} emptyTitle="暂无审计记录"/><div className={styles.auditList}>{audit.data.slice(0, 30).map((item) => <article key={item.id}><strong>{auditLabel(item.action)}</strong><span>{formatLocalDateTime(item.createdAt)} · {item.actorId || 'SYSTEM'}</span></article>)}</div></section>
   </section>
 }
@@ -246,7 +251,7 @@ function PlanEditor({ initialName = '', initial, submitLabel, busy, onSubmit }: 
 function InputSnapshot({ version }: { version: InvestmentVersion }) {
   const input = version.input
   return <section className={styles.panel}><header><div><span>LOCKED INPUT SNAPSHOT</span><h2>正式参数快照</h2></div><StatusBadge value={version.lifecycleStatus}/></header><dl className={styles.snapshotGrid}>
-    <Snapshot label="租金" value={`${money(input.rentPerSqmMonth)} 元/㎡/月`}/><Snapshot label="物业面积" value={`${number(input.propertyAreaSqm)}㎡`}/><Snapshot label="物业费" value={`${money(input.propertyFeePerSqmMonth)} 元/㎡/月`}/><Snapshot label="房间数量" value={`${input.roomCount}间`}/><Snapshot label="人员数量" value={`${input.staffCount}人`}/><Snapshot label="项目定位" value={input.positioning === 'FOUR_DIAMOND' ? '四钻' : '三钻'}/><Snapshot label="管理费率" value={percent(input.managementFeeRate)}/><Snapshot label="售卖房价" value={`${money(input.sellingRoomRate)}元`}/><Snapshot label="投资总额" value={`${money(input.investmentTotal)}元`}/>
+    <Snapshot label="租金" value={`${money(input.rentPerSqmMonth)}/㎡/月`}/><Snapshot label="物业面积" value={`${number(input.propertyAreaSqm)}㎡`}/><Snapshot label="物业费" value={`${money(input.propertyFeePerSqmMonth)}/㎡/月`}/><Snapshot label="房间数量" value={`${input.roomCount}间`}/><Snapshot label="人员数量" value={`${input.staffCount}人`}/><Snapshot label="项目定位" value={input.positioning === 'FOUR_DIAMOND' ? '四钻' : '三钻'}/><Snapshot label="管理费率" value={percent(input.managementFeeRate)}/><Snapshot label="售卖房价" value={money(input.sellingRoomRate)}/><Snapshot label="投资总额" value={money(input.investmentTotal)}/>
   </dl></section>
 }
 
@@ -273,7 +278,7 @@ function CostStructure({ version, scenario }: { version: InvestmentVersion; scen
     ['单房变动成本', scenario.annualVariableCost], ['管理费', scenario.annualManagementFee],
   ] as const
   const total = items.reduce((sum, item) => sum + item[1], 0) || 1
-  return <article className={styles.panel}><header><div><span>COST STRUCTURE · 85%</span><h2>成本结构</h2></div></header><div className={styles.costList}>{items.map(([label, value]) => <div key={label}><span>{label}<strong>{money(value)}</strong></span><div><i style={{ width: `${Math.max(2, value / total * 100)}%` }}/></div></div>)}</div><p className={styles.note}>单房变动成本：{money(version.calculation.unitVariableCost)}元/已售间夜；年固定成本：{money(version.calculation.annualFixedCost)}元。</p></article>
+  return <article className={styles.panel}><header><div><span>COST STRUCTURE · 85%</span><h2>成本结构</h2></div></header><div className={styles.costList}>{items.map(([label, value]) => <div key={label}><span>{label}<strong>{money(value)}</strong></span><div><i style={{ width: `${Math.max(2, value / total * 100)}%` }}/></div></div>)}</div><p className={styles.note}>单房变动成本：{money(version.calculation.unitVariableCost)}/已售间夜；年固定成本：{money(version.calculation.annualFixedCost)}。</p></article>
 }
 
 function VersionComparison({ versions }: { versions: InvestmentVersion[] }) {
@@ -298,6 +303,7 @@ function CostParameterPage({ identity, grantedPermissions, go }: {
   const command = useStableCommand('investment-cost-parameters')
   const [editing, setEditing] = useState<CostParameterVersion | undefined>()
   const [creating, setCreating] = useState(false)
+  const [creatingFrom, setCreatingFrom] = useState<CostParameterVersion | undefined>()
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
   const canConfigure = identity.roleCode === 'PLATFORM_ADMIN' && hasPermission(grantedPermissions, permissions.investment.configure)
@@ -305,21 +311,22 @@ function CostParameterPage({ identity, grantedPermissions, go }: {
   const active = parameters.data.find((item) => item.lifecycleStatus === 'ACTIVE')
   const run = async (operation: () => Promise<unknown>, success: string) => {
     setError(undefined); setMessage(undefined)
-    try { await command.run(operation); setMessage(success); setCreating(false); setEditing(undefined); await parameters.reload() }
+    try { await command.run(operation); setMessage(success); setCreating(false); setCreatingFrom(undefined); setEditing(undefined); await parameters.reload() }
     catch (reason) { setError(reason instanceof Error ? reason.message : '操作失败') }
   }
   return <section className={styles.page}>
-    <FeatureHeader eyebrow="VERSIONED COST PARAMETERS" title="投资测算成本参数" description="新测算绑定最新生效版本；历史正式预测继续引用原版本，不随参数变化。" actions={<><button className="secondary" onClick={() => go('investments')}>返回投资测算</button>{canConfigure && <button className="primary" onClick={() => setCreating(true)}>新建参数草稿</button>}</>}/>
+    <FeatureHeader eyebrow="VERSIONED COST PARAMETERS" title="投资测算成本参数" description="可新增固定成本配置，或基于现有配置修改并保存为新版本草稿；历史正式预测继续引用原版本，不随参数变化。" actions={<><button className="secondary" onClick={() => go('investments')}>返回投资测算</button>{canConfigure && <button className="primary" onClick={() => { setEditing(undefined); setCreatingFrom(undefined); setCreating(true) }}>新增固定成本配置</button>}</>}/>
     {(message || error) && <div className={error ? styles.error : styles.success}>{error || message}</div>}
-    {creating && <section className={styles.panel}><header><h2>新建成本参数草稿</h2></header><CostParameterEditor initial={active} busy={command.busy} onSubmit={(input) => run(() => createInvestmentCostParameters(identity, input), '成本参数草稿已创建')}/></section>}
+    {creating && <section className={styles.panel}><header><div><span>{creatingFrom ? `MODIFY COST-V${String(creatingFrom.versionNo).padStart(3, '0')}` : 'NEW COST CONFIGURATION'}</span><h2>{creatingFrom ? '修改固定成本参数（新版本草稿）' : '新增固定成本配置'}</h2><p>{creatingFrom ? '已生效版本不会被覆盖；保存后将创建新的可编辑草稿，待 CEO 确认启用。' : '请填写新的成本口径；保存后将创建新的可编辑草稿，待 CEO 确认启用。'}</p></div><button className="secondary" type="button" onClick={() => { setCreating(false); setCreatingFrom(undefined) }}>取消</button></header><CostParameterEditor initial={creatingFrom} busy={command.busy} submitLabel={creatingFrom ? '保存为新版本草稿' : '新增参数草稿'} onSubmit={(input) => run(() => createInvestmentCostParameters(identity, input), creatingFrom ? '修改已保存为新版本草稿' : '成本参数草稿已创建')}/></section>}
     <AsyncState loading={parameters.loading} error={parameters.error} empty={!parameters.data.length} onRetry={parameters.reload}/>
-    <div className={styles.parameterList}>{parameters.data.map((item) => <article key={item.id} className={styles.panel}><header><div><span>COST-V{String(item.versionNo).padStart(3, '0')}</span><h2>固定成本参数</h2></div><StatusBadge value={item.lifecycleStatus}/></header>{editing?.id === item.id ? <CostParameterEditor initial={item} busy={command.busy} onSubmit={(input) => run(() => updateInvestmentCostParameters(identity, item, input), '成本参数草稿已更新')}/> : <dl className={styles.snapshotGrid}><Snapshot label="人员工资" value={`${money(item.salaryPerPersonMonth)}元/人/月`}/><Snapshot label="易耗品" value={`${money(item.consumablesPerRoomNight)}元/间夜`}/><Snapshot label="布草洗涤" value={`${money(item.linenPerRoomNight)}元/间夜`}/><Snapshot label="水电" value={`${money(item.utilitiesPerRoomNight)}元/间夜`}/><Snapshot label="三钻运营费" value={`${money(item.threeDiamondOperationsPerRoomNight)}元/间夜`}/><Snapshot label="四钻运营费" value={`${money(item.fourDiamondOperationsPerRoomNight)}元/间夜`}/></dl>}<footer className={styles.actions}>{canConfigure && item.lifecycleStatus === 'DRAFT' && <button className="secondary" onClick={() => setEditing(item)}>编辑草稿</button>}{canActivate && item.lifecycleStatus === 'DRAFT' && <button className="primary" disabled={command.busy} onClick={() => { if (window.confirm('启用后旧参数将停用，是否继续？')) void run(() => activateInvestmentCostParameters(identity, item), '新成本参数已生效') }}>CEO确认启用</button>}<span>创建 {formatLocalDateTime(item.createdAt)}</span></footer></article>)}</div>
+    <div className={styles.parameterList}>{parameters.data.map((item) => <article key={item.id} className={styles.panel}><header><div><span>COST-V{String(item.versionNo).padStart(3, '0')}</span><h2>固定成本参数</h2></div><StatusBadge value={item.lifecycleStatus}/></header>{editing?.id === item.id ? <CostParameterEditor initial={item} busy={command.busy} onSubmit={(input) => run(() => updateInvestmentCostParameters(identity, item, input), '成本参数草稿已更新')}/> : <dl className={styles.snapshotGrid}><Snapshot label="人员工资" value={`${money(item.salaryPerPersonMonth)}/人/月`}/><Snapshot label="易耗品" value={`${money(item.consumablesPerRoomNight)}/间夜`}/><Snapshot label="布草洗涤" value={`${money(item.linenPerRoomNight)}/间夜`}/><Snapshot label="水电" value={`${money(item.utilitiesPerRoomNight)}/间夜`}/><Snapshot label="三钻运营费" value={`${money(item.threeDiamondOperationsPerRoomNight)}/间夜`}/><Snapshot label="四钻运营费" value={`${money(item.fourDiamondOperationsPerRoomNight)}/间夜`}/></dl>}<footer className={styles.actions}>{canConfigure && item.lifecycleStatus === 'ACTIVE' && <button className="secondary" disabled={command.busy} onClick={() => { setEditing(undefined); setCreatingFrom(item); setCreating(true) }}>修改此配置</button>}{canConfigure && item.lifecycleStatus === 'DRAFT' && <button className="secondary" onClick={() => { setCreating(false); setCreatingFrom(undefined); setEditing(item) }}>编辑草稿</button>}{canActivate && item.lifecycleStatus === 'DRAFT' && <button className="primary" disabled={command.busy} onClick={() => { if (window.confirm('启用后旧参数将停用，是否继续？')) void run(() => activateInvestmentCostParameters(identity, item), '新成本参数已生效') }}>CEO确认启用</button>}<span>创建 {formatLocalDateTime(item.createdAt)}</span></footer></article>)}</div>
   </section>
 }
 
-function CostParameterEditor({ initial, busy, onSubmit }: {
+function CostParameterEditor({ initial, busy, submitLabel, onSubmit }: {
   initial?: CostParameterVersion
   busy: boolean
+  submitLabel?: string
   onSubmit: (input: CostParameterInput) => Promise<void>
 }) {
   const [form, setForm] = useState(() => ({
@@ -333,7 +340,7 @@ function CostParameterEditor({ initial, busy, onSubmit }: {
   const set = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }))
   return <form className={styles.form} onSubmit={(event) => { event.preventDefault(); void onSubmit(Object.fromEntries(Object.entries(form).map(([key, value]) => [key, Number(value)])) as CostParameterInput) }}>
     {(Object.keys(form) as Array<keyof typeof form>).map((key) => <label key={key}>{costLabel(key)}<input required min="0" step="0.01" type="number" value={form[key]} onChange={(event) => set(key, event.target.value)}/></label>)}
-    <div className={styles.full}><button className="primary" disabled={busy}>{busy ? '保存中…' : '保存参数草稿'}</button></div>
+    <div className={styles.full}><button className="primary" disabled={busy}>{busy ? '保存中…' : submitLabel || '保存参数草稿'}</button></div>
   </form>
 }
 
@@ -344,9 +351,9 @@ function Bar({ label, value, max, kind }: { label: string; value: number; max: n
 type PlanForm = Record<'rentPerSqmMonth' | 'propertyAreaSqm' | 'propertyFeePerSqmMonth' | 'roomCount' | 'staffCount' | 'positioning' | 'managementFeeRate' | 'sellingRoomRate' | 'investmentTotal' | 'notes' | 'reviewedAnalysis', string>
 function planForm(input?: PlanInput): PlanForm { return { rentPerSqmMonth: String(input?.rentPerSqmMonth ?? ''), propertyAreaSqm: String(input?.propertyAreaSqm ?? ''), propertyFeePerSqmMonth: String(input?.propertyFeePerSqmMonth ?? ''), roomCount: String(input?.roomCount ?? ''), staffCount: String(input?.staffCount ?? ''), positioning: input?.positioning ?? 'THREE_DIAMOND', managementFeeRate: String(input?.managementFeeRate ?? 0.05), sellingRoomRate: String(input?.sellingRoomRate ?? ''), investmentTotal: String(input?.investmentTotal ?? ''), notes: input?.notes ?? '', reviewedAnalysis: input?.reviewedAnalysis ?? '' } }
 function scenario85(version: InvestmentVersion) { return version.calculation.scenarios.find((item) => item.occupancyRate === 0.85) || version.calculation.scenarios[0] }
-function money(value?: number) { return value == null ? '—' : new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value) }
-function number(value?: number) { return value == null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) }
-function percent(value?: number) { return value == null ? '—' : new Intl.NumberFormat('zh-CN', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value) }
+function money(value?: number) { return value == null ? '—' : `${number(value)}元` }
+function number(value?: number) { return value == null ? '—' : new Intl.NumberFormat('zh-CN', { useGrouping: false, maximumFractionDigits: 2 }).format(value) }
+function percent(value?: number) { return value == null ? '—' : new Intl.NumberFormat('zh-CN', { style: 'percent', useGrouping: false, maximumFractionDigits: 2 }).format(value) }
 function ratingLabel(value?: string) { return ({ LOSS: '亏损', HIGH_RISK: '高风险', CAUTIOUS: '谨慎', FEASIBLE: '可行', QUALITY: '优质' } as Record<string, string>)[value || ''] || '待测算' }
 function statusLabel(value: string) { return ({ DRAFT: '草稿', FORMAL: '正式预测', HISTORICAL: '历史版本', ACTIVE: '生效', ARCHIVED: '已归档' } as Record<string, string>)[value] || value }
 function auditLabel(value: string) { return ({ INVESTMENT_PROJECT_CREATED: '新建项目', INVESTMENT_DRAFT_UPDATED: '修改并重算', INVESTMENT_VERSION_CONFIRMED: '确认正式预测', INVESTMENT_VERSION_COPIED: '复制为新草稿', INVESTMENT_PROJECT_ARCHIVED: '归档项目', INVESTMENT_PROJECT_RESTORED: '恢复项目', INVESTMENT_EXCEL_EXPORTED: '导出Excel', INVESTMENT_PDF_EXPORTED: '导出PDF' } as Record<string, string>)[value] || value }

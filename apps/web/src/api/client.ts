@@ -146,13 +146,17 @@ export async function apiRequest<T>(path: string, identity: ApiIdentity, init: R
   return response.json() as Promise<T>
 }
 
-export async function apiBlob(path: string, identity: ApiIdentity): Promise<Blob> {
+export async function apiBlob(path: string, identity: ApiIdentity, init: RequestInit = {}): Promise<Blob> {
+  const hasJsonBody = Boolean(init.body) && !(init.body instanceof FormData)
   const response = await fetch(`${API_BASE}${path.startsWith('/') ? path : `/${path}`}`, {
+    ...init,
     credentials: 'include',
     headers: {
-      Accept: 'image/*,application/octet-stream',
+      Accept: 'application/pdf,image/*,application/octet-stream',
+      ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}),
       'X-Correlation-Id': crypto.randomUUID(),
       ...authenticationHeaders(identity),
+      ...init.headers,
     },
   })
   if (!response.ok) {

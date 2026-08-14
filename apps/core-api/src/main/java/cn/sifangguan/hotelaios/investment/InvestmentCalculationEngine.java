@@ -195,12 +195,12 @@ public class InvestmentCalculationEngine {
                 .orElse("四档情景均未盈利");
         String breakEvenText = breakEvenOccupancy == null
                 ? "无法形成有效盈亏平衡点"
-                : breakEvenOccupancy.multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP) + "%";
+                : display(breakEvenOccupancy.multiply(BigDecimal.valueOf(100))) + "%";
         return "本方案按" + ("FOUR_DIAMOND".equals(normalizePositioning(input.positioning())) ? "四钻" : "三钻")
-                + "定位测算，年固定成本为" + money(annualFixedCost).toPlainString() + "元，单房变动成本为"
-                + money(unitVariableCost).toPlainString() + "元。默认85%出租率下，年收入"
-                + defaultScenario.annualRevenue().toPlainString() + "元，年利润"
-                + defaultScenario.annualProfit().toPlainString() + "元，投资等级为"
+                + "定位测算，年固定成本为" + display(annualFixedCost) + "元，单房变动成本为"
+                + display(unitVariableCost) + "元。默认85%出租率下，年收入"
+                + display(defaultScenario.annualRevenue()) + "元，年利润"
+                + display(defaultScenario.annualProfit()) + "元，投资等级为"
                 + ratingLabel(defaultScenario.rating()) + "。盈亏平衡出租率为" + breakEvenText
                 + "，四档预测中首个盈利情景为" + firstProfitable + "。系统识别到"
                 + warnings.size() + "项风险或复核提示；该文字为确定性规则生成的基础分析，不改变任何计算结果。";
@@ -227,6 +227,10 @@ public class InvestmentCalculationEngine {
 
     private static BigDecimal money(BigDecimal value) {
         return decimal(value, 2);
+    }
+
+    private static String display(BigDecimal value) {
+        return money(value).stripTrailingZeros().toPlainString();
     }
 
     private static BigDecimal quantity(BigDecimal value) {

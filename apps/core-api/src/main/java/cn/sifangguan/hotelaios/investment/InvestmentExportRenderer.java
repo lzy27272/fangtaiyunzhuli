@@ -2,8 +2,18 @@ package cn.sifangguan.hotelaios.investment;
 
 import org.springframework.stereotype.Component;
 
+import org.apache.fontbox.ttf.TrueTypeCollection;
+import org.apache.fontbox.ttf.TrueTypeFont;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -15,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -286,52 +297,104 @@ public class InvestmentExportRenderer {
         return """
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                  <numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.00"/><numFmt numFmtId="165" formatCode="0.00%"/></numFmts>
+                  <numFmts count="3"><numFmt numFmtId="164" formatCode="0.##&quot;元&quot;"/><numFmt numFmtId="165" formatCode="0.##%"/><numFmt numFmtId="166" formatCode="0.##"/></numFmts>
                   <fonts count="2"><font><sz val="11"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Microsoft YaHei"/></font></fonts>
                   <fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF123A5A"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCEAF4"/><bgColor indexed="64"/></patternFill></fill></fills>
                   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
                   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-                  <cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
+                  <cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
                 </styleSheet>
                 """;
     }
 
     private static byte[] pdf(List<String> pageContents) {
-        List<byte[]> objects = new ArrayList<>();
-        objects.add(bytes("<< /Type /Catalog /Pages 2 0 R >>"));
-        StringBuilder kids = new StringBuilder();
-        for (int index = 0; index < pageContents.size(); index++) {
-            kids.append(5 + index * 2).append(" 0 R ");
-        }
-        objects.add(bytes("<< /Type /Pages /Kids [" + kids + "] /Count " + pageContents.size() + " >>"));
-        objects.add(bytes("<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [4 0 R] >>"));
-        objects.add(bytes("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> >>"));
-        for (int index = 0; index < pageContents.size(); index++) {
-            int contentObject = 6 + index * 2;
-            objects.add(bytes("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents " + contentObject + " 0 R >>"));
-            byte[] content = bytes(pageContents.get(index));
-            objects.add(join(bytes("<< /Length " + content.length + " >>\nstream\n"), content, bytes("\nendstream")));
-        }
-
-        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            output.write(bytes("%PDF-1.4\n%\u00E2\u00E3\u00CF\u00D3\n"));
-            int[] offsets = new int[objects.size() + 1];
-            for (int index = 0; index < objects.size(); index++) {
-                offsets[index + 1] = output.size();
-                output.write(bytes((index + 1) + " 0 obj\n"));
-                output.write(objects.get(index));
-                output.write(bytes("\nendobj\n"));
+        try (PDDocument document = new PDDocument();
+             FontSet fonts = loadFonts(document);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            for (String pageContent : pageContents) {
+                PDPage page = new PDPage(PDRectangle.A4);
+                document.addPage(page);
+                try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                    drawPage(content, pageContent, fonts);
+                }
             }
-            int xref = output.size();
-            output.write(bytes("xref\n0 " + (objects.size() + 1) + "\n0000000000 65535 f \n"));
-            for (int index = 1; index <= objects.size(); index++) {
-                output.write(bytes(String.format(Locale.ROOT, "%010d 00000 n \n", offsets[index])));
-            }
-            output.write(bytes("trailer\n<< /Size " + (objects.size() + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n"));
+            document.save(output);
             return output.toByteArray();
         } catch (IOException exception) {
             throw new IllegalStateException("无法生成投资测算PDF", exception);
         }
+    }
+
+    private static FontSet loadFonts(PDDocument document) throws IOException {
+        TrueTypeCollection serifCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/simsun.ttc"));
+        TrueTypeCollection sansCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/msyh.ttc"));
+        TrueTypeCollection boldCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/msyhbd.ttc"));
+        PDFont serif = PDType0Font.load(document, requireFont(serifCollection, "SimSun"), true);
+        PDFont sans = PDType0Font.load(document, requireFont(sansCollection, "MicrosoftYaHei"), true);
+        PDFont bold = PDType0Font.load(document, requireFont(boldCollection, "MicrosoftYaHei-Bold"), true);
+        return new FontSet(serif, sans, bold, serifCollection, sansCollection, boldCollection);
+    }
+
+    private static TrueTypeFont requireFont(TrueTypeCollection collection, String name) throws IOException {
+        return Objects.requireNonNull(collection.getFontByName(name), "未找到PDF字体：" + name);
+    }
+
+    private static void drawPage(PDPageContentStream content, String commands, FontSet fonts) throws IOException {
+        for (String command : commands.split("\\n")) {
+            if (command.isBlank()) continue;
+            if (command.startsWith("RECT|")) {
+                String[] part = command.split("\\|", -1);
+                PdfColor color = decodeColor(part, 5);
+                content.setNonStrokingColor((float) color.red(), (float) color.green(), (float) color.blue());
+                content.addRect(parse(part[1]), parse(part[2]), parse(part[3]), parse(part[4]));
+                content.fill();
+            } else if (command.startsWith("STROKERECT|")) {
+                String[] part = command.split("\\|", -1);
+                PdfColor color = decodeColor(part, 5);
+                content.setStrokingColor((float) color.red(), (float) color.green(), (float) color.blue());
+                content.setLineWidth(parse(part[8]));
+                content.addRect(parse(part[1]), parse(part[2]), parse(part[3]), parse(part[4]));
+                content.stroke();
+            } else if (command.startsWith("LINE|")) {
+                String[] part = command.split("\\|", -1);
+                PdfColor color = decodeColor(part, 5);
+                content.setStrokingColor((float) color.red(), (float) color.green(), (float) color.blue());
+                content.setLineWidth(parse(part[8]));
+                content.moveTo(parse(part[1]), parse(part[2]));
+                content.lineTo(parse(part[3]), parse(part[4]));
+                content.stroke();
+            } else if (command.startsWith("TEXT|")) {
+                String[] part = command.split("\\|", 9);
+                PdfColor color = decodeColor(part, 5);
+                PDFont font = switch (part[8]) {
+                    case "TITLE" -> fonts.serif();
+                    case "BOLD" -> fonts.bold();
+                    default -> fonts.sans();
+                };
+                content.beginText();
+                content.setFont(font, parse(part[1]));
+                content.setNonStrokingColor((float) color.red(), (float) color.green(), (float) color.blue());
+                content.newLineAtOffset(parse(part[2]), parse(part[3]));
+                content.showText(unescapeText(part[4]));
+                content.endText();
+            }
+        }
+    }
+
+    private static float parse(String value) {
+        return Float.parseFloat(value);
+    }
+
+    private static PdfColor decodeColor(String[] part, int index) {
+        return new PdfColor(Double.parseDouble(part[index]), Double.parseDouble(part[index + 1]), Double.parseDouble(part[index + 2]));
+    }
+
+    private static String escapeText(String value) {
+        return value.replace("\\", "\\\\").replace("|", "\\p").replace("\n", " ");
+    }
+
+    private static String unescapeText(String value) {
+        return value.replace("\\p", "|").replace("\\\\", "\\");
     }
 
     private static final PdfColor DEEP_GREEN = new PdfColor(0.055, 0.245, 0.196);
@@ -357,10 +420,10 @@ public class InvestmentExportRenderer {
         PdfCanvas page = new PdfCanvas();
         page.fillPage(DEEP_GREEN);
         page.fillRect(50, 770, 76, 4, GOLD);
-        page.text("SIFANGGUAN HOTEL AI OS", 9, 50, 744, GOLD);
-        page.text("酒店投资分析书", 31, 50, 666, WHITE);
+        page.text("SIFANGGUAN HOTEL AI OS", 9, 50, 744, GOLD, FontRole.BOLD);
+        page.text("酒店投资分析书", 31, 50, 666, WHITE, FontRole.TITLE);
         page.text("HOTEL INVESTMENT ANALYSIS", 11, 52, 638, GOLD);
-        page.text(version.projectName(), 18, 50, 584, WHITE);
+        page.text(version.projectName(), 18, 50, 584, WHITE, FontRole.TITLE);
         page.strokeLine(50, 559, 545, 559, GOLD, 0.8);
         page.text("项目编号  " + projectNo, 9, 50, 535, CREAM);
         page.text("预测版本  " + versionLabel(version), 9, 285, 535, CREAM);
@@ -512,10 +575,10 @@ public class InvestmentExportRenderer {
         page.table(42, 455, new double[]{191, 160, 160},
                 new String[]{"指标", "年度", "月均"},
                 List.of(
-                        new String[]{"营业收入", moneyText(scenario.annualRevenue()), moneyText(scenario.monthlyRevenue())},
-                        new String[]{"成本（不含管理费）", moneyText(scenario.annualCost()), moneyText(scenario.monthlyCost())},
-                        new String[]{"管理费", moneyText(scenario.annualManagementFee()), moneyText(scenario.monthlyManagementFee())},
-                        new String[]{"利润", moneyText(scenario.annualProfit()), moneyText(scenario.monthlyProfit())}
+                        new String[]{"营业收入", moneyText(scenario.annualRevenue()) + "元", moneyText(scenario.monthlyRevenue()) + "元"},
+                        new String[]{"成本（不含管理费）", moneyText(scenario.annualCost()) + "元", moneyText(scenario.monthlyCost()) + "元"},
+                        new String[]{"管理费", moneyText(scenario.annualManagementFee()) + "元", moneyText(scenario.monthlyManagementFee()) + "元"},
+                        new String[]{"利润", moneyText(scenario.annualProfit()) + "元", moneyText(scenario.monthlyProfit()) + "元"}
                 ), new boolean[]{false, true, true}, 27);
 
         page.sectionTitle("经营规模与成本构成", "OPERATING SCALE & COST", 42, 305);
@@ -605,20 +668,21 @@ public class InvestmentExportRenderer {
         return List.of(cells);
     }
 
-    private static String moneyText(BigDecimal value) {
-        return value == null ? "—" : String.format(Locale.ROOT, "%,.2f", value);
+    static String moneyText(BigDecimal value) {
+        return value == null ? "—" : value.stripTrailingZeros().toPlainString();
     }
 
     private static String amountWanText(BigDecimal value) {
         return value == null ? "—" : moneyText(value.divide(BigDecimal.valueOf(10_000), 2, RoundingMode.HALF_UP));
     }
 
-    private static String numberText(BigDecimal value) {
+    static String numberText(BigDecimal value) {
         return value == null ? "—" : value.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
     }
 
-    private static String percentText(BigDecimal value) {
-        return value == null ? "—" : value.multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP) + "%";
+    static String percentText(BigDecimal value) {
+        return value == null ? "—" : value.multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
+                .stripTrailingZeros().toPlainString() + "%";
     }
 
     private static String versionLabel(InvestmentVersionView version) {
@@ -659,6 +723,24 @@ public class InvestmentExportRenderer {
     private record PdfColor(double red, double green, double blue) {
     }
 
+    private enum FontRole { TITLE, BODY, BOLD }
+
+    private record FontSet(
+            PDFont serif,
+            PDFont sans,
+            PDFont bold,
+            TrueTypeCollection serifCollection,
+            TrueTypeCollection sansCollection,
+            TrueTypeCollection boldCollection
+    ) implements AutoCloseable {
+        @Override
+        public void close() throws IOException {
+            serifCollection.close();
+            sansCollection.close();
+            boldCollection.close();
+        }
+    }
+
     private record Cell(String value, boolean numeric, int style) {
         static Cell empty() { return text(""); }
         static Cell text(Object value) { return new Cell(value == null ? "" : String.valueOf(value), false, 0); }
@@ -686,10 +768,10 @@ public class InvestmentExportRenderer {
         ) {
             fillPage(PAPER);
             fillRect(0, 802, 595, 40, DEEP_GREEN);
-            text("四方馆酒店 AI OS · 投资分析", 9, 42, 817, WHITE);
+            text("四方馆酒店 AI OS · 投资分析", 9, 42, 817, WHITE, FontRole.BOLD);
             rightText("内部经营资料", 8, 553, 817, CREAM);
             fillRect(42, 770, 34, 3, GOLD);
-            text(section + "  " + title, 21, 42, 738, DEEP_GREEN);
+            text(section + "  " + title, 22, 42, 738, DEEP_GREEN, FontRole.TITLE);
             text(version.projectName() + "  ·  " + projectNo + "  ·  " + versionLabel(version), 8, 43, 715, MUTED);
             text("FORMAL".equals(version.lifecycleStatus()) ? "正式预测" : "非正式测算", 40, 184, 410,
                     new PdfColor(0.948, 0.944, 0.918));
@@ -701,8 +783,8 @@ public class InvestmentExportRenderer {
         private void metricCard(double x, double y, double width, double height, String label, String value, String unit, PdfColor accent) {
             fillRect(x, y, width, height, MID_GREEN);
             fillRect(x, y + height - 4, width, 4, accent);
-            text(label, 9, x + 17, y + height - 25, CREAM);
-            text(value, value.length() > 12 ? 15 : 19, x + 17, y + 32, WHITE);
+            text(label, 9, x + 17, y + height - 25, CREAM, FontRole.BOLD);
+            text(value, value.length() > 12 ? 15 : 19, x + 17, y + 32, WHITE, FontRole.BOLD);
             if (hasText(unit)) rightText(unit, 8, x + width - 17, y + 16, accent);
         }
 
@@ -715,12 +797,12 @@ public class InvestmentExportRenderer {
                 fillRect(cardX, y + 62, cardWidth, 4, index == 0 ? MID_GREEN : GOLD);
                 text(metrics.get(index).label(), 7, cardX + 10, y + 43, MUTED);
                 String value = metrics.get(index).value();
-                text(value, value.length() > 15 ? 10 : 12, cardX + 10, y + 19, DEEP_GREEN);
+                text(value, value.length() > 15 ? 10 : 12, cardX + 10, y + 19, DEEP_GREEN, FontRole.BOLD);
             }
         }
 
         private void sectionTitle(String title, String english, double x, double y) {
-            text(title, 12, x, y, DEEP_GREEN);
+            text(title, 14, x, y, DEEP_GREEN, FontRole.TITLE);
             rightText(english, 7, 553, y + 1, GOLD);
             strokeLine(x, y - 8, 553, y - 8, GRID, 0.5);
         }
@@ -756,8 +838,8 @@ public class InvestmentExportRenderer {
             double cursor = x;
             for (int column = 0; column < headers.length; column++) {
                 double textY = topY - rowHeight + 8.5;
-                if (rightAligned[column]) rightText(headers[column], 7, cursor + widths[column] - 7, textY, WHITE);
-                else text(headers[column], 7, cursor + 7, textY, WHITE);
+                if (rightAligned[column]) rightText(headers[column], 7.5, cursor + widths[column] - 7, textY, WHITE, FontRole.BOLD);
+                else text(headers[column], 7.5, cursor + 7, textY, WHITE, FontRole.BOLD);
                 cursor += widths[column];
             }
 
@@ -769,7 +851,7 @@ public class InvestmentExportRenderer {
                 for (int column = 0; column < headers.length; column++) {
                     String value = column < row.length ? row[column] : "";
                     double textY = bottom + 8.5;
-                    double size = value.length() > 17 ? 6.5 : 8;
+                    double size = value.length() > 17 ? 7 : 8.5;
                     if (rightAligned[column]) rightText(value, size, cursor + widths[column] - 7, textY, INK);
                     else text(value, size, cursor + 7, textY, INK);
                     cursor += widths[column];
@@ -802,8 +884,8 @@ public class InvestmentExportRenderer {
         private void callout(double x, double y, double width, double height, String title, String body, String note) {
             fillRect(x, y, width, height, CREAM);
             fillRect(x, y, 4, height, GOLD);
-            text(title, 10, x + 18, y + height - 24, DEEP_GREEN);
-            wrapped(body, 8.5, x + 18, y + height - 43, 55, 14, note == null ? 4 : 3, INK);
+            text(title, 11, x + 18, y + height - 24, DEEP_GREEN, FontRole.BOLD);
+            wrapped(body, 9.5, x + 18, y + height - 43, 55, 15, note == null ? 4 : 3, INK);
             if (hasText(note)) text(clip(note, 61), 7, x + 18, y + 13, RISK);
         }
 
@@ -840,9 +922,19 @@ public class InvestmentExportRenderer {
                 }
                 double weight = 1;
                 if (units + weight > maxUnits && !line.isEmpty()) {
+                    String carry = "";
+                    if (isNumericTokenCharacter(character)) {
+                        int tokenStart = line.length();
+                        while (tokenStart > 0 && isNumericTokenCharacter(line.charAt(tokenStart - 1))) tokenStart--;
+                        if (tokenStart > 0 && tokenStart < line.length()) {
+                            carry = line.substring(tokenStart);
+                            line.setLength(tokenStart);
+                        }
+                    }
                     lines.add(line.toString());
                     line.setLength(0);
-                    units = 0;
+                    line.append(carry);
+                    units = carry.length();
                 }
                 line.append(character);
                 units += weight;
@@ -851,41 +943,56 @@ public class InvestmentExportRenderer {
             return lines;
         }
 
+        private boolean isNumericTokenCharacter(char character) {
+            return Character.isDigit(character)
+                    || character == '.'
+                    || character == '%'
+                    || character == '-'
+                    || character == '元'
+                    || character == '年';
+        }
+
         private String clip(String value, int length) {
             if (value == null || value.length() <= length) return value == null ? "" : value;
             return value.substring(0, Math.max(1, length - 1)) + "…";
         }
 
         private void fillRect(double x, double y, double width, double height, PdfColor color) {
-            content.append(String.format(Locale.ROOT, "q %.3f %.3f %.3f rg %.2f %.2f %.2f %.2f re f Q\n",
-                    color.red(), color.green(), color.blue(), x, y, width, height));
+            content.append(String.format(Locale.ROOT, "RECT|%.2f|%.2f|%.2f|%.2f|%.3f|%.3f|%.3f\n",
+                    x, y, width, height, color.red(), color.green(), color.blue()));
         }
 
         private void strokeRect(double x, double y, double width, double height, PdfColor color, double lineWidth) {
-            content.append(String.format(Locale.ROOT, "q %.3f %.3f %.3f RG %.2f w %.2f %.2f %.2f %.2f re S Q\n",
-                    color.red(), color.green(), color.blue(), lineWidth, x, y, width, height));
+            content.append(String.format(Locale.ROOT, "STROKERECT|%.2f|%.2f|%.2f|%.2f|%.3f|%.3f|%.3f|%.2f\n",
+                    x, y, width, height, color.red(), color.green(), color.blue(), lineWidth));
         }
 
         private void strokeLine(double x1, double y1, double x2, double y2, PdfColor color, double lineWidth) {
-            content.append(String.format(Locale.ROOT, "q %.3f %.3f %.3f RG %.2f w %.2f %.2f m %.2f %.2f l S Q\n",
-                    color.red(), color.green(), color.blue(), lineWidth, x1, y1, x2, y2));
+            content.append(String.format(Locale.ROOT, "LINE|%.2f|%.2f|%.2f|%.2f|%.3f|%.3f|%.3f|%.2f\n",
+                    x1, y1, x2, y2, color.red(), color.green(), color.blue(), lineWidth));
         }
 
         private void text(String value, double size, double x, double y, PdfColor color) {
-            content.append("BT /F1 ").append(String.format(Locale.ROOT, "%.2f", size)).append(" Tf ")
-                    .append(String.format(Locale.ROOT, "%.3f %.3f %.3f rg %.2f %.2f Td ",
-                            color.red(), color.green(), color.blue(), x, y))
-                    .append('<').append(pdfHex(value == null ? "" : value)).append("> Tj ET\n");
+            text(value, size, x, y, color, FontRole.BODY);
+        }
+
+        private void text(String value, double size, double x, double y, PdfColor color, FontRole role) {
+            content.append(String.format(Locale.ROOT, "TEXT|%.2f|%.2f|%.2f|%s|%.3f|%.3f|%.3f|%s\n",
+                    size, x, y, escapeText(value == null ? "" : value), color.red(), color.green(), color.blue(), role));
         }
 
         private void rightText(String value, double size, double rightX, double y, PdfColor color) {
             text(value, size, rightX - estimatedWidth(value, size), y, color);
         }
 
+        private void rightText(String value, double size, double rightX, double y, PdfColor color, FontRole role) {
+            text(value, size, rightX - estimatedWidth(value, size), y, color, role);
+        }
+
         private double estimatedWidth(String value, double size) {
             if (value == null) return 0;
             double units = 0;
-            for (int index = 0; index < value.length(); index++) units += value.charAt(index) <= 127 ? 0.90 : 1;
+            for (int index = 0; index < value.length(); index++) units += value.charAt(index) <= 127 ? 0.55 : 1;
             return units * size;
         }
 
