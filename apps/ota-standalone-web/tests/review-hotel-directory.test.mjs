@@ -516,7 +516,7 @@ test('created review hotels are returned by the directory and survive restart', 
             displayName: 'Synthetic Review Source',
             platformCode: 'MEITUAN',
             portalUrl: '',
-            dataEndpointUrl: 'https://ota.example.test/api/comments',
+            dataEndpointUrl: '',
             requestMethod: 'GET',
             requestPayloadJson: '',
             pollIntervalMinutes: 120,
@@ -533,7 +533,7 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.equal(optionalPortalOtaBody.data[0].portalUrl, '')
     assert.equal(
       optionalPortalOtaBody.data[0].dataEndpointUrl,
-      'https://ota.example.test/api/comments',
+      '',
     )
     assert.equal(
       firstBody.data.hotels.some(
@@ -619,6 +619,10 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.equal(
       restartedOptionalPortalOtaBody.data[0].sourceId,
       optionalPortalSourceId,
+    )
+    assert.equal(
+      restartedOptionalPortalOtaBody.data[0].dataEndpointUrl,
+      '',
     )
     const restartedManagedPath =
       `http://127.0.0.1:${second.port}/api/v1/ota/tenants/`

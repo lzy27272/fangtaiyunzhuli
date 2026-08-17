@@ -17,6 +17,13 @@ import {
 import { createReviewAuthStore } from './review-auth-store.mjs'
 import { collectOtaSource } from './ota-source-collector.mjs'
 import {
+  builtInFliggyEndpointUrl,
+  sanitizeFliggyEndpointUrl,
+} from './fliggy-source-collector.mjs'
+import {
+  pairOtaReviewAndOrderSources,
+} from './ota-review-order-pairing.mjs'
+import {
   OTA_DEFAULT_POLL_INTERVAL_MINUTES,
   OTA_POLL_INTERVAL_OPTIONS_MINUTES,
   otaSourcePollingDue,
@@ -1107,6 +1114,9 @@ const normalizeOtaUrl = (value) => {
   let url
   try {
     url = new URL(value)
+    if (url.hostname.toLowerCase() === 'h5api.m.fliggy.com') {
+      url = new URL(sanitizeFliggyEndpointUrl(url))
+    }
   } catch {
     throw new Error('OTA_SOURCE_URL_INVALID')
   }
@@ -1116,7 +1126,11 @@ const normalizeOtaUrl = (value) => {
     || url.password
     || url.hash
     || [...url.searchParams.keys()].some((key) =>
-      sensitiveQueryKey.test(key))
+      sensitiveQueryKey.test(key)
+      && !(
+        url.hostname.toLowerCase() === 'h5api.m.fliggy.com'
+        && key.toLowerCase() === 'appkey'
+      ))
   ) {
     throw new Error('OTA_SOURCE_URL_UNSAFE')
   }
@@ -1231,7 +1245,7 @@ const normalizeOtaSources = (
       displayName: source.displayName.trim(),
       platformCode: source.platformCode,
       portalUrl: normalizeOptionalOtaUrl(source.portalUrl),
-      dataEndpointUrl: normalizeOtaUrl(source.dataEndpointUrl),
+      dataEndpointUrl: normalizeOptionalOtaUrl(source.dataEndpointUrl),
       requestMethod: source.requestMethod,
       requestPayloadJson:
         requestPayload === null ? '' : JSON.stringify(requestPayload),
@@ -2470,14 +2484,12 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
     let cookie
     try {
       cookie = otaSecretValuesFor(hotelId, sourceId).cookie
-      const latestSnapshot = (liveSnapshotStore[hotelId] ?? []).at(-1)
       const summary = await collectOtaSource({
         source,
         cookie,
-        businessDate: latestSnapshot?.businessDate,
-        validStayedOrderCountThroughPreviousBusinessDate:
-          latestSnapshot?.validStayedOrderSummary
-            ?.validStayedOrderCount ?? null,
+        businessDate: (liveSnapshotStore[hotelId] ?? []).at(-1)
+          ?.businessDate,
+        validStayedOrderCountThroughPreviousBusinessDate: null,
       })
       const updated = {
         ...source,
@@ -2487,9 +2499,13 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
         lastSummary: summary,
       }
       sources[sourceIndex] = updated
-      otaSourcesByHotel.set(hotelId, sources)
+      const pairedSources = pairOtaReviewAndOrderSources(sources)
+      otaSourcesByHotel.set(hotelId, pairedSources)
       persistOtaSources()
-      return decorateOtaSources(hotelId, [updated])[0]
+      return decorateOtaSources(hotelId, [
+        pairedSources.find((candidate) => candidate.sourceId === sourceId)
+          ?? updated,
+      ])[0]
     } catch (error) {
       const errorCode = safeOtaRefreshErrorCode(error)
       const updated = {
@@ -2500,7 +2516,8 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
         lastSummary: null,
       }
       sources[sourceIndex] = updated
-      otaSourcesByHotel.set(hotelId, sources)
+      const pairedSources = pairOtaReviewAndOrderSources(sources)
+      otaSourcesByHotel.set(hotelId, pairedSources)
       persistOtaSources()
       process.stderr.write(
         `${JSON.stringify({
@@ -2530,7 +2547,13 @@ const refreshEnabledOtaSourcesFor = async (
       ?.validStayedOrderSummary?.validStayedOrderCount ?? null
   const enabled = (otaSourcesByHotel.get(hotelId) ?? [])
     .filter((source) =>
-      source.enabled && (!dueOnly || otaSourcePollingDue(source, now, {
+      source.enabled
+      && typeof source.dataEndpointUrl === 'string'
+      && Boolean(
+        source.dataEndpointUrl.trim()
+        || builtInFliggyEndpointUrl(source),
+      )
+      && (!dueOnly || otaSourcePollingDue(source, now, {
         validStayedOrderCountThroughPreviousBusinessDate,
       })))
   const results = []
@@ -2791,7 +2814,7 @@ const scheduledOtaSourceTick = async () => {
   if (!automaticHourlyCollectionEnabled) return
   const now = new Date()
   if (!otaSourceSchedulerReady(schedulerStartedAt, now)) return
-  for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+  for (const hotel of hotels) {
     const validStayedOrderCountThroughPreviousBusinessDate =
       (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
         ?.validStayedOrderSummary?.validStayedOrderCount ?? null

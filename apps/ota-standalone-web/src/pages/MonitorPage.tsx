@@ -20,6 +20,11 @@ import {
   type ReportSourceAttention,
 } from './reportSourceAttention'
 import { otaSourceGuidance } from './otaSourceGuidance'
+import {
+  buildOtaHotelReviewDashboard,
+  isOtaDashboardSource,
+  type OtaHotelReviewRateStatus,
+} from './otaReviewDashboard'
 
 interface Props {
   context: HotelContext | null
@@ -37,18 +42,10 @@ const METRIC_LABELS: Record<string, string> = {
   sellProgress: '售卖进度',
 }
 
-const OTA_DIMENSION_LABELS: Record<string, string> = {
-  DATE: '日期',
-  ROOM_TYPE: '房型',
-  INVENTORY: '库存/可售',
-  PRICE: '价格/收入',
-  SALES: '销量/间夜',
-  CHANNEL: '渠道',
-  CANCELLATION: '取消',
-  REVIEW: '评价',
-}
-
 const OTA_PEER_RANK_LABELS: Record<string, string> = {
+  OVERALL: '综合表现',
+  ORDER_COUNT: '订单量',
+  REVIEW_SCORE: '评价表现',
   STAY_ROOM_NIGHTS: '入住间夜',
   ROOM_REVENUE: '房费收入',
   SOLD_ROOM_NIGHTS: '销售间夜',
@@ -57,6 +54,13 @@ const OTA_PEER_RANK_LABELS: Record<string, string> = {
   VIEWS: '浏览',
   VIEW_CONVERSION: '浏览转化',
   PAYMENT_CONVERSION: '支付转化',
+}
+
+const otaProviderLabel = (provider?: string): string => {
+  if (provider === 'MEITUAN') return '美团'
+  if (provider === 'DOUYIN') return '抖音'
+  if (provider === 'FLIGGY') return '飞猪'
+  return 'OTA'
 }
 
 function pollingIntervalLabel(minutes: number): string {
@@ -71,6 +75,26 @@ function observedAtLabel(value: string): string {
   return Number.isNaN(observedAt.getTime())
     ? '采集时间待核验'
     : `采集于 ${observedAt.toLocaleString('zh-CN', { hour12: false })}`
+}
+
+function otaPairingStatusLabel(status?: string): string {
+  if (status === 'AVAILABLE') return '订单与评价已配对'
+  if (status === 'ZERO_DENOMINATOR') return '截止昨日有效订单为0'
+  if (status === 'ORDER_SOURCE_MISSING') return '待配置同平台订单接口'
+  if (status === 'ORDER_DATA_INCOMPLETE') return '订单数据未完整分页'
+  if (status === 'REVIEW_SCORE_METRICS_UNAVAILABLE') return '评价评分字段待映射'
+  if (status === 'PERIOD_MISMATCH') return '订单与评价统计期不一致'
+  return '等待订单与评价配对'
+}
+
+function otaHotelReviewRateStatusLabel(
+  status: OtaHotelReviewRateStatus,
+): string {
+  if (status === 'AVAILABLE') return '已按全渠道汇总口径计算'
+  if (status === 'NO_REVIEW_DATA') return '等待渠道评价数据'
+  if (status === 'PERIOD_MISMATCH') return '各渠道统计期不一致'
+  if (status === 'ZERO_DENOMINATOR') return '截止昨日全渠道有效订单为0'
+  return '部分渠道订单分母尚未就绪'
 }
 
 function displayMetric(value: string | number | null | undefined, unit: string, state: string): string {
@@ -274,6 +298,8 @@ export function MonitorPage({
       sourceCode: source.sourceCode,
       errorCode: source.errorCode ?? 'COLLECTION_INCOMPLETE',
     }))
+  const visibleOtaSources = otaSources.filter(isOtaDashboardSource)
+  const hotelReviewDashboard = buildOtaHotelReviewDashboard(otaSources)
 
   return (
     <section className="page-card">
@@ -419,10 +445,10 @@ export function MonitorPage({
         <section className="ota-monitor-panel">
           <div className="page-heading">
             <div>
-              <h3>OTA多维度对比来源</h3>
+              <h3>OTA排名与评价经营看板</h3>
               <p>
-                OTA刷新结果与PMS报表分开留痕；当前显示JSON记录数及已识别的
-                日期、房型、库存、价格、销量、渠道和取消等维度。
+                仅展示各渠道排名、门店全渠道评价汇总及分渠道评价；
+                订单数据只作为评价率分母在后台计算，不在看板展示。
               </p>
             </div>
             <button
@@ -433,9 +459,63 @@ export function MonitorPage({
               配置OTA来源
             </button>
           </div>
-          {otaSources.length > 0 ? (
+          {hotelReviewDashboard.channels.length > 0 ? (
+            <section className="ota-peer-rank-board ota-review-board ota-hotel-review-board">
+              <header>
+                <div>
+                  <strong>门店全渠道评价总览</strong>
+                  <small>
+                    本月 {hotelReviewDashboard.monthStart ?? '统计期待对齐'} 起
+                    {' · '}已纳入 {hotelReviewDashboard.channels.length} 个渠道
+                  </small>
+                </div>
+                <span>
+                  {hotelReviewDashboard.latestObservedAt
+                    ? observedAtLabel(hotelReviewDashboard.latestObservedAt)
+                    : '等待渠道采集'}
+                </span>
+              </header>
+              <div className="ota-peer-rank-metrics">
+                <div>
+                  <span>本月全渠道好评</span>
+                  <strong>{hotelReviewDashboard.monthlyGoodCount} 条</strong>
+                </div>
+                <div>
+                  <span>截止昨日全渠道好评率</span>
+                  <strong>
+                    {hotelReviewDashboard.goodRatePercent === null
+                      ? otaHotelReviewRateStatusLabel(hotelReviewDashboard.rateStatus)
+                      : `${hotelReviewDashboard.goodRatePercent}%`}
+                  </strong>
+                </div>
+                <div>
+                  <span>本月全渠道差评</span>
+                  <strong>{hotelReviewDashboard.monthlyNegativeCount} 条</strong>
+                </div>
+                <div>
+                  <span>昨日全渠道新增差评</span>
+                  <strong>{hotelReviewDashboard.yesterdayNegativeCount} 条</strong>
+                </div>
+                <div>
+                  <span>截止昨日全渠道差评率</span>
+                  <strong>
+                    {hotelReviewDashboard.negativeRatePermille === null
+                      ? otaHotelReviewRateStatusLabel(hotelReviewDashboard.rateStatus)
+                      : `${hotelReviewDashboard.negativeRatePermille}‰`}
+                  </strong>
+                </div>
+              </div>
+              <small>
+                全渠道好评率＝所有已配置渠道截止昨日好评数之和 ÷
+                所有对应渠道截止昨日有效订单数之和；差评率按相同分母 ×1000‰。
+                订单仅用于后台测算，不在看板显示。
+              </small>
+            </section>
+          ) : null}
+
+          {visibleOtaSources.length > 0 ? (
             <div className="ota-monitor-grid">
-              {otaSources.map((source) => {
+              {visibleOtaSources.map((source) => {
                 const guidance = source.lastRefreshStatus === 'FAILED'
                   ? otaSourceGuidance(source.lastErrorCode)
                   : null
@@ -458,27 +538,16 @@ export function MonitorPage({
                         {source.lastRefreshStatus}
                       </b>
                     </header>
-                    <span>
-                      Cookie｜{source.cookieConfigured ? '已配置' : '未配置'}
-                      {' · '}
-                      账号密码｜
-                      {source.credentialsConfigured ? '已加密配置' : '未配置'}
-                    </span>
                     {source.lastSummary ? (
                       <>
-                        <span>记录数｜{source.lastSummary.recordCount}</span>
-                        <span>
-                          已识别维度｜
-                          {source.lastSummary.detectedDimensions
-                            .map((code) => OTA_DIMENSION_LABELS[code] ?? code)
-                            .join('、')
-                            || '尚未识别'}
-                        </span>
                         {source.lastSummary.peerRanking ? (
                           <section className="ota-peer-rank-board">
                             <header>
                               <div>
-                                <strong>美团排名实时看板</strong>
+                                <strong>
+                                  {otaProviderLabel(source.lastSummary.peerRanking.provider)}
+                                  排名实时看板
+                                </strong>
                                 <small>
                                   最近一次采集 · {pollingIntervalLabel(source.pollIntervalMinutes)}更新
                                 </small>
@@ -505,7 +574,10 @@ export function MonitorPage({
                           <section className="ota-peer-rank-board ota-review-board">
                             <header>
                               <div>
-                                <strong>美团评价经营看板</strong>
+                                <strong>
+                                  {otaProviderLabel(source.lastSummary.reviewMetrics.provider)}
+                                  评价经营看板
+                                </strong>
                                 <small>
                                   本月 {source.lastSummary.reviewMetrics.monthStart} 起
                                   {' · '}
@@ -516,7 +588,11 @@ export function MonitorPage({
                             </header>
                             <div className="ota-peer-rank-metrics">
                               <div>
-                                <span>本月新增 ≥4.8分</span>
+                                <span>
+                                  {source.lastSummary.reviewMetrics.provider === 'DOUYIN'
+                                    ? '本月新增平台好评'
+                                    : '本月新增 ≥4.8分'}
+                                </span>
                                 <strong>
                                   {source.lastSummary.reviewMetrics.monthlyGoodCount} 条
                                 </strong>
@@ -525,12 +601,18 @@ export function MonitorPage({
                                 <span>本月截止昨日好评率</span>
                                 <strong>
                                   {source.lastSummary.reviewMetrics.goodRatePercent === null
-                                    ? '待入住订单分母'
+                                    ? otaPairingStatusLabel(
+                                      source.lastSummary.reviewOrderPairing?.status,
+                                    )
                                     : `${source.lastSummary.reviewMetrics.goodRatePercent}%`}
                                 </strong>
                               </div>
                               <div>
-                                <span>本月差评 &lt;3.0分</span>
+                                <span>
+                                  {source.lastSummary.reviewMetrics.provider === 'DOUYIN'
+                                    ? '本月平台差评'
+                                    : '本月差评 <3.0分'}
+                                </span>
                                 <strong>
                                   {source.lastSummary.reviewMetrics.monthlyNegativeCount} 条
                                 </strong>
@@ -545,19 +627,75 @@ export function MonitorPage({
                                 <span>本月截止昨日差评率</span>
                                 <strong>
                                   {source.lastSummary.reviewMetrics.negativeRatePermille === null
-                                    ? '待入住订单分母'
+                                    ? otaPairingStatusLabel(
+                                      source.lastSummary.reviewOrderPairing?.status,
+                                    )
                                     : `${source.lastSummary.reviewMetrics.negativeRatePermille}‰`}
                                 </strong>
                               </div>
                             </div>
                             <small>
-                              已通过美团官方页面安全分页采集
+                              已通过
+                              {source.lastSummary.reviewMetrics.provider === 'DOUYIN'
+                                ? '抖音生活服务接口'
+                                : `${otaProviderLabel(source.lastSummary.reviewMetrics.provider)}已配置接口`}
+                              安全分页采集
                               {' '}{source.lastSummary.reviewMetrics.fetchedPageCount} 页；
                               仅保存日期和评分汇总，不保存评价正文、用户名或订单号。
-                              {source.lastSummary.reviewMetrics.denominatorStatus
-                                === 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE'
-                                ? ' 两项比率将在PMS提供全渠道有效入住订单分母后自动计算。'
-                                : ''}
+                              {source.lastSummary.reviewMetrics.provider === 'DOUYIN'
+                                ? ' 抖音按平台原生好评、中评、差评分类汇总；'
+                                : null}
+                              {' '}两项比率按同门店、同一OTA平台、同统计期的未取消订单测算，
+                              不再混用PMS全渠道订单。
+                            </small>
+                          </section>
+                        ) : null}
+                        {source.lastSummary.providerDataset?.dataset === 'REVIEW'
+                        && !source.lastSummary.reviewMetrics ? (
+                          <section className="ota-peer-rank-board ota-review-board">
+                            <header>
+                              <div>
+                                <strong>
+                                  {otaProviderLabel(source.lastSummary.providerDataset.provider)}
+                                  评价数据看板
+                                </strong>
+                                <small>
+                                  {source.lastSummary.providerDataset.scope === 'BUSINESS_MONTH_TO_DATE'
+                                    ? `${source.lastSummary.providerDataset.rangeStart} 至 ${source.lastSummary.providerDataset.rangeEnd}`
+                                    : '接口累计与当前页'}
+                                  {' · '}{pollingIntervalLabel(source.pollIntervalMinutes)}更新
+                                </small>
+                              </div>
+                              <span>{observedAtLabel(source.lastSummary.observedAt)}</span>
+                            </header>
+                            <div className="ota-peer-rank-metrics">
+                              <div>
+                                <span>
+                                  平台评价总数
+                                </span>
+                                <strong>
+                                  {source.lastSummary.providerDataset.totalCount === null
+                                    ? '平台暂未返回'
+                                    : `${source.lastSummary.providerDataset.totalCount} 条`}
+                                </strong>
+                              </div>
+                              <div>
+                                <span>本次返回记录</span>
+                                <strong>{source.lastSummary.providerDataset.returnedCount} 条</strong>
+                              </div>
+                              {source.lastSummary.providerDataset.hasMore !== undefined ? (
+                                <div>
+                                  <span>平台是否还有更多</span>
+                                  <strong>
+                                    {source.lastSummary.providerDataset.hasMore ? '是' : '否'}
+                                  </strong>
+                                </div>
+                              ) : null}
+                            </div>
+                            <small>
+                              仅保存数量、日期范围和状态汇总，不保存住客信息、评价正文或用户信息。
+                              {' '}当前{otaProviderLabel(source.lastSummary.providerDataset.provider)}
+                              接口尚未形成可确认的完整评分分页，暂不推算好评率和差评率。
                             </small>
                           </section>
                         ) : null}

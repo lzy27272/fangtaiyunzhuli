@@ -3,7 +3,6 @@ import {
   loadOtaSources,
   refreshOtaSource,
   saveOtaSources,
-  triggerLiveCollection,
   type HotelContext,
   type OtaCredentialUpdate,
   type OtaCookieUpdate,
@@ -29,6 +28,40 @@ const PLATFORM_LABELS: Record<OtaPlatformCode, string> = {
   TONGCHENG: '同程',
   OTHER: '其他OTA',
 }
+
+type OtaSourceKind = 'ORDER' | 'REVIEW' | 'RANK' | 'OTHER'
+
+const SOURCE_KIND_LABELS: Record<OtaSourceKind, string> = {
+  ORDER: '订单',
+  REVIEW: '评价',
+  RANK: '排名',
+  OTHER: '其他数据',
+}
+
+const SOURCE_KIND_ORDER: Record<OtaSourceKind, number> = {
+  ORDER: 0,
+  REVIEW: 1,
+  RANK: 2,
+  OTHER: 3,
+}
+
+const otaSourceKind = (source: OtaSourceView): OtaSourceKind => {
+  if (source.lastSummary?.peerRanking) return 'RANK'
+  if (
+    source.lastSummary?.reviewMetrics
+    || source.lastSummary?.providerDataset?.dataset === 'REVIEW'
+  ) return 'REVIEW'
+  if (source.lastSummary?.providerDataset?.dataset === 'ORDER') return 'ORDER'
+  const text = `${source.displayName} ${source.dataEndpointUrl}`.toLowerCase()
+  if (/rank|ranking|排名/.test(text)) return 'RANK'
+  if (/review|comment|evaluate|evaluation|评价|点评/.test(text)) return 'REVIEW'
+  if (/order|booking|订单/.test(text)) return 'ORDER'
+  return 'OTHER'
+}
+
+const hasBuiltInReadOnlyEndpoint = (source: OtaSourceView): boolean =>
+  source.platformCode === 'FLIGGY'
+  && ['ORDER', 'REVIEW'].includes(otaSourceKind(source))
 
 const DIMENSION_LABELS: Record<string, string> = {
   DATE: '日期',
@@ -60,10 +93,35 @@ const OTA_POLL_INTERVAL_OPTIONS = [
 const SENSITIVE_QUERY_KEY =
   /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
 
+const FLIGGY_EPHEMERAL_QUERY_KEYS = new Set([
+  't',
+  'sign',
+  'bx-ua',
+  'bx-umidtoken',
+])
+
+const normalizeDataEndpointUrl = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const url = new URL(trimmed)
+    if (url.hostname.toLowerCase() === 'h5api.m.fliggy.com') {
+      for (const key of [...url.searchParams.keys()]) {
+        if (FLIGGY_EPHEMERAL_QUERY_KEYS.has(key.toLowerCase())) {
+          url.searchParams.delete(key)
+        }
+      }
+    }
+    return url.toString()
+  } catch {
+    return trimmed
+  }
+}
+
 const validateUrl = (value: string): string | null => {
   let url
   try {
-    url = new URL(value)
+    url = new URL(normalizeDataEndpointUrl(value))
   } catch {
     return '必须填写完整HTTPS网址。'
   }
@@ -71,16 +129,22 @@ const validateUrl = (value: string): string | null => {
   if (url.username || url.password) return '网址中不能包含账号或密码。'
   if (url.hash) return '网址中不能包含片段标识。'
   if ([...url.searchParams.keys()].some((key) =>
-    SENSITIVE_QUERY_KEY.test(key))) {
+    SENSITIVE_QUERY_KEY.test(key)
+    && !(
+      url.hostname.toLowerCase() === 'h5api.m.fliggy.com'
+      && key.toLowerCase() === 'appkey'
+    ))) {
     return '网址查询参数中不能包含Token、Cookie、密码或签名。'
   }
   return null
 }
 
-const emptyOtaSource = (): OtaSourceView => ({
+const emptyOtaSource = (
+  platformCode: OtaPlatformCode = 'CTRIP',
+): OtaSourceView => ({
   sourceId: globalThis.crypto.randomUUID(),
   displayName: '',
-  platformCode: 'CTRIP',
+  platformCode,
   portalUrl: '',
   dataEndpointUrl: '',
   requestMethod: 'GET',
@@ -122,9 +186,15 @@ export function OtaSourceConfigPanel({
     useState<Record<string, boolean>>({})
   const [portalUrlEnabled, setPortalUrlEnabled] =
     useState<Record<string, boolean>>({})
+  const [expandedSourceIds, setExpandedSourceIds] =
+    useState<Record<string, boolean>>({})
+  const [expandedPlatformCodes, setExpandedPlatformCodes] =
+    useState<Partial<Record<OtaPlatformCode, boolean>>>({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [refreshingId, setRefreshingId] = useState<string | null>(null)
+  const [dirtySourceIds, setDirtySourceIds] =
+    useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -134,6 +204,14 @@ export function OtaSourceConfigPanel({
     setPortalUrlEnabled(Object.fromEntries(
       rows.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
     ))
+    setExpandedSourceIds(Object.fromEntries(
+      rows.map((source) => [
+        source.sourceId,
+        source.rowVersion === 0
+          || attentionSourceId === source.sourceId,
+      ]),
+    ))
+    expandPlatformForRows(rows)
     return rows
   }
 
@@ -151,9 +229,18 @@ export function OtaSourceConfigPanel({
           setPasswordDrafts({})
           setClearCookies({})
           setClearCredentials({})
+          setDirtySourceIds({})
           setPortalUrlEnabled(Object.fromEntries(
             rows.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
           ))
+          setExpandedSourceIds(Object.fromEntries(
+            rows.map((source) => [
+              source.sourceId,
+              source.rowVersion === 0
+                || attentionSourceId === source.sourceId,
+            ]),
+          ))
+          expandPlatformForRows(rows)
         }
       })
       .catch((cause) => {
@@ -171,6 +258,21 @@ export function OtaSourceConfigPanel({
 
   useEffect(() => {
     if (attentionSourceId === null || loading) return
+    if (attentionSourceId) {
+      const attentionSource = sources.find(
+        (source) => source.sourceId === attentionSourceId,
+      )
+      if (attentionSource) {
+        setExpandedPlatformCodes((current) => ({
+          ...current,
+          [attentionSource.platformCode]: true,
+        }))
+      }
+      setExpandedSourceIds((current) => ({
+        ...current,
+        [attentionSourceId]: true,
+      }))
+    }
     const frame = window.requestAnimationFrame(() => {
       const target = attentionSourceId
         ? document.getElementById(otaCardId(attentionSourceId))
@@ -186,12 +288,38 @@ export function OtaSourceConfigPanel({
     [sources],
   )
 
+  const platformGroups = useMemo(() =>
+    (Object.entries(PLATFORM_LABELS) as Array<[OtaPlatformCode, string]>)
+      .map(([platformCode, label]) => ({
+        platformCode,
+        label,
+        sources: sources
+          .filter((source) => source.platformCode === platformCode)
+          .sort((left, right) =>
+            SOURCE_KIND_ORDER[otaSourceKind(left)]
+            - SOURCE_KIND_ORDER[otaSourceKind(right)]),
+      }))
+      .filter((group) => group.sources.length > 0),
+  [sources])
+
+  const expandPlatformForRows = (rows: OtaSourceView[]) => {
+    const next: Partial<Record<OtaPlatformCode, boolean>> = {}
+    for (const source of rows) {
+      if (
+        source.rowVersion === 0
+        || attentionSourceId === source.sourceId
+      ) next[source.platformCode] = true
+    }
+    setExpandedPlatformCodes(next)
+  }
+
   const updateSource = (
     sourceId: string,
     patch: Partial<OtaSourceView>,
   ) => {
     setSources((current) => current.map((source) =>
       source.sourceId === sourceId ? { ...source, ...patch } : source))
+    setDirtySourceIds((current) => ({ ...current, [sourceId]: true }))
   }
 
   const validate = (): string | null => {
@@ -203,8 +331,10 @@ export function OtaSourceConfigPanel({
         const portalError = validateUrl(source.portalUrl)
         if (portalError) return `${source.displayName || 'OTA来源'}后台网址：${portalError}`
       }
-      const endpointError = validateUrl(source.dataEndpointUrl)
-      if (endpointError) return `${source.displayName || 'OTA来源'}数据接口：${endpointError}`
+      if (source.dataEndpointUrl.trim()) {
+        const endpointError = validateUrl(source.dataEndpointUrl)
+        if (endpointError) return `${source.displayName || 'OTA来源'}数据接口：${endpointError}`
+      }
       if (source.requestMethod === 'GET' && source.requestPayloadJson.trim()) {
         return `${source.displayName}使用GET时不能填写POST请求载荷。`
       }
@@ -269,7 +399,7 @@ export function OtaSourceConfigPanel({
         (portalUrlEnabled[source.sourceId] ?? Boolean(source.portalUrl))
           ? source.portalUrl.trim()
           : '',
-      dataEndpointUrl: source.dataEndpointUrl.trim(),
+      dataEndpointUrl: normalizeDataEndpointUrl(source.dataEndpointUrl),
       requestMethod: source.requestMethod,
       requestPayloadJson: source.requestPayloadJson.trim(),
       pollIntervalMinutes: source.pollIntervalMinutes,
@@ -291,6 +421,14 @@ export function OtaSourceConfigPanel({
     }
     setSaving(true)
     try {
+      const sourceIdsToRefresh = new Set(
+        sources
+          .filter((source) =>
+            source.rowVersion === 0
+            || dirtySourceIds[source.sourceId]
+            || Boolean((cookieDrafts[source.sourceId] ?? '').trim()))
+          .map((source) => source.sourceId),
+      )
       const saved = await saveOtaSources(
         context,
         sources.map(inputFor),
@@ -299,62 +437,85 @@ export function OtaSourceConfigPanel({
       setPortalUrlEnabled(Object.fromEntries(
         saved.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
       ))
+      setExpandedSourceIds(Object.fromEntries(
+        saved.map((source) => [
+          source.sourceId,
+          attentionSourceId === source.sourceId,
+        ]),
+      ))
+      expandPlatformForRows(saved)
       setCookieDrafts({})
       setAccountDrafts({})
       setPasswordDrafts({})
       setClearCookies({})
       setClearCredentials({})
-      const enabledSources = saved.filter((source) => source.enabled)
-      if (enabledSources.length === 0) {
-        setNotice('OTA配置已安全保存；当前没有启用的OTA来源，因此未执行自动采集。')
+      setDirtySourceIds({})
+      const refreshTargets = saved.filter(
+        (source) =>
+          sourceIdsToRefresh.has(source.sourceId)
+          && source.enabled
+          && source.cookieConfigured
+          && (
+            Boolean(source.dataEndpointUrl)
+            || hasBuiltInReadOnlyEndpoint(source)
+          ),
+      )
+      if (refreshTargets.length === 0) {
+        setNotice(
+          'OTA配置已保存；本次没有需要立即刷新的已启用数据源。',
+        )
         onStatusChanged?.()
         return
       }
-      try {
-        const run = await triggerLiveCollection(context)
-        const refreshed = run.otaRefreshes ?? await reload()
-        setSources(refreshed)
-        const otaCompleted = refreshed.filter(
-          (source) =>
-            source.enabled && source.lastRefreshStatus === 'COMPLETE',
-        ).length
-        setNotice(
-          `OTA配置已保存并自动执行一次融合采集：`
-          + `${run.successfulSourceCount}/${run.sourceCount}个主报表来源可用，`
-          + `${otaCompleted}/${enabledSources.length}个OTA来源已形成数据。`,
-        )
-      } catch (collectionCause) {
-        let completed = 0
-        let failed = 0
-        for (const source of enabledSources) {
-          setRefreshingId(source.sourceId)
-          try {
-            await refreshOtaSource(context, source.sourceId)
-            completed += 1
-          } catch {
-            failed += 1
-          }
-        }
-        await reload()
-        const code =
-          collectionCause instanceof Error
-            ? collectionCause.message
-            : 'COLLECTION_FAILED'
-        setNotice(
-          `OTA配置已保存；融合采集未完成（${code}），`
-          + `已自动单独刷新一次OTA来源：${completed}个完成，${failed}个需核对。`,
-        )
-        if (failed > 0) {
-          setError('部分OTA来源刷新失败，请根据来源卡片中的错误原因修改后再次保存或手动刷新。')
-        }
-      }
+      setNotice(
+        `OTA配置已保存；正在后台刷新本次改动的${refreshTargets.length}个数据源，`
+        + '无需等待整店其他渠道采集。',
+      )
+      void refreshAfterSave(refreshTargets)
       onStatusChanged?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存OTA配置失败')
     } finally {
-      setRefreshingId(null)
       setSaving(false)
     }
+  }
+
+  async function refreshAfterSave(targets: OtaSourceView[]) {
+    let completed = 0
+    let failed = 0
+    const targetIds = new Set(targets.map((source) => source.sourceId))
+    for (const source of targets) {
+      setRefreshingId(source.sourceId)
+      try {
+        const refreshed = await refreshOtaSource(context, source.sourceId)
+        setSources((current) => current.map((candidate) =>
+          candidate.sourceId === refreshed.sourceId ? refreshed : candidate))
+        completed += 1
+      } catch {
+        failed += 1
+      }
+    }
+    if (failed > 0) {
+      try {
+        const latest = await loadOtaSources(context)
+        setSources((current) => current.map((source) => {
+          if (!targetIds.has(source.sourceId)) return source
+          return latest.find((candidate) =>
+            candidate.sourceId === source.sourceId) ?? source
+        }))
+      } catch {
+        // The saved configuration remains valid even if status reload fails.
+      }
+    }
+    setRefreshingId(null)
+    setNotice(
+      `OTA配置已保存；本次改动数据源刷新完成：${completed}个完成，`
+      + `${failed}个需要核对。`,
+    )
+    if (failed > 0) {
+      setError('部分本次改动的数据源刷新失败，请根据来源卡片中的错误原因核对；其他渠道未被重复采集。')
+    }
+    onStatusChanged?.()
   }
 
   async function refreshOne(sourceId: string) {
@@ -389,8 +550,8 @@ export function OtaSourceConfigPanel({
           <h3>OTA后台与数据接口</h3>
           <p>
             每个门店可配置多个OTA来源。Cookie和账号密码分别加密保存且不回显；
-            后台登录网址为可选补充项；立即刷新仅使用Cookie只读访问HTTPS JSON接口，
-            不会自动调价或修改库存。
+            后台登录网址和JSON数据接口均为可选补充项。已保存来源默认折叠；
+            补充接口后可使用Cookie进行只读采集，不会自动调价或修改库存。
           </p>
         </div>
         <span className="mode-chip">
@@ -400,49 +561,116 @@ export function OtaSourceConfigPanel({
 
       <div className="security-note report-source-note">
         账号密码已预留给后续平台专用受控登录；在明确登录协议、验证码流程和授权范围前，
-        不会把账号密码发送给任意网址。当前可用链路为：登录OTA后台取得Cookie → 保存 →
-        立即刷新JSON数据接口。
+        不会把账号密码发送给任意网址。如补充JSON数据接口，当前可用链路为：
+        登录OTA后台取得Cookie → 保存 → 立即刷新JSON数据接口。
       </div>
 
       {loading ? <div className="state-panel">正在读取OTA配置…</div> : null}
       {error ? <div className="error" role="alert">{error}</div> : null}
       {notice ? <div className="success" role="status">{notice}</div> : null}
 
-      <div className="ota-source-list">
-        {sources.map((source, index) => {
+      <div className="ota-platform-list">
+        {platformGroups.map((group) => {
+          const platformExpanded = expandedPlatformCodes[group.platformCode]
+            ?? group.sources.some((source) =>
+              source.rowVersion === 0
+              || attentionSourceId === source.sourceId)
+          const kinds = [...new Set(group.sources.map(otaSourceKind))]
+            .sort((left, right) =>
+              SOURCE_KIND_ORDER[left] - SOURCE_KIND_ORDER[right])
+          return (
+            <section className="ota-platform-group" key={group.platformCode}>
+              <button
+                aria-expanded={platformExpanded}
+                className="ota-platform-menu"
+                type="button"
+                onClick={() =>
+                  setExpandedPlatformCodes((current) => ({
+                    ...current,
+                    [group.platformCode]: !platformExpanded,
+                  }))}
+              >
+                <div>
+                  <strong>{group.label}</strong>
+                  <small>{group.sources.length} 个数据源</small>
+                </div>
+                <span className="ota-platform-kinds">
+                  {kinds.map((kind) => (
+                    <b key={kind}>{SOURCE_KIND_LABELS[kind]}</b>
+                  ))}
+                </span>
+                <b>{platformExpanded ? '收起' : '展开'}</b>
+              </button>
+
+              {platformExpanded ? (
+                <div className="ota-platform-content">
+                  <div className="ota-source-list">
+        {group.sources.map((source) => {
+          const index = sources.findIndex(
+            (candidate) => candidate.sourceId === source.sourceId,
+          )
           const guidance = source.lastRefreshStatus === 'FAILED'
             ? otaSourceGuidance(source.lastErrorCode)
             : null
           const highlighted =
             attentionSourceId === source.sourceId
             || source.lastRefreshStatus === 'FAILED'
+          const expanded = expandedSourceIds[source.sourceId]
+            ?? (
+              source.rowVersion === 0
+              || attentionSourceId === source.sourceId
+            )
           return (
             <article
-              className={`ota-source-card ${highlighted ? 'needs-attention' : ''}`}
+              className={`ota-source-card ${highlighted ? 'needs-attention' : ''} ${
+                expanded ? 'is-expanded' : 'is-collapsed'
+              }`}
               id={otaCardId(source.sourceId)}
               key={source.sourceId}
               tabIndex={-1}
             >
               <header>
                 <div>
-                  <span>OTA {String(index + 1).padStart(2, '0')}</span>
+                  {expanded ? (
+                    <span>OTA {String(index + 1).padStart(2, '0')}</span>
+                  ) : null}
                   <strong>{source.displayName || '未命名OTA来源'}</strong>
-                  <small>{PLATFORM_LABELS[source.platformCode]}</small>
+                  <small>
+                    {SOURCE_KIND_LABELS[otaSourceKind(source)]}
+                    {' · '}{source.enabled ? '已启用' : '已停用'}
+                  </small>
                 </div>
-                <label className="inline-toggle">
-                  <input
-                    checked={source.enabled}
-                    disabled={!canConfigure}
-                    type="checkbox"
-                    onChange={(event) =>
-                      updateSource(source.sourceId, {
-                        enabled: event.target.checked,
-                      })}
-                  />
-                  启用
-                </label>
+                <div className="ota-card-header-actions">
+                  {expanded ? (
+                    <label className="inline-toggle">
+                      <input
+                        checked={source.enabled}
+                        disabled={!canConfigure}
+                        type="checkbox"
+                        onChange={(event) =>
+                          updateSource(source.sourceId, {
+                            enabled: event.target.checked,
+                          })}
+                      />
+                      启用
+                    </label>
+                  ) : null}
+                  <button
+                    aria-expanded={expanded}
+                    className="secondary ota-expand-button"
+                    type="button"
+                    onClick={() =>
+                      setExpandedSourceIds((current) => ({
+                        ...current,
+                        [source.sourceId]: !expanded,
+                      }))}
+                  >
+                    {expanded ? '收起' : '展开'}
+                  </button>
+                </div>
               </header>
 
+              {expanded ? <>
               {guidance ? (
                 <div className="report-source-card-attention" role="alert">
                   <strong>{guidance.reason}</strong>
@@ -471,10 +699,14 @@ export function OtaSourceConfigPanel({
                   <select
                     disabled={!canConfigure}
                     value={source.platformCode}
-                    onChange={(event) =>
-                      updateSource(source.sourceId, {
-                        platformCode: event.target.value as OtaPlatformCode,
-                      })}
+                    onChange={(event) => {
+                      const platformCode = event.target.value as OtaPlatformCode
+                      updateSource(source.sourceId, { platformCode })
+                      setExpandedPlatformCodes((current) => ({
+                        ...current,
+                        [platformCode]: true,
+                      }))
+                    }}
                   >
                     {Object.entries(PLATFORM_LABELS).map(([code, label]) => (
                       <option key={code} value={code}>{label}</option>
@@ -517,10 +749,10 @@ export function OtaSourceConfigPanel({
                   </label>
                 ) : null}
                 <label className="wide-field">
-                  OTA数据接口网址（返回JSON）
+                  OTA数据接口网址（返回JSON，可选）
                   <input
                     disabled={!canConfigure}
-                    placeholder="https://.../api/..."
+                    placeholder="可补充填写：https://.../api/..."
                     value={source.dataEndpointUrl}
                     onChange={(event) =>
                       updateSource(source.sourceId, {
@@ -530,6 +762,15 @@ export function OtaSourceConfigPanel({
                   {source.dataEndpointUrl && validateUrl(source.dataEndpointUrl)
                     ? <small className="field-error">{validateUrl(source.dataEndpointUrl)}</small>
                     : null}
+                  {!source.dataEndpointUrl ? (
+                    <small>未填写时仅保存OTA渠道资料，不参与自动轮询。</small>
+                  ) : null}
+                  {source.platformCode === 'FLIGGY' ? (
+                    <small>
+                      飞猪接口中的临时 t、sign、bx-ua 和 bx-umidtoken
+                      会在保存时自动移除，采集时使用已加密Cookie重新生成短效签名。
+                    </small>
+                  ) : null}
                 </label>
                 <label>
                   请求方式
@@ -732,6 +973,10 @@ export function OtaSourceConfigPanel({
                       !canConfigure
                       || refreshingId !== null
                       || source.rowVersion === 0
+                      || (
+                        !source.dataEndpointUrl
+                        && !hasBuiltInReadOnlyEndpoint(source)
+                      )
                     }
                     type="button"
                     onClick={() => void refreshOne(source.sourceId)}
@@ -752,14 +997,43 @@ export function OtaSourceConfigPanel({
                   </button>
                 ) : null}
               </footer>
+              </> : null}
             </article>
+          )
+        })}
+                  </div>
+                  {canConfigure ? (
+                    <button
+                      className="secondary ota-platform-add-source"
+                      disabled={saving}
+                      type="button"
+                      onClick={() => {
+                        const source = emptyOtaSource(group.platformCode)
+                        setSources((current) => [...current, source])
+                        setPortalUrlEnabled((current) => ({
+                          ...current,
+                          [source.sourceId]: false,
+                        }))
+                        setExpandedSourceIds((current) => ({
+                          ...current,
+                          [source.sourceId]: true,
+                        }))
+                      }}
+                    >
+                      新增{group.label}数据源
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
           )
         })}
       </div>
 
       {sources.length === 0 && !loading ? (
         <div className="state-panel">
-          尚未配置OTA来源。新增后填写JSON数据接口及Cookie；后台登录网址可选。
+          尚未配置OTA来源。新增后先选择OTA平台并填写来源名称；
+          后台登录网址、JSON数据接口及Cookie均可按需补充。
         </div>
       ) : null}
 
@@ -776,9 +1050,17 @@ export function OtaSourceConfigPanel({
                   ...current,
                   [source.sourceId]: false,
                 }))
+                setExpandedSourceIds((current) => ({
+                  ...current,
+                  [source.sourceId]: true,
+                }))
+                setExpandedPlatformCodes((current) => ({
+                  ...current,
+                  [source.platformCode]: true,
+                }))
               }}
           >
-            新增OTA数据源
+            新增OTA渠道
           </button>
           <button
             disabled={saving || sources.length === 0}

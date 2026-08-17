@@ -203,7 +203,7 @@ public class KpiSourcePreviewService {
         result.put("window", Map.of("from", aggregate.from(), "to", aggregate.to(), "businessDays", aggregate.businessDays()));
         result.put("freshnessState", freshness(hotel.latest()));
         result.put("completenessState", completeness(hotel.snapshots()));
-        result.put("sourceMetrics", sourceMetrics(aggregate));
+        result.put("sourceMetrics", sourceMetrics(aggregate, false));
         result.put("automaticScore", autoScore);
         result.put("automaticMaxScore", autoMaxScore);
         result.put("baseFullScore", header.baseFullScore());
@@ -361,7 +361,7 @@ public class KpiSourcePreviewService {
         result.put("freshnessState", monthly == null ? freshness(hotel.latest()) : freshness(monthly.collectedAt()));
         result.put("completenessState", candidateEligible ? "COMPLETE_MONTH_VALIDATED" : "INCOMPLETE_OR_INVALID");
         result.put("validation", monthlyValidation(monthly));
-        result.put("sourceMetrics", sourceMetrics(aggregate));
+        result.put("sourceMetrics", sourceMetrics(aggregate, officialEligible));
         result.put("automaticScore", automaticScore);
         result.put("automaticMaxScore", automaticMaxScore);
         result.put("candidateScore", candidateScore);
@@ -445,6 +445,10 @@ public class KpiSourcePreviewService {
         result.put("hotelId", hotel.hotelId());
         result.put("hotelCode", hotel.hotelCode());
         result.put("hotelName", hotel.hotelName());
+        result.put("pmsProviderCode", hotel.pmsProviderCode());
+        result.put("sourceProfile", hotel.sourceProfile());
+        result.put("sourceConnectionState", hotel.sourceConnectionState());
+        result.put("sourceConnectionMessage", hotel.sourceConnectionMessage());
         result.put("snapshotAvailable", !hotel.snapshots().isEmpty());
         if (hotel.latest() != null) {
             result.put("latestBusinessDate", hotel.latest().businessDate());
@@ -452,29 +456,37 @@ public class KpiSourcePreviewService {
             result.put("freshnessState", freshness(hotel.latest()));
             result.put("businessDayCount", hotel.snapshots().size());
         }
-        result.put("middlePlatformStoreBindingState", "UNBOUND_PREVIEW_SOURCE");
+        result.put("middlePlatformStoreBindingState", "DIRECTORY_BOUND_READ_ONLY_SOURCE");
         return result;
     }
 
-    private List<Map<String, Object>> sourceMetrics(SourceAggregate value) {
+    private List<Map<String, Object>> sourceMetrics(SourceAggregate value, boolean verifiedDirectOccupancy) {
         return List.of(
-                metric("OCCUPANCY", "出租率", value.occupancy(), formatPercent(value.occupancy()), "RATIO"),
-                metric("ROOM_REVENUE", "房费收入", value.roomRevenue(), currency(value.roomRevenue()), "CURRENCY"),
-                metric("ADR", "平均房价 ADR", value.adr(), currency(value.adr()), "CURRENCY"),
-                metric("REVPAR", "每可售房收入 RevPAR", value.revPar(), currency(value.revPar()), "CURRENCY"),
-                metric("SOLD_ROOM_NIGHTS", "出租房晚", value.roomNights(), plain(value.roomNights()), "ROOM_NIGHT"),
-                metric("SELLABLE_ROOMS", "可售房数", value.sellableRooms(), plain(value.sellableRooms()), "ROOM")
+                metric("OCCUPANCY", "出租率", value.occupancy(), formatPercent(value.occupancy()), "RATIO",
+                        verifiedDirectOccupancy),
+                metric("ROOM_REVENUE", "房费收入", value.roomRevenue(), currency(value.roomRevenue()), "CURRENCY", false),
+                metric("ADR", "平均房价 ADR", value.adr(), currency(value.adr()), "CURRENCY", false),
+                metric("REVPAR", "每可售房收入 RevPAR", value.revPar(), currency(value.revPar()), "CURRENCY", false),
+                metric("SOLD_ROOM_NIGHTS", "出租房晚", value.roomNights(), plain(value.roomNights()), "ROOM_NIGHT", false),
+                metric("SELLABLE_ROOMS", "可售房数", value.sellableRooms(), plain(value.sellableRooms()), "ROOM", false)
         );
     }
 
-    private Map<String, Object> metric(String code, String name, BigDecimal value, String display, String unit) {
+    private Map<String, Object> metric(
+            String code,
+            String name,
+            BigDecimal value,
+            String display,
+            String unit,
+            boolean verified
+    ) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("code", code);
         result.put("name", name);
         result.put("value", value);
         result.put("displayValue", display);
         result.put("unit", unit);
-        result.put("state", value == null ? "PENDING_VERIFICATION" : "AVAILABLE_WITH_WARNING");
+        result.put("state", value == null ? "PENDING_VERIFICATION" : verified ? "AVAILABLE" : "AVAILABLE_WITH_WARNING");
         return result;
     }
 

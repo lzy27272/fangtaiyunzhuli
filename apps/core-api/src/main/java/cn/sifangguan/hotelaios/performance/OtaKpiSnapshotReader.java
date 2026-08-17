@@ -39,7 +39,9 @@ final class OtaKpiSnapshotReader {
             Map<String, List<LatestSnapshot>> snapshots = readSnapshots(snapshotPath);
             List<SourceHotel> hotels = new ArrayList<>();
             directory.values().forEach(item -> hotels.add(new SourceHotel(item.tenantCode(), item.hotelId(),
-                    item.hotelCode(), item.hotelName(), snapshots.getOrDefault(item.hotelId(), List.of()))));
+                    item.hotelCode(), item.hotelName(), item.pmsProviderCode(), item.sourceProfile(),
+                    item.sourceConnectionState(), item.sourceConnectionMessage(),
+                    snapshots.getOrDefault(item.hotelId(), List.of()))));
             List<SourceHotel> immutable = List.copyOf(hotels);
             cache = new Cache(directoryPath, snapshotPath, allowedTenantCode, directoryModified, snapshotModified, immutable);
             return immutable;
@@ -57,7 +59,10 @@ final class OtaKpiSnapshotReader {
             String hotelId = hotel.path("hotelId").asText("");
             if (!allowedTenantCode.equals(tenantCode) || hotelId.isBlank()) continue;
             result.put(hotelId, new HotelDirectory(tenantCode, hotelId, hotel.path("hotelCode").asText(""),
-                    hotel.path("hotelName").asText(hotelId)));
+                    hotel.path("hotelName").asText(hotelId), hotel.path("pmsProviderCode").asText("UNCONFIGURED"),
+                    hotel.path("sourceProfile").asText(""),
+                    hotel.path("sourceConnectionState").asText("UNCONFIGURED"),
+                    hotel.path("sourceConnectionMessage").asText("数据源尚未配置")));
         }
         return result;
     }
@@ -170,6 +175,8 @@ final class OtaKpiSnapshotReader {
     }
 
     record SourceHotel(String tenantCode, String hotelId, String hotelCode, String hotelName,
+                       String pmsProviderCode, String sourceProfile, String sourceConnectionState,
+                       String sourceConnectionMessage,
                        List<LatestSnapshot> snapshots) {
         LatestSnapshot latest() {
             return snapshots.stream().max(java.util.Comparator.comparing(LatestSnapshot::observedAt)).orElse(null);
@@ -194,7 +201,9 @@ final class OtaKpiSnapshotReader {
         }
     }
 
-    private record HotelDirectory(String tenantCode, String hotelId, String hotelCode, String hotelName) {
+    private record HotelDirectory(String tenantCode, String hotelId, String hotelCode, String hotelName,
+                                  String pmsProviderCode, String sourceProfile, String sourceConnectionState,
+                                  String sourceConnectionMessage) {
     }
 
     private record Cache(Path directoryPath, Path snapshotPath, String tenantCode, long directoryModified,

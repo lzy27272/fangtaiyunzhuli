@@ -222,6 +222,9 @@ export type OtaPlatformCode =
   | 'OTHER'
 
 export type OtaPeerRankMetricCode =
+  | 'OVERALL'
+  | 'ORDER_COUNT'
+  | 'REVIEW_SCORE'
   | 'STAY_ROOM_NIGHTS'
   | 'ROOM_REVENUE'
   | 'SOLD_ROOM_NIGHTS'
@@ -237,12 +240,16 @@ export interface OtaPeerRankMetric {
 }
 
 export interface OtaPeerRankingSummary {
-  provider: 'MEITUAN'
+  provider: 'MEITUAN' | 'FLIGGY'
   metrics: OtaPeerRankMetric[]
 }
 
 export interface OtaReviewMetricsSummary {
-  provider: 'MEITUAN'
+  provider: 'MEITUAN' | 'DOUYIN' | 'FLIGGY'
+  metricBasis?:
+    | 'MEITUAN_STAR_THRESHOLDS'
+    | 'DOUYIN_NATIVE_ATTITUDE'
+    | 'FLIGGY_STAR_THRESHOLDS'
   businessDate: string
   businessDateBasis: 'PMS_CONFIRMED' | 'SYSTEM_DATE_FALLBACK'
   previousBusinessDate: string
@@ -253,13 +260,102 @@ export interface OtaReviewMetricsSummary {
   goodCountThroughPreviousBusinessDate: number
   negativeCountThroughPreviousBusinessDate: number
   validStayedOrderCountThroughPreviousBusinessDate: number | null
+  eligibleOtaOrderCountThroughPreviousBusinessDate?: number | null
   goodRatePercent: number | null
   negativeRatePermille: number | null
-  denominatorStatus: 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE' | 'AVAILABLE'
+  denominatorSource?: 'MATCHED_OTA_ORDER_SOURCE'
+  denominatorStatus:
+    | 'PMS_VALID_STAYED_ORDER_COUNT_UNAVAILABLE'
+    | 'AVAILABLE'
+    | 'ZERO_DENOMINATOR'
+    | 'ORDER_SOURCE_MISSING'
+    | 'ORDER_DATA_INCOMPLETE'
+    | 'REVIEW_SCORE_METRICS_UNAVAILABLE'
+    | 'PERIOD_MISMATCH'
   totalAllTime: number | null
   fetchedRowCount: number
   fetchedPageCount: number
   paginationComplete: boolean
+  aggregationVersion?: number
+}
+
+export interface OtaProviderDatasetSummary {
+  provider: 'MEITUAN' | 'DOUYIN' | 'FLIGGY'
+  dataset: 'ORDER' | 'REVIEW'
+  scope: 'BUSINESS_MONTH_TO_DATE' | 'ENDPOINT_TOTAL_AND_CURRENT_PAGE'
+  periodBasis?:
+    | 'THROUGH_PREVIOUS_BUSINESS_DATE'
+    | 'THROUGH_CURRENT_BUSINESS_DATE'
+  rangeStart?: string
+  rangeEnd?: string
+  totalCount: number | null
+  returnedCount: number
+  canceledCount?: number
+  nonCanceledCount?: number
+  hasMore?: boolean
+  duplicateCount?: number
+  aggregationVersion?: number
+  safeDiagnosticsVersion?: number
+  scoreFieldProfiles?: Array<{
+    fieldPath: string
+    observedCount: number
+    distinctValues: number[]
+  }>
+  paginationFieldTypes?: Record<string, string>
+  fetchedPageCount?: number
+  paginationComplete?: boolean
+  oldestObservedDate?: string | null
+  attitudeCounts?: Record<string, number>
+  monthlyAttitudeCounts?: Record<string, number>
+  throughPreviousBusinessDateAttitudeCounts?: Record<string, number>
+  yesterdayAttitudeCounts?: Record<string, number>
+  schemaDiagnosticsVersion?: number
+  identityFieldProfiles?: Array<{
+    fieldPath: string
+    observedCount: number
+    distinctCount: number
+  }>
+  dateFieldProfiles?: Array<{
+    fieldPath: string
+    observedCount: number
+    earliestDate: string
+    latestDate: string
+  }>
+  classificationMetadata?: Array<{
+    fieldPath: string
+    value: string
+  }>
+  classificationFieldProfiles?: Array<{
+    attitude: number
+    fieldPath: string
+    value: string
+    count: number
+  }>
+  attitudeSignalProfiles?: Array<{
+    attitude: number
+    count: number
+    scoreTagSubTypes: Record<string, number>
+    reviewSources: Record<string, number>
+    complainStatuses: Record<string, number>
+  }>
+}
+
+export interface OtaReviewOrderPairingSummary {
+  provider: 'MEITUAN' | 'DOUYIN' | 'FLIGGY'
+  orderSourceId: string | null
+  orderCountDefinition: 'NON_CANCELED_OTA_ORDERS'
+  periodStart: string | null
+  periodEnd: string | null
+  denominatorCount: number | null
+  orderDataComplete: boolean
+  scoreMetricsAvailable: boolean
+  status:
+    | 'AVAILABLE'
+    | 'ZERO_DENOMINATOR'
+    | 'ORDER_SOURCE_MISSING'
+    | 'ORDER_DATA_INCOMPLETE'
+    | 'REVIEW_SCORE_METRICS_UNAVAILABLE'
+    | 'PERIOD_MISMATCH'
 }
 
 export interface OtaRefreshSummary {
@@ -272,6 +368,8 @@ export interface OtaRefreshSummary {
   detectedFields: string[]
   peerRanking?: OtaPeerRankingSummary
   reviewMetrics?: OtaReviewMetricsSummary
+  providerDataset?: OtaProviderDatasetSummary
+  reviewOrderPairing?: OtaReviewOrderPairingSummary
 }
 
 export interface OtaSourceView {

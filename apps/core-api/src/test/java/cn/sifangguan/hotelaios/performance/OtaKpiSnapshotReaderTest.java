@@ -19,7 +19,7 @@ class OtaKpiSnapshotReaderTest {
         Path snapshots = tempDir.resolve("snapshots.json");
         Files.writeString(hotels, """
                 [
-                  {"tenantCode":"001","hotelId":"h1","hotelCode":"001","hotelName":"门店一","cookie":"never"},
+                  {"tenantCode":"001","hotelId":"h1","hotelCode":"001","hotelName":"门店一","pmsProviderCode":"TEST_PMS","sourceProfile":"profile-001","sourceConnectionState":"AVAILABLE","sourceConnectionMessage":"月报可用","cookie":"never"},
                   {"tenantCode":"999","hotelId":"h2","hotelCode":"002","hotelName":"越权门店"}
                 ]
                 """);
@@ -34,6 +34,10 @@ class OtaKpiSnapshotReaderTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().hotelName()).isEqualTo("门店一");
+        assertThat(result.getFirst().pmsProviderCode()).isEqualTo("TEST_PMS");
+        assertThat(result.getFirst().sourceProfile()).isEqualTo("profile-001");
+        assertThat(result.getFirst().sourceConnectionState()).isEqualTo("AVAILABLE");
+        assertThat(result.getFirst().sourceConnectionMessage()).isEqualTo("月报可用");
         assertThat(result.getFirst().snapshots()).hasSize(1);
         assertThat(result.getFirst().latest().overview().roomNights()).isEqualByComparingTo("9");
     }

@@ -17,6 +17,10 @@ const otaSourceCollectorSource = await readFile(
   new URL('../../../tools/uat/ota-source-collector.mjs', import.meta.url),
   'utf8',
 )
+const fliggySourceCollectorSource = await readFile(
+  new URL('../../../tools/uat/fliggy-source-collector.mjs', import.meta.url),
+  'utf8',
+)
 const luopanBrowserConfigSource = await readFile(new URL('../src/pages/LuopanBrowserConfigPanel.tsx', import.meta.url), 'utf8')
 const dataAccessOverviewSource = await readFile(
   new URL('../src/pages/DataAccessOverviewPanel.tsx', import.meta.url),
@@ -234,7 +238,15 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(otaSourceConfigSource, /仅用于后台快捷跳转，不参与数据采集/)
   assert.match(reviewApiSource, /normalizeOptionalOtaUrl/)
   assert.match(reviewApiSource, /portalUrl: normalizeOptionalOtaUrl/)
-  assert.match(otaSourceConfigSource, /OTA数据接口网址（返回JSON）/)
+  assert.match(otaSourceConfigSource, /OTA数据接口网址（返回JSON，可选）/)
+  assert.match(otaSourceConfigSource, /未填写时仅保存OTA渠道资料，不参与自动轮询/)
+  assert.match(otaSourceConfigSource, /expandedSourceIds/)
+  assert.match(otaSourceConfigSource, /\{expanded \? '收起' : '展开'\}/)
+  assert.match(otaSourceConfigSource, /expandedPlatformCodes/)
+  assert.match(otaSourceConfigSource, /新增\{group\.label\}数据源/)
+  assert.match(otaSourceConfigSource, /新增OTA渠道/)
+  assert.match(otaSourceConfigSource, /SOURCE_KIND_LABELS/)
+  assert.match(reviewApiSource, /dataEndpointUrl: normalizeOptionalOtaUrl/)
   assert.match(otaSourceConfigSource, /OTA Cookie/)
   assert.match(otaSourceConfigSource, /OTA账号/)
   assert.match(otaSourceConfigSource, /OTA密码/)
@@ -247,18 +259,36 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(otaSourceConfigSource, /每24小时/)
   assert.match(reviewApiSource, /scheduledOtaSourceTick/)
   assert.match(reviewApiSource, /otaRefreshDueOnly: true/)
-  assert.match(otaSourceConfigSource, /triggerLiveCollection/)
+  const scheduledOtaSourceBlock = reviewApiSource.slice(
+    reviewApiSource.indexOf('const scheduledOtaSourceTick'),
+    reviewApiSource.indexOf('const deliverWeComSnapshot'),
+  )
+  assert.match(scheduledOtaSourceBlock, /for \(const hotel of hotels\)/)
+  assert.doesNotMatch(scheduledOtaSourceBlock, /collectionEnabled/)
+  assert.match(otaSourceConfigSource, /refreshAfterSave/)
+  assert.match(otaSourceConfigSource, /dirtySourceIds/)
+  assert.doesNotMatch(otaSourceConfigSource, /triggerLiveCollection/)
   assert.match(otaSourceConfigSource, /打开OTA后台/)
   assert.match(otaSourceGuidanceSource, /OTA_RESPONSE_NOT_JSON/)
   assert.match(otaSourceGuidanceSource, /OTA_HTTP_403/)
   assert.match(reviewApiSource, /safeOtaRefreshErrorCode/)
   assert.match(otaSourceCollectorSource, /MEITUAN_EBOOKING_REFERER/)
-  assert.match(monitorSource, /OTA多维度对比来源/)
-  assert.match(monitorSource, /美团排名实时看板/)
+  assert.match(monitorSource, /OTA排名与评价经营看板/)
+  assert.match(monitorSource, /门店全渠道评价总览/)
+  assert.match(
+    monitorSource,
+    /全渠道好评率＝所有已配置渠道截止昨日好评数之和/,
+  )
+  assert.doesNotMatch(monitorSource, /订单数据看板|未取消订单（分母）/)
+  assert.match(monitorSource, /排名实时看板/)
   assert.match(monitorSource, /当前接口未返回竞争圈总数和上期名次/)
   assert.match(monitorSource, /遇到排名空值将在10分钟后补采/)
   assert.match(monitorSource, /平台暂未返回/)
   assert.match(otaSourceCollectorSource, /MEITUAN_PEER_RANK_METRICS/)
+  assert.match(otaSourceCollectorSource, /collectFliggySourceSummary/)
+  assert.match(fliggySourceCollectorSource, /FLIGGY_STAR_THRESHOLDS/)
+  assert.match(fliggySourceCollectorSource, /_m_h5_tk/)
+  assert.match(fliggySourceCollectorSource, /OTA_FLIGGY_PAGINATION_STALLED/)
   assert.doesNotMatch(monitorSource, /bestPeerPoiId/)
   assert.match(monitorSource, /直达修改/)
   assert.match(appSource, /onOpenOtaSource/)
@@ -300,13 +330,14 @@ test('Luopan controlled browser collection is single-hotel locked and produces a
   )
 })
 
-test('each saved data-source configuration triggers one collection while manual collection remains available', () => {
+test('each saved data-source configuration triggers a scoped collection while manual collection remains available', () => {
   assert.match(reportSourceSource, /saveReportSources[\s\S]*triggerLiveCollection/)
   assert.match(
     reportSourceSource,
     /保存当前门店配置并自动采集一次|保存同步接口并自动采集一次/,
   )
-  assert.match(otaSourceConfigSource, /saveOtaSources[\s\S]*triggerLiveCollection/)
+  assert.match(otaSourceConfigSource, /saveOtaSources[\s\S]*refreshAfterSave/)
+  assert.doesNotMatch(otaSourceConfigSource, /triggerLiveCollection/)
   assert.match(
     luopanBrowserConfigSource,
     /saveLuopanBrowserConfig[\s\S]*triggerLiveCollection/,

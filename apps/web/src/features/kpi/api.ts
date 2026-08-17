@@ -57,6 +57,10 @@ export type KpiSourceHotel = {
   hotelId: string
   hotelCode: string
   hotelName: string
+  pmsProviderCode: string
+  sourceProfile: string
+  sourceConnectionState: string
+  sourceConnectionMessage: string
   snapshotAvailable: boolean
   latestBusinessDate?: string
   latestObservedAt?: string

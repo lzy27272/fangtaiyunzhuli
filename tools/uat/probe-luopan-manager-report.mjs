@@ -41,9 +41,70 @@ const browserExecutable =
   ].find(existsSync)
 const reportCenterUrl =
   'http://bj.chinapms.com:8880/pms-web/report/index.do'
-const reportCode = 'Inc00-1'
+const reportCodeArgument = process.argv.find((value) =>
+  value.startsWith('--report-code='))
+const reportCode = (
+  reportCodeArgument?.slice('--report-code='.length)
+  || 'Inc00-1'
+).trim()
+if (!/^[a-z0-9][a-z0-9-]{0,39}$/iu.test(reportCode)) {
+  throw new Error('LUOPAN_REPORT_CODE_INVALID')
+}
 const submitReport = process.argv.includes('--submit')
 const allowMultipleHotels = process.argv.includes('--allow-multi-hotel')
+const reportDateArgument = process.argv.find((value) =>
+  value.startsWith('--report-date='))
+const reportDate = reportDateArgument
+  ? reportDateArgument.slice('--report-date='.length).trim()
+  : null
+if (reportDate && !/^\d{4}-\d{2}-\d{2}$/u.test(reportDate)) {
+  throw new Error('LUOPAN_REPORT_DATE_INVALID')
+}
+const periodStartArgument = process.argv.find((value) =>
+  value.startsWith('--period-start='))
+const periodEndArgument = process.argv.find((value) =>
+  value.startsWith('--period-end='))
+const periodStart = periodStartArgument
+  ? periodStartArgument.slice('--period-start='.length).trim()
+  : null
+const periodEnd = periodEndArgument
+  ? periodEndArgument.slice('--period-end='.length).trim()
+  : null
+if (
+  Boolean(periodStart) !== Boolean(periodEnd)
+  || (periodStart && !/^\d{4}-\d{2}-\d{2}$/u.test(periodStart))
+  || (periodEnd && !/^\d{4}-\d{2}-\d{2}$/u.test(periodEnd))
+  || (periodStart && periodEnd && periodStart > periodEnd)
+) {
+  throw new Error('LUOPAN_REPORT_PERIOD_INVALID')
+}
+const expectedHotelFingerprintArgument = process.argv.find((value) =>
+  value.startsWith('--expected-hotel-fingerprint='))
+const expectedHotelFingerprint = expectedHotelFingerprintArgument
+  ? expectedHotelFingerprintArgument
+      .slice('--expected-hotel-fingerprint='.length)
+      .trim()
+      .toLowerCase()
+  : null
+if (
+  expectedHotelFingerprint
+  && !/^[a-f0-9]{16}$/u.test(expectedHotelFingerprint)
+) {
+  throw new Error('LUOPAN_EXPECTED_HOTEL_FINGERPRINT_INVALID')
+}
+const captureAggregatePdf = process.argv.includes('--capture-aggregate-pdf')
+const aggregatePdfOutputPath = captureAggregatePdf
+  ? path.join(
+      repoRoot,
+      'tmp',
+      'pdfs',
+      `luopan-${profileName}-${reportCode}-${
+        periodStart && periodEnd
+          ? `${periodStart}_${periodEnd}`
+          : reportDate ?? 'default'
+      }.pdf`,
+    )
+  : null
 
 if (!browserExecutable || !existsSync(browserExecutable)) {
   throw new Error('LUOPAN_MANAGER_REPORT_BROWSER_NOT_FOUND')
@@ -70,6 +131,8 @@ const context = await chromium.launchPersistentContext(profileRoot, {
 })
 
 const networkEvents = []
+const pdfCapturePromises = []
+let aggregatePdfCaptured = false
 const attachPage = (page) => {
   page.on('response', (response) => {
     if (!isLuopanUrl(response.url())) return
@@ -79,6 +142,8 @@ const attachPage = (page) => {
     }
     const sanitized = sanitizeNetworkUrl(response.url())
     const authenticationFlow = isAuthenticationUrl(response.url())
+    const contentType =
+      response.headers()['content-type']?.toLowerCase() ?? ''
     networkEvents.push({
       observedAt: new Date().toISOString(),
       endpoint: sanitized.endpoint,
@@ -86,8 +151,7 @@ const attachPage = (page) => {
       method: request.method(),
       resourceType: request.resourceType(),
       status: response.status(),
-      contentType:
-        response.headers()['content-type']?.toLowerCase() ?? '',
+      contentType,
       authenticationFlow,
       requestPayload: authenticationFlow
         ? '[REDACTED_AUTH_FLOW]'
@@ -98,6 +162,37 @@ const attachPage = (page) => {
           }),
       responseBodyStored: false,
     })
+    if (
+      captureAggregatePdf
+      && !aggregatePdfCaptured
+      && response.status() === 200
+      && /application\/pdf/iu.test(contentType)
+      && sanitized.endpoint === 'http://report.chinapms.com:8081/report/run'
+    ) {
+      aggregatePdfCaptured = true
+      pdfCapturePromises.push(
+        (async () => {
+          let body = await response.body()
+          if (!body.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+            const rawResponse = await context.request.get(response.url(), {
+              failOnStatusCode: true,
+            })
+            body = await rawResponse.body()
+          }
+          if (
+            !Buffer.isBuffer(body)
+            || body.length < 100
+            || !body.subarray(0, 5).equals(Buffer.from('%PDF-'))
+          ) {
+            throw new Error('LUOPAN_AGGREGATE_PDF_INVALID')
+          }
+          await mkdir(path.dirname(aggregatePdfOutputPath), {
+            recursive: true,
+          })
+          await writeFile(aggregatePdfOutputPath, body)
+        })(),
+      )
+    }
   })
 }
 context.on('page', attachPage)
@@ -119,6 +214,7 @@ let hotelScope = {
   optionCount: null,
   selectedCount: null,
   selectedFingerprint: null,
+  expectedFingerprintMatches: null,
 }
 if (isAuthenticationUrl(page.url())) {
   status = 'REAUTH_REQUIRED'
@@ -159,6 +255,17 @@ if (isAuthenticationUrl(page.url())) {
         ))
       const select = form?.querySelector('select[name="hotel_id"]')
       if (!select) return null
+      const selectableOptions = [...select.options]
+        .filter((option) =>
+          String(option.value ?? '').trim()
+          || String(option.textContent ?? '').trim())
+      if (
+        selectableOptions.length === 1
+        && !selectableOptions[0].selected
+      ) {
+        selectableOptions[0].selected = true
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      }
       const options = [...select.options]
         .filter((option) =>
           String(option.value ?? '').trim()
@@ -201,17 +308,24 @@ if (isAuthenticationUrl(page.url())) {
                 .update(selected.join('\n'))
                 .digest('hex')
                 .slice(0, 16),
+        expectedFingerprintMatches: null,
       }
+      hotelScope.expectedFingerprintMatches = expectedHotelFingerprint
+        ? hotelScope.selectedFingerprint === expectedHotelFingerprint
+        : null
       if (
         !allowMultipleHotels
         && hotelScope.status !== 'SINGLE_HOTEL_CONFIRMED'
       ) {
         status = 'LUOPAN_HOTEL_SCOPE_AMBIGUOUS'
         submitResult = 'BLOCKED_HOTEL_SCOPE_AMBIGUOUS'
+      } else if (hotelScope.expectedFingerprintMatches === false) {
+        status = 'LUOPAN_HOTEL_SCOPE_MISMATCH'
+        submitResult = 'BLOCKED_HOTEL_SCOPE_MISMATCH'
       }
     }
     if (submitReport && status === 'COMPLETE') {
-      submitResult = await page.evaluate(() => {
+      submitResult = await page.evaluate((targetPeriod) => {
         const normalized = (element) =>
           String(element.textContent ?? '')
             .replace(/\s+/g, ' ')
@@ -221,6 +335,26 @@ if (isAuthenticationUrl(page.url())) {
             candidate.getAttribute('action') ?? '',
           ))
         if (!form) return 'REPORT_FORM_NOT_FOUND'
+        if (targetPeriod.reportDate) {
+          const dateField = form.querySelector('[name="today_date"]')
+          if (!dateField) return 'REPORT_DATE_FIELD_NOT_FOUND'
+          dateField.value = targetPeriod.reportDate
+          dateField.dispatchEvent(new Event('input', { bubbles: true }))
+          dateField.dispatchEvent(new Event('change', { bubbles: true }))
+        }
+        if (targetPeriod.periodStart && targetPeriod.periodEnd) {
+          const startField = form.querySelector('[name="start_date"]')
+          const endField = form.querySelector('[name="end_date"]')
+          if (!startField || !endField) {
+            return 'REPORT_PERIOD_FIELDS_NOT_FOUND'
+          }
+          startField.value = targetPeriod.periodStart
+          endField.value = targetPeriod.periodEnd
+          for (const field of [startField, endField]) {
+            field.dispatchEvent(new Event('input', { bubbles: true }))
+            field.dispatchEvent(new Event('change', { bubbles: true }))
+          }
+        }
         const submit = [
           ...form.querySelectorAll(
             'button, input[type="submit"], input[type="button"]',
@@ -229,7 +363,7 @@ if (isAuthenticationUrl(page.url())) {
         if (!submit) return 'SUBMIT_ACTION_NOT_FOUND'
         submit.click()
         return 'SUBMIT_CLICKED'
-      })
+      }, { reportDate, periodStart, periodEnd })
       if (submitResult !== 'SUBMIT_CLICKED') {
         status = submitResult
       } else {
@@ -305,6 +439,7 @@ for (const currentPage of context.pages()) {
   }
 }
 
+await Promise.all(pdfCapturePromises)
 await context.close()
 
 const output = {
@@ -319,6 +454,12 @@ const output = {
   storesCookies: false,
   storesCredentials: false,
   storesReportCells: false,
+  storesAggregatePdf: Boolean(
+    captureAggregatePdf && aggregatePdfCaptured),
+  aggregatePdfOutputPath:
+    captureAggregatePdf && aggregatePdfCaptured
+      ? aggregatePdfOutputPath
+      : null,
   networkEvents,
   documentSchemas,
 }
@@ -339,5 +480,11 @@ process.stdout.write(`${JSON.stringify({
   hotelOptionCount: hotelScope.optionCount,
   networkEventCount: networkEvents.length,
   documentSchemaCount: documentSchemas.length,
+  aggregatePdfCaptured:
+    captureAggregatePdf && aggregatePdfCaptured,
+  aggregatePdfOutputPath:
+    captureAggregatePdf && aggregatePdfCaptured
+      ? aggregatePdfOutputPath
+      : null,
   outputPath,
 })}\n`)
