@@ -42,6 +42,8 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .sidebar-footer { margin-top: auto; padding: 13px; display: grid; gap: 4px; border: 1px solid rgba(255,255,255,.07); border-radius: 11px; background: rgba(255,255,255,.05); }
 .sidebar-footer span { font-size: 11px; }
 .sidebar-footer small { color: #7e9cb2; font-size: 9px; line-height: 1.5; }
+.icp-record { color: #91afc3; font-size: 9px; line-height: 1.5; text-decoration: none; }
+.icp-record:hover { color: #fff; text-decoration: underline; }
 
 main { min-width: 0; grid-column: 2; }
 .topbar { height: 70px; padding: 0 32px; display: flex; align-items: center; justify-content: flex-end; gap: 21px; position: sticky; top: 0; z-index: 8; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.96); backdrop-filter: blur(14px); }
@@ -319,7 +321,8 @@ dd { margin: 5px 0 0; color: #334f64; font-size: 10px; }
 .operations-table .table-row { grid-template-columns: minmax(185px,1.4fr) repeat(5,.65fr) .8fr; }
 .danger-text { color: #c14d4d !important; font-weight: 800; }
 
-.login-screen { min-height: 100vh; display: grid; grid-template-columns: minmax(0,1.3fr) minmax(380px,.7fr); align-items: center; gap: 64px; padding: 7vw 9vw; background: radial-gradient(circle at 20% 20%,rgba(59,151,225,.15),transparent 34%),linear-gradient(135deg,#071f32 0%,#0d334d 52%,#edf4f7 52%,#f7fafb 100%); }
+.login-screen { min-height: 100vh; display: grid; grid-template-columns: minmax(0,1.3fr) minmax(380px,.7fr); align-items: center; gap: 64px; padding: 7vw 9vw; position: relative; background: radial-gradient(circle at 20% 20%,rgba(59,151,225,.15),transparent 34%),linear-gradient(135deg,#071f32 0%,#0d334d 52%,#edf4f7 52%,#f7fafb 100%); }
+.login-icp { position: absolute; bottom: 20px; left: 50%; color: #6e8797; transform: translateX(-50%); }
 .login-brand { display: flex; align-items: flex-start; gap: 24px; max-width: 720px; color: #fff; }
 .login-logo { width: 82px; height: 82px; flex: 0 0 82px; display: grid; place-items: center; border-radius: 23px; color: #17364a; background: linear-gradient(145deg,#f9d689,#d8a645); box-shadow: 0 20px 42px rgba(0,0,0,.28); font-size: 38px; font-weight: 900; }
 .login-brand h1 { margin: 12px 0 16px; max-width: 520px; font-size: clamp(30px,4vw,54px); line-height: 1.16; letter-spacing: -.04em; }

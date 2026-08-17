@@ -14,6 +14,7 @@ apt-get -y install \
   clamav-freshclam \
   curl \
   fail2ban \
+  fonts-noto-cjk \
   gnupg \
   jq \
   logrotate \

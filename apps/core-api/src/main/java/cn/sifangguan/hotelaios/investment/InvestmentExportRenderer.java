@@ -2,18 +2,14 @@ package cn.sifangguan.hotelaios.investment;
 
 import org.springframework.stereotype.Component;
 
-import org.apache.fontbox.ttf.TrueTypeCollection;
-import org.apache.fontbox.ttf.TrueTypeFont;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDType0Font;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -25,7 +21,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -34,6 +29,7 @@ import static cn.sifangguan.hotelaios.investment.InvestmentModels.CostParameterV
 import static cn.sifangguan.hotelaios.investment.InvestmentModels.InvestmentVersionView;
 import static cn.sifangguan.hotelaios.investment.InvestmentModels.PlanInput;
 import static cn.sifangguan.hotelaios.investment.InvestmentModels.ScenarioResult;
+import static cn.sifangguan.hotelaios.investment.InvestmentPdfFontLoader.FontSet;
 
 @Component
 public class InvestmentExportRenderer {
@@ -309,7 +305,7 @@ public class InvestmentExportRenderer {
 
     private static byte[] pdf(List<String> pageContents) {
         try (PDDocument document = new PDDocument();
-             FontSet fonts = loadFonts(document);
+             FontSet fonts = InvestmentPdfFontLoader.load(document);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             for (String pageContent : pageContents) {
                 PDPage page = new PDPage(PDRectangle.A4);
@@ -323,20 +319,6 @@ public class InvestmentExportRenderer {
         } catch (IOException exception) {
             throw new IllegalStateException("无法生成投资测算PDF", exception);
         }
-    }
-
-    private static FontSet loadFonts(PDDocument document) throws IOException {
-        TrueTypeCollection serifCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/simsun.ttc"));
-        TrueTypeCollection sansCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/msyh.ttc"));
-        TrueTypeCollection boldCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/msyhbd.ttc"));
-        PDFont serif = PDType0Font.load(document, requireFont(serifCollection, "SimSun"), true);
-        PDFont sans = PDType0Font.load(document, requireFont(sansCollection, "MicrosoftYaHei"), true);
-        PDFont bold = PDType0Font.load(document, requireFont(boldCollection, "MicrosoftYaHei-Bold"), true);
-        return new FontSet(serif, sans, bold, serifCollection, sansCollection, boldCollection);
-    }
-
-    private static TrueTypeFont requireFont(TrueTypeCollection collection, String name) throws IOException {
-        return Objects.requireNonNull(collection.getFontByName(name), "未找到PDF字体：" + name);
     }
 
     private static void drawPage(PDPageContentStream content, String commands, FontSet fonts) throws IOException {
@@ -436,11 +418,11 @@ public class InvestmentExportRenderer {
                 representative.paybackYears() == null ? "无法回收" : numberText(representative.paybackYears()),
                 representative.paybackYears() == null ? "" : "年 · " + ratingLabel(representative.rating()), SOFT_GREEN);
 
-        page.fillRect(50, 105, 495, 138, CREAM);
-        page.text("投资结论", 11, 70, 214, DEEP_GREEN);
+        page.fillRect(50, 105, 495, 158, CREAM);
+        page.text("投资结论", 11, 70, 234, DEEP_GREEN);
         String conclusion = hasText(version.input().reviewedAnalysis())
                 ? version.input().reviewedAnalysis() : version.calculation().systemAnalysis();
-        page.wrapped(conclusion, 10, 70, 187, 43, 18, 5, INK);
+        page.wrapped(conclusion, 10, 70, 207, 43, 18, 5, INK);
         page.text("测算范围：" + scenarios.stream().map(item -> percentText(item.occupancyRate())).reduce((a, b) -> a + " / " + b).orElse("—"),
                 8, 70, 125, MUTED);
         page.text("内部经营资料 · 由确定性公式生成", 8, 50, 55, CREAM);
@@ -724,22 +706,6 @@ public class InvestmentExportRenderer {
     }
 
     private enum FontRole { TITLE, BODY, BOLD }
-
-    private record FontSet(
-            PDFont serif,
-            PDFont sans,
-            PDFont bold,
-            TrueTypeCollection serifCollection,
-            TrueTypeCollection sansCollection,
-            TrueTypeCollection boldCollection
-    ) implements AutoCloseable {
-        @Override
-        public void close() throws IOException {
-            serifCollection.close();
-            sansCollection.close();
-            boldCollection.close();
-        }
-    }
 
     private record Cell(String value, boolean numeric, int style) {
         static Cell empty() { return text(""); }

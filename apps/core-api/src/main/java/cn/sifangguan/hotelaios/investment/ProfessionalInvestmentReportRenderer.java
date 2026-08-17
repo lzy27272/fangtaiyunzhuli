@@ -1,18 +1,14 @@
 package cn.sifangguan.hotelaios.investment;
 
-import org.apache.fontbox.ttf.TrueTypeCollection;
-import org.apache.fontbox.ttf.TrueTypeFont;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.springframework.stereotype.Component;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -25,6 +21,7 @@ import static cn.sifangguan.hotelaios.investment.ProfessionalInvestmentModels.Pr
 import static cn.sifangguan.hotelaios.investment.ProfessionalInvestmentModels.ProfessionalPlanInput;
 import static cn.sifangguan.hotelaios.investment.ProfessionalInvestmentModels.ProfessionalReportNarrative;
 import static cn.sifangguan.hotelaios.investment.ProfessionalInvestmentModels.ProfessionalYearlyResult;
+import static cn.sifangguan.hotelaios.investment.InvestmentPdfFontLoader.FontSet;
 
 /** Renders the investor-facing professional report in the forest-green/gold visual system. */
 @Component
@@ -43,7 +40,7 @@ public class ProfessionalInvestmentReportRenderer {
 
     public byte[] render(ProfessionalPlanInput input, ProfessionalCalculationResult result) {
         try (PDDocument document = new PDDocument();
-             FontSet fonts = loadFonts(document);
+             FontSet fonts = InvestmentPdfFontLoader.load(document);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             ReportContext context = reportContext(input);
             cover(document, fonts, input, result);
@@ -436,22 +433,6 @@ public class ProfessionalInvestmentReportRenderer {
         }
     }
 
-    private static FontSet loadFonts(PDDocument document) throws IOException {
-        TrueTypeCollection serifCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/simsun.ttc"));
-        TrueTypeCollection sansCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/msyh.ttc"));
-        TrueTypeCollection boldCollection = new TrueTypeCollection(new File("C:/Windows/Fonts/msyhbd.ttc"));
-        PDFont serif = PDType0Font.load(document, requireFont(serifCollection, "SimSun"), true);
-        PDFont sans = PDType0Font.load(document, requireFont(sansCollection, "MicrosoftYaHei"), true);
-        PDFont bold = PDType0Font.load(document, requireFont(boldCollection, "MicrosoftYaHei-Bold"), true);
-        return new FontSet(serif, sans, bold, serifCollection, sansCollection, boldCollection);
-    }
-
-    private static TrueTypeFont requireFont(TrueTypeCollection collection, String name) throws IOException {
-        TrueTypeFont font = collection.getFontByName(name);
-        if (font == null) throw new IOException("未找到 PDF 字体：" + name);
-        return font;
-    }
-
     private static BigDecimal resultValue(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
@@ -657,22 +638,6 @@ public class ProfessionalInvestmentReportRenderer {
     }
 
     private enum FontRole { TITLE, BODY, BOLD }
-
-    private record FontSet(
-            PDFont serif,
-            PDFont sans,
-            PDFont bold,
-            TrueTypeCollection serifCollection,
-            TrueTypeCollection sansCollection,
-            TrueTypeCollection boldCollection
-    ) implements AutoCloseable {
-        @Override
-        public void close() throws IOException {
-            serifCollection.close();
-            sansCollection.close();
-            boldCollection.close();
-        }
-    }
 
     private record Metric(String label, String value, String note) {
     }
