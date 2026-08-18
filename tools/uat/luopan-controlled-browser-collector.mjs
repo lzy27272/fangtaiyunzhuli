@@ -127,12 +127,32 @@ const selectedFingerprint = (option) =>
     .digest('hex')
     .slice(0, 16)
 
+const browserContextOptions = (browserExecutable) => ({
+  headless: true,
+  executablePath: browserExecutable,
+  acceptDownloads: false,
+  locale: 'zh-CN',
+  timezoneId: 'Asia/Shanghai',
+  viewport: { width: 1440, height: 960 },
+  args: [
+    '--disable-features=PasswordManagerOnboarding,PasswordLeakDetection',
+    '--disable-save-password-bubble',
+    '--no-default-browser-check',
+    '--no-first-run',
+  ],
+})
+
+export const isRecoverableLuopanProfileLaunchFailure = (error) =>
+  /ProcessSingleton|profile.*in use|user data directory is already in use|Target page, context or browser has been closed|Browser closed/i
+    .test(String(error?.message ?? ''))
+
 export const launchLuopanBrowserContext = async (
   profileRef,
   sessionState = null,
+  { chromium: providedChromium = null, executablePath = null } = {},
 ) => {
-  const chromium = chromiumFor()
-  const browserExecutable = browserExecutableFor()
+  const chromium = providedChromium ?? chromiumFor()
+  const browserExecutable = executablePath ?? browserExecutableFor()
   if (!browserExecutable || !existsSync(browserExecutable)) {
     throw new Error('LUOPAN_BROWSER_NOT_FOUND')
   }
@@ -140,22 +160,25 @@ export const launchLuopanBrowserContext = async (
   if (!existsSync(profileRoot)) {
     throw new Error('LUOPAN_BROWSER_PROFILE_NOT_FOUND')
   }
-  const context = await chromium.launchPersistentContext(profileRoot, {
-    headless: true,
-    executablePath: browserExecutable,
-    acceptDownloads: false,
-    locale: 'zh-CN',
-    timezoneId: 'Asia/Shanghai',
-    viewport: { width: 1440, height: 960 },
-    args: [
-      '--disable-features=PasswordManagerOnboarding,PasswordLeakDetection',
-      '--disable-save-password-bubble',
-      '--no-default-browser-check',
-      '--no-first-run',
-    ],
-  })
-  await applyLuopanSessionState(context, sessionState)
-  return { context, profileName }
+  const options = browserContextOptions(browserExecutable)
+  let context
+  let profileMode = 'PERSISTENT_PROFILE'
+  try {
+    context = await chromium.launchPersistentContext(profileRoot, options)
+  } catch (error) {
+    if (!sessionState || !isRecoverableLuopanProfileLaunchFailure(error)) {
+      throw error
+    }
+    context = await chromium.launchPersistentContext('', options)
+    profileMode = 'EPHEMERAL_SESSION_FALLBACK'
+  }
+  try {
+    await applyLuopanSessionState(context, sessionState)
+  } catch (error) {
+    await context.close().catch(() => {})
+    throw error
+  }
+  return { context, profileName, profileMode }
 }
 
 const readSingleHotelScope = async (page) => {
@@ -453,8 +476,23 @@ const safeCollectorError = (error) => {
     'LUOPAN_HOTEL_SCOPE_CHANGED',
     'LUOPAN_HOTEL_SCOPE_UNVERIFIED',
     'LUOPAN_REAUTH_REQUIRED',
+    'LUOPAN_SESSION_STATE_INVALID',
+    'LUOPAN_SESSION_VALIDATION_REQUIRED',
   ])
-  return allowed.has(code) ? code : 'LUOPAN_COLLECTION_FAILED'
+  if (allowed.has(code)) return code
+  if (/ProcessSingleton|profile.*in use|user data directory is already in use/i.test(code)) {
+    return 'LUOPAN_BROWSER_PROFILE_LOCKED'
+  }
+  if (/Target page, context or browser has been closed|Browser closed/i.test(code)) {
+    return 'LUOPAN_BROWSER_CONTEXT_CLOSED'
+  }
+  if (/Timeout .* exceeded|timed out/i.test(code)) {
+    return 'LUOPAN_NAVIGATION_TIMEOUT'
+  }
+  if (/net::ERR_|ECONNRESET|ECONNREFUSED|ENOTFOUND/i.test(code)) {
+    return 'LUOPAN_NETWORK_ERROR'
+  }
+  return 'LUOPAN_COLLECTION_FAILED'
 }
 
 export const validateLuopanBrowserSession = async ({
@@ -487,7 +525,7 @@ export const validateLuopanBrowserSession = async ({
       hotelOptionCount: scope.optionCount,
     }
   } finally {
-    await context.close()
+    await context.close().catch(() => {})
   }
 }
 
@@ -681,6 +719,6 @@ export const collectLuopanControlledBrowser = async ({
   } catch (error) {
     throw new Error(safeCollectorError(error))
   } finally {
-    await context.close()
+    await context.close().catch(() => {})
   }
 }
