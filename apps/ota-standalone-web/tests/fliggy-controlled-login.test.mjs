@@ -206,3 +206,39 @@ test('Fliggy controlled login supports iframe two-step credentials', async () =>
   assert.equal(submitCount, 2)
   await login.close()
 })
+
+test('Fliggy controlled login reports the exact missing login stage', async () => {
+  const page = {
+    url: () => 'https://hotel.fliggy.com/ebooking/login.htm',
+    goto: async () => undefined,
+    waitForTimeout: async () => undefined,
+    waitForNavigation: async () => null,
+    frames: () => [],
+    locator: () => ({
+      first() { return this },
+      isVisible: async () => false,
+      innerText: async () => '登录页面',
+    }),
+  }
+  const context = {
+    newPage: async () => page,
+    close: async () => undefined,
+  }
+  const chromium = {
+    launch: async () => ({
+      newContext: async () => context,
+      close: async () => undefined,
+    }),
+  }
+  const login = await startFliggyControlledLogin({
+    credentials: {
+      account: 'synthetic-account',
+      password: ['synthetic', 'credential'].join('-'),
+    },
+    chromium,
+    executablePath: process.execPath,
+  })
+  assert.equal(login.status, 'FAILED')
+  assert.equal(login.reasonCode, 'OTA_FLIGGY_USERNAME_FORM_UNAVAILABLE')
+  await login.close()
+})

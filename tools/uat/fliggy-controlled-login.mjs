@@ -131,6 +131,8 @@ export const fliggyLoginSelectors = Object.freeze({
     '#fm-login-id',
     'input[name="fm-login-id"]',
     'input[name="TPL_username"]',
+    'input[autocomplete="username"]',
+    'input[placeholder*="账号"]',
   ],
   password: [
     'input[name="password"]',
@@ -138,11 +140,15 @@ export const fliggyLoginSelectors = Object.freeze({
     'input[name="fm-login-password"]',
     '#TPL_password_1',
     'input[type="password"]',
+    'input[autocomplete="current-password"]',
+    'input[placeholder*="密码"]',
   ],
   submit: [
     'button.login-button',
     'button[type="submit"]',
-    '.password-login',
+    'button:has-text("下一步")',
+    'button:has-text("登录")',
+    '.login-submit',
     '#J_SubmitStatic',
   ],
   verification: [
@@ -374,7 +380,7 @@ export const startFliggyControlledLogin = async ({
       await clickAndSettle(page, submit)
     }
 
-    for (let step = 0; step < 5; step += 1) {
+    for (let step = 0; step < 15; step += 1) {
       const bodyText = await safeBodyText(page)
       const classified = classifyFliggyLoginChallengeText(bodyText)
       const username = await firstVisible(page, fliggyLoginSelectors.username)
@@ -430,7 +436,11 @@ export const startFliggyControlledLogin = async ({
     }
     return {
       status: 'FAILED',
-      reasonCode: 'OTA_FLIGGY_LOGIN_FORM_UNAVAILABLE',
+      reasonCode: !usernameSubmitted
+        ? 'OTA_FLIGGY_USERNAME_FORM_UNAVAILABLE'
+        : !passwordSubmitted
+          ? 'OTA_FLIGGY_PASSWORD_FORM_UNAVAILABLE'
+          : 'OTA_FLIGGY_LOGIN_CONFIRMATION_UNAVAILABLE',
       close,
     }
   }
