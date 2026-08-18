@@ -1348,7 +1348,7 @@ const requestOtaJson = async ({
   try {
     response = await fetchImpl(endpoint, {
       method,
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal,
       headers,
       ...(body ? { body } : {}),
@@ -1358,6 +1358,23 @@ const requestOtaJson = async ({
     throw new Error('OTA_NETWORK_FAILED')
   } finally {
     clearTimeout(timer)
+  }
+  if (response.status >= 300 && response.status <= 399) {
+    const location = response.headers?.get?.('location') ?? ''
+    let loginRedirect = false
+    try {
+      const target = new URL(location, endpoint)
+      loginRedirect = [
+        'login.taobao.com',
+        'login.tmall.com',
+        'login.fliggy.com',
+      ].includes(target.hostname.toLowerCase())
+    } catch {
+      loginRedirect = false
+    }
+    throw new Error(
+      loginRedirect ? 'OTA_SESSION_INVALID' : 'OTA_HTTP_REDIRECT',
+    )
   }
   if (!response.ok) {
     const status = Number(response.status)

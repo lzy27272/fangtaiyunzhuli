@@ -129,6 +129,30 @@ test('OTA HTTP failures retain the safe status code', async () => {
   )
 })
 
+test('Fliggy login redirect is classified as an expired session', async () => {
+  await assert.rejects(
+    collectOtaSource({
+      source: {
+        platformCode: 'FLIGGY',
+        requestMethod: 'POST',
+        dataEndpointUrl:
+          'https://hotel.fliggy.com/ebooking/guestReviewV3.do',
+        requestPayloadJson: '{"hid":"10001"}',
+      },
+      cookie: 'session=synthetic-fliggy-cookie',
+      lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+      fetchImpl: async (_url, options) => {
+        assert.equal(options.redirect, 'manual')
+        return new Response('', {
+          status: 302,
+          headers: { Location: 'https://login.taobao.com/member/login.jhtml' },
+        })
+      },
+    }),
+    /OTA_SESSION_INVALID/,
+  )
+})
+
 test('OTA source without an optional data endpoint stays unconfigured', async () => {
   await assert.rejects(
     collectOtaSource({

@@ -514,7 +514,7 @@ test('created review hotels are returned by the directory and survive restart', 
           sources: [{
             sourceId: optionalPortalSourceId,
             displayName: 'Synthetic Review Source',
-            platformCode: 'MEITUAN',
+            platformCode: 'FLIGGY',
             portalUrl: '',
             dataEndpointUrl: '',
             requestMethod: 'GET',
@@ -535,6 +535,43 @@ test('created review hotels are returned by the directory and survive restart', 
       optionalPortalOtaBody.data[0].dataEndpointUrl,
       '',
     )
+    assert.equal(
+      optionalPortalOtaBody.data[0].loginMode,
+      'CONTROLLED_BROWSER_CREDENTIALS',
+    )
+    assert.equal(optionalPortalOtaBody.data[0].loginExecutionEnabled, true)
+    const controlledLoginProfiles = await fetch(
+      `${createdPath}/ota-controlled-logins`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    assert.equal(controlledLoginProfiles.status, 200)
+    const controlledLoginText = await controlledLoginProfiles.text()
+    const controlledLoginBody = JSON.parse(controlledLoginText)
+    assert.equal(controlledLoginBody.data[0].credentialsConfigured, false)
+    assert.equal(controlledLoginBody.data[0].autoRenewEnabled, false)
+    assert.doesNotMatch(
+      controlledLoginText,
+      /(?:password|cookie)\s*[:=]\s*["'][^"']+/i,
+    )
+    const missingCredentialLogin = await fetch(
+      `${createdPath}/ota-controlled-logins`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'review-controlled-login-missing-001',
+        },
+        body: JSON.stringify({
+          platformCode: 'FLIGGY',
+          reasonCode: 'MANUAL_OTA_CONTROLLED_LOGIN',
+        }),
+      },
+    )
+    assert.equal(missingCredentialLogin.status, 400)
+    assert.deepEqual(await missingCredentialLogin.json(), {
+      code: 'OTA_CHANNEL_CREDENTIALS_MISSING',
+    })
     assert.equal(
       firstBody.data.hotels.some(
         (hotel) =>

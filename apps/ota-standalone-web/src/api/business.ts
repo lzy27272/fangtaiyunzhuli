@@ -386,13 +386,62 @@ export interface OtaSourceView {
   cookieUpdatedAt: string | null
   credentialsConfigured: boolean
   credentialsUpdatedAt: string | null
-  loginMode: 'CONTROLLED_LOGIN_PENDING'
-  loginExecutionEnabled: false
+  loginMode:
+    | 'CONTROLLED_LOGIN_PENDING'
+    | 'CONTROLLED_BROWSER_CREDENTIALS'
+  loginExecutionEnabled: boolean
+  autoLoginEnabled?: boolean
+  lastLoginStatus?: OtaControlledLoginStatus
+  lastLoginAttemptAt?: string | null
+  lastLoginAt?: string | null
+  lastLoginErrorCode?: string | null
   lastRefreshStatus: 'NEVER' | 'COMPLETE' | 'FAILED'
   lastRefreshAt: string | null
   lastErrorCode: string | null
   lastSummary: OtaRefreshSummary | null
   rowVersion: number
+}
+
+export type OtaControlledLoginStatus =
+  | 'NEVER'
+  | 'RUNNING'
+  | 'AUTHENTICATED'
+  | 'VERIFICATION_REQUIRED'
+  | 'EXTERNAL_VERIFICATION_REQUIRED'
+  | 'FAILED'
+  | 'RATE_LIMITED'
+
+export interface OtaControlledLoginProfile {
+  platformCode: 'FLIGGY'
+  loginMode: 'CONTROLLED_BROWSER_CREDENTIALS'
+  supported: true
+  credentialSourceCount: number
+  credentialsConfigured: boolean
+  sessionSourceCount: number
+  sessionConfigured: boolean
+  autoRenewEnabled: boolean
+  status: OtaControlledLoginStatus
+  lastAttemptAt: string | null
+  lastAuthenticatedAt: string | null
+  lastErrorCode: string | null
+  nextAttemptAt: string | null
+  attemptCount: number
+  maxAttempts: number
+  challengeActive: boolean
+}
+
+export interface OtaControlledLoginResult {
+  profile: OtaControlledLoginProfile | null
+  status:
+    | 'AUTHENTICATED'
+    | 'VERIFICATION_REQUIRED'
+    | 'EXTERNAL_VERIFICATION_REQUIRED'
+    | 'FAILED'
+  reasonCode: string | null
+  attemptId: string | null
+  challengeType: 'CODE' | 'IMAGE_CODE' | 'SLIDER' | 'QR' | null
+  captchaImageDataUrl: string | null
+  refreshedSources: OtaSourceView[]
 }
 
 export type OtaCookieUpdate =
@@ -1153,6 +1202,42 @@ export function refreshOtaSource(
     {
       sourceId,
       reasonCode: 'MANUAL_OTA_SOURCE_REFRESH',
+    },
+  )
+}
+
+export function loadOtaControlledLogins(
+  context: HotelContext,
+): Promise<OtaControlledLoginProfile[]> {
+  return authenticatedRequest(scopedPath(context, '/ota-controlled-logins'))
+}
+
+export function startOtaControlledLogin(
+  context: HotelContext,
+  platformCode: 'FLIGGY',
+): Promise<OtaControlledLoginResult> {
+  return postCommand<OtaControlledLoginResult>(
+    scopedPath(context, '/ota-controlled-logins'),
+    {
+      platformCode,
+      reasonCode: 'MANUAL_OTA_CONTROLLED_LOGIN',
+    },
+  )
+}
+
+export function submitOtaControlledLoginVerification(
+  context: HotelContext,
+  platformCode: 'FLIGGY',
+  attemptId: string,
+  answer: string,
+): Promise<OtaControlledLoginResult> {
+  return postCommand<OtaControlledLoginResult>(
+    scopedPath(context, '/ota-controlled-login-verifications'),
+    {
+      platformCode,
+      attemptId,
+      answer,
+      reasonCode: 'SUBMIT_OTA_LOGIN_VERIFICATION',
     },
   )
 }

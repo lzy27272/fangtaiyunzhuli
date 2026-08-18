@@ -55,6 +55,16 @@ const GUIDANCE: Record<string, OtaSourceGuidance> = {
     fields: ['OTA数据接口网址'],
     action: '核对网址、网络和OTA服务状态后重试。',
   },
+  OTA_SESSION_INVALID: {
+    reason: 'OTA接口已跳转至登录页，当前会话已失效',
+    fields: ['Cookie或账号受控登录'],
+    action: '飞猪可使用渠道顶部“账号登录并刷新”；其他渠道请更新Cookie。',
+  },
+  OTA_HTTP_REDIRECT: {
+    reason: 'OTA接口返回了非登录跳转，当前接口网址可能已变化',
+    fields: ['OTA数据接口网址'],
+    action: '从浏览器网络面板重新确认实际返回JSON的接口网址。',
+  },
   OTA_ENDPOINT_DNS_FAILED: {
     reason: 'OTA数据接口域名无法解析',
     fields: ['OTA数据接口网址'],
@@ -107,8 +117,38 @@ const GUIDANCE: Record<string, OtaSourceGuidance> = {
   },
   OTA_FLIGGY_SESSION_INVALID: {
     reason: '飞猪登录会话已失效或缺少短效签名所需的登录Cookie',
-    fields: ['飞猪Cookie'],
-    action: '重新登录飞猪后台并更新Cookie；接口网址无需保留t、sign或bx临时参数。',
+    fields: ['飞猪受控登录或Cookie'],
+    action: '优先使用渠道顶部“账号登录并刷新”；也可手工更新Cookie。接口网址无需保留t、sign或bx临时参数。',
+  },
+  OTA_FLIGGY_CODE_VERIFICATION_REQUIRED: {
+    reason: '飞猪要求一次性验证码，本次自动续期已安全停止',
+    fields: ['渠道顶部验证码框'],
+    action: '由已授权管理员在10分钟内完成验证码；最多提交3次。',
+  },
+  OTA_FLIGGY_SLIDER_VERIFICATION_REQUIRED: {
+    reason: '飞猪要求滑块安全验证，系统不会自动绕过',
+    fields: ['飞猪后台或Cookie'],
+    action: '请人工登录飞猪后台完成验证后更新Cookie，再执行刷新。',
+  },
+  OTA_FLIGGY_QR_VERIFICATION_REQUIRED: {
+    reason: '飞猪要求扫码验证，系统不会采集或展示二维码令牌',
+    fields: ['飞猪后台或Cookie'],
+    action: '请人工登录飞猪后台完成验证后更新Cookie，再执行刷新。',
+  },
+  OTA_FLIGGY_LOGIN_RATE_LIMITED: {
+    reason: '飞猪受控登录已达到30分钟内3次的安全上限',
+    fields: ['等待窗口'],
+    action: '请勿继续尝试，待后台显示的限次窗口结束后再操作。',
+  },
+  OTA_CHANNEL_CREDENTIALS_MISSING: {
+    reason: '尚未配置飞猪账号密码',
+    fields: ['飞猪账号', '飞猪密码'],
+    action: '在任一飞猪数据源中填写并保存一次；账号密码只会加密保存。',
+  },
+  OTA_CHANNEL_CREDENTIALS_CONFLICT: {
+    reason: '同一门店的飞猪数据源配置了不同账号密码',
+    fields: ['各飞猪数据源账号密码'],
+    action: '保留一组统一账号密码，或清除其他飞猪来源的冲突凭据。',
   },
   OTA_FLIGGY_BUSINESS_ERROR: {
     reason: '飞猪接口返回业务错误，当前会话、门店权限或接口参数可能失效',

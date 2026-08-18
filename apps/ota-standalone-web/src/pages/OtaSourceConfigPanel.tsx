@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  loadOtaControlledLogins,
   loadOtaSources,
   refreshOtaSource,
   saveOtaSources,
+  startOtaControlledLogin,
+  submitOtaControlledLoginVerification,
   type HotelContext,
+  type OtaControlledLoginProfile,
+  type OtaControlledLoginResult,
   type OtaCredentialUpdate,
   type OtaCookieUpdate,
   type OtaPlatformCode,
@@ -90,6 +95,16 @@ const OTA_POLL_INTERVAL_OPTIONS = [
   { minutes: 1_440, label: '每24小时' },
 ] as const
 
+const CONTROLLED_LOGIN_STATUS_LABELS: Record<string, string> = {
+  NEVER: '尚未使用账号登录',
+  RUNNING: '登录处理中',
+  AUTHENTICATED: '会话有效',
+  VERIFICATION_REQUIRED: '等待一次性验证码',
+  EXTERNAL_VERIFICATION_REQUIRED: '需要滑块或扫码验证',
+  FAILED: '登录失败',
+  RATE_LIMITED: '已触发安全限次',
+}
+
 const SENSITIVE_QUERY_KEY =
   /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
 
@@ -174,6 +189,13 @@ export function OtaSourceConfigPanel({
   onStatusChanged,
 }: Props) {
   const [sources, setSources] = useState<OtaSourceView[]>([])
+  const [controlledLogins, setControlledLogins] =
+    useState<OtaControlledLoginProfile[]>([])
+  const [controlledLoginResult, setControlledLoginResult] =
+    useState<OtaControlledLoginResult | null>(null)
+  const [verificationAnswer, setVerificationAnswer] = useState('')
+  const [loggingInPlatform, setLoggingInPlatform] =
+    useState<OtaPlatformCode | null>(null)
   const [cookieDrafts, setCookieDrafts] =
     useState<Record<string, string>>({})
   const [accountDrafts, setAccountDrafts] =
@@ -199,8 +221,12 @@ export function OtaSourceConfigPanel({
   const [notice, setNotice] = useState('')
 
   const reload = async () => {
-    const rows = await loadOtaSources(context)
+    const [rows, loginProfiles] = await Promise.all([
+      loadOtaSources(context),
+      loadOtaControlledLogins(context),
+    ])
     setSources(rows)
+    setControlledLogins(loginProfiles)
     setPortalUrlEnabled(Object.fromEntries(
       rows.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
     ))
@@ -220,10 +246,16 @@ export function OtaSourceConfigPanel({
     setLoading(true)
     setError('')
     setNotice('')
-    loadOtaSources(context)
-      .then((rows) => {
+    Promise.all([
+      loadOtaSources(context),
+      loadOtaControlledLogins(context),
+    ])
+      .then(([rows, loginProfiles]) => {
         if (!cancelled) {
           setSources(rows)
+          setControlledLogins(loginProfiles)
+          setControlledLoginResult(null)
+          setVerificationAnswer('')
           setCookieDrafts({})
           setAccountDrafts({})
           setPasswordDrafts({})
@@ -536,6 +568,86 @@ export function OtaSourceConfigPanel({
     }
   }
 
+  const mergeControlledLoginResult = (result: OtaControlledLoginResult) => {
+    setControlledLoginResult(result)
+    if (result.profile) {
+      setControlledLogins((current) => [
+        ...current.filter((profile) =>
+          profile.platformCode !== result.profile?.platformCode),
+        result.profile as OtaControlledLoginProfile,
+      ])
+    }
+    if (result.refreshedSources.length > 0) {
+      setSources((current) => current.map((source) =>
+        result.refreshedSources.find((updated) =>
+          updated.sourceId === source.sourceId) ?? source))
+    }
+  }
+
+  async function loginAndRefreshFliggy() {
+    if (!canConfigure) return
+    setLoggingInPlatform('FLIGGY')
+    setError('')
+    setNotice('正在通过飞猪官方登录页建立受控会话，请勿重复提交。')
+    setControlledLoginResult(null)
+    setVerificationAnswer('')
+    try {
+      const result = await startOtaControlledLogin(context, 'FLIGGY')
+      mergeControlledLoginResult(result)
+      if (result.status === 'AUTHENTICATED') {
+        setNotice(
+          `飞猪会话已安全更新，并刷新${result.refreshedSources.length}个已启用数据源。`,
+        )
+      } else if (result.status === 'VERIFICATION_REQUIRED') {
+        setNotice('飞猪要求一次性验证码；请在10分钟内完成，最多提交3次。')
+      } else {
+        setNotice('飞猪要求滑块或扫码等外部验证；本次已安全停止，请改用Cookie方式。')
+      }
+    } catch (cause) {
+      await reload().catch(() => undefined)
+      setError(cause instanceof Error ? cause.message : '飞猪受控登录失败')
+      setNotice('')
+    } finally {
+      setLoggingInPlatform(null)
+      onStatusChanged?.()
+    }
+  }
+
+  async function submitFliggyVerification() {
+    const attemptId = controlledLoginResult?.attemptId
+    if (!attemptId || !/^[A-Za-z0-9]{4,8}$/.test(verificationAnswer)) {
+      setError('请输入页面当前显示的4至8位验证码。')
+      return
+    }
+    setLoggingInPlatform('FLIGGY')
+    setError('')
+    setNotice('正在提交一次性验证码…')
+    try {
+      const result = await submitOtaControlledLoginVerification(
+        context,
+        'FLIGGY',
+        attemptId,
+        verificationAnswer,
+      )
+      setVerificationAnswer('')
+      mergeControlledLoginResult(result)
+      if (result.status === 'AUTHENTICATED') {
+        setNotice(
+          `飞猪会话已安全更新，并刷新${result.refreshedSources.length}个已启用数据源。`,
+        )
+      } else {
+        setNotice('验证码尚未通过，请核对页面当前验证码后重试。')
+      }
+    } catch (cause) {
+      await reload().catch(() => undefined)
+      setError(cause instanceof Error ? cause.message : '验证码提交失败')
+      setNotice('')
+    } finally {
+      setLoggingInPlatform(null)
+      onStatusChanged?.()
+    }
+  }
+
   return (
     <section
       className={`ota-source-config-panel ${
@@ -560,9 +672,10 @@ export function OtaSourceConfigPanel({
       </div>
 
       <div className="security-note report-source-note">
-        账号密码已预留给后续平台专用受控登录；在明确登录协议、验证码流程和授权范围前，
-        不会把账号密码发送给任意网址。如补充JSON数据接口，当前可用链路为：
-        登录OTA后台取得Cookie → 保存 → 立即刷新JSON数据接口。
+        飞猪账号密码仅在管理员主动点击“账号登录并刷新”后提交给飞猪官方登录页，
+        会话Cookie按数据接口域名隔离后加密保存且不回显；首次成功后才允许会话失效时
+        自动续期。验证码最多3次、10分钟有效，滑块或扫码不会自动绕过。
+        其他OTA仍使用Cookie只读采集。
       </div>
 
       {loading ? <div className="state-panel">正在读取OTA配置…</div> : null}
@@ -578,6 +691,8 @@ export function OtaSourceConfigPanel({
           const kinds = [...new Set(group.sources.map(otaSourceKind))]
             .sort((left, right) =>
               SOURCE_KIND_ORDER[left] - SOURCE_KIND_ORDER[right])
+          const controlledLogin = controlledLogins.find((profile) =>
+            profile.platformCode === group.platformCode)
           return (
             <section className="ota-platform-group" key={group.platformCode}>
               <button
@@ -604,6 +719,87 @@ export function OtaSourceConfigPanel({
 
               {platformExpanded ? (
                 <div className="ota-platform-content">
+                  {group.platformCode === 'FLIGGY' && controlledLogin ? (
+                    <div className="ota-controlled-login-panel">
+                      <div>
+                        <strong>飞猪账号受控登录</strong>
+                        <span>
+                          {CONTROLLED_LOGIN_STATUS_LABELS[
+                            controlledLogin.status
+                          ] ?? controlledLogin.status}
+                        </span>
+                        <small>
+                          账号密码已配置 {controlledLogin.credentialSourceCount}
+                          个数据源；会话覆盖 {controlledLogin.sessionSourceCount}
+                          个数据源；自动续期
+                          {controlledLogin.autoRenewEnabled ? '已启用' : '尚未启用'}。
+                        </small>
+                        {controlledLogin.lastAuthenticatedAt ? (
+                          <small>
+                            最近成功：
+                            {new Date(
+                              controlledLogin.lastAuthenticatedAt,
+                            ).toLocaleString('zh-CN')}
+                          </small>
+                        ) : null}
+                        {controlledLogin.lastErrorCode ? (
+                          <code>{controlledLogin.lastErrorCode}</code>
+                        ) : null}
+                      </div>
+                      <button
+                        className="secondary"
+                        disabled={
+                          !canConfigure
+                          || loggingInPlatform !== null
+                          || !controlledLogin.credentialsConfigured
+                          || controlledLogin.status === 'RATE_LIMITED'
+                          || controlledLogin.challengeActive
+                        }
+                        type="button"
+                        onClick={() => void loginAndRefreshFliggy()}
+                      >
+                        {loggingInPlatform === 'FLIGGY'
+                          ? '登录处理中…'
+                          : '账号登录并刷新'}
+                      </button>
+                    </div>
+                  ) : null}
+                  {group.platformCode === 'FLIGGY'
+                    && controlledLoginResult?.status
+                      === 'VERIFICATION_REQUIRED'
+                    && controlledLoginResult.attemptId ? (
+                    <div className="ota-controlled-verification" role="group">
+                      <div>
+                        <strong>完成一次性验证码</strong>
+                        <small>仅填写当前页面验证码，不要填写账号、密码或Cookie。</small>
+                      </div>
+                      {controlledLoginResult.captchaImageDataUrl ? (
+                        <img
+                          alt="飞猪登录验证码"
+                          src={controlledLoginResult.captchaImageDataUrl}
+                        />
+                      ) : null}
+                      <input
+                        autoComplete="one-time-code"
+                        disabled={loggingInPlatform !== null}
+                        maxLength={8}
+                        placeholder="4至8位验证码"
+                        value={verificationAnswer}
+                        onChange={(event) =>
+                          setVerificationAnswer(event.target.value.trim())}
+                      />
+                      <button
+                        disabled={
+                          loggingInPlatform !== null
+                          || !/^[A-Za-z0-9]{4,8}$/.test(verificationAnswer)
+                        }
+                        type="button"
+                        onClick={() => void submitFliggyVerification()}
+                      >
+                        提交验证码
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="ota-source-list">
         {group.sources.map((source) => {
           const index = sources.findIndex(
@@ -865,7 +1061,9 @@ export function OtaSourceConfigPanel({
                     placeholder={
                       source.credentialsConfigured
                         ? '已配置；重新填写将替换'
-                        : '用于后续受控登录'
+                        : source.platformCode === 'FLIGGY'
+                          ? '用于飞猪官方受控登录'
+                          : '暂仅加密保存'
                     }
                     value={accountDrafts[source.sourceId] ?? ''}
                     onChange={(event) =>
@@ -883,7 +1081,9 @@ export function OtaSourceConfigPanel({
                     placeholder={
                       source.credentialsConfigured
                         ? '已配置；重新填写将替换'
-                        : '用于后续受控登录'
+                        : source.platformCode === 'FLIGGY'
+                          ? '用于飞猪官方受控登录'
+                          : '暂仅加密保存'
                     }
                     type="password"
                     value={passwordDrafts[source.sourceId] ?? ''}
