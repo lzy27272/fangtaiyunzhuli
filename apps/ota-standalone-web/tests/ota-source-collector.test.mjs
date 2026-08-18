@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  classifyOtaRedirect,
   collectOtaSource,
   summarizeOtaJson,
 } from '../../../tools/uat/ota-source-collector.mjs'
 import {
+  fliggyBuiltInFallbackSource,
   sanitizeFliggyEndpointUrl,
 } from '../../../tools/uat/fliggy-source-collector.mjs'
 
@@ -151,6 +153,50 @@ test('Fliggy login redirect is classified as an expired session', async () => {
     }),
     /OTA_SESSION_INVALID/,
   )
+})
+
+test('Fliggy official authentication redirects are classified conservatively', () => {
+  const endpoint = 'https://hotel.fliggy.com/ebooking/review/guestReviewV3.do'
+  assert.equal(classifyOtaRedirect({
+    endpoint,
+    location: 'https://passport.fliggy.com/login.htm',
+  }), 'OTA_SESSION_INVALID')
+  assert.equal(classifyOtaRedirect({
+    endpoint,
+    location: '/ebooking/login.htm',
+  }), 'OTA_SESSION_INVALID')
+  assert.equal(classifyOtaRedirect({
+    endpoint,
+    location: 'https://hotel.fliggy.com/ebooking/review/newReview.do',
+  }), 'OTA_HTTP_REDIRECT')
+  assert.equal(classifyOtaRedirect({
+    endpoint,
+    location: 'https://untrusted.example/login',
+  }), 'OTA_HTTP_REDIRECT')
+})
+
+test('Fliggy stale custom endpoint can fall back only to its built-in read-only endpoint', () => {
+  const source = {
+    platformCode: 'FLIGGY',
+    displayName: '飞猪评价',
+    requestMethod: 'POST',
+    dataEndpointUrl: 'https://hotel.fliggy.com/old/review.do',
+  }
+  assert.deepEqual(fliggyBuiltInFallbackSource({
+    source,
+    errorCode: 'OTA_HTTP_REDIRECT',
+  }), {
+    ...source,
+    dataEndpointUrl: '',
+  })
+  assert.equal(fliggyBuiltInFallbackSource({
+    source,
+    errorCode: 'OTA_HTTP_403',
+  }), null)
+  assert.equal(fliggyBuiltInFallbackSource({
+    source: { ...source, platformCode: 'MEITUAN' },
+    errorCode: 'OTA_HTTP_REDIRECT',
+  }), null)
 })
 
 test('OTA source without an optional data endpoint stays unconfigured', async () => {

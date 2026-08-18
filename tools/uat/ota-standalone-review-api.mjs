@@ -18,6 +18,7 @@ import { createReviewAuthStore } from './review-auth-store.mjs'
 import { collectOtaSource } from './ota-source-collector.mjs'
 import {
   builtInFliggyEndpointUrl,
+  fliggyBuiltInFallbackSource,
   sanitizeFliggyEndpointUrl,
 } from './fliggy-source-collector.mjs'
 import {
@@ -2912,13 +2913,25 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
     if (sourceIndex < 0) throw new Error('OTA_SOURCE_NOT_FOUND')
     const source = sources[sourceIndex]
     try {
-      const collect = async () => collectOtaSource({
-        source,
+      const collectSource = async (candidateSource) => collectOtaSource({
+        source: candidateSource,
         cookie: otaSecretValuesFor(hotelId, sourceId).cookie,
         businessDate: (liveSnapshotStore[hotelId] ?? []).at(-1)
           ?.businessDate,
         validStayedOrderCountThroughPreviousBusinessDate: null,
       })
+      const collect = async () => {
+        try {
+          return await collectSource(source)
+        } catch (error) {
+          const fallbackSource = fliggyBuiltInFallbackSource({
+            source,
+            errorCode: safeOtaRefreshErrorCode(error),
+          })
+          if (!fallbackSource) throw error
+          return collectSource(fallbackSource)
+        }
+      }
       let summary
       try {
         summary = await collect()

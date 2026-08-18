@@ -1361,20 +1361,7 @@ const requestOtaJson = async ({
   }
   if (response.status >= 300 && response.status <= 399) {
     const location = response.headers?.get?.('location') ?? ''
-    let loginRedirect = false
-    try {
-      const target = new URL(location, endpoint)
-      loginRedirect = [
-        'login.taobao.com',
-        'login.tmall.com',
-        'login.fliggy.com',
-      ].includes(target.hostname.toLowerCase())
-    } catch {
-      loginRedirect = false
-    }
-    throw new Error(
-      loginRedirect ? 'OTA_SESSION_INVALID' : 'OTA_HTTP_REDIRECT',
-    )
+    throw new Error(classifyOtaRedirect({ endpoint, location }))
   }
   if (!response.ok) {
     const status = Number(response.status)
@@ -1391,6 +1378,44 @@ const requestOtaJson = async ({
     return { root: JSON.parse(text), httpStatus: response.status }
   } catch {
     throw new Error('OTA_RESPONSE_NOT_JSON')
+  }
+}
+
+const officialLoginDomain = (hostname) => {
+  const host = String(hostname ?? '').toLowerCase()
+  const officialBase = [
+    'taobao.com',
+    'tmall.com',
+    'fliggy.com',
+    'alibaba.com',
+    'alipay.com',
+  ].some((domain) => host === domain || host.endsWith(`.${domain}`))
+  return officialBase
+    && /^(?:login|passport|auth|account|member|security)\./.test(host)
+}
+
+export const classifyOtaRedirect = ({ endpoint, location }) => {
+  try {
+    const target = new URL(location, endpoint)
+    const path = target.pathname.toLowerCase()
+    const officialFliggyContext = [
+      'taobao.com',
+      'tmall.com',
+      'fliggy.com',
+      'alibaba.com',
+      'alipay.com',
+    ].some((domain) => (
+      target.hostname.toLowerCase() === domain
+      || target.hostname.toLowerCase().endsWith(`.${domain}`)
+    ))
+    const loginPath = officialFliggyContext
+      && /(?:^|\/)(?:login|passport|member|security|verify|captcha|punish|jump)(?:\/|\.|$)/
+        .test(path)
+    return officialLoginDomain(target.hostname) || loginPath
+      ? 'OTA_SESSION_INVALID'
+      : 'OTA_HTTP_REDIRECT'
+  } catch {
+    return 'OTA_HTTP_REDIRECT'
   }
 }
 

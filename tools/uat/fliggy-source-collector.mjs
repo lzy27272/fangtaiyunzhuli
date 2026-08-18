@@ -316,6 +316,19 @@ export const builtInFliggyEndpointUrl = (source) =>
   builtInFliggyOrderEndpointUrl(source)
   ?? builtInFliggyReviewEndpointUrl(source)
 
+export const fliggyBuiltInFallbackSource = ({ source, errorCode }) => {
+  if (
+    source?.platformCode !== 'FLIGGY'
+    || errorCode !== 'OTA_HTTP_REDIRECT'
+    || !String(source?.dataEndpointUrl ?? '').trim()
+    || !builtInFliggyEndpointUrl(source)
+  ) return null
+  return {
+    ...source,
+    dataEndpointUrl: '',
+  }
+}
+
 const h5Token = (cookie) => {
   const match = String(cookie).match(/(?:^|;\s*)_m_h5_tk=([^;]+)/)
   if (!match) throw new Error('OTA_FLIGGY_SESSION_INVALID')
