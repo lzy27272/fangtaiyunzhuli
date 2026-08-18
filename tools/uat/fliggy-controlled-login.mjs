@@ -3,8 +3,7 @@ import { createRequire } from 'node:module'
 import process from 'node:process'
 
 const require = createRequire(import.meta.url)
-const FLIGGY_PORTAL_URL =
-  'https://hotel.fliggy.com/ebooking/hotelBaseInfoUv.htm#/ebk/order/listV2'
+const FLIGGY_PORTAL_URL = 'https://hotel.fliggy.com/ebooking/'
 const FLIGGY_LOGIN_HOST = 'hotel.fliggy.com'
 const SESSION_COOKIE_DOMAINS = Object.freeze([
   'fliggy.com',

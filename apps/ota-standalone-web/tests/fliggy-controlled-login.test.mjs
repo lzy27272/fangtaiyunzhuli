@@ -80,6 +80,7 @@ test('Fliggy login challenges fail closed and remain human verified', () => {
   )
   assert.deepEqual(
     {
+      portalUrl: fliggyControlledLoginPolicy.portalUrl,
       maxAttemptsPerWindow:
         fliggyControlledLoginPolicy.maxAttemptsPerWindow,
       attemptWindowMinutes:
@@ -90,6 +91,7 @@ test('Fliggy login challenges fail closed and remain human verified', () => {
         fliggyControlledLoginPolicy.maxVerificationAnswers,
     },
     {
+      portalUrl: 'https://hotel.fliggy.com/ebooking/',
       maxAttemptsPerWindow: 3,
       attemptWindowMinutes: 30,
       challengeTtlMinutes: 10,
@@ -127,8 +129,8 @@ test('Fliggy controlled login rejects same-domain shell false positives', () => 
   }), false)
 })
 
-test('Fliggy controlled login fills iframe credentials before authenticating', async () => {
-  let state = 'LOGIN'
+test('Fliggy controlled login supports iframe two-step credentials', async () => {
+  let state = 'USERNAME'
   let account = ''
   let password = ''
   let submitCount = 0
@@ -147,17 +149,22 @@ test('Fliggy controlled login fills iframe credentials before authenticating', a
       const kind = selectorKind(selector)
       return {
         first() { return this },
-        isVisible: async () => state === 'LOGIN'
-          && ['ACCOUNT', 'PASSWORD', 'SUBMIT'].includes(kind),
+        isVisible: async () => (
+          (state === 'USERNAME' && ['ACCOUNT', 'SUBMIT'].includes(kind))
+          || (state === 'PASSWORD' && ['PASSWORD', 'SUBMIT'].includes(kind))
+        ),
         fill: async (value) => {
           if (kind === 'ACCOUNT') account = value
           if (kind === 'PASSWORD') password = value
         },
         click: async () => {
           submitCount += 1
-          if (account && password) state = 'AUTHENTICATED'
+          if (state === 'USERNAME' && account) state = 'PASSWORD'
+          else if (state === 'PASSWORD' && password) state = 'AUTHENTICATED'
         },
-        innerText: async () => state === 'LOGIN' ? '账号登录' : '酒店后台',
+        innerText: async () => state === 'AUTHENTICATED'
+          ? '酒店后台'
+          : '账号登录',
       }
     },
   }
@@ -170,7 +177,9 @@ test('Fliggy controlled login fills iframe credentials before authenticating', a
     locator: () => ({
       first() { return this },
       isVisible: async () => false,
-      innerText: async () => state === 'LOGIN' ? '登录页面' : '酒店后台',
+      innerText: async () => state === 'AUTHENTICATED'
+        ? '酒店后台'
+        : '登录页面',
     }),
   }
   const context = {
@@ -194,6 +203,6 @@ test('Fliggy controlled login fills iframe credentials before authenticating', a
   assert.equal(login.status, 'AUTHENTICATED')
   assert.equal(account, 'hotel-account')
   assert.equal(password, syntheticCredential)
-  assert.equal(submitCount, 1)
+  assert.equal(submitCount, 2)
   await login.close()
 })
