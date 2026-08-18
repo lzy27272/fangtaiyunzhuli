@@ -78,6 +78,14 @@ test('Fliggy login challenges fail closed and remain human verified', () => {
     classifyFliggyLoginChallengeText('账号或密码错误').status,
     'FAILED',
   )
+  assert.equal(
+    classifyFliggyLoginChallengeText('账户名或登录密码不正确').reasonCode,
+    'OTA_FLIGGY_CREDENTIALS_REJECTED',
+  )
+  assert.equal(
+    classifyFliggyLoginChallengeText('请完成身份验证').reasonCode,
+    'OTA_FLIGGY_EXTERNAL_VERIFICATION_REQUIRED',
+  )
   assert.deepEqual(
     {
       portalUrl: fliggyControlledLoginPolicy.portalUrl,
@@ -240,5 +248,80 @@ test('Fliggy controlled login reports the exact missing login stage', async () =
   })
   assert.equal(login.status, 'FAILED')
   assert.equal(login.reasonCode, 'OTA_FLIGGY_USERNAME_FORM_UNAVAILABLE')
+  await login.close()
+})
+
+test('Fliggy controlled login verifies a session after an intermediate login host', async () => {
+  let state = 'USERNAME'
+  let currentUrl = 'https://hotel.fliggy.com/ebooking/login.htm'
+  let account = ''
+  let password = ''
+  const selectorKind = (selector) => {
+    if (selector === 'body') return 'BODY'
+    if (/(?:username|login-id|TPL_username)/.test(selector)) return 'ACCOUNT'
+    if (/(?:password|TPL_password)/.test(selector)) return 'PASSWORD'
+    if (/(?:submit|login-button|J_SubmitStatic)/i.test(selector)) return 'SUBMIT'
+    return 'OTHER'
+  }
+  const locator = (selector) => {
+    const kind = selectorKind(selector)
+    return {
+      first() { return this },
+      isVisible: async () => (
+        (state === 'USERNAME' && ['ACCOUNT', 'SUBMIT'].includes(kind))
+        || (state === 'PASSWORD' && ['PASSWORD', 'SUBMIT'].includes(kind))
+      ),
+      fill: async (value) => {
+        if (kind === 'ACCOUNT') account = value
+        if (kind === 'PASSWORD') password = value
+      },
+      click: async () => {
+        if (state === 'USERNAME' && account) state = 'PASSWORD'
+        else if (state === 'PASSWORD' && password) {
+          state = 'INTERMEDIATE'
+          currentUrl = 'https://login.taobao.com/member/login.jhtml'
+        }
+      },
+      innerText: async () => state === 'AUTHENTICATED'
+        ? '酒店后台'
+        : '账号登录',
+    }
+  }
+  const page = {
+    url: () => currentUrl,
+    goto: async (url) => {
+      if (state === 'INTERMEDIATE') {
+        state = 'AUTHENTICATED'
+        currentUrl = 'https://hotel.fliggy.com/ebooking/hotelBaseInfoUv.htm'
+      }
+    },
+    waitForTimeout: async () => undefined,
+    waitForNavigation: async () => null,
+    frames: () => [],
+    locator,
+  }
+  const context = {
+    newPage: async () => page,
+    storageState: async () => ({
+      cookies: [cookie('hotel_session', 'synthetic_hotel', 'hotel.fliggy.com')],
+    }),
+    close: async () => undefined,
+  }
+  const chromium = {
+    launch: async () => ({
+      newContext: async () => context,
+      close: async () => undefined,
+    }),
+  }
+  const login = await startFliggyControlledLogin({
+    credentials: {
+      account: 'synthetic-account',
+      password: ['synthetic', 'credential'].join('-'),
+    },
+    chromium,
+    executablePath: process.execPath,
+  })
+  assert.equal(login.status, 'AUTHENTICATED')
+  assert.equal(currentUrl, 'https://hotel.fliggy.com/ebooking/hotelBaseInfoUv.htm')
   await login.close()
 })

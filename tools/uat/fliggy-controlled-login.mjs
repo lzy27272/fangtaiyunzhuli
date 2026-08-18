@@ -170,7 +170,10 @@ export const classifyFliggyLoginChallengeText = (value) => {
   if (/锁定|冻结|次数过多|稍后再试|风险账号/u.test(text)) {
     return { status: 'FAILED', reasonCode: 'OTA_FLIGGY_ACCOUNT_LOCKED' }
   }
-  if (/账号或密码|用户名或密码|密码错误|密码不正确|账号不存在/u.test(text)) {
+  if (
+    /账号或密码|用户名或密码|账户名或登录密码|账户或密码|密码错误|密码不正确|账号不存在|账户不存在|账号未注册/u
+      .test(text)
+  ) {
     return { status: 'FAILED', reasonCode: 'OTA_FLIGGY_CREDENTIALS_REJECTED' }
   }
   if (/滑块|拖动.*验证|安全验证|验证中心/u.test(text)) {
@@ -192,6 +195,13 @@ export const classifyFliggyLoginChallengeText = (value) => {
       status: 'VERIFICATION_REQUIRED',
       reasonCode: 'OTA_FLIGGY_CODE_VERIFICATION_REQUIRED',
       challengeType: 'CODE',
+    }
+  }
+  if (/二次验证|身份验证|登录保护|账号保护|验证身份|手机确认/u.test(text)) {
+    return {
+      status: 'EXTERNAL_VERIFICATION_REQUIRED',
+      reasonCode: 'OTA_FLIGGY_EXTERNAL_VERIFICATION_REQUIRED',
+      challengeType: 'EXTERNAL',
     }
   }
   return null
@@ -344,6 +354,7 @@ export const startFliggyControlledLogin = async ({
   let closed = false
   let usernameSubmitted = false
   let passwordSubmitted = false
+  let portalSessionProbeAttempted = false
   const close = async () => {
     if (closed) return
     closed = true
@@ -386,6 +397,10 @@ export const startFliggyControlledLogin = async ({
       const username = await firstVisible(page, fliggyLoginSelectors.username)
       const password = await firstVisible(page, fliggyLoginSelectors.password)
       const submit = await firstVisible(page, fliggyLoginSelectors.submit)
+      const verification = await firstVisible(
+        page,
+        fliggyLoginSelectors.verification,
+      )
       if (fliggyAuthenticationEligible({
         url: page.url(),
         usernameSubmitted,
@@ -416,10 +431,6 @@ export const startFliggyControlledLogin = async ({
         continue
       }
 
-      const verification = await firstVisible(
-        page,
-        fliggyLoginSelectors.verification,
-      )
       if (verification && submit) {
         const captcha = await captureCaptcha(page)
         return {
@@ -432,6 +443,20 @@ export const startFliggyControlledLogin = async ({
         }
       }
       if (classified) return { ...classified, close }
+      if (
+        passwordSubmitted
+        && !username
+        && !password
+        && !portalSessionProbeAttempted
+      ) {
+        portalSessionProbeAttempted = true
+        try {
+          return await authenticated()
+        } catch (error) {
+          if (error?.message !== 'OTA_FLIGGY_SESSION_INVALID') throw error
+        }
+        continue
+      }
       await page.waitForTimeout(1_000)
     }
     return {

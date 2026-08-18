@@ -105,6 +105,20 @@ const CONTROLLED_LOGIN_STATUS_LABELS: Record<string, string> = {
   RATE_LIMITED: '已触发安全限次',
 }
 
+const CONTROLLED_LOGIN_ERROR_LABELS: Record<string, string> = {
+  OTA_FLIGGY_USERNAME_FORM_UNAVAILABLE: '未检测到飞猪官方账号输入页。',
+  OTA_FLIGGY_PASSWORD_FORM_UNAVAILABLE:
+    '账号提交后未进入密码页；当前账号可能不适用密码登录。',
+  OTA_FLIGGY_LOGIN_CONFIRMATION_UNAVAILABLE:
+    '密码已提交，但飞猪未建立有效后台会话；可能要求二次验证或拒绝当前登录方式。',
+  OTA_FLIGGY_CREDENTIALS_REJECTED: '账号或密码被飞猪拒绝，请核对后再试。',
+  OTA_FLIGGY_ACCOUNT_LOCKED: '飞猪限制了当前账号登录，请稍后按官方提示处理。',
+  OTA_FLIGGY_CODE_VERIFICATION_REQUIRED: '飞猪要求提交一次性验证码。',
+  OTA_FLIGGY_SLIDER_VERIFICATION_REQUIRED: '飞猪要求完成滑块验证。',
+  OTA_FLIGGY_QR_VERIFICATION_REQUIRED: '飞猪要求扫码确认登录。',
+  OTA_FLIGGY_EXTERNAL_VERIFICATION_REQUIRED: '飞猪要求完成额外身份验证。',
+}
+
 const SENSITIVE_QUERY_KEY =
   /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
 
@@ -748,7 +762,18 @@ export function OtaSourceConfigPanel({
                           </small>
                         ) : null}
                         {controlledLogin.lastErrorCode ? (
-                          <code>{controlledLogin.lastErrorCode}</code>
+                          <>
+                            {CONTROLLED_LOGIN_ERROR_LABELS[
+                              controlledLogin.lastErrorCode
+                            ] ? (
+                              <small>
+                                {CONTROLLED_LOGIN_ERROR_LABELS[
+                                  controlledLogin.lastErrorCode
+                                ]}
+                              </small>
+                            ) : null}
+                            <code>{controlledLogin.lastErrorCode}</code>
+                          </>
                         ) : null}
                       </div>
                       <button
