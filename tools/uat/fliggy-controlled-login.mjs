@@ -490,3 +490,31 @@ export const fliggyControlledLoginPolicy = Object.freeze({
   challengeTtlMinutes: 10,
   maxVerificationAnswers: 3,
 })
+
+export const fliggyLoginRateLimitState = ({
+  windowStartedAt,
+  attemptCount,
+  now = Date.now(),
+}) => {
+  const startedAt = new Date(windowStartedAt ?? '').getTime()
+  const count = Number.isInteger(attemptCount) && attemptCount > 0
+    ? attemptCount
+    : 0
+  const windowEndsAt = Number.isFinite(startedAt)
+    ? startedAt
+      + fliggyControlledLoginPolicy.attemptWindowMinutes * 60_000
+    : null
+  const rateLimited = Boolean(
+    windowEndsAt
+    && windowEndsAt > now
+    && count >= fliggyControlledLoginPolicy.maxAttemptsPerWindow,
+  )
+  return {
+    rateLimited,
+    nextAttemptAt: rateLimited
+      ? new Date(windowEndsAt).toISOString()
+      : null,
+    attemptCount: count,
+    maxAttempts: fliggyControlledLoginPolicy.maxAttemptsPerWindow,
+  }
+}

@@ -24,6 +24,7 @@ import {
 import {
   fliggyControlledLoginPolicy,
   fliggyCookieHeaderForHost,
+  fliggyLoginRateLimitState,
   fliggyMtopTokenAvailable,
   startFliggyControlledLogin,
 } from './fliggy-controlled-login.mjs'
@@ -2579,22 +2580,13 @@ const otaControlledLoginProfilesFor = (hotelId) => {
   const cookieSourceCount = sources.filter(
     (source) => Boolean(secrets[source.sourceId]?.cookie),
   ).length
-  const windowStartedAt = Number.isFinite(
-    new Date(state?.loginAttemptWindowStartedAt ?? '').getTime(),
-  )
-    ? new Date(state.loginAttemptWindowStartedAt)
-    : null
-  const windowEndsAt = windowStartedAt
-    ? new Date(
-      windowStartedAt.getTime()
-      + fliggyControlledLoginPolicy.attemptWindowMinutes * 60_000,
-    )
-    : null
-  const rateLimited = Boolean(
-    windowEndsAt
-    && windowEndsAt.getTime() > Date.now()
-    && state?.loginAttemptCount
-      >= fliggyControlledLoginPolicy.maxAttemptsPerWindow,
+  const rateLimit = fliggyLoginRateLimitState({
+    windowStartedAt: state?.loginAttemptWindowStartedAt,
+    attemptCount: state?.loginAttemptCount,
+  })
+  const expiredPersistedRateLimit = Boolean(
+    !rateLimit.rateLimited
+    && state?.lastLoginStatus === 'RATE_LIMITED',
   )
   const active = activeOtaControlledLoginAttempts.get(
     otaControlledLoginKey(hotelId, platformCode),
@@ -2608,19 +2600,23 @@ const otaControlledLoginProfilesFor = (hotelId) => {
     sessionSourceCount: cookieSourceCount,
     sessionConfigured: cookieSourceCount > 0,
     autoRenewEnabled: sources.some((source) => source.autoLoginEnabled),
-    status: rateLimited
+    status: rateLimit.rateLimited
       ? 'RATE_LIMITED'
       : active
         ? 'VERIFICATION_REQUIRED'
-        : state?.lastLoginStatus ?? 'NEVER',
+        : expiredPersistedRateLimit
+          ? 'FAILED'
+          : state?.lastLoginStatus ?? 'NEVER',
     lastAttemptAt: state?.lastLoginAttemptAt ?? null,
     lastAuthenticatedAt: state?.lastLoginAt ?? null,
-    lastErrorCode: rateLimited
+    lastErrorCode: rateLimit.rateLimited
       ? 'OTA_FLIGGY_LOGIN_RATE_LIMITED'
-      : state?.lastLoginErrorCode ?? null,
-    nextAttemptAt: rateLimited ? windowEndsAt.toISOString() : null,
-    attemptCount: state?.loginAttemptCount ?? 0,
-    maxAttempts: fliggyControlledLoginPolicy.maxAttemptsPerWindow,
+      : expiredPersistedRateLimit
+        ? null
+        : state?.lastLoginErrorCode ?? null,
+    nextAttemptAt: rateLimit.nextAttemptAt,
+    attemptCount: rateLimit.attemptCount,
+    maxAttempts: rateLimit.maxAttempts,
     challengeActive: Boolean(active),
   }]
 }

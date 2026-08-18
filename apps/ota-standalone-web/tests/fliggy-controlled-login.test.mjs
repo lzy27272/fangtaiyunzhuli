@@ -6,6 +6,7 @@ import {
   fliggyAuthenticationEligible,
   fliggyControlledLoginPolicy,
   fliggyCookieHeaderForHost,
+  fliggyLoginRateLimitState,
   fliggyMtopTokenAvailable,
   normalizeFliggySessionState,
   startFliggyControlledLogin,
@@ -135,6 +136,24 @@ test('Fliggy controlled login rejects same-domain shell false positives', () => 
     ...valid,
     url: 'https://login.taobao.com/member/login.jhtml',
   }), false)
+})
+
+test('Fliggy controlled login rate limit releases when its window expires', () => {
+  const windowStartedAt = '2026-08-19T00:00:00.000Z'
+  const active = fliggyLoginRateLimitState({
+    windowStartedAt,
+    attemptCount: 3,
+    now: Date.parse('2026-08-19T00:29:59.000Z'),
+  })
+  assert.equal(active.rateLimited, true)
+  assert.equal(active.nextAttemptAt, '2026-08-19T00:30:00.000Z')
+  const expired = fliggyLoginRateLimitState({
+    windowStartedAt,
+    attemptCount: 3,
+    now: Date.parse('2026-08-19T00:30:00.000Z'),
+  })
+  assert.equal(expired.rateLimited, false)
+  assert.equal(expired.nextAttemptAt, null)
 })
 
 test('Fliggy controlled login supports iframe two-step credentials', async () => {

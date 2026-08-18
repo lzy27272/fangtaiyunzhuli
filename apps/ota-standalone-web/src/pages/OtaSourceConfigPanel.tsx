@@ -329,6 +329,21 @@ export function OtaSourceConfigPanel({
     return () => window.cancelAnimationFrame(frame)
   }, [attentionSourceId, loading, sources.length])
 
+  useEffect(() => {
+    const nextAttemptAt = controlledLogins
+      .filter((profile) => profile.status === 'RATE_LIMITED')
+      .map((profile) => new Date(profile.nextAttemptAt ?? '').getTime())
+      .filter(Number.isFinite)
+      .sort((left, right) => left - right)[0]
+    if (!Number.isFinite(nextAttemptAt)) return
+    const timer = window.setTimeout(() => {
+      void loadOtaControlledLogins(context)
+        .then(setControlledLogins)
+        .catch(() => undefined)
+    }, Math.max(1_000, nextAttemptAt - Date.now() + 1_000))
+    return () => window.clearTimeout(timer)
+  }, [context, controlledLogins])
+
   const enabledCount = useMemo(
     () => sources.filter((source) => source.enabled).length,
     [sources],
@@ -761,6 +776,18 @@ export function OtaSourceConfigPanel({
                             ).toLocaleString('zh-CN')}
                           </small>
                         ) : null}
+                        {controlledLogin.status === 'RATE_LIMITED'
+                          && controlledLogin.nextAttemptAt ? (
+                            <small>
+                              已达到 {controlledLogin.maxAttempts} 次安全上限；将在
+                              {' '}
+                              {new Date(
+                                controlledLogin.nextAttemptAt,
+                              ).toLocaleString('zh-CN')}
+                              {' '}
+                              自动解锁，请勿重复提交。
+                            </small>
+                          ) : null}
                         {controlledLogin.lastErrorCode ? (
                           <>
                             {CONTROLLED_LOGIN_ERROR_LABELS[
