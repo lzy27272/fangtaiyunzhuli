@@ -121,6 +121,21 @@ const addCalendarDays = (date, days) => {
   return parsed.toISOString().slice(0, 10)
 }
 
+export const isLuopanNavigationTimeout = (error) =>
+  /Timeout .* exceeded|timed out/i.test(String(error?.message ?? ''))
+
+export const navigateLuopanPage = async (page, url) => {
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000,
+    })
+  } catch (error) {
+    if (!isLuopanNavigationTimeout(error)) throw error
+    await page.waitForTimeout(500)
+  }
+}
+
 const selectedFingerprint = (option) =>
   createHash('sha256')
     .update(`${option.value}\u0000${option.label}`)
@@ -239,17 +254,17 @@ const verifyFingerprint = (actual, expected) => {
 }
 
 const queryForecastRows = async (page, businessDate) => {
-  await page.goto(forecastUrl, {
-    waitUntil: 'domcontentloaded',
-    timeout: 30_000,
-  })
+  await navigateLuopanPage(page, forecastUrl)
   if (isAuthenticationUrl(page.url())) {
     throw new Error('LUOPAN_REAUTH_REQUIRED')
   }
   const navigation = page.waitForNavigation({
     waitUntil: 'domcontentloaded',
     timeout: 30_000,
-  })
+  }).then(
+    () => null,
+    (error) => error,
+  )
   const submitted = await page.evaluate((date) => {
     const form = [...document.forms].find((candidate) =>
       /\/post\/room_forecast\.do/i.test(
@@ -262,7 +277,10 @@ const queryForecastRows = async (page, businessDate) => {
     return true
   }, businessDate)
   if (!submitted) throw new Error('LUOPAN_FORECAST_FORM_UNAVAILABLE')
-  await navigation
+  const navigationError = await navigation
+  if (navigationError && !isLuopanNavigationTimeout(navigationError)) {
+    throw navigationError
+  }
   await page.waitForTimeout(1_500)
   const tableRows = await page.evaluate(() => {
     const clean = (value) =>
@@ -507,10 +525,7 @@ export const validateLuopanBrowserSession = async ({
   )
   try {
     const page = context.pages()[0] ?? await context.newPage()
-    await page.goto(homeUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30_000,
-    })
+    await navigateLuopanPage(page, homeUrl)
     if (isAuthenticationUrl(page.url())) {
       throw new Error('LUOPAN_REAUTH_REQUIRED')
     }
@@ -554,10 +569,7 @@ export const collectLuopanControlledBrowser = async ({
   )
   try {
     const page = context.pages()[0] ?? await context.newPage()
-    await page.goto(homeUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30_000,
-    })
+    await navigateLuopanPage(page, homeUrl)
     if (isAuthenticationUrl(page.url())) {
       throw new Error('LUOPAN_REAUTH_REQUIRED')
     }
