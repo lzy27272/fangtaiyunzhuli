@@ -584,6 +584,15 @@ export function OtaSourceConfigPanel({
     }
   }
 
+  const controlledLoginRefreshNotice = (result: OtaControlledLoginResult) => {
+    const failed = result.refreshedSources.filter((source) =>
+      source.lastRefreshStatus === 'FAILED')
+    const complete = result.refreshedSources.length - failed.length
+    return failed.length > 0
+      ? `飞猪会话已更新；${complete}个数据源刷新成功，${failed.length}个失败，请查看失败卡片错误码。`
+      : `飞猪会话已安全更新，并刷新${complete}个已启用数据源。`
+  }
+
   async function loginAndRefreshFliggy() {
     if (!canConfigure) return
     setLoggingInPlatform('FLIGGY')
@@ -595,9 +604,7 @@ export function OtaSourceConfigPanel({
       const result = await startOtaControlledLogin(context, 'FLIGGY')
       mergeControlledLoginResult(result)
       if (result.status === 'AUTHENTICATED') {
-        setNotice(
-          `飞猪会话已安全更新，并刷新${result.refreshedSources.length}个已启用数据源。`,
-        )
+        setNotice(controlledLoginRefreshNotice(result))
       } else if (result.status === 'VERIFICATION_REQUIRED') {
         setNotice('飞猪要求一次性验证码；请在10分钟内完成，最多提交3次。')
       } else {
@@ -632,9 +639,7 @@ export function OtaSourceConfigPanel({
       setVerificationAnswer('')
       mergeControlledLoginResult(result)
       if (result.status === 'AUTHENTICATED') {
-        setNotice(
-          `飞猪会话已安全更新，并刷新${result.refreshedSources.length}个已启用数据源。`,
-        )
+        setNotice(controlledLoginRefreshNotice(result))
       } else {
         setNotice('验证码尚未通过，请核对页面当前验证码后重试。')
       }

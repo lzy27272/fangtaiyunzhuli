@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
+import process from 'node:process'
 import test from 'node:test'
 import {
   classifyFliggyLoginChallengeText,
+  fliggyAuthenticationEligible,
   fliggyControlledLoginPolicy,
   fliggyCookieHeaderForHost,
   fliggyMtopTokenAvailable,
   normalizeFliggySessionState,
+  startFliggyControlledLogin,
 } from '../../../tools/uat/fliggy-controlled-login.mjs'
 
 const cookie = (name, value, domain, path = '/') => ({
@@ -93,4 +96,104 @@ test('Fliggy login challenges fail closed and remain human verified', () => {
       maxVerificationAnswers: 3,
     },
   )
+})
+
+test('Fliggy controlled login rejects same-domain shell false positives', () => {
+  const valid = {
+    url: 'https://hotel.fliggy.com/ebooking/hotelBaseInfoUv.htm',
+    usernameSubmitted: true,
+    passwordSubmitted: true,
+    usernameVisible: false,
+    passwordVisible: false,
+    challengeDetected: false,
+  }
+  assert.equal(fliggyAuthenticationEligible(valid), true)
+  assert.equal(fliggyAuthenticationEligible({
+    ...valid,
+    usernameSubmitted: false,
+    passwordSubmitted: false,
+  }), false)
+  assert.equal(fliggyAuthenticationEligible({
+    ...valid,
+    passwordVisible: true,
+  }), false)
+  assert.equal(fliggyAuthenticationEligible({
+    ...valid,
+    challengeDetected: true,
+  }), false)
+  assert.equal(fliggyAuthenticationEligible({
+    ...valid,
+    url: 'https://login.taobao.com/member/login.jhtml',
+  }), false)
+})
+
+test('Fliggy controlled login fills iframe credentials before authenticating', async () => {
+  let state = 'LOGIN'
+  let account = ''
+  let password = ''
+  let submitCount = 0
+  const syntheticCredential = ['hotel', 'credential'].join('-')
+  const selectorKind = (selector) => {
+    if (selector === 'body') return 'BODY'
+    if (/(?:username|login-id|TPL_username)/.test(selector)) return 'ACCOUNT'
+    if (/(?:password|TPL_password)/.test(selector)) return 'PASSWORD'
+    if (/(?:submit|login-button|password-login|J_SubmitStatic)/i.test(selector)) {
+      return 'SUBMIT'
+    }
+    return 'OTHER'
+  }
+  const frame = {
+    locator: (selector) => {
+      const kind = selectorKind(selector)
+      return {
+        first() { return this },
+        isVisible: async () => state === 'LOGIN'
+          && ['ACCOUNT', 'PASSWORD', 'SUBMIT'].includes(kind),
+        fill: async (value) => {
+          if (kind === 'ACCOUNT') account = value
+          if (kind === 'PASSWORD') password = value
+        },
+        click: async () => {
+          submitCount += 1
+          if (account && password) state = 'AUTHENTICATED'
+        },
+        innerText: async () => state === 'LOGIN' ? '账号登录' : '酒店后台',
+      }
+    },
+  }
+  const page = {
+    url: () => 'https://hotel.fliggy.com/ebooking/hotelBaseInfoUv.htm',
+    goto: async () => undefined,
+    waitForTimeout: async () => undefined,
+    waitForNavigation: async () => null,
+    frames: () => [frame],
+    locator: () => ({
+      first() { return this },
+      isVisible: async () => false,
+      innerText: async () => state === 'LOGIN' ? '登录页面' : '酒店后台',
+    }),
+  }
+  const context = {
+    newPage: async () => page,
+    storageState: async () => ({
+      cookies: [cookie('hotel_session', 'synthetic_hotel', 'hotel.fliggy.com')],
+    }),
+    close: async () => undefined,
+  }
+  const chromium = {
+    launch: async () => ({
+      newContext: async () => context,
+      close: async () => undefined,
+    }),
+  }
+  const login = await startFliggyControlledLogin({
+    credentials: { account: 'hotel-account', password: syntheticCredential },
+    chromium,
+    executablePath: process.execPath,
+  })
+  assert.equal(login.status, 'AUTHENTICATED')
+  assert.equal(account, 'hotel-account')
+  assert.equal(password, syntheticCredential)
+  assert.equal(submitCount, 1)
+  await login.close()
 })

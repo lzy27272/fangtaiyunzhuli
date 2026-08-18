@@ -192,10 +192,18 @@ export const classifyFliggyLoginChallengeText = (value) => {
   return null
 }
 
+const locatorScopes = (page) => {
+  const frames = typeof page?.frames === 'function' ? page.frames() : []
+  return [...new Set([page, ...frames])]
+    .filter((scope) => typeof scope?.locator === 'function')
+}
+
 const firstVisible = async (page, selectors) => {
   for (const selector of selectors) {
-    const locator = page.locator(selector).first()
-    if (await locator.isVisible().catch(() => false)) return locator
+    for (const scope of locatorScopes(page)) {
+      const locator = scope.locator(selector).first()
+      if (await locator.isVisible().catch(() => false)) return locator
+    }
   }
   return null
 }
@@ -222,11 +230,30 @@ const authenticatedUrl = (value) => {
   }
 }
 
-const safeBodyText = async (page) =>
-  String(await page.locator('body').innerText().catch(() => ''))
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 8_000)
+export const fliggyAuthenticationEligible = ({
+  url,
+  usernameSubmitted,
+  passwordSubmitted,
+  usernameVisible,
+  passwordVisible,
+  challengeDetected,
+}) => Boolean(
+  usernameSubmitted
+  && passwordSubmitted
+  && authenticatedUrl(url)
+  && !usernameVisible
+  && !passwordVisible
+  && !challengeDetected
+)
+
+const safeBodyText = async (page) => [...new Set(await Promise.all(
+  locatorScopes(page).map(async (scope) =>
+    String(await scope.locator('body').innerText().catch(() => ''))),
+))]
+  .join(' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 8_000)
 
 const captureCaptcha = async (page) => {
   const captcha = await firstVisible(page, fliggyLoginSelectors.captcha)
@@ -238,13 +265,25 @@ const captureCaptcha = async (page) => {
 const captureSession = async (context) =>
   normalizeFliggySessionState(await context.storageState())
 
+const authenticatedPageReady = async (page) => {
+  if (!authenticatedUrl(page.url())) return false
+  const [username, password, bodyText] = await Promise.all([
+    firstVisible(page, fliggyLoginSelectors.username),
+    firstVisible(page, fliggyLoginSelectors.password),
+    safeBodyText(page),
+  ])
+  return !username
+    && !password
+    && !classifyFliggyLoginChallengeText(bodyText)
+}
+
 const warmAuthenticatedSession = async (page, context) => {
   await page.goto(FLIGGY_PORTAL_URL, {
     waitUntil: 'domcontentloaded',
     timeout: 30_000,
   })
   await page.waitForTimeout(5_000)
-  if (!authenticatedUrl(page.url())) {
+  if (!await authenticatedPageReady(page)) {
     throw new Error('OTA_FLIGGY_SESSION_INVALID')
   }
   return captureSession(context)
@@ -337,23 +376,34 @@ export const startFliggyControlledLogin = async ({
     }
 
     for (let step = 0; step < 5; step += 1) {
-      if (authenticatedUrl(page.url())) return authenticated()
       const bodyText = await safeBodyText(page)
       const classified = classifyFliggyLoginChallengeText(bodyText)
+      const username = await firstVisible(page, fliggyLoginSelectors.username)
+      const password = await firstVisible(page, fliggyLoginSelectors.password)
+      const submit = await firstVisible(page, fliggyLoginSelectors.submit)
+      if (fliggyAuthenticationEligible({
+        url: page.url(),
+        usernameSubmitted,
+        passwordSubmitted,
+        usernameVisible: Boolean(username),
+        passwordVisible: Boolean(password),
+        challengeDetected: Boolean(classified),
+      })) return authenticated()
       if (classified?.status === 'FAILED') {
         return { ...classified, close }
       }
 
-      const username = await firstVisible(page, fliggyLoginSelectors.username)
-      const submit = await firstVisible(page, fliggyLoginSelectors.submit)
       if (!usernameSubmitted && username && submit) {
         await username.fill(credentials.account)
         usernameSubmitted = true
+        if (!passwordSubmitted && password) {
+          await password.fill(credentials.password)
+          passwordSubmitted = true
+        }
         await clickAndSettle(page, submit)
         continue
       }
 
-      const password = await firstVisible(page, fliggyLoginSelectors.password)
       if (!passwordSubmitted && password && submit) {
         await password.fill(credentials.password)
         passwordSubmitted = true
