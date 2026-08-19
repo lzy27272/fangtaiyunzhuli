@@ -98,6 +98,14 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     assert.equal(initial.paired, false)
     assert.equal(initial.pairedUserCount, 0)
     assert.equal(initial.pairedUserCapacity, 2)
+    assert.equal(initial.hotelPairedUserCount, 0)
+    assert.equal(Array.isArray(initial.hotelBindings), true)
+    assert.equal(
+      initial.hotelBindings.every((binding) =>
+        binding.pairedUserCount === 0
+        && binding.pairedUserCapacity === 20),
+      true,
+    )
     assert.deepEqual(initial.allowedUserFingerprints, [])
 
     const savedResponse = await fetch(endpoint, {

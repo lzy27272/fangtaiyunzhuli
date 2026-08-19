@@ -664,6 +664,15 @@ export interface WeComRepairBotConfigView {
   paired: boolean
   pairedUserCount: number
   pairedUserCapacity: 2
+  hotelPairedUserCount: number
+  hotelBindings: Array<{
+    hotelId: string
+    hotelCode: string
+    displayName: string
+    pairedUserCount: number
+    pairedUserCapacity: number
+    userFingerprints: string[]
+  }>
   botIdFingerprint: string | null
   allowedUserFingerprint: string | null
   allowedUserFingerprints: string[]
@@ -684,6 +693,7 @@ export interface WeComRepairBotConfigView {
     active: boolean
     expiresAt: string | null
     attemptsRemaining: number
+    scope?: { type: 'GLOBAL' } | { type: 'HOTEL'; hotelId: string }
   }
 }
 
@@ -696,6 +706,11 @@ export interface WeComRepairBotPairingView {
   pairingCode: string
   expiresAt: string
   attemptsRemaining: number
+  hotelId: string
+  hotelCode: string
+  displayName: string
+  pairedUserCount: number
+  pairedUserCapacity: number
 }
 
 export type WeComWebhookUpdate =
@@ -1468,10 +1483,12 @@ export function saveWeComRepairBotConfig(
   )
 }
 
-export function startWeComRepairBotPairing(): Promise<WeComRepairBotPairingView> {
+export function startWeComRepairBotPairing(
+  hotelId: string,
+): Promise<WeComRepairBotPairingView> {
   return postCommand<WeComRepairBotPairingView>(
     '/ota/wecom-repair-bot-pairing',
-    { reasonCode: 'START_WECOM_REPAIR_BOT_PAIRING' },
+    { hotelId, reasonCode: 'START_WECOM_REPAIR_BOT_PAIRING' },
   )
 }
 

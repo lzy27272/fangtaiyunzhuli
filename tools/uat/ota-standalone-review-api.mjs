@@ -106,6 +106,8 @@ import {
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
   WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
+  WECOM_REPAIR_BOT_MAX_STORE_USERS,
+  weComRepairBotRecipientsForHotel,
 } from './wecom/src/wecom-repair-bot.mjs'
 
 const host = '127.0.0.1'
@@ -331,6 +333,7 @@ let weComRepairBotConfig = {
   botIdSha256: null,
   allowedUserIdSha256: null,
   allowedUserIdSha256s: [],
+  hotelAllowedUserIdSha256s: {},
   updatedAt: null,
 }
 let weComRepairBotCredentials = null
@@ -1818,6 +1821,22 @@ const persistWeComDeliveries = () => {
 const weComRepairBotSecretScope = () => 'wecom-repair-bot:v1'
 const SHA256_PATTERN = /^[a-f0-9]{64}$/iu
 
+const weComRepairBotHotelUserFingerprints = (hotelAllowedUserIds = {}) =>
+  Object.fromEntries(
+    Object.entries(hotelAllowedUserIds)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([hotelId, userIds]) => [
+        hotelId,
+        userIds.map(fingerprintWeComRepairBotValue),
+      ]),
+  )
+
+const weComRepairBotAuthorizedForHotel = (userId, hotelId) =>
+  weComRepairBotRecipientsForHotel(
+    weComRepairBotCredentials ?? {},
+    hotelId,
+  ).includes(userId)
+
 const persistWeComRepairBotConfig = () => {
   if (!weComRepairBotConfigPath) return
   mkdirSync(dirname(weComRepairBotConfigPath), { recursive: true })
@@ -1862,12 +1881,35 @@ const weComRepairBotStatus = () => {
   const allowedUserFingerprints =
     weComRepairBotConfig.allowedUserIdSha256s
       .map((fingerprint) => fingerprint.slice(0, 16))
+  const hotelBindings = hotels
+    .filter((hotel) => hotel.pmsSystemCode === 'LUOPAN_CLOUD')
+    .map((hotel) => {
+      const userIds =
+        weComRepairBotCredentials?.hotelAllowedUserIds?.[hotel.hotelId] ?? []
+      const fingerprints =
+        weComRepairBotConfig.hotelAllowedUserIdSha256s?.[hotel.hotelId] ?? []
+      return {
+        hotelId: hotel.hotelId,
+        hotelCode: hotel.hotelCode,
+        displayName: hotel.displayName,
+        pairedUserCount: userIds.length,
+        pairedUserCapacity: WECOM_REPAIR_BOT_MAX_STORE_USERS,
+        userFingerprints: fingerprints.map((value) => value.slice(0, 16)),
+      }
+    })
+    .sort((left, right) => left.hotelCode.localeCompare(right.hotelCode))
+  const hotelPairedUserCount = hotelBindings.reduce(
+    (sum, binding) => sum + binding.pairedUserCount,
+    0,
+  )
   return {
     enabled: weComRepairBotConfig.enabled === true,
     credentialConfigured: Boolean(weComRepairBotCredentials),
-    paired: allowedUserIds.length > 0,
+    paired: allowedUserIds.length > 0 || hotelPairedUserCount > 0,
     pairedUserCount: allowedUserIds.length,
     pairedUserCapacity: WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
+    hotelPairedUserCount,
+    hotelBindings,
     botIdFingerprint:
       weComRepairBotConfig.botIdSha256?.slice(0, 16) ?? null,
     allowedUserFingerprint:
@@ -1932,6 +1974,38 @@ if (weComRepairBotConfigPath && existsSync(weComRepairBotConfigPath)) {
     if (allowedUserIdSha256s.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
       throw new Error('WECOM_REPAIR_BOT_ALLOWED_USERS_INVALID')
     }
+    const persistedHotelFingerprints =
+      persisted.hotelAllowedUserIdSha256s == null
+        ? {}
+        : persisted.hotelAllowedUserIdSha256s
+    if (
+      !persistedHotelFingerprints
+      || typeof persistedHotelFingerprints !== 'object'
+      || Array.isArray(persistedHotelFingerprints)
+    ) {
+      throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
+    }
+    const hotelAllowedUserIdSha256s = Object.fromEntries(
+      Object.entries(persistedHotelFingerprints)
+        .filter(([hotelId]) => hotels.some((hotel) =>
+          hotel.hotelId === hotelId
+          && hotel.pmsSystemCode === 'LUOPAN_CLOUD'))
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([hotelId, values]) => {
+          const fingerprints = [...new Set(
+            (Array.isArray(values) ? values : [])
+              .map((value) => String(value).toLowerCase()),
+          )]
+          if (
+            !Array.isArray(values)
+            || fingerprints.length > WECOM_REPAIR_BOT_MAX_STORE_USERS
+            || fingerprints.some((value) => !SHA256_PATTERN.test(value))
+          ) {
+            throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
+          }
+          return [hotelId, fingerprints]
+        }),
+    )
     weComRepairBotConfig = {
       enabled: persisted.enabled === true,
       botIdSha256:
@@ -1940,6 +2014,7 @@ if (weComRepairBotConfigPath && existsSync(weComRepairBotConfigPath)) {
           : null,
       allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
       allowedUserIdSha256s,
+      hotelAllowedUserIdSha256s,
       updatedAt:
         typeof persisted.updatedAt === 'string' ? persisted.updatedAt : null,
     }
@@ -1965,12 +2040,17 @@ if (weComRepairBotSecretPath && existsSync(weComRepairBotSecretPath)) {
     const allowedUserIdSha256s = credentials.allowedUserIds
       .map(fingerprintWeComRepairBotValue)
     const allowedUserIdSha256 = allowedUserIdSha256s[0] ?? null
+    const hotelAllowedUserIdSha256s =
+      weComRepairBotHotelUserFingerprints(credentials.hotelAllowedUserIds)
     if (
       (weComRepairBotConfig.botIdSha256
         && weComRepairBotConfig.botIdSha256 !== botIdSha256)
       || (weComRepairBotConfig.allowedUserIdSha256s.length > 0
         && JSON.stringify(weComRepairBotConfig.allowedUserIdSha256s)
           !== JSON.stringify(allowedUserIdSha256s))
+      || (Object.keys(weComRepairBotConfig.hotelAllowedUserIdSha256s).length > 0
+        && JSON.stringify(weComRepairBotConfig.hotelAllowedUserIdSha256s)
+          !== JSON.stringify(hotelAllowedUserIdSha256s))
     ) {
       throw new Error('WECOM_REPAIR_BOT_SECRET_FINGERPRINT_MISMATCH')
     }
@@ -1980,6 +2060,7 @@ if (weComRepairBotSecretPath && existsSync(weComRepairBotSecretPath)) {
       botIdSha256,
       allowedUserIdSha256,
       allowedUserIdSha256s,
+      hotelAllowedUserIdSha256s,
     }
   } catch {
     weComRepairBotCredentials = null
@@ -2008,6 +2089,8 @@ const applyWeComRepairBotConfigUpdate = (body) => {
   let nextAllowedUserIdSha256 = weComRepairBotConfig.allowedUserIdSha256
   let nextAllowedUserIdSha256s =
     weComRepairBotConfig.allowedUserIdSha256s
+  let nextHotelAllowedUserIdSha256s =
+    weComRepairBotConfig.hotelAllowedUserIdSha256s
   if (credentialUpdate.action === 'REPLACE') {
     const candidateBotId = String(credentialUpdate.botId ?? '').trim()
     const candidateBotIdSha256 = fingerprintWeComRepairBotValue(candidateBotId)
@@ -2015,21 +2098,32 @@ const applyWeComRepairBotConfigUpdate = (body) => {
       candidateBotIdSha256 === weComRepairBotConfig.botIdSha256
         ? weComRepairBotCredentials?.allowedUserIds ?? []
         : []
+    const preserveHotelPairing =
+      candidateBotIdSha256 === weComRepairBotConfig.botIdSha256
+        ? weComRepairBotCredentials?.hotelAllowedUserIds ?? {}
+        : {}
     nextCredentials = normalizeWeComRepairBotCredentials({
       botId: candidateBotId,
       secret: credentialUpdate.secret,
       allowedUserIds: preservePairing,
+      hotelAllowedUserIds: preserveHotelPairing,
     })
     nextBotIdSha256 = candidateBotIdSha256
     nextAllowedUserIdSha256s = preservePairing
       .map(fingerprintWeComRepairBotValue)
     nextAllowedUserIdSha256 = nextAllowedUserIdSha256s[0] ?? null
-    if (preservePairing.length === 0) weComRepairBotPairingStore.clear()
+    nextHotelAllowedUserIdSha256s =
+      weComRepairBotHotelUserFingerprints(preserveHotelPairing)
+    if (
+      preservePairing.length === 0
+      && Object.keys(preserveHotelPairing).length === 0
+    ) weComRepairBotPairingStore.clear()
   } else if (credentialUpdate.action === 'CLEAR') {
     nextCredentials = null
     nextBotIdSha256 = null
     nextAllowedUserIdSha256 = null
     nextAllowedUserIdSha256s = []
+    nextHotelAllowedUserIdSha256s = {}
     weComRepairBotPairingStore.clear()
   }
 
@@ -2043,6 +2137,7 @@ const applyWeComRepairBotConfigUpdate = (body) => {
     botIdSha256: nextBotIdSha256,
     allowedUserIdSha256: nextAllowedUserIdSha256,
     allowedUserIdSha256s: nextAllowedUserIdSha256s,
+    hotelAllowedUserIdSha256s: nextHotelAllowedUserIdSha256s,
     updatedAt: new Date().toISOString(),
   }
   persistWeComRepairBotSecret()
@@ -2054,7 +2149,7 @@ const applyWeComRepairBotConfigUpdate = (body) => {
   return weComRepairBotStatus()
 }
 
-const startWeComRepairBotPairing = () => {
+const startWeComRepairBotPairing = (hotelId) => {
   const status = weComRepairBotStatus()
   if (
     !status.enabled
@@ -2064,10 +2159,27 @@ const startWeComRepairBotPairing = () => {
   ) {
     throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
   }
-  if (status.pairedUserCount >= WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
+  const hotel = hotels.find((candidate) =>
+    candidate.hotelId === hotelId
+    && candidate.pmsSystemCode === 'LUOPAN_CLOUD')
+  if (!hotel) {
+    throw new Error('WECOM_REPAIR_BOT_PAIRING_HOTEL_INVALID')
+  }
+  const hotelUserCount =
+    weComRepairBotCredentials?.hotelAllowedUserIds?.[hotel.hotelId]?.length ?? 0
+  if (hotelUserCount >= WECOM_REPAIR_BOT_MAX_STORE_USERS) {
     throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
   }
-  return weComRepairBotPairingStore.start()
+  return {
+    ...weComRepairBotPairingStore.start({
+      scope: { type: 'HOTEL', hotelId: hotel.hotelId },
+    }),
+    hotelId: hotel.hotelId,
+    hotelCode: hotel.hotelCode,
+    displayName: hotel.displayName,
+    pairedUserCount: hotelUserCount,
+    pairedUserCapacity: WECOM_REPAIR_BOT_MAX_STORE_USERS,
+  }
 }
 
 if (weComConfigPath && existsSync(weComConfigPath)) {
@@ -3598,7 +3710,10 @@ const deliverWeComRepairBotDirectMessage = async ({
     if (!weComRepairBotReady()) {
       throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
     }
-    const allowedUserIds = weComRepairBotCredentials?.allowedUserIds ?? []
+    const allowedUserIds = weComRepairBotRecipientsForHotel(
+      weComRepairBotCredentials ?? {},
+      hotelId,
+    )
     if (allowedUserIds.length === 0) {
       throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
     }
@@ -3629,6 +3744,7 @@ const deliverWeComRepairBotDirectMessage = async ({
     persistWeComDeliveries()
     const results = await deliverWeComRepairBotToAllowedUsers({
       credentials: weComRepairBotCredentials,
+      hotelId,
       deliver: (userId) => captcha
         ? weComRepairBotRuntime.sendCaptcha({ userId, captcha, content })
         : weComRepairBotRuntime.sendText(userId, content),
@@ -4068,17 +4184,44 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         pairingCode: command.pairingCode,
         userId,
       })
-      const existingAllowedUserIds =
-        weComRepairBotCredentials.allowedUserIds
-      const allowedUserIds = existingAllowedUserIds.includes(pairing.userId)
-        ? existingAllowedUserIds
-        : [...existingAllowedUserIds, pairing.userId]
-      if (allowedUserIds.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
-        throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
+      const existingAllowedUserIds = weComRepairBotCredentials.allowedUserIds
+      let allowedUserIds = existingAllowedUserIds
+      let hotelAllowedUserIds = {
+        ...weComRepairBotCredentials.hotelAllowedUserIds,
+      }
+      let reply
+      if (pairing.scope?.type === 'HOTEL') {
+        const hotel = hotels.find((candidate) =>
+          candidate.hotelId === pairing.scope.hotelId
+          && candidate.pmsSystemCode === 'LUOPAN_CLOUD')
+        if (!hotel) {
+          throw new Error('WECOM_REPAIR_BOT_PAIRING_HOTEL_INVALID')
+        }
+        const existingHotelUserIds = hotelAllowedUserIds[hotel.hotelId] ?? []
+        const hotelUserIds = existingHotelUserIds.includes(pairing.userId)
+          ? existingHotelUserIds
+          : [...existingHotelUserIds, pairing.userId]
+        if (hotelUserIds.length > WECOM_REPAIR_BOT_MAX_STORE_USERS) {
+          throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
+        }
+        hotelAllowedUserIds = {
+          ...hotelAllowedUserIds,
+          [hotel.hotelId]: hotelUserIds,
+        }
+        reply = `绑定成功。你已获授权处理 ${hotel.hotelCode} ${hotel.displayName}；该门店当前已绑定${hotelUserIds.length}名管理人员。`
+      } else {
+        allowedUserIds = existingAllowedUserIds.includes(pairing.userId)
+          ? existingAllowedUserIds
+          : [...existingAllowedUserIds, pairing.userId]
+        if (allowedUserIds.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
+          throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
+        }
+        reply = `绑定成功。当前已保留${allowedUserIds.length}/2名全局接收人。`
       }
       weComRepairBotCredentials = normalizeWeComRepairBotCredentials({
         ...weComRepairBotCredentials,
         allowedUserIds,
+        hotelAllowedUserIds,
       })
       const allowedUserIdSha256s = weComRepairBotCredentials.allowedUserIds
         .map(fingerprintWeComRepairBotValue)
@@ -4086,27 +4229,34 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         ...weComRepairBotConfig,
         allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
         allowedUserIdSha256s,
+        hotelAllowedUserIdSha256s:
+          weComRepairBotHotelUserFingerprints(hotelAllowedUserIds),
         updatedAt: new Date().toISOString(),
       }
       persistWeComRepairBotSecret()
       persistWeComRepairBotConfig()
       await replyText(
         frame,
-        `绑定成功。当前已授权${allowedUserIds.length}/2人，两人都会同时收到验证码。`,
+        reply,
       )
     } catch (error) {
       await replyText(
         frame,
         error?.message === 'WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED'
-          ? '已绑定2人，不能再添加其他账号。'
+          ? '该门店绑定人员已达到安全上限。'
           : '配对码无效或已过期，请在后台重新生成。',
       )
     }
     return
   }
 
-  const allowedUserIds = weComRepairBotCredentials?.allowedUserIds ?? []
-  if (!allowedUserIds.includes(userId)) {
+  const globalAllowedUserIds = weComRepairBotCredentials?.allowedUserIds ?? []
+  const hotelAllowedUserIds =
+    weComRepairBotCredentials?.hotelAllowedUserIds ?? {}
+  const userHotelIds = Object.entries(hotelAllowedUserIds)
+    .filter(([, userIds]) => userIds.includes(userId))
+    .map(([hotelId]) => hotelId)
+  if (!globalAllowedUserIds.includes(userId) && userHotelIds.length === 0) {
     await replyText(frame, '当前账号未获授权，请先使用后台配对码完成绑定。')
     return
   }
@@ -4114,6 +4264,9 @@ const handleWeComRepairBotText = async (frame, replyText) => {
   if (command.type === 'HELP') {
     const pendingCodes = [...activeLuopanRepairsByHotel.values()]
       .filter((handle) => handle.channel === 'WECOM_LONG_CONNECTION')
+      .filter((handle) =>
+        globalAllowedUserIds.includes(userId)
+        || userHotelIds.includes(handle.hotelId))
       .map((handle) => selectedHotel(handle.hotelId).hotelCode)
       .sort()
     await replyText(
@@ -4134,6 +4287,10 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     const handle = hotel
       ? activeLuopanRepairsByHotel.get(hotel.hotelId)
       : null
+    if (hotel && !weComRepairBotAuthorizedForHotel(userId, hotel.hotelId)) {
+      await replyText(frame, '当前账号未获该门店授权。')
+      return
+    }
     if (!hotel || !handle || handle.channel !== 'WECOM_LONG_CONNECTION') {
       await replyText(frame, '该门店当前没有等待填写的验证码。')
       return
@@ -4711,10 +4868,14 @@ const server = createServer(async (request, response) => {
       const body = await readBody(request)
       if (
         body?.reasonCode !== 'START_WECOM_REPAIR_BOT_PAIRING'
+        || typeof body?.hotelId !== 'string'
+        || !SIMULATION_HOTEL_ID.test(body.hotelId)
       ) {
         throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUEST_INVALID')
       }
-      json(response, 201, { data: startWeComRepairBotPairing() })
+      json(response, 201, {
+        data: startWeComRepairBotPairing(body.hotelId),
+      })
       return
     }
 

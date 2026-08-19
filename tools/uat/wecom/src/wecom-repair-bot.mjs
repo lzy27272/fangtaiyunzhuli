@@ -14,6 +14,9 @@ const CAPTCHA_PATTERN = /^[A-Za-z0-9]{4,8}$/u
 const DEFAULT_PAIRING_TTL_MS = 10 * 60 * 1000
 const DEFAULT_PAIRING_ATTEMPTS = 5
 export const WECOM_REPAIR_BOT_MAX_ALLOWED_USERS = 2
+export const WECOM_REPAIR_BOT_MAX_STORE_USERS = 20
+const WECOM_REPAIR_BOT_MAX_STORE_COUNT = 200
+const HOTEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u
 
 const hash = (value) =>
   createHash('sha256').update(String(value), 'utf8').digest('hex')
@@ -37,10 +40,44 @@ export const normalizeWeComRepairBotAllowedUserIds = (candidate) => {
   return allowedUserIds
 }
 
+export const normalizeWeComRepairBotHotelAllowedUserIds = (candidate) => {
+  const source = candidate?.hotelAllowedUserIds == null
+    ? {}
+    : candidate.hotelAllowedUserIds
+  if (
+    !source
+    || typeof source !== 'object'
+    || Array.isArray(source)
+    || Object.keys(source).length > WECOM_REPAIR_BOT_MAX_STORE_COUNT
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
+  }
+  const entries = Object.entries(source)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([hotelId, candidateUserIds]) => {
+      const allowedUserIds = [...new Set(
+        (Array.isArray(candidateUserIds) ? candidateUserIds : [])
+          .map((value) => String(value ?? '').trim()),
+      )]
+      if (
+        !HOTEL_ID_PATTERN.test(hotelId)
+        || !Array.isArray(candidateUserIds)
+        || allowedUserIds.length > WECOM_REPAIR_BOT_MAX_STORE_USERS
+        || allowedUserIds.some((userId) => !USER_ID_PATTERN.test(userId))
+      ) {
+        throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
+      }
+      return [hotelId, allowedUserIds]
+    })
+  return Object.fromEntries(entries)
+}
+
 export const normalizeWeComRepairBotCredentials = (candidate) => {
   const botId = String(candidate?.botId ?? '').trim()
   const secret = String(candidate?.secret ?? '').trim()
   const allowedUserIds = normalizeWeComRepairBotAllowedUserIds(candidate)
+  const hotelAllowedUserIds =
+    normalizeWeComRepairBotHotelAllowedUserIds(candidate)
   if (
     !BOT_ID_PATTERN.test(botId)
     || !SECRET_PATTERN.test(secret)
@@ -52,14 +89,26 @@ export const normalizeWeComRepairBotCredentials = (candidate) => {
     secret,
     allowedUserId: allowedUserIds[0] ?? null,
     allowedUserIds,
+    hotelAllowedUserIds,
   }
+}
+
+export const weComRepairBotRecipientsForHotel = (credentials, hotelId) => {
+  const allowedUserIds = normalizeWeComRepairBotAllowedUserIds(credentials)
+  const hotelAllowedUserIds =
+    normalizeWeComRepairBotHotelAllowedUserIds(credentials)
+  const scopedUserIds = hotelAllowedUserIds[String(hotelId ?? '')] ?? []
+  return [...new Set([...allowedUserIds, ...scopedUserIds])]
 }
 
 export const deliverWeComRepairBotToAllowedUsers = async ({
   credentials,
+  hotelId = null,
   deliver,
 }) => {
-  const allowedUserIds = normalizeWeComRepairBotAllowedUserIds(credentials)
+  const allowedUserIds = hotelId
+    ? weComRepairBotRecipientsForHotel(credentials, hotelId)
+    : normalizeWeComRepairBotAllowedUserIds(credentials)
   if (allowedUserIds.length === 0) {
     throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
   }
@@ -115,6 +164,18 @@ export const createWeComRepairBotPairingStore = ({
     return value
   }
 
+  const pairingScope = (candidate) => {
+    if (candidate == null) return { type: 'GLOBAL' }
+    if (
+      candidate?.type === 'HOTEL'
+      && HOTEL_ID_PATTERN.test(String(candidate.hotelId ?? ''))
+    ) {
+      return { type: 'HOTEL', hotelId: String(candidate.hotelId) }
+    }
+    if (candidate?.type === 'GLOBAL') return { type: 'GLOBAL' }
+    throw new Error('WECOM_REPAIR_BOT_PAIRING_SCOPE_INVALID')
+  }
+
   const publicStatus = () => {
     if (!active) return { active: false, expiresAt: null, attemptsRemaining: 0 }
     if (currentTime().getTime() >= new Date(active.expiresAt).getTime()) {
@@ -125,11 +186,12 @@ export const createWeComRepairBotPairingStore = ({
       active: true,
       expiresAt: active.expiresAt,
       attemptsRemaining: Math.max(0, maxAttempts - active.attemptsUsed),
+      scope: active.scope,
     }
   }
 
   return {
-    start() {
+    start({ scope = null } = {}) {
       const pairingCode = String(codeFactory())
       if (!PAIRING_CODE_PATTERN.test(pairingCode)) {
         throw new Error('WECOM_REPAIR_BOT_PAIRING_CODE_INVALID')
@@ -139,11 +201,13 @@ export const createWeComRepairBotPairingStore = ({
         codeSha256: hash(pairingCode),
         expiresAt: new Date(createdAt.getTime() + ttlMs).toISOString(),
         attemptsUsed: 0,
+        scope: pairingScope(scope),
       }
       return {
         pairingCode,
         expiresAt: active.expiresAt,
         attemptsRemaining: maxAttempts,
+        scope: active.scope,
       }
     },
     submit({ pairingCode, userId }) {
@@ -164,8 +228,9 @@ export const createWeComRepairBotPairingStore = ({
         if (active.attemptsUsed >= maxAttempts) active = null
         throw new Error('WECOM_REPAIR_BOT_PAIRING_CODE_REJECTED')
       }
+      const scope = active.scope
       active = null
-      return { userId: normalizedUserId }
+      return { userId: normalizedUserId, scope }
     },
     status: publicStatus,
     clear() {

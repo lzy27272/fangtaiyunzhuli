@@ -34,6 +34,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
   const [secret, setSecret] = useState('')
   const [clearCredentials, setClearCredentials] = useState(false)
   const [pairing, setPairing] = useState<WeComRepairBotPairingView | null>(null)
+  const [pairingHotelId, setPairingHotelId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [pairingLoading, setPairingLoading] = useState(false)
@@ -46,6 +47,10 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
       const next = await loadWeComRepairBotConfig()
       setConfig(next)
       setEnabled(next.enabled)
+      setPairingHotelId((current) =>
+        next.hotelBindings.some((binding) => binding.hotelId === current)
+          ? current
+          : next.hotelBindings[0]?.hotelId ?? '')
       if (!next.pairing.active) setPairing(null)
       setError('')
     } catch (cause) {
@@ -105,19 +110,29 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
   }
 
   async function createPairingCode() {
+    if (!pairingHotelId) {
+      setError('请先选择需要新增管理人员的罗盘门店。')
+      return
+    }
     setPairingLoading(true)
     setError('')
     setNotice('')
     try {
-      const next = await startWeComRepairBotPairing()
+      const next = await startWeComRepairBotPairing(pairingHotelId)
       setPairing(next)
-      setNotice('配对码已生成，请在10分钟内发送给企业微信智能机器人。')
+      setNotice(
+        `${next.hotelCode} ${next.displayName} 的配对码已生成，请在10分钟内发送给企业微信智能机器人。`,
+      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成配对码失败')
     } finally {
       setPairingLoading(false)
     }
   }
+
+  const selectedHotelBinding = config?.hotelBindings.find(
+    (binding) => binding.hotelId === pairingHotelId,
+  ) ?? null
 
   return (
     <section className="wecom-automation-card">
@@ -128,7 +143,8 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
           <p>
             服务器通过企业微信官方长连接接收消息，无需域名。
             发现罗盘会话失效时，机器人会私聊发送验证码图片；
-            最多绑定两位企业微信成员，两人同时接收；
+            现有两位全局接收人继续保留；还可按罗盘门店新增管理人员。
+            门店管理人员只接收并处理其授权门店的验证码；
             只有完成一次性绑定的账号可以回复“门店编号 验证码”。
           </p>
         </div>
@@ -192,21 +208,57 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
         <span>连接｜{connectionLabel(config)}</span>
         <span>
           授权账号｜{config?.pairedUserCount
-            ? `已绑定${config.pairedUserCount}/${config.pairedUserCapacity}人`
+            ? `全局保留${config.pairedUserCount}/${config.pairedUserCapacity}人`
             : '尚未绑定'}
         </span>
+        <span>门店管理人员｜已绑定{config?.hotelPairedUserCount ?? 0}人次</span>
         <span>机器人指纹｜{config?.botIdFingerprint ?? '无'}</span>
       </div>
 
       {pairing ? (
         <div className="success" role="status">
-          请在企业微信中打开刚创建的智能机器人并发送：
+          为 {pairing.hotelCode} {pairing.displayName} 新增管理人员；
+          请让该人员在企业微信中打开智能机器人并发送：
           <strong className="pairing-command">绑定 {pairing.pairingCode}</strong>
           <small>有效至 {new Date(pairing.expiresAt).toLocaleString('zh-CN')}，最多尝试 {pairing.attemptsRemaining} 次。</small>
         </div>
       ) : null}
       {notice ? <div className="success" role="status">{notice}</div> : null}
       {error ? <div className="error" role="alert">{error}</div> : null}
+
+      <div className="wecom-config-grid">
+        <label className="wide-field">
+          选择需要新增管理人员的罗盘门店
+          <select
+            disabled={!canConfigure || loading || pairingLoading}
+            value={pairingHotelId}
+            onChange={(event) => {
+              setPairingHotelId(event.target.value)
+              setPairing(null)
+              setNotice('')
+            }}
+          >
+            {config?.hotelBindings.map((binding) => (
+              <option key={binding.hotelId} value={binding.hotelId}>
+                {binding.hotelCode} · {binding.displayName}（已绑定
+                {binding.pairedUserCount}人）
+              </option>
+            ))}
+          </select>
+          <small>
+            新人员仅获得所选门店的验证码修复权限；不会替换现有两位全局接收人。
+          </small>
+        </label>
+      </div>
+
+      <div className="wecom-status-row">
+        {config?.hotelBindings.map((binding) => (
+          <span key={binding.hotelId}>
+            {binding.hotelCode} {binding.displayName}｜
+            {binding.pairedUserCount}人
+          </span>
+        ))}
+      </div>
 
       <div className="heading-actions">
         <button
@@ -223,20 +275,22 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
             || pairingLoading
             || !config?.connected
             || config.connectionStatus !== 'AUTHENTICATED'
-            || (config?.pairedUserCount ?? 0)
-              >= (config?.pairedUserCapacity ?? 2)
+            || !selectedHotelBinding
+            || selectedHotelBinding.pairedUserCount
+              >= selectedHotelBinding.pairedUserCapacity
           }
           type="button"
           onClick={createPairingCode}
         >
           {pairingLoading
             ? '正在生成…'
-            : (config?.pairedUserCount ?? 0)
-                >= (config?.pairedUserCapacity ?? 2)
-              ? '已绑定2人'
-              : config?.pairedUserCount === 1
-                ? '绑定第二位接收人'
-                : '生成第一位配对码'}
+            : selectedHotelBinding
+                && selectedHotelBinding.pairedUserCount
+                  >= selectedHotelBinding.pairedUserCapacity
+              ? '该门店已达绑定上限'
+              : selectedHotelBinding
+                ? `为${selectedHotelBinding.hotelCode}新增管理人员`
+                : '请选择罗盘门店'}
         </button>
       </div>
     </section>

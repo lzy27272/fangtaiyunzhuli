@@ -8,6 +8,7 @@ import {
   deliverWeComRepairBotToAllowedUsers,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  weComRepairBotRecipientsForHotel,
 } from '../../../tools/uat/wecom/src/wecom-repair-bot.mjs'
 
 test('parses only pairing, help and strict store captcha commands', () => {
@@ -42,6 +43,23 @@ test('pairing stores only a code hash and binds one valid user', () => {
   assert.equal(store.status().active, false)
 })
 
+test('pairing keeps a safe hotel scope without storing the plain code', () => {
+  const store = createWeComRepairBotPairingStore({
+    now: () => new Date('2026-08-05T00:00:00Z'),
+    codeFactory: () => '123456',
+  })
+  const created = store.start({
+    scope: { type: 'HOTEL', hotelId: 'hotel-014' },
+  })
+  assert.deepEqual(created.scope, { type: 'HOTEL', hotelId: 'hotel-014' })
+  assert.equal(JSON.stringify(store.debugSnapshot()).includes('123456'), false)
+  const paired = store.submit({
+    pairingCode: '123456',
+    userId: 'hotel.manager',
+  })
+  assert.deepEqual(paired.scope, { type: 'HOTEL', hotelId: 'hotel-014' })
+})
+
 test('credentials reject whitespace and never appear in runtime status', () => {
   const normalized = normalizeWeComRepairBotCredentials({
     botId: 'aib-example-bot',
@@ -49,12 +67,38 @@ test('credentials reject whitespace and never appear in runtime status', () => {
   })
   assert.equal(normalized.allowedUserId, null)
   assert.deepEqual(normalized.allowedUserIds, [])
+  assert.deepEqual(normalized.hotelAllowedUserIds, {})
   assert.throws(
     () => normalizeWeComRepairBotCredentials({
       botId: 'aib-example-bot',
       secret: 'bad secret value',
     }),
     /WECOM_REPAIR_BOT_CREDENTIALS_INVALID/u,
+  )
+})
+
+test('store managers are scoped to their hotel while legacy users stay global', () => {
+  const credentials = normalizeWeComRepairBotCredentials({
+    botId: 'aib-example-bot',
+    secret: 'example_secret_value_1234567890',
+    allowedUserIds: ['global.first', 'global.second'],
+    hotelAllowedUserIds: {
+      'hotel-009': ['hotel.manager', 'global.first'],
+      'hotel-014': ['other.manager'],
+    },
+  })
+  assert.deepEqual(
+    weComRepairBotRecipientsForHotel(credentials, 'hotel-009'),
+    ['global.first', 'global.second', 'hotel.manager'],
+  )
+  assert.deepEqual(
+    weComRepairBotRecipientsForHotel(credentials, 'hotel-014'),
+    ['global.first', 'global.second', 'other.manager'],
+  )
+  assert.equal(
+    weComRepairBotRecipientsForHotel(credentials, 'hotel-009')
+      .includes('other.manager'),
+    false,
   )
 })
 
