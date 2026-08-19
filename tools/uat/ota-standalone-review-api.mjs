@@ -1891,7 +1891,7 @@ const weComRepairBotStatus = () => {
       return {
         hotelId: hotel.hotelId,
         hotelCode: hotel.hotelCode,
-        displayName: hotel.displayName,
+        displayName: hotel.hotelName,
         pairedUserCount: userIds.length,
         pairedUserCapacity: WECOM_REPAIR_BOT_MAX_STORE_USERS,
         userFingerprints: fingerprints.map((value) => value.slice(0, 16)),
@@ -2176,7 +2176,7 @@ const startWeComRepairBotPairing = (hotelId) => {
     }),
     hotelId: hotel.hotelId,
     hotelCode: hotel.hotelCode,
-    displayName: hotel.displayName,
+    displayName: hotel.hotelName,
     pairedUserCount: hotelUserCount,
     pairedUserCapacity: WECOM_REPAIR_BOT_MAX_STORE_USERS,
   }
@@ -4208,7 +4208,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
           ...hotelAllowedUserIds,
           [hotel.hotelId]: hotelUserIds,
         }
-        reply = `绑定成功。你已获授权处理 ${hotel.hotelCode} ${hotel.displayName}；该门店当前已绑定${hotelUserIds.length}名管理人员。`
+        reply = `绑定成功。你已获授权处理 ${hotel.hotelCode} ${hotel.hotelName}；该门店当前已绑定${hotelUserIds.length}名管理人员。`
       } else {
         allowedUserIds = existingAllowedUserIds.includes(pairing.userId)
           ? existingAllowedUserIds

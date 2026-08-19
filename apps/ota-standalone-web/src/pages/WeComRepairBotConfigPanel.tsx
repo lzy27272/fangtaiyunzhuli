@@ -121,7 +121,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
       const next = await startWeComRepairBotPairing(pairingHotelId)
       setPairing(next)
       setNotice(
-        `${next.hotelCode} ${next.displayName} 的配对码已生成，请在10分钟内发送给企业微信智能机器人。`,
+        `${next.hotelCode} ${next.displayName} 的配对命令是“绑定 ${next.pairingCode}”；请在10分钟内发送给企业微信智能机器人。`,
       )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成配对码失败')
@@ -219,7 +219,9 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
         <div className="success" role="status">
           为 {pairing.hotelCode} {pairing.displayName} 新增管理人员；
           请让该人员在企业微信中打开智能机器人并发送：
-          <strong className="pairing-command">绑定 {pairing.pairingCode}</strong>
+          <strong className="pairing-command">
+            配对命令：绑定 {pairing.pairingCode}
+          </strong>
           <small>有效至 {new Date(pairing.expiresAt).toLocaleString('zh-CN')}，最多尝试 {pairing.attemptsRemaining} 次。</small>
         </div>
       ) : null}
