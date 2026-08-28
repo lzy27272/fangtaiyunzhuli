@@ -328,7 +328,15 @@ const fetchPmsBusinessDay = async (cookie, fetchImpl) => {
   } catch {
     throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
   }
-  if (![0, 10000].includes(Number(root?.code))) {
+  const pmsCode = Number(root?.code)
+  if (![0, 10000].includes(pmsCode)) {
+    // Meituan PMS can return an HTTP 200 response after a login session has
+    // expired. Treat the observed session-rejection response as actionable so
+    // the operator is directed to renew the stored PMS Cookie, rather than
+    // being shown a generic availability failure.
+    if (pmsCode === 10008) {
+      throw new Error('PMS_SESSION_REAUTH_REQUIRED')
+    }
     throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
   }
   const businessDate = canonicalBusinessDate(
@@ -355,13 +363,20 @@ const resolvePmsBusinessDay = async ({
         .filter((cookie) => typeof cookie === 'string' && cookie.length > 0),
     ),
   ]
+  let sessionReauthenticationRequired = false
   for (const cookie of candidateCookies) {
     try {
       return await fetchPmsBusinessDay(cookie, fetchImpl)
-    } catch {
+    } catch (error) {
+      if (error?.message === 'PMS_SESSION_REAUTH_REQUIRED') {
+        sessionReauthenticationRequired = true
+      }
       // A store can temporarily contain one expired source Cookie and another
       // current one. Only fail after every configured PMS session was tried.
     }
+  }
+  if (sessionReauthenticationRequired) {
+    throw new Error('PMS_SESSION_REAUTH_REQUIRED')
   }
   throw new Error('PMS_BUSINESS_DATE_UNAVAILABLE')
 }

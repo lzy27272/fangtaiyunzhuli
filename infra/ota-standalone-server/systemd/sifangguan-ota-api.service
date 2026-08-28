@@ -9,6 +9,10 @@ User=sifangguan-ota
 Group=sifangguan-ota
 WorkingDirectory=/opt/sifangguan-ota/current
 EnvironmentFile=/etc/sifangguan-ota/runtime.env
+Environment=HOME=/var/lib/sifangguan-ota/browser-runtime
+Environment=XDG_CONFIG_HOME=/var/lib/sifangguan-ota/browser-runtime/config
+Environment=XDG_CACHE_HOME=/var/lib/sifangguan-ota/browser-runtime/cache
+Environment=TMPDIR=/var/lib/sifangguan-ota/browser-runtime/tmp
 ExecStartPre=/usr/bin/test -f /opt/sifangguan-ota/current/tools/uat/ota-standalone-review-api.mjs
 ExecStart=/opt/sifangguan-ota/runtime/node/bin/node /opt/sifangguan-ota/current/tools/uat/ota-standalone-review-api.mjs
 Restart=on-failure

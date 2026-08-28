@@ -563,11 +563,12 @@ export const collectLuopanControlledBrowser = async ({
   ) {
     throw new Error('LUOPAN_SESSION_VALIDATION_REQUIRED')
   }
-  const { context } = await launchLuopanBrowserContext(
-    profileRef,
-    sessionState,
-  )
+  let context = null
   try {
+    ({ context } = await launchLuopanBrowserContext(
+      profileRef,
+      sessionState,
+    ))
     const page = context.pages()[0] ?? await context.newPage()
     await navigateLuopanPage(page, homeUrl)
     if (isAuthenticationUrl(page.url())) {
@@ -731,6 +732,6 @@ export const collectLuopanControlledBrowser = async ({
   } catch (error) {
     throw new Error(safeCollectorError(error))
   } finally {
-    await context.close().catch(() => {})
+    await context?.close().catch(() => {})
   }
 }

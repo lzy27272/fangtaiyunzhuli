@@ -59,6 +59,12 @@ install -d -m 0700 \
   -g sifangguan-ota \
   /var/lib/sifangguan-ota/caddy-data \
   /var/lib/sifangguan-ota/caddy-config
+install -d -m 0700 \
+  -o sifangguan-ota \
+  -g sifangguan-ota \
+  /var/lib/sifangguan-ota/browser-runtime/config \
+  /var/lib/sifangguan-ota/browser-runtime/cache \
+  /var/lib/sifangguan-ota/browser-runtime/tmp
 
 if [[ ! -x ${node_release}/bin/node ]]; then
   download_dir="$(mktemp -d)"

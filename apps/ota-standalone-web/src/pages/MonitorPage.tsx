@@ -134,6 +134,9 @@ function collectionErrorMessage(cause: unknown): string {
   if (code === 'PMS_BUSINESS_DATE_UNAVAILABLE') {
     return '当前门店Cookie无法访问PMS营业日接口，可能已经失效或缺少登录上下文。请更新Cookie后重新采集。'
   }
+  if (code === 'PMS_SESSION_REAUTH_REQUIRED') {
+    return 'PMS已拒绝当前登录会话，本次未生成新简报。请到“报表接口”页更新当前门店的PMS Cookie后重新采集。'
+  }
   if (code === 'PMS_BUSINESS_DATE_INVALID') {
     return 'PMS返回的营业日格式无效，本次未生成经营监控数据。'
   }

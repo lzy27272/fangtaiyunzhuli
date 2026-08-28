@@ -780,3 +780,29 @@ test('collector fails closed when PMS cannot confirm a valid business date', asy
     /PMS_BUSINESS_DATE_UNAVAILABLE/,
   )
 })
+
+test('collector identifies an explicitly rejected PMS session', async () => {
+  const fetchImpl = async (url) => {
+    const target = new URL(url)
+    const body = target.pathname.includes('/night/audit/businessDate')
+      ? { code: 10008, data: null }
+      : responseSet(1)[target.pathname]
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  await assert.rejects(
+    collectLiveReports({
+      hotel,
+      sources,
+      cookiesBySourceId,
+      previousSnapshots: [],
+      secretKey: 'unit-test-hmac-key',
+      reportDate: '2026-07-25',
+      fetchImpl,
+    }),
+    /PMS_SESSION_REAUTH_REQUIRED/,
+  )
+})
