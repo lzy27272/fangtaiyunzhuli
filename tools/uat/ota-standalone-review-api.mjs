@@ -328,6 +328,8 @@ const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
 const weComRepairBotPairingStore = createWeComRepairBotPairingStore()
 const seenWeComRepairBotMessageHashes = new Map()
+const lastScheduledLuopanRecoveryAtByHotel = new Map()
+let scheduledLuopanRecoveryRunning = false
 let weComRepairBotConfig = {
   enabled: false,
   botIdSha256: null,
@@ -342,6 +344,7 @@ const lastDailyBriefingAuditKeyByHotel = new Map()
 const schedulerStartedAt = new Date()
 const REPORT_POLL_INTERVAL_MINUTES = 30
 const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
+const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
 
 const SIMULATION_HOTEL_CODE = /^[A-Z0-9][A-Z0-9_-]{0,15}$/
 const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -4060,6 +4063,60 @@ const startLuopanRepairChallenge = async (
   }
 }
 
+// A collection failure already starts this repair flow. This extra recovery
+// pass closes the gap where the process restarts (or a prior scheduler run is
+// interrupted) after the session has been marked as needing re-authentication.
+// It is intentionally limited to a single pending repair per hotel and a
+// thirty-minute retry window, so a failed browser start cannot flood the
+// assigned WeCom managers with captcha messages.
+const scheduledLuopanRecoveryTick = async () => {
+  if (
+    !automaticHourlyCollectionEnabled
+    || !luopanAssistedRepairReady()
+    || scheduledLuopanRecoveryRunning
+  ) return
+  scheduledLuopanRecoveryRunning = true
+  try {
+    const now = Date.now()
+    for (const hotel of hotels.filter(
+      (item) => item.pmsSystemCode === 'LUOPAN_CLOUD',
+    )) {
+      const config = luopanBrowserConfigRecordFor(hotel.hotelId)
+      if (
+        !config.enabled
+        || config.lastErrorCode !== 'LUOPAN_REAUTH_REQUIRED'
+      ) continue
+      const lastAttemptAt =
+        lastScheduledLuopanRecoveryAtByHotel.get(hotel.hotelId) ?? 0
+      if (now - lastAttemptAt < LUOPAN_AUTO_RECOVERY_RETRY_MS) continue
+      lastScheduledLuopanRecoveryAtByHotel.set(hotel.hotelId, now)
+      try {
+        const challenge = await startLuopanRepairChallenge(
+          hotel.hotelId,
+          'SCHEDULED_STALE_SESSION_RECOVERY',
+        )
+        process.stdout.write(
+          `${JSON.stringify({
+            event: 'LUOPAN_STALE_SESSION_RECOVERY_ATTEMPTED',
+            hotelId: hotel.hotelId,
+            challengeStarted: Boolean(challenge),
+          })}\n`,
+        )
+      } catch (error) {
+        process.stderr.write(
+          `${JSON.stringify({
+            event: 'LUOPAN_STALE_SESSION_RECOVERY_FAILED',
+            hotelId: hotel.hotelId,
+            reasonCode: safeLuopanRepairReason(error),
+          })}\n`,
+        )
+      }
+    }
+  } finally {
+    scheduledLuopanRecoveryRunning = false
+  }
+}
+
 const processSubmittedLuopanRepair = (submitted) => {
   const challenge = luopanRepairChallengeStore.getInternalByHash(
     submitted.tokenSha256,
@@ -5786,6 +5843,7 @@ server.listen(port, host, () => {
     })}\n`,
   )
   const scheduler = setInterval(() => {
+    void scheduledLuopanRecoveryTick()
     void scheduledCollectionTick()
     void scheduledOtaSourceTick()
     void scheduledWeComDeliveryTick()
@@ -5795,6 +5853,7 @@ server.listen(port, host, () => {
   }, 30_000)
   scheduler.unref()
   const initialScheduler = setTimeout(() => {
+    void scheduledLuopanRecoveryTick()
     void scheduledCollectionTick()
     void scheduledWeComDeliveryTick()
     void scheduledFutureBookingDeliveryTick()
