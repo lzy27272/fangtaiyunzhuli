@@ -99,10 +99,18 @@ export const startLuopanAssistedLogin = async ({
     }).catch(() => null)
     await page.waitForTimeout(1_000)
     if (!isAuthenticationUrl(page.url())) {
-      return {
-        alreadyAuthenticated: true,
-        sessionState: await captureSessionState(context),
-        close,
+      try {
+        return {
+          alreadyAuthenticated: true,
+          sessionState: await captureSessionState(context),
+          close,
+        }
+      } catch (error) {
+        // Some expired PMS sessions land on a non-login intermediate page. Do
+        // not treat that page as an authenticated session when it has no
+        // usable Chinapms cookie; continue with the explicit login form so a
+        // human can complete the current captcha challenge.
+        if (error?.message !== 'LUOPAN_SESSION_STATE_INVALID') throw error
       }
     }
     const captcha = await prepareLuopanLoginPage(page, credentials)

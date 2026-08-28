@@ -345,6 +345,7 @@ const schedulerStartedAt = new Date()
 const REPORT_POLL_INTERVAL_MINUTES = 30
 const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
 const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
+const LUOPAN_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 
 const SIMULATION_HOTEL_CODE = /^[A-Z0-9][A-Z0-9_-]{0,15}$/
 const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -4130,10 +4131,29 @@ const processSubmittedLuopanRepair = (submitted) => {
     throw new Error('LUOPAN_REPAIR_SESSION_UNAVAILABLE')
   }
   luopanRepairChallengeStore.markVerifying(submitted.tokenSha256)
+  process.stdout.write(
+    `${JSON.stringify({
+      event: 'LUOPAN_REPAIR_CAPTCHA_SUBMITTED',
+      hotelId: challenge.hotelId,
+      challengeId: challenge.challengeId,
+    })}\n`,
+  )
   void (async () => {
     let answer = submitted.answer
     try {
-      const result = await handle.login.submit(answer)
+      let timeoutId = null
+      const result = await Promise.race([
+        handle.login.submit(answer),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('LUOPAN_REPAIR_SUBMISSION_TIMEOUT')),
+            LUOPAN_REPAIR_SUBMISSION_TIMEOUT_MS,
+          )
+          timeoutId.unref?.()
+        }),
+      ]).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId)
+      })
       answer = null
       if (!result.authenticated) {
         if (
@@ -4183,6 +4203,29 @@ const processSubmittedLuopanRepair = (submitted) => {
       await handle.login?.close().catch(() => {})
       activeLuopanRepairsByHotel.delete(challenge.hotelId)
       luopanRepairChallengeStore.fail(submitted.tokenSha256, reasonCode)
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'LUOPAN_REPAIR_SUBMISSION_FAILED',
+          hotelId: challenge.hotelId,
+          challengeId: challenge.challengeId,
+          reasonCode,
+        })}\n`,
+      )
+      if (handle.channel === 'WECOM_LONG_CONNECTION') {
+        const hotel = selectedHotel(challenge.hotelId)
+        await deliverWeComRepairBotDirectMessage({
+          hotelId: challenge.hotelId,
+          messageKey:
+            `${challenge.hotelId}:LUOPAN_REPAIR_BOT_SUBMISSION_FAILED:${challenge.challengeId}:${challenge.attemptsUsed}`,
+          deliveryType: 'LUOPAN_REPAIR_BOT_FAILED',
+          content: [
+            '### 罗盘简报修复未完成',
+            `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+            `状态码：${reasonCode}`,
+            '系统已停止本次尝试，稍后会重新发送新的验证码。',
+          ].join('\n'),
+        }).catch(() => {})
+      }
     }
   })()
   return submitted.record
