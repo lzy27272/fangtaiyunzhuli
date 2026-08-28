@@ -97,7 +97,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
       setClearWebhook(false)
       setNotice(
         saved.enabled
-          ? '企微自动推送已启用：08:00至次日02:00每30分钟采集，按既定顺序发送并@所有人。'
+          ? '企微自动推送已启用：系统按旺季/节假日与普通日期的动态时段采集，采集后按既定顺序发送并@所有人。'
           : '企微自动推送当前关闭；自动采集不受影响。',
       )
     } catch (cause) {
@@ -174,7 +174,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
                 <p className="eyebrow">WECOM AUTOMATION</p>
                 <h3>企业微信群机器人自动推送</h3>
                 <p>
-                  08:00至次日02:00每30分钟采集，整点约06分推送今日经营、约08分推送远期房态；
+                  旺季及节假日08:00起每小时采集，普通日期09/11/13点及14:00后每小时采集；采集后约06分推送今日经营、约08分推送远期房态，末班01:00；
                   热销房型可靠售罄时，在两类简报送达后约09分单独预警。固定
                   @所有人，消息正文仅保留经营数据与建议。
                   每个模板压缩为1条高密度消息，在企微安全长度内保留核心经营数据。

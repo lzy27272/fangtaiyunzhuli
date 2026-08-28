@@ -236,7 +236,9 @@ const hourlyOrderLines = (hourlyDelta) => {
   const heading =
     hourlyDelta.aggregationWindow === 'PAUSE_TO_FIRST_BRIEF'
       ? '✅停播汇总'
-      : '✅小时进单'
+      : hourlyDelta.aggregationWindow === 'TWO_HOUR'
+        ? '✅两小时进单'
+        : '✅小时进单'
   return [
     `${heading}｜${localHour(hourlyDelta.intervalStartAt)}→`
       + `${localHour(hourlyDelta.intervalEndAt)}`,

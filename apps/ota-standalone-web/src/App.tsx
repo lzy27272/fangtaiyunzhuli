@@ -196,7 +196,7 @@ function SprintOneShell({
 
         <div className="simulation-banner" role="status">
           <strong>本机试点环境 · 报表只读采集已启用 · 企微UAT推送可配置</strong>
-          <span>系统在08:00至次日02:00每30分钟采集、整点约06分发送；Webhook在本机加密保存，推送结果可追踪。</span>
+          <span>7月、8月、节假日及前一天从08:00起每小时采集播报；其他日期09/11/13点及14:00后每小时采集播报，末班均为次日01:00。Webhook在本机加密保存，推送结果可追踪。</span>
         </div>
 
         {logoutError ? <div className="shell-error" role="alert">{logoutError}，当前会话仍保留。</div> : null}

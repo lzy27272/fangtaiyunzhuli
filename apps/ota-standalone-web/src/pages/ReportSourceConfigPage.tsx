@@ -436,8 +436,8 @@ export function ReportSourceConfigPage({
       <div className="delivery-policy-grid" aria-label="企业微信推送规则">
         <article>
           <span>整点简报</span>
-          <strong>08:00—次日02:00整点</strong>
-          <small>每30分钟采集；02:00后暂停，08:00首轮汇总停播时段。</small>
+          <strong>动态时段｜末班01:00</strong>
+          <small>7/8月、节假日及前一天08:00起每小时；其他日期09/11/13点及14:00后每小时。</small>
         </article>
         <article>
           <span>热销房型售罄</span>
@@ -447,7 +447,7 @@ export function ReportSourceConfigPage({
         <article>
           <span>P1房态风险</span>
           <strong>播报时段内立即推送</strong>
-          <small>08:00至次日02:00不等待整点；停播期间不采集、不推送。</small>
+          <small>手动采集不等待整点；自动播报仍遵循动态时段。</small>
         </article>
         <article>
           <span>推送对象</span>

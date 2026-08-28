@@ -7,7 +7,11 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname } from 'node:path'
-import { briefingCycleStart } from './report-schedule.mjs'
+import {
+  briefingCycleStart,
+  isScheduledBriefSnapshot,
+  reportScheduleFor,
+} from './report-schedule.mjs'
 
 const MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 const SNAPSHOT_RETENTION = 50
@@ -684,10 +688,12 @@ const sameSnapshotSource = (left, right) => {
   return leftSource !== null && leftSource === snapshotSourceSystem(right)
 }
 
-const isMorningFirstBriefSnapshot = (snapshot) =>
-  /^\d{4}-\d{2}-\d{2}T08:0[0-5]/.test(
-    String(snapshot?.observedAt ?? ''),
-  )
+const isMorningFirstBriefSnapshot = (snapshot) => {
+  const observedAt = new Date(snapshot?.observedAt ?? '')
+  if (Number.isNaN(observedAt.getTime())) return false
+  const schedule = reportScheduleFor(observedAt)
+  return schedule.hour === schedule.startHour && schedule.minute <= 5
+}
 
 const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
   const hourlyCandidates = previousSnapshots
@@ -695,36 +701,40 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
       (candidate) =>
         candidate.businessDate === snapshot.businessDate
         && sameSnapshotSource(candidate, snapshot)
-        && Array.isArray(candidate.orders),
+        && Array.isArray(candidate.orders)
+        && isScheduledBriefSnapshot(candidate),
     )
     .map((candidate) => ({
       candidate,
       distance:
-        Math.abs(
-          new Date(candidate.observedAt).getTime()
-          - (observedAtMs - 60 * 60 * 1000),
-        ),
+        observedAtMs - new Date(candidate.observedAt).getTime(),
     }))
-    .filter((item) => item.distance <= 15 * 60 * 1000)
+    .filter(
+      (item) =>
+        item.distance > 0
+        && item.distance <= 135 * 60 * 1000,
+    )
     .sort((left, right) => left.distance - right.distance)
+  const observedDate = String(snapshot?.observedAt ?? '').slice(0, 10)
   const pauseCandidates = previousSnapshots
     .filter(
       (candidate) =>
         Array.isArray(candidate.orders)
         && sameSnapshotSource(candidate, snapshot)
-        && /^\d{4}-\d{2}-\d{2}T02:0[0-5]/.test(
+        && new RegExp(`^${observedDate}T01:0[0-5]`).test(
           String(candidate.observedAt ?? ''),
         ),
     )
     .map((candidate) => ({
       candidate,
       distance:
-        Math.abs(
-          new Date(candidate.observedAt).getTime()
-          - (observedAtMs - 6 * 60 * 60 * 1000),
-        ),
+        observedAtMs - new Date(candidate.observedAt).getTime(),
     }))
-    .filter((item) => item.distance <= 15 * 60 * 1000)
+    .filter(
+      (item) =>
+        item.distance > 0
+        && item.distance <= 9 * 60 * 60 * 1000,
+    )
     .sort((left, right) => left.distance - right.distance)
   const pauseWindow =
     isMorningFirstBriefSnapshot(snapshot)
@@ -816,7 +826,12 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
   return {
     basis: 'HOURLY_SNAPSHOT_DIFF',
     aggregationWindow:
-      pauseWindow ? 'PAUSE_TO_FIRST_BRIEF' : 'HOURLY',
+      pauseWindow
+        ? 'PAUSE_TO_FIRST_BRIEF'
+        : observedAtMs - new Date(previous.observedAt).getTime()
+          >= 90 * 60 * 1000
+          ? 'TWO_HOUR'
+          : 'HOURLY',
     intervalStartAt: previous.observedAt,
     intervalEndAt: snapshot.observedAt,
     totals,
@@ -838,7 +853,7 @@ const occupancyPercentFor = (row) => {
     : rounded(booked / roomCount * 100)
 }
 
-const closestHourlyFutureBaseline = (
+const closestScheduledFutureBaseline = (
   snapshot,
   previousSnapshots,
   observedAtMs,
@@ -848,16 +863,18 @@ const closestHourlyFutureBaseline = (
       (candidate) =>
         Array.isArray(candidate?.futureDaily)
         && sameSnapshotSource(candidate, snapshot)
+        && isScheduledBriefSnapshot(candidate)
         && Number.isFinite(new Date(candidate.observedAt).getTime()),
     )
     .map((candidate) => ({
       candidate,
-      distance: Math.abs(
-        new Date(candidate.observedAt).getTime()
-        - (observedAtMs - 60 * 60 * 1000),
-      ),
+      distance: observedAtMs - new Date(candidate.observedAt).getTime(),
     }))
-    .filter((item) => item.distance <= 15 * 60 * 1000)
+    .filter(
+      (item) =>
+        item.distance > 0
+        && item.distance <= 135 * 60 * 1000,
+    )
     .sort((left, right) => left.distance - right.distance)[0]?.candidate ?? null
 
 const previousCalendarDayEndBaseline = (
@@ -894,6 +911,7 @@ const currentBriefingCycleBaseline = (
       return Array.isArray(candidate?.futureDaily)
         && sameSnapshotSource(candidate, snapshot)
         && ['COMPLETE', 'PARTIAL'].includes(candidate?.completeness)
+        && isScheduledBriefSnapshot(candidate)
         && Number.isFinite(candidateAtMs)
         && candidateAtMs < cycleStartMs
     })
@@ -963,7 +981,7 @@ const futureBookingChangesFor = (
   previousSnapshots,
   observedAtMs,
 ) => {
-  const hourlyBaseline = closestHourlyFutureBaseline(
+  const hourlyBaseline = closestScheduledFutureBaseline(
     snapshot,
     previousSnapshots,
     observedAtMs,

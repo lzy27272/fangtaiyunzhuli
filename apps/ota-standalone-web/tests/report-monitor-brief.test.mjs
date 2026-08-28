@@ -193,14 +193,14 @@ test('baseline-pending template does not invent hourly changes', () => {
   assert.doesNotMatch(content, /新增｜4/)
 })
 
-test('08:00 first brief labels the 02:00 to 08:00 pause summary', () => {
+test('08:00 first brief labels the 01:00 to 08:00 pause summary', () => {
   const payloads = createReportMonitorWeComPayloads({
     ...monitor,
     cutoffAt: '2026-07-26T08:00:03+08:00',
     hourlyDelta: {
       ...monitor.hourlyDelta,
       aggregationWindow: 'PAUSE_TO_FIRST_BRIEF',
-      intervalStartAt: '2026-07-26T02:00:00+08:00',
+      intervalStartAt: '2026-07-26T01:00:00+08:00',
       intervalEndAt: '2026-07-26T08:00:03+08:00',
     },
   }, {
@@ -209,7 +209,21 @@ test('08:00 first brief labels the 02:00 to 08:00 pause summary', () => {
       observedAt: '2026-07-26T08:00:18+08:00',
     },
   })
-  assert.match(payloads[0].text.content, /✅停播汇总｜02:00→08:00/)
+  assert.match(payloads[0].text.content, /✅停播汇总｜01:00→08:00/)
+})
+
+test('ordinary morning cadence labels a two-hour order interval', () => {
+  const payloads = createReportMonitorWeComPayloads({
+    ...monitor,
+    cutoffAt: '2026-09-10T11:00:03+08:00',
+    hourlyDelta: {
+      ...monitor.hourlyDelta,
+      aggregationWindow: 'TWO_HOUR',
+      intervalStartAt: '2026-09-10T09:00:00+08:00',
+      intervalEndAt: '2026-09-10T11:00:03+08:00',
+    },
+  }, { snapshot })
+  assert.match(payloads[0].text.content, /✅两小时进单｜09:00→11:00/)
 })
 
 test('hot-selling room names stay out of the today brief', () => {

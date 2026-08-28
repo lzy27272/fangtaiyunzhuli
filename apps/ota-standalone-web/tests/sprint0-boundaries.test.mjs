@@ -68,7 +68,7 @@ test('pilot shell exposes five report-fusion pages and controlled WeCom UAT deli
   assert.doesNotMatch(monitorSource, /loadBusinessDayControl|saveBusinessDayControl/)
   assert.doesNotMatch(monitorSource, /type="date"/)
   assert.doesNotMatch(monitorSource, /collectNow\('automatic'\)/)
-  assert.match(monitorSource, /系统会在播报时段按30分钟轮询/)
+  assert.match(monitorSource, /系统会按旺季\/节假日与普通日期的动态时段采集/)
   assert.match(monitorSource, /重新采集已配置报表/)
   assert.match(monitorSource, /进入报表接口核对配置/)
   assert.match(
@@ -85,7 +85,7 @@ test('pilot shell exposes five report-fusion pages and controlled WeCom UAT deli
   assert.match(stylesSource, /\.report-source-attention-panel/)
   assert.match(
     monitorSource,
-    /本次仅采集；企微在08:00至次日02:00的整点约06分推送/,
+    /本次仅采集；企微按动态时段在采集完成后约06分推送/,
   )
   assert.match(historySource, /type="password"/)
   assert.match(historySource, /saveWeComConfig/)

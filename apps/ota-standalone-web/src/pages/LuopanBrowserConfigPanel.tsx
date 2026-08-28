@@ -226,7 +226,7 @@ export function LuopanBrowserConfigPanel({
         <div>
           <span>LUOPAN CLOUD</span>
           <strong>罗盘云单门店受控采集</strong>
-          <small>每30分钟采集；08:00至次日02:00参与简报周期</small>
+          <small>按旺季/节假日与普通日期的动态时段采集；末班01:00</small>
         </div>
         <span className="mode-chip">
           {config?.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'

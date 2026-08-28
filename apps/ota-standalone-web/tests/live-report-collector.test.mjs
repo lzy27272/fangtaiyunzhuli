@@ -382,14 +382,14 @@ test('a PMS switch never treats the previous connector as an hourly baseline', a
   )
 })
 
-test('08:00 first brief summarizes changes since the final 02:00 snapshot', async () => {
+test('08:00 first brief summarizes changes since the final 01:00 snapshot', async () => {
   const finalBeforePause = await collectLiveReports({
     hotel,
     sources,
     cookiesBySourceId,
     previousSnapshots: [],
     secretKey: 'unit-test-hmac-key',
-    now: new Date('2026-07-25T18:00:00Z'),
+    now: new Date('2026-07-25T17:00:00Z'),
     fetchImpl: fetchFor(1, []),
   })
   const firstMorningBrief = await collectLiveReports({
@@ -412,7 +412,7 @@ test('08:00 first brief summarizes changes since the final 02:00 snapshot', asyn
   )
   assert.equal(
     firstMorningBrief.monitor.hourlyDelta.intervalStartAt,
-    '2026-07-26T02:00:00+08:00',
+    '2026-07-26T01:00:00+08:00',
   )
   assert.equal(
     firstMorningBrief.monitor.hourlyDelta.intervalEndAt,
@@ -424,6 +424,44 @@ test('08:00 first brief summarizes changes since the final 02:00 snapshot', asyn
     futureRoomNights: 0,
     canceledRoomNights: 1,
   })
+})
+
+test('ordinary morning briefs compare against the previous two-hour slot', async () => {
+  const nineOClock = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-09-10T01:00:00Z'),
+    fetchImpl: fetchFor(1, []),
+  })
+  const elevenOClock = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [nineOClock.snapshot],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-09-10T03:00:00Z'),
+    fetchImpl: fetchFor(2, []),
+  })
+
+  assert.equal(
+    elevenOClock.monitor.hourlyDelta.basis,
+    'HOURLY_SNAPSHOT_DIFF',
+  )
+  assert.equal(
+    elevenOClock.monitor.hourlyDelta.aggregationWindow,
+    'TWO_HOUR',
+  )
+  assert.equal(
+    elevenOClock.monitor.hourlyDelta.intervalStartAt,
+    '2026-09-10T09:00:00+08:00',
+  )
+  assert.equal(
+    elevenOClock.monitor.hourlyDelta.intervalEndAt,
+    '2026-09-10T11:00:00+08:00',
+  )
 })
 
 test('future booking changes compare hour, cycle and yesterday baselines', async () => {
@@ -444,7 +482,7 @@ test('future booking changes compare hour, cycle and yesterday baselines', async
   const cumulativeBaseline = {
     ...previousDay.snapshot,
     collectionRunId: 'cycle-future-baseline',
-    observedAt: '2026-07-26T02:00:00+08:00',
+    observedAt: '2026-07-26T01:00:00+08:00',
     futureDaily: previousDay.snapshot.futureDaily.map((row) =>
       row.stayDate === '2026-07-27'
         ? { ...row, roomNights: 3, soldRooms: 3 }
@@ -474,7 +512,7 @@ test('future booking changes compare hour, cycle and yesterday baselines', async
   )
   assert.equal(
     current.snapshot.futureBookingChanges.cumulativeBaselineAt,
-    '2026-07-26T02:00:00+08:00',
+    '2026-07-26T01:00:00+08:00',
   )
   const july27 = current.snapshot.futureBookingChanges.daily.find(
     (row) => row.stayDate === '2026-07-27',
@@ -526,14 +564,14 @@ test('Luopan future booking changes keep cycle cumulative separate from yesterda
     current,
     [
       previous('2026-08-06T23:30:00+08:00', 10),
-      previous('2026-08-07T02:00:00+08:00', 12),
+      previous('2026-08-07T01:00:00+08:00', 12),
       previous('2026-08-07T12:00:00+08:00', 19),
     ],
     new Date(current.observedAt).getTime(),
   )
 
   assert.equal(changes.hourlyBaselineAt, '2026-08-07T12:00:00+08:00')
-  assert.equal(changes.cumulativeBaselineAt, '2026-08-07T02:00:00+08:00')
+  assert.equal(changes.cumulativeBaselineAt, '2026-08-07T01:00:00+08:00')
   assert.equal(changes.previousDayEndAt, '2026-08-06T23:30:00+08:00')
   const today = changes.daily.find((item) => item.stayDate === '2026-08-07')
   const august20 = changes.daily.find((item) => item.stayDate === '2026-08-20')
