@@ -95,8 +95,10 @@ import {
 } from './wecom/src/wecom-group-robot.mjs'
 import { createWeComTestSuitePlan } from './wecom/src/wecom-test-suite.mjs'
 import {
-  auditLuopanBriefingStore,
+  auditBriefingStore,
   dailyBriefingAuditSlot,
+  dailyBriefingRepairSlot,
+  isNightlyRepairDeferred,
 } from './wecom/src/briefing-delivery-audit.mjs'
 import {
   createWeComRepairBotPairingStore,
@@ -184,6 +186,9 @@ const weComSecretPath = dataPath
   : null
 const weComDeliveryPath = dataPath
   ? join(dirname(dataPath), 'wecom-deliveries.json')
+  : null
+const briefingHealthAuditPath = dataPath
+  ? join(dirname(dataPath), 'briefing-health-audits.json')
   : null
 const futureDemandRiskStatePath = dataPath
   ? join(dirname(dataPath), 'future-demand-risk-states.json')
@@ -323,6 +328,7 @@ const weComSecretsByHotel = new Map()
 const weComDeliveriesByKey = new Map()
 const weComDeliveryLocks = new Map()
 const futureDemandRiskStates = {}
+const briefingHealthAudits = []
 const lastScheduledCollectionSlotByHotel = new Map()
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
@@ -341,9 +347,11 @@ let weComRepairBotConfig = {
 let weComRepairBotCredentials = null
 let weComRepairBotRuntime = null
 const lastDailyBriefingAuditKeyByHotel = new Map()
+const lastDailyBriefingRepairKeyByHotel = new Map()
 const schedulerStartedAt = new Date()
 const REPORT_POLL_INTERVAL_MINUTES = 30
 const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
+const BRIEFING_HEALTH_AUDIT_RETENTION_MS = 366 * 24 * 60 * 60_000
 const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
 const LUOPAN_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 
@@ -1822,6 +1830,64 @@ const persistWeComDeliveries = () => {
   renameSync(temporaryPath, weComDeliveryPath)
 }
 
+const persistBriefingHealthAudits = () => {
+  if (!briefingHealthAuditPath) return
+  const cutoffAt = Date.now() - BRIEFING_HEALTH_AUDIT_RETENTION_MS
+  const retained = briefingHealthAudits
+    .filter((audit) => {
+      const auditedAt = new Date(audit?.auditedAt ?? '').getTime()
+      return Number.isFinite(auditedAt) && auditedAt >= cutoffAt
+    })
+    .sort((left, right) =>
+      String(left.auditedAt).localeCompare(String(right.auditedAt)))
+  briefingHealthAudits.splice(0, briefingHealthAudits.length, ...retained)
+  mkdirSync(dirname(briefingHealthAuditPath), { recursive: true })
+  const temporaryPath = `${briefingHealthAuditPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(briefingHealthAudits, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, briefingHealthAuditPath)
+}
+
+const upsertBriefingHealthAudit = (record) => {
+  const index = briefingHealthAudits.findIndex(
+    (candidate) => candidate.auditId === record.auditId,
+  )
+  if (index >= 0) briefingHealthAudits[index] = record
+  else briefingHealthAudits.push(record)
+  persistBriefingHealthAudits()
+  return record
+}
+
+const updateBriefingHealthAudit = (auditId, patch) => {
+  const existing = briefingHealthAudits.find(
+    (candidate) => candidate.auditId === auditId,
+  )
+  if (!existing) return null
+  return upsertBriefingHealthAudit({
+    ...existing,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+const updateLatestPendingBriefingHealthAudit = (hotelId, patch) => {
+  const existing = briefingHealthAudits
+    .filter((candidate) =>
+      candidate.hotelId === hotelId
+      && ['PENDING', 'WAITING_CAPTCHA', 'REPAIRING'].includes(
+        candidate.resolutionStatus,
+      ))
+    .sort((left, right) =>
+      String(left.auditedAt).localeCompare(String(right.auditedAt)))
+    .at(-1)
+  return existing
+    ? updateBriefingHealthAudit(existing.auditId, patch)
+    : null
+}
+
 const weComRepairBotSecretScope = () => 'wecom-repair-bot:v1'
 const SHA256_PATTERN = /^[a-f0-9]{64}$/iu
 
@@ -2261,6 +2327,32 @@ if (weComDeliveryPath && existsSync(weComDeliveryPath)) {
     }
   } catch {
     process.stderr.write('REVIEW_WECOM_DELIVERY_STORE_IGNORED\n')
+  }
+}
+
+if (briefingHealthAuditPath && existsSync(briefingHealthAuditPath)) {
+  try {
+    const persisted = JSON.parse(
+      readFileSync(briefingHealthAuditPath, 'utf8'),
+    )
+    const cutoffAt = Date.now() - BRIEFING_HEALTH_AUDIT_RETENTION_MS
+    if (Array.isArray(persisted)) {
+      for (const audit of persisted) {
+        const auditedAt = new Date(audit?.auditedAt ?? '').getTime()
+        if (
+          audit
+          && typeof audit === 'object'
+          && typeof audit.auditId === 'string'
+          && typeof audit.hotelId === 'string'
+          && Number.isFinite(auditedAt)
+          && auditedAt >= cutoffAt
+        ) {
+          briefingHealthAudits.push(audit)
+        }
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_BRIEFING_HEALTH_AUDIT_STORE_IGNORED\n')
   }
 }
 
@@ -3232,7 +3324,10 @@ const collectLuopanLiveFor = async (
       rowVersion: config.rowVersion + 1,
     })
     persistLuopanBrowserConfigs()
-    if (errorCode === 'LUOPAN_REAUTH_REQUIRED') {
+    if (
+      errorCode === 'LUOPAN_REAUTH_REQUIRED'
+      && !isNightlyRepairDeferred()
+    ) {
       void startLuopanRepairChallenge(
         hotelId,
         'SCHEDULED_COLLECTION_FAILURE',
@@ -3888,6 +3983,11 @@ const finishLuopanRepair = async ({
       throw new Error('LUOPAN_REPAIR_DELIVERY_NOT_CONFIRMED')
     }
     luopanRepairChallengeStore.complete(tokenSha256)
+    updateLatestPendingBriefingHealthAudit(hotelId, {
+      resolutionStatus: 'RESOLVED',
+      resolvedAt: new Date().toISOString(),
+      reasonCode: 'LUOPAN_REPAIR_VERIFIED',
+    })
     const hotel = selectedHotel(hotelId)
     await deliverWeComAuditNotice({
       hotelId,
@@ -3919,6 +4019,10 @@ const finishLuopanRepair = async ({
   } catch (error) {
     const reasonCode = safeLuopanRepairReason(error)
     luopanRepairChallengeStore.fail(tokenSha256, reasonCode)
+    updateLatestPendingBriefingHealthAudit(hotelId, {
+      resolutionStatus: 'FAILED',
+      reasonCode,
+    })
     const hotel = selectedHotel(hotelId)
     await deliverWeComAuditNotice({
       hotelId,
@@ -4081,6 +4185,7 @@ const scheduledLuopanRecoveryTick = async () => {
     !automaticHourlyCollectionEnabled
     || !luopanAssistedRepairReady()
     || scheduledLuopanRecoveryRunning
+    || isNightlyRepairDeferred()
   ) return
   scheduledLuopanRecoveryRunning = true
   try {
@@ -4368,17 +4473,55 @@ const handleWeComRepairBotText = async (frame, replyText) => {
   }
 
   if (command.type === 'HELP') {
-    const pendingCodes = [...activeLuopanRepairsByHotel.values()]
-      .filter((handle) => handle.channel === 'WECOM_LONG_CONNECTION')
-      .filter((handle) =>
-        globalAllowedUserIds.includes(userId)
-        || userHotelIds.includes(handle.hotelId))
-      .map((handle) => selectedHotel(handle.hotelId).hotelCode)
+    const authorizedForUser = (hotelId) =>
+      globalAllowedUserIds.includes(userId)
+      || userHotelIds.includes(hotelId)
+    const activeCaptchaHotelIds = new Set(
+      [...activeLuopanRepairsByHotel.values()]
+        .filter((handle) => handle.channel === 'WECOM_LONG_CONNECTION')
+        .map((handle) => handle.hotelId),
+    )
+    const visibleHotelIds = new Set([
+      ...activeCaptchaHotelIds,
+      ...briefingHealthAudits
+        .filter((audit) =>
+          ['PENDING', 'WAITING_CAPTCHA', 'REPAIRING', 'FAILED'].includes(
+            audit.resolutionStatus,
+          ))
+        .filter((audit) => {
+          const auditedAt = new Date(audit.auditedAt ?? '').getTime()
+          return Number.isFinite(auditedAt)
+            && Date.now() - auditedAt <= 48 * 60 * 60_000
+        })
+        .map((audit) => audit.hotelId),
+    ])
+    const pendingCodes = [...visibleHotelIds]
+      .filter((hotelId) =>
+        hotels.some((candidate) => candidate.hotelId === hotelId))
+      .filter(authorizedForUser)
+      .map((hotelId) => selectedHotel(hotelId).hotelCode)
       .sort()
+    const captchaCodes = [...activeCaptchaHotelIds]
+      .filter((hotelId) =>
+        hotels.some((candidate) => candidate.hotelId === hotelId))
+      .filter(authorizedForUser)
+      .map((hotelId) => selectedHotel(hotelId).hotelCode)
+      .sort()
+    const statusLines = []
+    if (pendingCodes.length > 0) {
+      statusLines.push(`待处理门店：${pendingCodes.join('、')}。`)
+    }
+    if (captchaCodes.length > 0) {
+      statusLines.push(
+        `等待验证码：${captchaCodes.join('、')}。请发送“门店编号 验证码”。`,
+      )
+    } else if (pendingCodes.length > 0) {
+      statusLines.push('系统将在晨间处理；无需提前提交验证码。')
+    }
     await replyText(
       frame,
-      pendingCodes.length > 0
-        ? `已安全连接。待处理门店：${pendingCodes.join('、')}。请发送“门店编号 验证码”。`
+      statusLines.length > 0
+        ? `已安全连接。${statusLines.join('')}`
         : '已安全连接，目前没有等待填写验证码的门店。',
     )
     return
@@ -4440,52 +4583,228 @@ const expireLuopanRepairSessions = async () => {
   }
 }
 
+const briefingHealthAuditFor = (hotel, date) => auditBriefingStore({
+  hotel,
+  luopanConfig: luopanBrowserConfigRecordFor(hotel.hotelId),
+  weComConfig: weComConfigFor(hotel.hotelId),
+  snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
+  deliveries: [...weComDeliveriesByKey.values()],
+  date,
+})
+
+const recordNightlyBriefingHealthAudit = ({ hotel, slot, date }) => {
+  const auditId = `${hotel.hotelId}:${slot.auditKey}`
+  const existing = briefingHealthAudits.find(
+    (candidate) => candidate.auditId === auditId,
+  )
+  if (existing) return existing
+  const audit = briefingHealthAuditFor(hotel, date)
+  const record = upsertBriefingHealthAudit({
+    auditId,
+    auditKey: slot.auditKey,
+    dateKey: slot.dateKey,
+    hotelId: hotel.hotelId,
+    hotelCode: hotel.hotelCode,
+    status: audit.status,
+    snapshotObservedAt: audit.snapshotObservedAt ?? null,
+    todayRevenueDelivered: audit.todayRevenueDelivered ?? false,
+    future14dDelivered: audit.future14dDelivered ?? false,
+    auditedAt: date.toISOString(),
+    resolutionStatus:
+      audit.status === 'HEALTHY' ? 'NOT_REQUIRED' : 'PENDING',
+    repairKey: null,
+    repairStartedAt: null,
+    resolvedAt: null,
+    reasonCode: null,
+    updatedAt: date.toISOString(),
+  })
+  process.stdout.write(
+    `${JSON.stringify({
+      event: 'NIGHTLY_BRIEFING_HEALTH_AUDITED',
+      hotelId: hotel.hotelId,
+      auditKey: slot.auditKey,
+      status: record.status,
+      notificationSent: false,
+    })}\n`,
+  )
+  return record
+}
+
+const deliverMorningRepairNotice = async ({
+  hotel,
+  auditRecord,
+  deliveryType,
+  content,
+}) => {
+  const messageKey =
+    `${hotel.hotelId}:${deliveryType}:${auditRecord.auditKey}`
+  const config = weComConfigFor(hotel.hotelId)
+  if (config.enabled && config.webhookConfigured) {
+    return deliverWeComAuditNotice({
+      hotelId: hotel.hotelId,
+      messageKey,
+      deliveryType,
+      content,
+      bodyPreview:
+        `${deliveryType} · ${hotel.hotelCode} · ${auditRecord.status}`,
+    })
+  }
+  if (weComRepairBotReady()) {
+    return deliverWeComRepairBotDirectMessage({
+      hotelId: hotel.hotelId,
+      messageKey,
+      deliveryType,
+      content,
+    })
+  }
+  throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
+}
+
+const repairNightlyBriefingHealthAudit = async ({
+  hotel,
+  auditRecord,
+  repairSlot,
+}) => {
+  updateBriefingHealthAudit(auditRecord.auditId, {
+    repairKey: repairSlot.repairKey,
+    repairStartedAt: new Date().toISOString(),
+    resolutionStatus: 'REPAIRING',
+    reasonCode: null,
+  })
+  try {
+    if (auditRecord.status === 'REAUTH_REQUIRED') {
+      const challenge = await startLuopanRepairChallenge(
+        hotel.hotelId,
+        'DAILY_07_30_REPAIR',
+      )
+      if (!challenge) throw new Error('LUOPAN_REPAIR_NOT_STARTED')
+      updateBriefingHealthAudit(auditRecord.auditId, {
+        resolutionStatus: 'WAITING_CAPTCHA',
+        reasonCode: 'LUOPAN_REPAIR_WAITING_CAPTCHA',
+      })
+      return
+    }
+    if (
+      auditRecord.status === 'COLLECTION_DISABLED'
+      || auditRecord.status === 'DELIVERY_DISABLED'
+    ) {
+      throw new Error(`${auditRecord.status}_MANUAL_CONFIGURATION_REQUIRED`)
+    }
+
+    const collection = await collectLiveFor(hotel.hotelId)
+    const today = await deliverWeComSnapshot({
+      hotelId: hotel.hotelId,
+      snapshot: collection.snapshot,
+      messageKey:
+        `${hotel.hotelId}:DAILY_MORNING_RECOVERY:${auditRecord.auditKey}:${collection.snapshot.collectionRunId}:TODAY`,
+      messagePrefix: '凌晨自检修复补发',
+      deliveryType: 'TODAY_REVENUE',
+    })
+    const future = await deliverWeComSnapshot({
+      hotelId: hotel.hotelId,
+      snapshot: collection.snapshot,
+      messageKey:
+        `${hotel.hotelId}:DAILY_MORNING_RECOVERY:${auditRecord.auditKey}:${collection.snapshot.collectionRunId}:FUTURE_14D_V1`,
+      messagePrefix: '凌晨自检修复补发',
+      deliveryType: 'FUTURE_14D',
+      payloadFactory: ({ hotel: selected, snapshot: current }) =>
+        futureBookingPayloads({
+          hotel: selected,
+          snapshot: current,
+          messagePrefix: '凌晨自检修复补发',
+        }),
+    })
+    if (
+      today.deliveryStatus !== 'DELIVERED'
+      || future.deliveryStatus !== 'DELIVERED'
+    ) {
+      throw new Error('MORNING_REPAIR_DELIVERY_NOT_CONFIRMED')
+    }
+    updateBriefingHealthAudit(auditRecord.auditId, {
+      resolutionStatus: 'RESOLVED',
+      resolvedAt: new Date().toISOString(),
+      reasonCode: 'MORNING_REPAIR_VERIFIED',
+    })
+    await deliverMorningRepairNotice({
+      hotel,
+      auditRecord,
+      deliveryType: 'DAILY_MORNING_REPAIR_COMPLETE',
+      content: [
+        '【门店晨间修复完成】',
+        `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+        `凌晨状态：${auditRecord.status}`,
+        '结果：已重新采集、补发两类简报并确认送达。',
+      ].join('\n'),
+    }).catch(() => {})
+  } catch (error) {
+    if (activeLuopanRepairsByHotel.has(hotel.hotelId)) {
+      updateBriefingHealthAudit(auditRecord.auditId, {
+        resolutionStatus: 'WAITING_CAPTCHA',
+        reasonCode: 'LUOPAN_REPAIR_WAITING_CAPTCHA',
+      })
+      return
+    }
+    const reasonCode = safeLuopanRepairReason(error)
+    updateBriefingHealthAudit(auditRecord.auditId, {
+      resolutionStatus: 'FAILED',
+      reasonCode,
+    })
+    await deliverMorningRepairNotice({
+      hotel,
+      auditRecord,
+      deliveryType: 'DAILY_MORNING_REPAIR_FAILED',
+      content: [
+        '【门店晨间修复未完成】',
+        `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+        `凌晨状态：${auditRecord.status}`,
+        `状态码：${reasonCode}`,
+        '请由OTA运营人员进入后台处理；系统不会重复登录。',
+      ].join('\n'),
+    }).catch(() => {})
+  }
+}
+
 const scheduledBriefingAuditTick = async () => {
   await expireLuopanRepairSessions()
-  if (!luopanAssistedRepairReady()) return
   const now = new Date()
-  const slot = dailyBriefingAuditSlot(now)
-  if (!slot) return
-  for (const hotel of hotels.filter(
-    (item) => item.pmsSystemCode === 'LUOPAN_CLOUD',
-  )) {
-    if (
-      lastDailyBriefingAuditKeyByHotel.get(hotel.hotelId)
-      === slot.auditKey
-    ) {
-      continue
+  const auditSlot = dailyBriefingAuditSlot(now)
+  if (auditSlot) {
+    for (const hotel of hotels) {
+      if (
+        lastDailyBriefingAuditKeyByHotel.get(hotel.hotelId)
+        === auditSlot.auditKey
+      ) continue
+      lastDailyBriefingAuditKeyByHotel.set(hotel.hotelId, auditSlot.auditKey)
+      recordNightlyBriefingHealthAudit({ hotel, slot: auditSlot, date: now })
     }
-    lastDailyBriefingAuditKeyByHotel.set(hotel.hotelId, slot.auditKey)
-    const audit = auditLuopanBriefingStore({
+  }
+
+  const repairSlot = dailyBriefingRepairSlot(now)
+  if (!repairSlot) return
+  for (const hotel of hotels) {
+    if (
+      lastDailyBriefingRepairKeyByHotel.get(hotel.hotelId)
+      === repairSlot.repairKey
+    ) continue
+    lastDailyBriefingRepairKeyByHotel.set(hotel.hotelId, repairSlot.repairKey)
+    const auditRecord = recordNightlyBriefingHealthAudit({
       hotel,
-      luopanConfig: luopanBrowserConfigRecordFor(hotel.hotelId),
-      snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
-      deliveries: [...weComDeliveriesByKey.values()],
+      slot: {
+        ...repairSlot,
+        auditKey: repairSlot.auditKey,
+      },
       date: now,
     })
-    if (audit.status === 'REAUTH_REQUIRED') {
-      await startLuopanRepairChallenge(hotel.hotelId, 'DAILY_08_15_AUDIT')
-      continue
-    }
     if (
-      audit.status === 'COLLECTION_MISSING'
-      || audit.status === 'DELIVERY_MISSING'
-    ) {
-      await deliverWeComAuditNotice({
-        hotelId: hotel.hotelId,
-        messageKey:
-          `${hotel.hotelId}:DAILY_BRIEFING_AUDIT:${slot.auditKey}`,
-        deliveryType: 'DAILY_BRIEFING_AUDIT_ALERT',
-        content: [
-          '【罗盘每日简报审核异常】',
-          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-          `状态码：${audit.status}`,
-          '本异常不是验证码问题，系统未启动登录操作。',
-        ].join('\n'),
-        bodyPreview:
-          `罗盘每日简报审核异常 · ${hotel.hotelCode} · ${audit.status}`,
-      }).catch(() => {})
-    }
+      auditRecord.resolutionStatus === 'NOT_REQUIRED'
+      || auditRecord.resolutionStatus === 'RESOLVED'
+      || auditRecord.repairKey === repairSlot.repairKey
+    ) continue
+    await repairNightlyBriefingHealthAudit({
+      hotel,
+      auditRecord,
+      repairSlot,
+    })
   }
 }
 
