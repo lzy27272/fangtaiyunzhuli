@@ -60,6 +60,10 @@ test('morning repair runs once in the 07:30 grace window', () => {
 
 test('defers automatic login repair overnight until 07:30', () => {
   assert.equal(
+    isNightlyRepairDeferred(new Date('2026-08-03T16:30:00Z')),
+    true,
+  )
+  assert.equal(
     isNightlyRepairDeferred(new Date('2026-08-03T17:00:00Z')),
     true,
   )

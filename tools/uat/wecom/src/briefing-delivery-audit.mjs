@@ -33,7 +33,7 @@ export const dailyBriefingRepairSlot = (date = new Date()) => {
 
 export const isNightlyRepairDeferred = (date = new Date()) => {
   const { hour, minute } = shanghaiScheduleParts(date)
-  return hour >= 1 && (hour < 7 || (hour === 7 && minute < 30))
+  return hour < 7 || (hour === 7 && minute < 30)
 }
 
 export const auditBriefingStore = ({
