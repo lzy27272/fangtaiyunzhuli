@@ -131,9 +131,21 @@ export const startLuopanAssistedLogin = async ({
         await navigation
         await page.waitForTimeout(1_500)
         if (!isAuthenticationUrl(page.url())) {
+          let sessionState = null
+          try {
+            sessionState = await captureSessionState(context)
+          } catch (error) {
+            if (error?.message !== 'LUOPAN_SESSION_STATE_INVALID') {
+              throw error
+            }
+          }
           return {
             authenticated: true,
-            sessionState: await captureSessionState(context),
+            // The managed persistent profile is the approved session store.
+            // Some PMS login variants keep their authenticated state there
+            // without exposing a serializable cookie, so validation must be
+            // allowed to reopen that same scoped profile.
+            sessionState,
           }
         }
         const bodyText = await page.locator('body').innerText()

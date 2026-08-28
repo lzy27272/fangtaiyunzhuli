@@ -3830,7 +3830,9 @@ const finishLuopanRepair = async ({
   activeLuopanRepairsByHotel.delete(hotelId)
   try {
     const config = luopanBrowserConfigRecordFor(hotelId)
-    const normalizedSession = normalizeLuopanSessionState(sessionState)
+    const normalizedSession = sessionState
+      ? normalizeLuopanSessionState(sessionState)
+      : null
     const validation = await validateLuopanBrowserSession({
       profileRef: config.profileRef,
       expectedHotelFingerprint: config.expectedHotelFingerprint,
@@ -3839,7 +3841,11 @@ const finishLuopanRepair = async ({
     if (validation.scopeStatus !== 'SINGLE_HOTEL_CONFIRMED') {
       throw new Error('LUOPAN_STORE_SCOPE_INVALID')
     }
-    luopanSessionStatesByHotel.set(hotelId, normalizedSession)
+    if (normalizedSession) {
+      luopanSessionStatesByHotel.set(hotelId, normalizedSession)
+    } else {
+      luopanSessionStatesByHotel.delete(hotelId)
+    }
     persistLuopanSessionStates()
     luopanBrowserConfigsByHotel.set(hotelId, {
       ...config,
