@@ -4730,12 +4730,29 @@ const finishBieyanghongRepair = async ({
 const startBieyanghongRepairChallenge = async (
   hotelId,
   trigger = 'MANUAL_PILOT',
+  replaceActive = false,
 ) => {
   if (!bieyanghongAssistedRepairReady()) return null
   const active = activeBieyanghongRepairsByHotel.get(hotelId)
   if (active) {
-    return bieyanghongRepairChallengeStore
-      .getInternalByHash(active.tokenSha256)
+    if (!replaceActive) {
+      return bieyanghongRepairChallengeStore
+        .getInternalByHash(active.tokenSha256)
+    }
+    await active.login?.close().catch(() => {})
+    bieyanghongRepairChallengeStore.fail(
+      active.tokenSha256,
+      'BIEYANGHONG_REPAIR_CHALLENGE_REPLACED',
+    )
+    activeBieyanghongRepairsByHotel.delete(hotelId)
+    process.stdout.write(
+      `${JSON.stringify({
+        event: 'BIEYANGHONG_REPAIR_CHALLENGE_REPLACED',
+        hotelId,
+        previousChallengeId: active.challengeId,
+        trigger,
+      })}\n`,
+    )
   }
   const hotel = selectedHotel(hotelId)
   if (
@@ -6207,6 +6224,7 @@ const server = createServer(async (request, response) => {
         ? await startBieyanghongRepairChallenge(
           hotel.hotelId,
           'LOOPBACK_PILOT_TEST',
+          true,
         )
         : null
       if (!challenge) {
