@@ -80,6 +80,13 @@ import {
   renderBieyanghongRepairPage,
 } from './bieyanghong-repair-page.mjs'
 import {
+  BIEYANGHONG_RECOVERY_HOTEL_CODES,
+  normalizeBieyanghongRecoveryRequest,
+  recoveryDeliveryDecision,
+  resolveBieyanghongRecoveryTargets,
+  safeBieyanghongRecoveryReason,
+} from './bieyanghong-targeted-recovery.mjs'
+import {
   appendAndPersistSnapshot,
   collectLiveReports,
   loadSnapshotStore,
@@ -93,7 +100,10 @@ import {
   isBroadcastWindowOpen,
   shanghaiScheduleParts,
 } from './report-schedule.mjs'
-import { selectHourlyDeliveryCandidates } from './wecom/src/hourly-delivery-candidates.mjs'
+import {
+  hourlyDeliveryMessageKey,
+  selectHourlyDeliveryCandidates,
+} from './wecom/src/hourly-delivery-candidates.mjs'
 import {
   createFutureBookingWeComPayloadsWithAi,
 } from './wecom/src/future-booking-brief.mjs'
@@ -396,6 +406,8 @@ const activeOtaControlledLoginAttempts = new Map()
 const luopanBrowserConfigsByHotel = new Map()
 const luopanSessionStatesByHotel = new Map()
 const liveCollectionLocks = new Map()
+const bieyanghongTargetedRecoveryLocks = new Map()
+const bieyanghongTargetedRecoveryResults = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
 const businessDayControlsByHotel = new Map()
 const hotSellingRoomTypesByHotel = new Map()
@@ -5991,6 +6003,301 @@ const futureBookingPayloads = ({
   },
 )
 
+const recoveryDeliveryView = (delivery) => ({
+  messageKey: delivery.messageKey,
+  deliveryType: delivery.deliveryType,
+  deliveryStatus: delivery.deliveryStatus,
+  reasonCode: delivery.reasonCode,
+  partCount: delivery.partCount,
+  deliveredPartCount: delivery.deliveredPartCount,
+  decision: recoveryDeliveryDecision(delivery),
+})
+
+const canonicalRecoveryMessageKeys = ({ hotelId, snapshot }) => {
+  const snapshotHour = shanghaiScheduleParts(
+    new Date(snapshot.observedAt),
+  ).hourKey
+  const common = {
+    hotelId,
+    businessDate: snapshot.businessDate,
+    snapshotHour,
+  }
+  const keys = {
+    today: hourlyDeliveryMessageKey(common),
+    future: hourlyDeliveryMessageKey({
+      ...common,
+      messageKeySuffix: 'FUTURE_14D_V1',
+    }),
+    hotSelling: hourlyDeliveryMessageKey({
+      ...common,
+      messageKeySuffix: 'HOT_SELLING_SOLD_OUT_V1',
+    }),
+  }
+  if (Object.values(keys).some((messageKey) => !messageKey)) {
+    throw new Error('BIEYANGHONG_RECOVERY_SNAPSHOT_SLOT_INVALID')
+  }
+  return { ...keys, snapshotHour }
+}
+
+const deliverMissingRecoveryMessage = async ({
+  messageKey,
+  delivery,
+}) => {
+  const existing = weComDeliveriesByKey.get(messageKey)
+  if (existing) return recoveryDeliveryView(existing)
+  return recoveryDeliveryView(await delivery())
+}
+
+const scheduleRecoveryHotSellingDelivery = ({
+  operationResult,
+  hotelResult,
+  hotelId,
+  snapshot,
+  snapshotHour,
+  messageKey,
+}) => {
+  const candidate = { snapshot, snapshotHour, messageKey }
+  const attempt = async () => {
+    if (!hourlyBriefBundleDelivered({
+      hotelId,
+      candidate,
+      deliveriesByKey: weComDeliveriesByKey,
+      now: new Date(),
+    })) {
+      hotelResult.hotSelling = {
+        messageKey,
+        decision: 'POLICY_DELAY_NOT_SATISFIED',
+        deliveryStatus: 'SKIPPED',
+        reasonCode: 'HOT_SELLING_POLICY_DELAY_NOT_SATISFIED',
+      }
+      hotelResult.status = 'DELIVERY_BLOCKED'
+      operationResult.status = 'PARTIAL'
+      return
+    }
+    try {
+      hotelResult.hotSelling = await deliverMissingRecoveryMessage({
+        messageKey,
+        delivery: () => deliverWeComSnapshot({
+          hotelId,
+          snapshot,
+          messageKey,
+          messagePrefix: '补发售罄预警',
+          deliveryType: 'HOT_SELLING_SOLD_OUT',
+          payloadFactory: ({ hotel: selected, snapshot: current }) =>
+            createHotSellingSoldOutWeComPayloads(
+              monitorFromSnapshot(
+                current,
+                selected,
+                null,
+                hotSellingRoomTypesFor(selected.hotelId).roomTypeCodes,
+              ),
+              { messagePrefix: '补发售罄预警' },
+            ),
+        }),
+      })
+      hotelResult.status = hotelResult.hotSelling.deliveryStatus === 'DELIVERED'
+        ? 'COMPLETE'
+        : 'DELIVERY_BLOCKED'
+    } catch (error) {
+      hotelResult.hotSelling = {
+        messageKey,
+        decision: 'FAILED_CLOSED',
+        deliveryStatus: 'REJECTED',
+        reasonCode: safeBieyanghongRecoveryReason(error),
+      }
+      hotelResult.status = 'DELIVERY_BLOCKED'
+    }
+    operationResult.status = operationResult.hotels.every(
+      (hotel) => hotel.status === 'COMPLETE',
+    ) ? 'COMPLETE' : 'PARTIAL'
+  }
+  const timer = setTimeout(() => void attempt(), 65_000)
+  timer.unref()
+}
+
+const runBieyanghongTargetedRecovery = async (body) => {
+  const request = normalizeBieyanghongRecoveryRequest({
+    operationKey: body?.operationKey,
+    hotelCodes: BIEYANGHONG_RECOVERY_HOTEL_CODES,
+  })
+  const completed = bieyanghongTargetedRecoveryResults.get(
+    request.operationKey,
+  )
+  if (completed) return { ...completed, replayed: true }
+  const running = bieyanghongTargetedRecoveryLocks.get(request.operationKey)
+  if (running) return running
+
+  const operation = (async () => {
+    const preflightHotels = hotels.map((hotel) => {
+      const weComConfig = weComConfigFor(hotel.hotelId)
+      return {
+        ...hotel,
+        cookieConfigured: Object.keys(secretsForHotel(hotel.hotelId)).length > 0,
+        weComEnabled: weComConfig.enabled,
+        weComWebhookConfigured: weComConfig.webhookConfigured,
+      }
+    })
+    const targets = resolveBieyanghongRecoveryTargets({
+      hotels: preflightHotels,
+      hotelCodes: request.hotelCodes,
+    })
+    const operationResult = {
+      operationKey: request.operationKey,
+      requestedHotelCodes: request.hotelCodes,
+      excludedHotelCodes: [BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE],
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      status: 'RUNNING',
+      replayed: false,
+      hotels: [],
+    }
+    for (const target of targets) {
+      const hotelResult = {
+        hotelId: target.hotelId,
+        hotelCode: target.hotelCode,
+        status: 'RUNNING',
+      }
+      operationResult.hotels.push(hotelResult)
+      try {
+        const collection = await collectLiveFor(target.hotelId)
+        const snapshot = collection.snapshot
+        const keys = canonicalRecoveryMessageKeys({
+          hotelId: target.hotelId,
+          snapshot,
+        })
+        hotelResult.collection = {
+          collectionRunId: snapshot.collectionRunId,
+          observedAt: snapshot.observedAt,
+          businessDate: snapshot.businessDate,
+          completeness: snapshot.completeness,
+        }
+        hotelResult.today = await deliverMissingRecoveryMessage({
+          messageKey: keys.today,
+          delivery: () => deliverWeComSnapshot({
+            hotelId: target.hotelId,
+            snapshot,
+            messageKey: keys.today,
+            messagePrefix: '补发小时简报',
+            deliveryType: 'TODAY_REVENUE',
+          }),
+        })
+
+        const futureAvailable =
+          Array.isArray(snapshot?.futureBookingChanges?.daily)
+          && snapshot.futureBookingChanges.daily.length > 0
+        hotelResult.future = futureAvailable
+          ? await deliverMissingRecoveryMessage({
+              messageKey: keys.future,
+              delivery: () => deliverWeComSnapshot({
+                hotelId: target.hotelId,
+                snapshot,
+                messageKey: keys.future,
+                messagePrefix: '补发远期房态',
+                deliveryType: 'FUTURE_14D',
+                payloadFactory: ({ hotel: selected, snapshot: current }) =>
+                  futureBookingPayloads({
+                    hotel: selected,
+                    snapshot: current,
+                    messagePrefix: '补发远期房态',
+                  }),
+              }),
+            })
+          : {
+              messageKey: keys.future,
+              decision: 'SKIPPED_NO_FUTURE_DATA',
+              deliveryStatus: 'SKIPPED',
+              reasonCode: 'FUTURE_BOOKING_SNAPSHOT_REQUIRED',
+            }
+
+        const monitor = monitorFromSnapshot(
+          snapshot,
+          target,
+          null,
+          hotSellingRoomTypesFor(target.hotelId).roomTypeCodes,
+        )
+        const alerts = selectHotSellingSoldOutAlerts(monitor)
+        const bundleDelivered =
+          hotelResult.today.deliveryStatus === 'DELIVERED'
+          && hotelResult.future.deliveryStatus === 'DELIVERED'
+        if (alerts.length === 0) {
+          hotelResult.hotSelling = {
+            messageKey: keys.hotSelling,
+            decision: 'SKIPPED_NO_RELIABLE_ALERT',
+            deliveryStatus: 'SKIPPED',
+            reasonCode: 'HOT_SELLING_SOLD_OUT_NONE',
+          }
+          hotelResult.status = bundleDelivered || !futureAvailable
+            ? 'COMPLETE'
+            : 'DELIVERY_BLOCKED'
+        } else if (!bundleDelivered) {
+          hotelResult.hotSelling = {
+            messageKey: keys.hotSelling,
+            decision: 'SKIPPED_BRIEF_BUNDLE_NOT_DELIVERED',
+            deliveryStatus: 'SKIPPED',
+            reasonCode: 'HOT_SELLING_BRIEF_BUNDLE_REQUIRED',
+          }
+          hotelResult.status = 'DELIVERY_BLOCKED'
+        } else {
+          const existingHot = weComDeliveriesByKey.get(keys.hotSelling)
+          if (existingHot) {
+            hotelResult.hotSelling = recoveryDeliveryView(existingHot)
+            hotelResult.status = existingHot.deliveryStatus === 'DELIVERED'
+              ? 'COMPLETE'
+              : 'DELIVERY_BLOCKED'
+          } else {
+            hotelResult.hotSelling = {
+              messageKey: keys.hotSelling,
+              decision: 'PENDING_POLICY_DELAY',
+              deliveryStatus: 'PENDING',
+              reasonCode: 'HOT_SELLING_POLICY_DELAY_PENDING',
+            }
+            hotelResult.status = 'PENDING_HOT_SELLING'
+            scheduleRecoveryHotSellingDelivery({
+              operationResult,
+              hotelResult,
+              hotelId: target.hotelId,
+              snapshot,
+              snapshotHour: keys.snapshotHour,
+              messageKey: keys.hotSelling,
+            })
+          }
+        }
+      } catch (error) {
+        hotelResult.status = 'FAILED'
+        hotelResult.reasonCode = safeBieyanghongRecoveryReason(error)
+      }
+    }
+    operationResult.completedAt = new Date().toISOString()
+    operationResult.status = operationResult.hotels.every(
+      (hotel) => hotel.status === 'COMPLETE',
+    )
+      ? 'COMPLETE'
+      : operationResult.hotels.some(
+          (hotel) => hotel.status === 'PENDING_HOT_SELLING',
+        )
+        ? 'PENDING'
+        : 'PARTIAL'
+    bieyanghongTargetedRecoveryResults.set(
+      request.operationKey,
+      operationResult,
+    )
+    process.stdout.write(`${JSON.stringify({
+      event: 'BIEYANGHONG_TARGETED_RECOVERY_COMPLETED',
+      operationKey: request.operationKey,
+      requestedHotelCodes: request.hotelCodes,
+      excludedHotelCodes: [BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE],
+      status: operationResult.status,
+    })}\n`)
+    return operationResult
+  })()
+  bieyanghongTargetedRecoveryLocks.set(request.operationKey, operation)
+  try {
+    return await operation
+  } finally {
+    bieyanghongTargetedRecoveryLocks.delete(request.operationKey)
+  }
+}
+
 const deliverFutureDemandRisks = async (hotelId, snapshot) => {
   if (!isBroadcastWindowOpen()) return []
   const stateChanged = reconcileFutureDemandRiskStates({
@@ -6581,6 +6888,25 @@ const server = createServer(async (request, response) => {
         )
       }
       json(response, 202, { data: challenge })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/internal/bieyanghong-cookie-recovery'
+    ) {
+      if (!loopbackPilotTriggerAuthorized(request)) {
+        json(response, 404, { code: 'REVIEW_ROUTE_NOT_FOUND' })
+        return
+      }
+      const body = await readBody(request)
+      if (Object.prototype.hasOwnProperty.call(body, 'hotelCodes')) {
+        throw new Error('BIEYANGHONG_RECOVERY_SCOPE_IS_SERVER_FIXED')
+      }
+      const result = await runBieyanghongTargetedRecovery(body)
+      json(response, result.status === 'PENDING' ? 202 : 200, {
+        data: result,
+      })
       return
     }
 

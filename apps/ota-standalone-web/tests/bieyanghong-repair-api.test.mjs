@@ -206,6 +206,67 @@ test('001 official-login popup is public but challenge data remains token-gated'
       (await localTrigger.json()).code,
       'BIEYANGHONG_REPAIR_DISABLED',
     )
+
+    const recoveryPath =
+      `http://127.0.0.1:${port}`
+      + '/api/v1/internal/bieyanghong-cookie-recovery'
+    const proxiedRecovery = await fetch(recoveryPath, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Pilot repair-test-token',
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.10',
+      },
+      body: JSON.stringify({
+        operationKey: 'COOKIE_RECOVERY_20260829_003_013',
+      }),
+    })
+    assert.equal(proxiedRecovery.status, 404)
+
+    const bearerRecovery = await fetch(recoveryPath, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer repair-test-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        operationKey: 'COOKIE_RECOVERY_20260829_003_013',
+      }),
+    })
+    assert.equal(bearerRecovery.status, 404)
+
+    const callerScopedRecovery = await fetch(recoveryPath, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Pilot repair-test-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        operationKey: 'COOKIE_RECOVERY_20260829_003_013',
+        hotelCodes: ['001'],
+      }),
+    })
+    assert.equal(callerScopedRecovery.status, 400)
+    assert.equal(
+      (await callerScopedRecovery.json()).code,
+      'BIEYANGHONG_RECOVERY_SCOPE_IS_SERVER_FIXED',
+    )
+
+    const fixedRecovery = await fetch(recoveryPath, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Pilot repair-test-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        operationKey: 'COOKIE_RECOVERY_20260829_003_013',
+      }),
+    })
+    assert.equal(fixedRecovery.status, 400)
+    assert.equal(
+      (await fixedRecovery.json()).code,
+      'BIEYANGHONG_RECOVERY_HOTEL_NOT_UNIQUE',
+    )
   } finally {
     if (child.exitCode === null) {
       child.kill()

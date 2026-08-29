@@ -32,6 +32,27 @@ const prefer = (candidate, current) => {
     .localeCompare(String(current.snapshot?.observedAt ?? '')) > 0
 }
 
+export const hourlyDeliveryMessageKey = ({
+  hotelId,
+  businessDate,
+  snapshotHour,
+  messageKeySuffix = 'HOURLY_UAT_V1',
+}) => {
+  if (
+    typeof hotelId !== 'string'
+    || !hotelId
+    || typeof businessDate !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)
+    || typeof snapshotHour !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}$/.test(snapshotHour)
+    || typeof messageKeySuffix !== 'string'
+    || !/^[A-Z0-9_]{3,40}$/.test(messageKeySuffix)
+  ) {
+    return null
+  }
+  return `${hotelId}:${businessDate}:${snapshotHour}:${messageKeySuffix}`
+}
+
 export const selectHourlyDeliveryCandidates = ({
   hotelId,
   snapshots,
@@ -83,9 +104,13 @@ export const selectHourlyDeliveryCandidates = ({
     }
     const hourSlot = `${hotelId}:${snapshotHour}`
     if (deliveredHourSlots.has(hourSlot)) continue
-    const messageKey =
-      `${hotelId}:${snapshot.businessDate}:`
-      + `${snapshotHour}:${messageKeySuffix}`
+    const messageKey = hourlyDeliveryMessageKey({
+      hotelId,
+      businessDate: snapshot.businessDate,
+      snapshotHour,
+      messageKeySuffix,
+    })
+    if (!messageKey) continue
     const candidate = { snapshot, snapshotHour, messageKey }
     if (prefer(candidate, selectedByHourSlot.get(hourSlot))) {
       selectedByHourSlot.set(hourSlot, candidate)

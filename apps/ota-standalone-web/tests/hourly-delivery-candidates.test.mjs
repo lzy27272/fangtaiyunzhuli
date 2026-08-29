@@ -1,8 +1,29 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  hourlyDeliveryMessageKey,
   selectHourlyDeliveryCandidates,
 } from '../../../tools/uat/wecom/src/hourly-delivery-candidates.mjs'
+
+test('canonical hourly delivery keys support controlled recovery at any minute', () => {
+  assert.equal(
+    hourlyDeliveryMessageKey({
+      hotelId: 'hotel-003',
+      businessDate: '2026-08-29',
+      snapshotHour: '2026-08-29T23',
+      messageKeySuffix: 'FUTURE_14D_V1',
+    }),
+    'hotel-003:2026-08-29:2026-08-29T23:FUTURE_14D_V1',
+  )
+  assert.equal(
+    hourlyDeliveryMessageKey({
+      hotelId: 'hotel-003',
+      businessDate: 'not-a-date',
+      snapshotHour: '2026-08-29T23',
+    }),
+    null,
+  )
+})
 
 const snapshot = (observedAt, completeness, businessDate = '2026-07-25') => ({
   collectionRunId: `${observedAt}:${completeness}`,
