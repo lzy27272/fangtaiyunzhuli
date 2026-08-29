@@ -209,26 +209,44 @@ const credentialFailureReason = (text) => {
   return smsFailureReason(text)
 }
 
-const selectAccountLogin = async (frame) => {
-  const password = frame.locator(bieyanghongLoginSelectors.password).first()
-  if (await password.isVisible().catch(() => false)) return
-  const tabs = frame.locator(bieyanghongLoginSelectors.accountLoginTab)
-  await tabs.filter({ hasText: '账号登录' }).first().click().catch(() => {})
-  if (await password.isVisible().catch(() => false)) return
-
-  // The vendor page currently ignores synthetic tab clicks in headless Chrome.
-  // Invoke the same React onClick handler only to select the official tab.
-  await tabs.filter({ hasText: '账号登录' }).first().evaluate((element) => {
-    const key = Object.keys(element)
-      .find((candidate) => candidate.startsWith('__reactProps'))
-    const onClick = key ? element[key]?.onClick : null
-    if (typeof onClick !== 'function') throw new Error('TAB_HANDLER_MISSING')
-    onClick({ preventDefault() {} })
-  }).catch(() => {})
-  await password.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => {})
-  if (!(await password.isVisible().catch(() => false))) {
-    throw new Error('BIEYANGHONG_ACCOUNT_LOGIN_FORM_UNAVAILABLE')
+const selectAccountLogin = async (page, initialFrame) => {
+  const deadline = Date.now() + 6_000
+  let frame = initialFrame
+  let nativeAttempted = false
+  let reactAttempted = false
+  while (Date.now() < deadline) {
+    frame = page.frames().find((candidate) =>
+      candidate.url().includes(bieyanghongLoginSelectors.loginFrameUrl))
+      ?? frame
+    const password = frame
+      .locator(bieyanghongLoginSelectors.password)
+      .first()
+    if (await password.isVisible().catch(() => false)) return frame
+    const accountTab = frame
+      .locator(bieyanghongLoginSelectors.accountLoginTab)
+      .filter({ hasText: '账号登录' })
+      .first()
+    if (!nativeAttempted) {
+      nativeAttempted = true
+      await accountTab.click().catch(() => {})
+    } else if (!reactAttempted) {
+      reactAttempted = true
+      // The vendor page can ignore synthetic tab clicks in headless Chrome.
+      // Invoke the same React handler, then reacquire the iframe because the
+      // tab switch may replace it.
+      await accountTab.evaluate((element) => {
+        const key = Object.keys(element)
+          .find((candidate) => candidate.startsWith('__reactProps'))
+        const onClick = key ? element[key]?.onClick : null
+        if (typeof onClick !== 'function') {
+          throw new Error('TAB_HANDLER_MISSING')
+        }
+        onClick({ preventDefault() {} })
+      }).catch(() => {})
+    }
+    await page.waitForTimeout(250)
   }
+  throw new Error('BIEYANGHONG_ACCOUNT_LOGIN_FORM_UNAVAILABLE')
 }
 
 const ensureAgreement = async (frame) => {
@@ -313,8 +331,8 @@ export const prepareBieyanghongCredentialLogin = async ({
     waitUntil: 'domcontentloaded',
     timeout: 45_000,
   })
-  const frame = await loginFrameFor(page)
-  await selectAccountLogin(frame)
+  let frame = await loginFrameFor(page)
+  frame = await selectAccountLogin(page, frame)
   try {
     await frame.locator(bieyanghongLoginSelectors.account).first().fill(phone)
     await frame.locator(bieyanghongLoginSelectors.password).first()
