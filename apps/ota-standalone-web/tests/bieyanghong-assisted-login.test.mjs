@@ -31,6 +31,13 @@ const fakeLoginPage = ({
         selector,
         value,
       }),
+      inputValue: async () => {
+        const latest = calls.findLast((call) =>
+          call.action === 'fill'
+          && call.frame === kind
+          && call.selector === selector)
+        return latest?.value ?? ''
+      },
       isChecked: async () => frameState.checked,
       isVisible: async () => {
         if (selector === bieyanghongLoginSelectors.password) {
@@ -133,6 +140,13 @@ test('requests the SMS code with a phone number and no password', async () => {
   assert.ok(calls.some((call) =>
     call.action === 'react-click'
     && call.selector === bieyanghongLoginSelectors.requestCode))
+  const agreementIndex = calls.findIndex((call) =>
+    call.action === 'click'
+    && call.selector === bieyanghongLoginSelectors.agreement)
+  const phoneFillIndex = calls.findIndex((call) =>
+    call.action === 'fill'
+    && call.selector === bieyanghongLoginSelectors.phone)
+  assert.ok(agreementIndex >= 0 && agreementIndex < phoneFillIndex)
   assert.equal(prepared.alreadyAuthenticated, false)
 })
 

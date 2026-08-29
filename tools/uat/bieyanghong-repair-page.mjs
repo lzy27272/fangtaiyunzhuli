@@ -75,6 +75,7 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
     BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED: '美团短信登录未建立有效会话。',
     BIEYANGHONG_LOGIN_FORM_UNAVAILABLE: '美团登录页面未能完整加载。',
     BIEYANGHONG_SMS_LOGIN_FORM_UNAVAILABLE: '美团短信登录表单未能完整加载。',
+    BIEYANGHONG_LOGIN_PHONE_INPUT_UNAVAILABLE: '手机号未能写入美团短信登录表单。',
     BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED: '美团页面未确认短信验证码已发送。',
     BIEYANGHONG_LOGIN_ACCOUNT_REJECTED: '手机号未通过美团校验。',
     BIEYANGHONG_SMS_RATE_LIMITED: '美团已限制验证码发送频率，请稍后再试。',

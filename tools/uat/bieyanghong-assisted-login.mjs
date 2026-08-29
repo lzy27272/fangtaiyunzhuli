@@ -346,8 +346,11 @@ export const prepareBieyanghongSmsLogin = async ({
   let requestConfirmed = false
   try {
     const phoneInput = frame.locator(bieyanghongLoginSelectors.phone).first()
-    await phoneInput.fill(phone)
     await ensureAgreement(frame)
+    await phoneInput.fill(phone)
+    if (await phoneInput.inputValue().catch(() => '') !== phone) {
+      throw new Error('BIEYANGHONG_LOGIN_PHONE_INPUT_UNAVAILABLE')
+    }
     const beforeText = await requestCode.innerText().catch(() => '')
     const beforeClass = await requestCode.getAttribute('class').catch(() => '')
     requestConfirmed =
@@ -355,12 +358,18 @@ export const prepareBieyanghongSmsLogin = async ({
       || String(beforeClass ?? '').includes('disabled')
     if (!requestConfirmed) {
       await clickVendorControl(requestCode)
-      await frame.waitForTimeout(2_500)
-      const afterText = await requestCode.innerText().catch(() => '')
-      const afterClass = await requestCode.getAttribute('class').catch(() => '')
-      requestConfirmed =
-        /\d+秒后/u.test(afterText)
-        || String(afterClass ?? '').includes('disabled')
+      const confirmationDeadline = Date.now() + 10_000
+      while (Date.now() < confirmationDeadline) {
+        await frame.waitForTimeout(250)
+        const afterText = await requestCode.innerText().catch(() => '')
+        const afterClass = await requestCode.getAttribute('class').catch(() => '')
+        requestConfirmed =
+          /\d+秒后/u.test(afterText)
+          || String(afterClass ?? '').includes('disabled')
+        if (requestConfirmed) break
+        const pendingReason = smsFailureReason(await pageText(frame))
+        if (pendingReason) throw new Error(pendingReason)
+      }
     }
   } catch (error) {
     if (String(error?.message ?? '').startsWith('BIEYANGHONG_')) throw error
