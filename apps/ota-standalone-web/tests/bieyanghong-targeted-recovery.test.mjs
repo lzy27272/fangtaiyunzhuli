@@ -14,7 +14,7 @@ const readyHotel = (overrides = {}) => ({
   pmsSystemCode: 'MEITUAN_BIEYANGHONG',
   collectionEnabled: true,
   cookieConfigured: true,
-  messageEnabled: true,
+  messageEnabled: false,
   weComEnabled: true,
   weComWebhookConfigured: true,
   ...overrides,

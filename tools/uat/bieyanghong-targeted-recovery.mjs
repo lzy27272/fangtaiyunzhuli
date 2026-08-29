@@ -58,11 +58,7 @@ export const resolveBieyanghongRecoveryTargets = ({
     if (!hotel.collectionEnabled || !hotel.cookieConfigured) {
       fail('BIEYANGHONG_RECOVERY_COLLECTION_NOT_READY')
     }
-    if (
-      !hotel.messageEnabled
-      || !hotel.weComEnabled
-      || !hotel.weComWebhookConfigured
-    ) {
+    if (!hotel.weComEnabled || !hotel.weComWebhookConfigured) {
       fail('BIEYANGHONG_RECOVERY_DELIVERY_NOT_READY')
     }
     return hotel
