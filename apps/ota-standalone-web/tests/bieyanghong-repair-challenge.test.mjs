@@ -48,6 +48,17 @@ test('accepts transient manager credentials and SMS codes without retaining them
   const credentialSnapshot = JSON.stringify(store.debugSnapshot())
   assert.equal(credentialSnapshot.includes('13800138000'), false)
   assert.equal(credentialSnapshot.includes('temporary-example-password'), false)
+  const interactive = store.setWaitingForInteractiveVerification(
+    created.tokenSha256,
+    'BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED',
+  )
+  assert.equal(interactive.status, 'WAITING_FOR_INTERACTIVE_VERIFICATION')
+  assert.equal(
+    interactive.reasonCode,
+    'BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED',
+  )
+  assert.equal(store.getInternal(created.token).hotelId, 'hotel-001')
+  store.markVerifying(created.tokenSha256)
   store.setWaitingForCode(created.tokenSha256)
   const submitted = store.submit(created.token, '123456')
   assert.equal(submitted.record.attemptsUsed, 1)

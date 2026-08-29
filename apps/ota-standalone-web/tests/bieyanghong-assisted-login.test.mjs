@@ -4,10 +4,11 @@ import test from 'node:test'
 import {
   bieyanghongCookieHeaderValid,
   bieyanghongLoginSelectors,
+  normalizeBieyanghongVisualInteraction,
   prepareBieyanghongCredentialLogin,
 } from '../../../tools/uat/bieyanghong-assisted-login.mjs'
 
-const fakeLoginPage = () => {
+const fakeLoginPage = ({ riskAfterCredential = false } = {}) => {
   const calls = []
   let accountMode = false
   let codeRequested = false
@@ -67,9 +68,14 @@ const fakeLoginPage = () => {
         return true
       },
       count: async () => 0,
-      innerText: async () => codeRequested
-        ? '59秒后重新获取'
-        : '获取验证码',
+      innerText: async () => {
+        if (
+          selector === 'body'
+          && riskAfterCredential
+          && kind === 'verification'
+        ) return '请完成安全验证'
+        return codeRequested ? '59秒后重新获取' : '获取验证码'
+      },
       getAttribute: async () => codeRequested
         ? 'timer-button disabled'
         : 'timer-button',
@@ -137,5 +143,66 @@ test('requires the complete scoped Meituan PMS cookie set', () => {
   assert.equal(
     bieyanghongCookieHeaderValid('hotelpms_token=e; _lxsdk_cuid=a'),
     false,
+  )
+})
+
+test('keeps the browser open for manager-operated Meituan risk verification', async () => {
+  const { page, context } = fakeLoginPage({ riskAfterCredential: true })
+  const prepared = await prepareBieyanghongCredentialLogin({
+    page,
+    context,
+    phone: '13800138000',
+    password: 'temporary-example-password',
+  })
+
+  assert.equal(prepared.alreadyAuthenticated, false)
+  assert.equal(prepared.interactiveVerificationRequired, true)
+  assert.equal(
+    prepared.interactiveReasonCode,
+    'BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED',
+  )
+})
+
+test('visual verification accepts only bounded pointer and keyboard actions', () => {
+  assert.deepEqual(
+    normalizeBieyanghongVisualInteraction({ kind: 'tap', x: 0.5, y: 0.25 }),
+    { kind: 'tap', x: 0.5, y: 0.25 },
+  )
+  assert.deepEqual(
+    normalizeBieyanghongVisualInteraction({
+      kind: 'drag',
+      fromX: 0.1,
+      fromY: 0.4,
+      toX: 0.8,
+      toY: 0.4,
+      durationMs: 5_000,
+    }),
+    {
+      kind: 'drag',
+      fromX: 0.1,
+      fromY: 0.4,
+      toX: 0.8,
+      toY: 0.4,
+      durationMs: 1_500,
+    },
+  )
+  assert.deepEqual(
+    normalizeBieyanghongVisualInteraction({ kind: 'key', key: 'Enter' }),
+    { kind: 'key', key: 'Enter' },
+  )
+  assert.throws(
+    () => normalizeBieyanghongVisualInteraction({
+      kind: 'tap',
+      x: 1.1,
+      y: 0.5,
+    }),
+    /BIEYANGHONG_VISUAL_INTERACTION_INVALID/u,
+  )
+  assert.throws(
+    () => normalizeBieyanghongVisualInteraction({
+      kind: 'text',
+      value: 'unsafe\nvalue',
+    }),
+    /BIEYANGHONG_VISUAL_INTERACTION_INVALID/u,
   )
 })

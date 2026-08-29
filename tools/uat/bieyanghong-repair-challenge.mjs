@@ -176,6 +176,11 @@ export const createBieyanghongRepairChallengeStore = ({
       return record ? publicRecord(record) : null
     },
 
+    getInternal(token) {
+      const record = recordForToken(token)
+      return record ? { ...record } : null
+    },
+
     getInternalByHash(hash) {
       const record = recordForHash(hash)
       return record ? { ...record } : null
@@ -245,6 +250,23 @@ export const createBieyanghongRepairChallengeStore = ({
       })
     },
 
+    setWaitingForInteractiveVerification(hash, reasonCode) {
+      return update(hash, (record) => {
+        if (
+          record.status !== 'REQUESTING_CODE'
+          || record.credentialRequestsUsed < 1
+        ) {
+          throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
+        }
+        record.status = 'WAITING_FOR_INTERACTIVE_VERIFICATION'
+        record.reasonCode =
+          typeof reasonCode === 'string'
+          && /^[A-Z][A-Z0-9_]{2,80}$/u.test(reasonCode)
+            ? reasonCode
+            : 'BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED'
+      })
+    },
+
     submit(token, code) {
       const record = recordForToken(token)
       if (!record) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
@@ -274,6 +296,7 @@ export const createBieyanghongRepairChallengeStore = ({
         if (![
           'PREPARING',
           'REQUESTING_CODE',
+          'WAITING_FOR_INTERACTIVE_VERIFICATION',
           'SUBMITTED',
           'VERIFYING',
         ].includes(record.status)) {

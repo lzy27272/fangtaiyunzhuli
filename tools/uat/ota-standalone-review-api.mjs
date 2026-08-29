@@ -2535,7 +2535,8 @@ const bieyanghongRepairHtml = (response) => {
     'cache-control': 'no-store, max-age=0',
     'content-security-policy':
       `default-src 'none'; base-uri 'none'; frame-ancestors 'none'; `
-      + `form-action 'self'; connect-src 'self'; style-src 'unsafe-inline'; `
+      + `form-action 'self'; img-src 'self' blob:; connect-src 'self'; `
+      + `style-src 'unsafe-inline'; `
       + `script-src 'self'`,
     'permissions-policy':
       'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
@@ -2556,6 +2557,19 @@ const bieyanghongRepairClientScript = (response) => {
     'x-content-type-options': 'nosniff',
   })
   response.end(content)
+}
+
+const bieyanghongVisualFrame = (response, image) => {
+  response.writeHead(200, {
+    'content-type': 'image/png',
+    'content-length': image.length,
+    'cache-control': 'no-store, max-age=0',
+    'vary': 'authorization',
+    'content-disposition': 'inline; filename="meituan-verification.png"',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  })
+  response.end(image)
 }
 
 const repairCaptcha = (response, captcha) => {
@@ -4706,6 +4720,9 @@ const startBieyanghongRepairChallenge = async (
     tokenSha256: created.tokenSha256,
     challengeId: created.record.challengeId,
     login: null,
+    visualOperation: null,
+    visualFrameLastAt: 0,
+    finishing: false,
   }
   activeBieyanghongRepairsByHotel.set(hotelId, handle)
   try {
@@ -4720,7 +4737,7 @@ const startBieyanghongRepairChallenge = async (
       content: [
         '### 001别样红简报需要管理员授权',
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '请由本次处理管理员点击一次性链接，临时填写自己的手机号和密码，手动发送验证码后再填写验证码登录：',
+        '请由本次处理管理员点击一次性链接，临时填写自己的手机号和密码；如美团要求额外安全验证，请直接在链接中的官方画面手动完成：',
         bieyanghongRepairLink(
           bieyanghongRepairPublicBaseUrl,
           created.token,
@@ -4813,6 +4830,22 @@ const processBieyanghongRepairCodeRequest = ({
         })
         return
       }
+      if (handle.login.interactiveVerificationRequired) {
+        bieyanghongRepairChallengeStore
+          .setWaitingForInteractiveVerification(
+            requested.tokenSha256,
+            handle.login.interactiveReasonCode,
+          )
+        process.stdout.write(
+          `${JSON.stringify({
+            event: 'BIEYANGHONG_INTERACTIVE_VERIFICATION_REQUIRED',
+            hotelId: challenge.hotelId,
+            challengeId: challenge.challengeId,
+            reasonCode: handle.login.interactiveReasonCode,
+          })}\n`,
+        )
+        return
+      }
       bieyanghongRepairChallengeStore.setWaitingForCode(
         requested.tokenSha256,
       )
@@ -4876,6 +4909,91 @@ const processBieyanghongRepairCodeRequest = ({
     }
   })()
   return requested.record
+}
+
+const bieyanghongInteractiveHandleFor = (token) => {
+  const challenge = bieyanghongRepairChallengeStore.getInternal(token)
+  if (!challenge) {
+    throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
+  }
+  if (challenge.status !== 'WAITING_FOR_INTERACTIVE_VERIFICATION') {
+    throw new Error('BIEYANGHONG_INTERACTIVE_VERIFICATION_NOT_READY')
+  }
+  const handle = activeBieyanghongRepairsByHotel.get(challenge.hotelId)
+  if (
+    !handle
+    || handle.tokenSha256 !== challenge.tokenSha256
+    || !handle.login?.captureVisualState
+    || !handle.login?.interactVisually
+  ) {
+    throw new Error('BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE')
+  }
+  return { challenge, handle }
+}
+
+const queueBieyanghongVisualOperation = (handle, operation) => {
+  const previous = handle.visualOperation ?? Promise.resolve()
+  const current = previous.catch(() => {}).then(operation)
+  handle.visualOperation = current
+  return current.finally(() => {
+    if (handle.visualOperation === current) handle.visualOperation = null
+  })
+}
+
+const beginBieyanghongInteractiveFinish = ({ challenge, handle, cookieHeader }) => {
+  if (handle.finishing) return
+  handle.finishing = true
+  let scopedCookieHeader = cookieHeader
+  void finishBieyanghongRepair({
+    hotelId: challenge.hotelId,
+    tokenSha256: challenge.tokenSha256,
+    cookieHeader: scopedCookieHeader,
+  }).finally(() => {
+    scopedCookieHeader = null
+  })
+}
+
+const captureBieyanghongInteractiveFrame = async (token) => {
+  const { challenge, handle } = bieyanghongInteractiveHandleFor(token)
+  const now = Date.now()
+  if (now - handle.visualFrameLastAt < 750) {
+    throw new Error('BIEYANGHONG_VISUAL_FRAME_RATE_LIMITED')
+  }
+  handle.visualFrameLastAt = now
+  const result = await queueBieyanghongVisualOperation(
+    handle,
+    () => handle.login.captureVisualState(),
+  )
+  if (result.authenticated) {
+    beginBieyanghongInteractiveFinish({
+      challenge,
+      handle,
+      cookieHeader: result.cookieHeader,
+    })
+    result.cookieHeader = null
+    return { authenticated: true, image: null }
+  }
+  return { authenticated: false, image: result.image }
+}
+
+const processBieyanghongInteractiveAction = async ({ token, input }) => {
+  const { challenge, handle } = bieyanghongInteractiveHandleFor(token)
+  const result = await queueBieyanghongVisualOperation(
+    handle,
+    () => handle.login.interactVisually(input),
+  )
+  if (result.authenticated) {
+    beginBieyanghongInteractiveFinish({
+      challenge,
+      handle,
+      cookieHeader: result.cookieHeader,
+    })
+    result.cookieHeader = null
+  }
+  return {
+    accepted: true,
+    authenticationDetected: result.authenticated,
+  }
 }
 
 const processBieyanghongRepairSubmission = ({ token, code }) => {
@@ -5905,6 +6023,43 @@ const server = createServer(async (request, response) => {
         code: body.code,
       })
       json(response, 202, { data: accepted })
+      return
+    }
+
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/bieyanghong-repair/visual/frame'
+    ) {
+      const captured = await captureBieyanghongInteractiveFrame(
+        repairTokenFrom(request),
+      )
+      if (captured.authenticated) {
+        json(response, 202, { data: { authenticationDetected: true } })
+      } else {
+        bieyanghongVisualFrame(response, captured.image)
+      }
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/bieyanghong-repair/visual/interact'
+    ) {
+      const token = repairTokenFrom(request)
+      const body = await readBody(request)
+      let interaction = body
+      try {
+        const result = await processBieyanghongInteractiveAction({
+          token,
+          input: interaction,
+        })
+        json(response, 202, { data: result })
+      } finally {
+        if (interaction && typeof interaction === 'object') {
+          interaction.value = null
+        }
+        interaction = null
+      }
       return
     }
 

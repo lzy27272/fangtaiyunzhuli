@@ -85,6 +85,8 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     assert.match(html, /id="phone"/u)
     assert.match(html, /id="password" type="password"/u)
     assert.match(html, /发送验证码/u)
+    assert.match(html, /id="visual"/u)
+    assert.match(html, /美团官方安全验证/u)
     assert.doesNotMatch(html, /手机号\s*1\d{10}|Cookie=/iu)
     assert.match(html, /\/api\/v1\/bieyanghong-repair\/client\.js/u)
 
@@ -104,6 +106,9 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     )
     assert.match(clientScript, /BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED/u)
     assert.match(clientScript, /安全模式不会自动代选账号/u)
+    assert.match(clientScript, /bieyanghong-repair\/visual\/frame/u)
+    assert.match(clientScript, /bieyanghong-repair\/visual\/interact/u)
+    assert.match(clientScript, /WAITING_FOR_INTERACTIVE_VERIFICATION/u)
     assert.doesNotMatch(clientScript, /localStorage|sessionStorage/u)
 
     const missing = await fetch(
@@ -111,6 +116,15 @@ test('001 SMS authorization page is public but challenge data remains token-gate
       { headers: { Authorization: 'Repair invalid' } },
     )
     assert.equal(missing.status, 404)
+
+    const visualMissing = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/visual/frame`,
+    )
+    assert.equal(visualMissing.status, 400)
+    assert.equal(
+      (await visualMissing.json()).code,
+      'BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND',
+    )
 
     const proxiedTrigger = await fetch(
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/start`,

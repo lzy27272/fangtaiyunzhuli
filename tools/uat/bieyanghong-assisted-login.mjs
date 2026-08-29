@@ -50,6 +50,60 @@ export const bieyanghongLoginSelectors = Object.freeze({
   accountCard: '.account-card',
 })
 
+const VISUAL_KEYS = new Set([
+  'Backspace',
+  'Tab',
+  'Enter',
+  'Escape',
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+])
+
+const visualCoordinate = (value) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+    ? value
+    : null
+
+export const normalizeBieyanghongVisualInteraction = (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
+  }
+  if (input.kind === 'tap') {
+    const x = visualCoordinate(input.x)
+    const y = visualCoordinate(input.y)
+    if (x === null || y === null) {
+      throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
+    }
+    return { kind: 'tap', x, y }
+  }
+  if (input.kind === 'drag') {
+    const fromX = visualCoordinate(input.fromX)
+    const fromY = visualCoordinate(input.fromY)
+    const toX = visualCoordinate(input.toX)
+    const toY = visualCoordinate(input.toY)
+    if ([fromX, fromY, toX, toY].includes(null)) {
+      throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
+    }
+    const durationMs = Number.isInteger(input.durationMs)
+      ? Math.max(250, Math.min(1_500, input.durationMs))
+      : 650
+    return { kind: 'drag', fromX, fromY, toX, toY, durationMs }
+  }
+  if (input.kind === 'text') {
+    const value = typeof input.value === 'string' ? input.value : ''
+    if (!value || value.length > 64 || /[\r\n\u0000]/u.test(value)) {
+      throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
+    }
+    return { kind: 'text', value }
+  }
+  if (input.kind === 'key' && VISUAL_KEYS.has(input.key)) {
+    return { kind: 'key', key: input.key }
+  }
+  throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
+}
+
 const loginFrameFor = async (page, timeoutMs = 20_000) => {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -85,6 +139,24 @@ const captureCookieHeader = async (context) => {
     throw new Error('BIEYANGHONG_SESSION_COOKIE_INVALID')
   }
   return header
+}
+
+const officialInteractivePage = (context, fallbackPage) => {
+  const active = context.pages().filter((candidate) => !candidate.isClosed())
+  const page = active.at(-1) ?? fallbackPage
+  let url
+  try {
+    url = new URL(page.url())
+  } catch {
+    throw new Error('BIEYANGHONG_VISUAL_PAGE_UNAVAILABLE')
+  }
+  if (
+    url.protocol !== 'https:'
+    || !/(^|\.)meituan\.com$/iu.test(url.hostname)
+  ) {
+    throw new Error('BIEYANGHONG_VISUAL_NAVIGATION_BLOCKED')
+  }
+  return page
 }
 
 const pageText = (frame) =>
@@ -271,6 +343,14 @@ export const prepareBieyanghongCredentialLogin = async ({
     const text = await pageText(activeFrame)
     const reasonCode = credentialFailureReason(text)
     if (reasonCode) {
+      if (reasonCode === 'BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED') {
+        return {
+          alreadyAuthenticated: false,
+          interactiveVerificationRequired: true,
+          interactiveReasonCode: reasonCode,
+          frame: activeFrame,
+        }
+      }
       await clearCredentialFields(activeFrame)
       throw new Error(reasonCode)
     }
@@ -283,8 +363,12 @@ export const prepareBieyanghongCredentialLogin = async ({
         await page.waitForTimeout(500)
         continue
       }
-      await clearCredentialFields(activeFrame)
-      throw new Error('BIEYANGHONG_ACCOUNT_SELECTION_REQUIRED')
+      return {
+        alreadyAuthenticated: false,
+        interactiveVerificationRequired: true,
+        interactiveReasonCode: 'BIEYANGHONG_ACCOUNT_SELECTION_REQUIRED',
+        frame: activeFrame,
+      }
     }
     const smsCode = activeFrame
       .locator(bieyanghongLoginSelectors.smsCode)
@@ -324,6 +408,14 @@ export const prepareBieyanghongCredentialLogin = async ({
       }
       const smsText = await pageText(activeFrame)
       const smsReasonCode = smsFailureReason(smsText)
+      if (smsReasonCode === 'BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED') {
+        return {
+          alreadyAuthenticated: false,
+          interactiveVerificationRequired: true,
+          interactiveReasonCode: smsReasonCode,
+          frame: activeFrame,
+        }
+      }
       await clearCredentialFields(activeFrame)
       if (smsReasonCode) throw new Error(smsReasonCode)
       if (!requestConfirmed) {
@@ -371,7 +463,32 @@ export const startBieyanghongAssistedLogin = async ({
     ],
   })
   const page = context.pages()[0] ?? await context.newPage()
+  await context.route('**/*', async (route) => {
+    const request = route.request()
+    if (request.isNavigationRequest()) {
+      const frame = request.frame()
+      const topLevel = frame === frame.page().mainFrame()
+      if (topLevel) {
+        let destination
+        try {
+          destination = new URL(request.url())
+        } catch {
+          await route.abort()
+          return
+        }
+        if (
+          destination.protocol !== 'https:'
+          || !/(^|\.)meituan\.com$/iu.test(destination.hostname)
+        ) {
+          await route.abort()
+          return
+        }
+      }
+    }
+    await route.continue()
+  })
   let closed = false
+  let visualInteractionCount = 0
   const close = async () => {
     if (closed) return
     closed = true
@@ -405,10 +522,76 @@ export const startBieyanghongAssistedLogin = async ({
         close,
       }
     }
+    const captureVisualState = async () => {
+      if (closed) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
+      const cookieHeader = await captureCookieHeader(context).catch(() => null)
+      if (cookieHeader) return { authenticated: true, cookieHeader }
+      const activePage = officialInteractivePage(context, page)
+      await activePage.bringToFront()
+      const image = await activePage.screenshot({
+        type: 'png',
+        animations: 'disabled',
+        caret: 'hide',
+      })
+      const viewport = activePage.viewportSize() ?? { width: 1280, height: 720 }
+      return {
+        authenticated: false,
+        image,
+        width: viewport.width,
+        height: viewport.height,
+      }
+    }
+    const interactVisually = async (input) => {
+      if (closed) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
+      visualInteractionCount += 1
+      if (visualInteractionCount > 120) {
+        throw new Error('BIEYANGHONG_VISUAL_INTERACTION_LIMIT_REACHED')
+      }
+      const action = normalizeBieyanghongVisualInteraction(input)
+      const activePage = officialInteractivePage(context, page)
+      await activePage.bringToFront()
+      const viewport = activePage.viewportSize() ?? { width: 1280, height: 720 }
+      const point = (x, y) => ({
+        x: Math.round(x * viewport.width),
+        y: Math.round(y * viewport.height),
+      })
+      if (action.kind === 'tap') {
+        const target = point(action.x, action.y)
+        await activePage.mouse.click(target.x, target.y)
+      } else if (action.kind === 'drag') {
+        const from = point(action.fromX, action.fromY)
+        const to = point(action.toX, action.toY)
+        await activePage.mouse.move(from.x, from.y)
+        await activePage.mouse.down()
+        const steps = 16
+        for (let step = 1; step <= steps; step += 1) {
+          await activePage.mouse.move(
+            from.x + ((to.x - from.x) * step / steps),
+            from.y + ((to.y - from.y) * step / steps),
+          )
+          await activePage.waitForTimeout(Math.ceil(action.durationMs / steps))
+        }
+        await activePage.mouse.up()
+      } else if (action.kind === 'text') {
+        await activePage.keyboard.insertText(action.value)
+      } else {
+        await activePage.keyboard.press(action.key)
+      }
+      await activePage.waitForTimeout(350)
+      const cookieHeader = await captureCookieHeader(context).catch(() => null)
+      return cookieHeader
+        ? { authenticated: true, cookieHeader }
+        : { authenticated: false }
+    }
     const frame = prepared.frame
     return {
       alreadyAuthenticated: false,
+      interactiveVerificationRequired:
+        prepared.interactiveVerificationRequired === true,
+      interactiveReasonCode: prepared.interactiveReasonCode ?? null,
       close,
+      captureVisualState,
+      interactVisually,
       submit: async (code) => {
         if (closed) {
           throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
