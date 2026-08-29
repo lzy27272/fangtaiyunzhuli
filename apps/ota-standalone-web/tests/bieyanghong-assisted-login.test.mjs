@@ -6,6 +6,7 @@ import {
   bieyanghongLoginSelectors,
   normalizeBieyanghongVisualInteraction,
   prepareBieyanghongCredentialLogin,
+  prepareBieyanghongOfficialLogin,
   prepareBieyanghongSmsLogin,
 } from '../../../tools/uat/bieyanghong-assisted-login.mjs'
 
@@ -150,6 +151,22 @@ test('requests the SMS code with a phone number and no password', async () => {
   assert.equal(prepared.alreadyAuthenticated, false)
 })
 
+test('opens the official Meituan login without collecting credentials', async () => {
+  const { page, calls } = fakeLoginPage()
+  const prepared = await prepareBieyanghongOfficialLogin({ page })
+
+  assert.deepEqual(calls, [{
+    action: 'goto',
+    url: 'https://pms.meituan.com/pms-web/account/login',
+  }])
+  assert.equal(prepared.interactiveVerificationRequired, true)
+  assert.equal(
+    prepared.interactiveReasonCode,
+    'BIEYANGHONG_OFFICIAL_LOGIN_REQUIRED',
+  )
+  assert.equal(calls.some((call) => call.action === 'fill'), false)
+})
+
 test('waits for the Meituan SMS form to finish rendering', async () => {
   const { page, calls } = fakeLoginPage({
     initialKind: 'verification',
@@ -248,7 +265,7 @@ test('visual verification accepts only bounded pointer and keyboard actions', ()
       fromY: 0.4,
       toX: 0.8,
       toY: 0.4,
-      durationMs: 1_500,
+      durationMs: 2_000,
     },
   )
   assert.deepEqual(

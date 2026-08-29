@@ -87,7 +87,7 @@ export const normalizeBieyanghongVisualInteraction = (input) => {
       throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
     }
     const durationMs = Number.isInteger(input.durationMs)
-      ? Math.max(250, Math.min(1_500, input.durationMs))
+      ? Math.max(250, Math.min(2_000, input.durationMs))
       : 650
     return { kind: 'drag', fromX, fromY, toX, toY, durationMs }
   }
@@ -113,6 +113,20 @@ const loginFrameFor = async (page, timeoutMs = 20_000) => {
     await page.waitForTimeout(250)
   }
   throw new Error('BIEYANGHONG_LOGIN_FORM_UNAVAILABLE')
+}
+
+export const prepareBieyanghongOfficialLogin = async ({ page }) => {
+  await page.goto(LOGIN_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 45_000,
+  })
+  const frame = await loginFrameFor(page)
+  return {
+    alreadyAuthenticated: false,
+    interactiveVerificationRequired: true,
+    interactiveReasonCode: 'BIEYANGHONG_OFFICIAL_LOGIN_REQUIRED',
+    frame,
+  }
 }
 
 const cookiesToHeader = (cookies) =>
@@ -522,13 +536,14 @@ export const prepareBieyanghongCredentialLogin = async ({
 export const startBieyanghongAssistedLogin = async ({
   profileRoot,
   phone,
+  officialLogin = false,
   chromium = chromiumFor(),
   browserExecutable = browserExecutableFor(),
 }) => {
   if (
     typeof profileRoot !== 'string'
     || !profileRoot
-    || !/^\d{11}$/u.test(String(phone ?? ''))
+    || (!officialLogin && !/^\d{11}$/u.test(String(phone ?? '')))
   ) {
     throw new Error('BIEYANGHONG_LOGIN_CONFIGURATION_INVALID')
   }
@@ -592,10 +607,9 @@ export const startBieyanghongAssistedLogin = async ({
       }
     }
 
-    const prepared = await prepareBieyanghongSmsLogin({
-      page,
-      phone,
-    })
+    const prepared = officialLogin
+      ? await prepareBieyanghongOfficialLogin({ page })
+      : await prepareBieyanghongSmsLogin({ page, phone })
     phone = null
     if (prepared.alreadyAuthenticated) {
       return {
@@ -645,7 +659,7 @@ export const startBieyanghongAssistedLogin = async ({
         const to = point(action.toX, action.toY)
         await activePage.mouse.move(from.x, from.y)
         await activePage.mouse.down()
-        const steps = 16
+        const steps = 36
         for (let step = 1; step <= steps; step += 1) {
           await activePage.mouse.move(
             from.x + ((to.x - from.x) * step / steps),

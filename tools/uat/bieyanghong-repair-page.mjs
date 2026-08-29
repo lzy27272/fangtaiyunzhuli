@@ -5,42 +5,19 @@ export const renderBieyanghongRepairPage = () => `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>别样红简报授权修复</title>
   <style>
-    :root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17332d;background:#f3f0e8}body{margin:0;padding:24px}main{max-width:720px;margin:0 auto;background:#fff;border:1px solid #d8d4c8;border-radius:22px;padding:24px;box-shadow:0 14px 36px rgba(20,44,38,.08)}h1{font-size:25px;margin:0 0 10px}.hint{color:#61706c;line-height:1.6}.store{margin:18px 0;padding:14px;border-radius:14px;background:#f4f8f5;font-weight:700}label{display:block;font-weight:700;margin:12px 0 8px}input{box-sizing:border-box;width:100%;font-size:22px;letter-spacing:5px;padding:13px;border:1px solid #aebbb6;border-radius:12px}button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:12px;background:#176b52;color:#fff;font-size:17px;font-weight:700}button:disabled{background:#9aaba5}.status{margin-top:16px;padding:12px;border-radius:12px;background:#f7f4eb;line-height:1.55}.error{color:#9e2c22;background:#fff0ed}.success{color:#126044;background:#eaf7f0}.hidden{display:none}.visual{margin-top:16px;padding:14px;border:1px solid #d5ddd8;border-radius:16px;background:#f7faf8}.visual h2{font-size:18px;margin:0 0 8px}.screen{overflow:hidden;border:1px solid #8ea39a;border-radius:12px;background:#e6ece8;min-height:180px}.screen img{display:block;width:100%;height:auto;min-height:180px;object-fit:contain;touch-action:none;user-select:none;-webkit-user-drag:none}.visual-tools{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}.visual-tools input{font-size:17px;letter-spacing:0}.visual-tools button{width:auto;padding:13px 16px}.key-tools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.key-tools button{padding:10px 6px;font-size:14px}.foot{margin-top:18px;color:#78837f;font-size:13px;line-height:1.6}@media(max-width:520px){body{padding:12px}main{padding:18px}.visual-tools{grid-template-columns:1fr}.visual-tools button{width:100%}}
+    :root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17332d;background:#f3f0e8}body{margin:0;padding:24px}main{max-width:720px;margin:0 auto;background:#fff;border:1px solid #d8d4c8;border-radius:22px;padding:24px;box-shadow:0 14px 36px rgba(20,44,38,.08)}h1{font-size:25px;margin:0 0 10px}.hint{color:#61706c;line-height:1.7}.store{margin:18px 0;padding:14px;border-radius:14px;background:#f4f8f5;font-weight:700}button{width:100%;margin-top:14px;padding:15px;border:0;border-radius:12px;background:#176b52;color:#fff;font-size:17px;font-weight:700}button:disabled{background:#9aaba5}.status{margin-top:16px;padding:12px;border-radius:12px;background:#f7f4eb;line-height:1.55}.error{color:#9e2c22;background:#fff0ed}.success{color:#126044;background:#eaf7f0}.hidden{display:none}.trust{margin:18px 0;padding:15px;border:1px solid #d5ddd8;border-radius:14px;background:#f7faf8}.trust strong{display:block;margin-bottom:6px}.foot{margin-top:18px;color:#78837f;font-size:13px;line-height:1.7}@media(max-width:520px){body{padding:12px}main{padding:18px}}
   </style>
   <script src="/api/v1/bieyanghong-repair/client.js" defer></script>
 </head>
 <body>
 <main>
   <h1>别样红简报授权修复</h1>
-  <p class="hint">请由本次处理管理员填写自己的手机号，手动发送并填写短信验证码。不需要密码；首次发送后本链接会锁定到本次登录流程，请勿转发或由多人同时操作。</p>
+  <p class="hint">请由本次处理管理员打开专属窗口，直接在美团官方登录页面完成账号、密码、短信或安全验证。不要转发本链接，也不要由多人同时操作。</p>
   <div id="store" class="store">正在读取门店信息…</div>
-  <form id="credential-form" class="hidden" autocomplete="off">
-    <label for="phone">管理员手机号</label>
-    <input id="phone" type="tel" inputmode="numeric" pattern="[0-9]*" minlength="11" maxlength="11" required autocomplete="off">
-    <button id="request-code" type="submit">发送短信验证码</button>
-  </form>
-  <form id="code-form" class="hidden" autocomplete="off">
-    <label for="answer">短信验证码</label>
-    <input id="answer" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" required autocomplete="one-time-code">
-    <button id="submit" type="submit">授权登录并自动修复</button>
-  </form>
-  <section id="visual" class="visual hidden">
-    <h2>美团官方安全验证</h2>
-    <p class="hint">下方是服务器中本次专属的美团官方页面。请直接点按或拖动图片完成验证；需要输入内容时，先点选官方输入框，再使用下方输入框发送。画面不保存。</p>
-    <div class="screen"><img id="vendor-screen" alt="正在加载美团官方安全验证页面" draggable="false"></div>
-    <form id="visual-text-form" class="visual-tools" autocomplete="off">
-      <div><label for="visual-text">向已选中的官方输入框输入</label><input id="visual-text" maxlength="64" autocomplete="off"></div>
-      <button id="visual-text-send" type="submit">发送文字</button>
-    </form>
-    <div class="key-tools">
-      <button type="button" data-visual-key="Backspace">退格</button>
-      <button type="button" data-visual-key="Tab">下一项</button>
-      <button type="button" data-visual-key="Enter">确认</button>
-      <button id="refresh-screen" type="button">刷新画面</button>
-    </div>
-  </section>
+  <div class="trust"><strong>官方登录目标</strong>https://pms.meituan.com<br><span class="hint">专属窗口连接001门店的云端隔离浏览器；登录成功后仅保存美团会话用于该门店采集。</span></div>
+  <button id="open-official" class="hidden" type="button">打开美团官网登录窗口</button>
   <div id="status" class="status">正在连接云端服务…</div>
-  <p class="foot">链接仅限001门店试点，10分钟内有效；手机号最多提交2次，验证码最多提交3次。手机号和验证码只在本次内存会话中使用，不保存、不回显、不写入日志，到期立即清除。罗盘门店不使用此页面。</p>
+  <p class="foot">链接仅限001门店试点，10分钟内有效；官方窗口最多启动2次。输入仅在本次加密会话中转交美团官方页面，不保存、不回显、不写入日志，到期立即清除。罗盘门店仍使用原修复方式。</p>
 </main>
 </body>
 </html>`
@@ -49,251 +26,236 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
   let repairToken = location.hash.slice(1)
   history.replaceState(null, '', location.pathname)
   const store = document.getElementById('store')
-  const credentialForm = document.getElementById('credential-form')
-  const phone = document.getElementById('phone')
-  const requestCode = document.getElementById('request-code')
-  const codeForm = document.getElementById('code-form')
-  const answer = document.getElementById('answer')
-  const submit = document.getElementById('submit')
-  const visual = document.getElementById('visual')
-  const vendorScreen = document.getElementById('vendor-screen')
-  const visualTextForm = document.getElementById('visual-text-form')
-  const visualText = document.getElementById('visual-text')
-  const visualTextSend = document.getElementById('visual-text-send')
-  const refreshScreen = document.getElementById('refresh-screen')
+  const openOfficial = document.getElementById('open-official')
   const status = document.getElementById('status')
-  let visualFrameBusy = false
-  let visualActionBusy = false
-  let visualFrameUrl = ''
-  let pointerStart = null
   const headers = () => ({ Authorization: 'Repair ' + repairToken })
   const setStatus = (message, kind = '') => {
     status.textContent = message
     status.className = 'status' + (kind ? ' ' + kind : '')
   }
   const failureMessage = (reasonCode) => ({
-    BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED: '美团短信登录未建立有效会话。',
-    BIEYANGHONG_LOGIN_FORM_UNAVAILABLE: '美团登录页面未能完整加载。',
-    BIEYANGHONG_SMS_LOGIN_FORM_UNAVAILABLE: '美团短信登录表单未能完整加载。',
-    BIEYANGHONG_LOGIN_PHONE_INPUT_UNAVAILABLE: '手机号未能写入美团短信登录表单。',
-    BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED: '美团页面未确认短信验证码已发送。',
-    BIEYANGHONG_LOGIN_ACCOUNT_REJECTED: '手机号未通过美团校验。',
-    BIEYANGHONG_SMS_RATE_LIMITED: '美团已限制验证码发送频率，请稍后再试。',
-    BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED: '美团要求额外安全验证，自动流程已停止。',
-    BIEYANGHONG_ACCOUNT_SELECTION_REQUIRED: '该手机号关联多个美团账号，安全模式不会自动代选账号。'
+    BIEYANGHONG_LOGIN_FORM_UNAVAILABLE: '美团官网登录页面未能完整加载。',
+    BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED: '美团登录未建立有效会话。',
+    BIEYANGHONG_VISUAL_INTERACTION_LIMIT_REACHED: '本次官方窗口的安全操作次数已用尽。',
+    BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE: '本次云端官方登录窗口已经失效。'
   }[reasonCode] || '本次授权未完成。')
-  const showOnly = (section) => {
-    credentialForm.classList.toggle('hidden', section !== credentialForm)
-    codeForm.classList.toggle('hidden', section !== codeForm)
-    visual.classList.toggle('hidden', section !== visual)
-    if (section !== visual && visualFrameUrl) {
-      URL.revokeObjectURL(visualFrameUrl)
-      visualFrameUrl = ''
-      vendorScreen.removeAttribute('src')
-    }
-  }
-  const updateVisualFrame = async () => {
-    if (!repairToken || visualFrameBusy || visual.classList.contains('hidden')) return
-    visualFrameBusy = true
-    try {
-      const response = await fetch('/api/v1/bieyanghong-repair/visual/frame', {
-        headers: headers(), cache: 'no-store'
-      })
-      if (response.status === 202) {
-        await refresh()
-        return
-      }
-      if (!response.ok || !(response.headers.get('content-type') || '').includes('image/png')) {
-        throw new Error('VISUAL_FRAME_UNAVAILABLE')
-      }
-      const nextUrl = URL.createObjectURL(await response.blob())
-      vendorScreen.src = nextUrl
-      if (visualFrameUrl) URL.revokeObjectURL(visualFrameUrl)
-      visualFrameUrl = nextUrl
-    } catch {
-      setStatus('安全验证画面暂时未更新，请点击“刷新画面”。', 'error')
-    } finally {
-      visualFrameBusy = false
-    }
-  }
-  const sendVisualAction = async (action) => {
-    if (!repairToken || visualActionBusy) return
-    visualActionBusy = true
-    try {
-      const response = await fetch('/api/v1/bieyanghong-repair/visual/interact', {
-        method: 'POST',
-        headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(action)
-      })
-      if (!response.ok) throw new Error('VISUAL_INTERACTION_REJECTED')
-      const data = (await response.json()).data
-      if (data.authenticationDetected) {
-        setStatus('美团登录已确认，正在核验001门店并恢复采集播报…')
-      }
-      await updateVisualFrame()
-      await refresh()
-    } catch {
-      setStatus('本次操作未送达官方页面，请刷新画面后重试。', 'error')
-    } finally {
-      visualActionBusy = false
-    }
-  }
   const refresh = async () => {
     if (!repairToken) {
+      openOfficial.classList.add('hidden')
       setStatus('链接无效，请等待系统重新发送授权通知。', 'error')
       return
     }
     try {
-      const response = await fetch('/api/v1/bieyanghong-repair/status', {
-        headers: headers(), cache: 'no-store'
-      })
+      const response = await fetch('/api/v1/bieyanghong-repair/status', { headers: headers(), cache: 'no-store' })
       if (!response.ok) throw new Error('CHALLENGE_UNAVAILABLE')
       const data = (await response.json()).data
       store.textContent = data.hotelCode + ' · ' + data.hotelName
       if (data.status === 'WAITING_FOR_CREDENTIALS') {
-        showOnly(credentialForm)
-        requestCode.disabled = false
-        setStatus(
-          data.reasonCode === 'BIEYANGHONG_LOGIN_ACCOUNT_REJECTED'
-            ? '手机号未通过美团校验，请核对后重试。剩余 ' + data.credentialRequestsRemaining + ' 次。'
-            : '请填写当前管理员本人的手机号，并手动发送短信验证码。不需要密码。剩余 ' + data.credentialRequestsRemaining + ' 次。',
-          data.reasonCode ? 'error' : ''
-        )
-      } else if (data.status === 'REQUESTING_CODE') {
-        showOnly(null)
-        setStatus('正在通过美团官方短信登录入口请求验证码…')
-      } else if (data.status === 'WAITING_FOR_CODE') {
-        showOnly(codeForm)
-        submit.disabled = false
-        setStatus('等待短信验证码，剩余 ' + data.attemptsRemaining + ' 次。')
+        openOfficial.classList.remove('hidden')
+        openOfficial.disabled = false
+        setStatus('请点击按钮，在专属窗口内直接完成美团官网登录。剩余可启动 ' + data.credentialRequestsRemaining + ' 次。')
+      } else if (data.status === 'OPENING_OFFICIAL_LOGIN') {
+        openOfficial.classList.add('hidden')
+        setStatus('正在启动001门店的美团官网登录窗口…')
       } else if (data.status === 'WAITING_FOR_INTERACTIVE_VERIFICATION') {
-        showOnly(visual)
-        setStatus(
-          data.reasonCode === 'BIEYANGHONG_ACCOUNT_SELECTION_REQUIRED'
-            ? '请在美团官方页面选择本次001门店对应的账号。'
-            : '美团要求额外安全验证，请由当前管理员在下方官方页面手动完成。'
-        )
-        void updateVisualFrame()
+        openOfficial.classList.remove('hidden')
+        openOfficial.disabled = false
+        openOfficial.textContent = '返回美团官网登录窗口'
+        setStatus('美团官网登录窗口已就绪，请在窗口内完成登录。')
       } else if (data.status === 'SUBMITTED' || data.status === 'VERIFYING') {
-        showOnly(null)
-        setStatus('正在验证登录并重新采集、补发简报，请稍候…')
+        openOfficial.classList.add('hidden')
+        setStatus('登录已确认，正在重新采集并补发001简报…')
       } else if (data.status === 'COMPLETE') {
-        showOnly(null)
+        openOfficial.classList.add('hidden')
         setStatus('授权修复完成，001简报已重新采集并确认送达。', 'success')
         repairToken = ''
       } else if (data.status === 'FAILED' || data.status === 'EXPIRED') {
-        showOnly(null)
-        setStatus(
-          data.status === 'EXPIRED'
-            ? '链接已过期，请等待新的授权通知。'
-            : failureMessage(data.reasonCode) + ' 请等待系统重新发起。' + (data.reasonCode ? '（' + data.reasonCode + '）' : ''),
-          'error'
-        )
+        openOfficial.classList.add('hidden')
+        setStatus(data.status === 'EXPIRED' ? '链接已过期，请等待新的授权通知。' : failureMessage(data.reasonCode) + ' 请等待系统重新发起。' + (data.reasonCode ? '（' + data.reasonCode + '）' : ''), 'error')
       } else {
-        showOnly(null)
+        openOfficial.classList.add('hidden')
         setStatus('系统正在准备安全授权链接…')
       }
     } catch {
-      showOnly(null)
+      openOfficial.classList.add('hidden')
       setStatus('暂时无法读取授权状态，请稍后刷新页面。', 'error')
     }
   }
-  credentialForm.addEventListener('submit', async (event) => {
-    event.preventDefault()
-    const phoneValue = phone.value.trim()
-    if (!/^\\d{11}$/.test(phoneValue)) {
-      setStatus('请输入11位手机号。', 'error')
+  openOfficial.addEventListener('click', () => {
+    if (!repairToken) return
+    const popup = window.open('/api/v1/bieyanghong-repair/official#' + repairToken, 'bieyanghongOfficialLogin', 'popup=yes,width=1180,height=820,resizable=yes,scrollbars=yes')
+    if (!popup) {
+      setStatus('当前浏览器不支持独立弹窗，正在进入美团官网登录窗口…')
+      location.assign('/api/v1/bieyanghong-repair/official#' + repairToken)
       return
     }
-    requestCode.disabled = true
-    try {
-      const pending = fetch('/api/v1/bieyanghong-repair/request-code', {
-        method: 'POST',
-        headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phoneValue })
-      })
-      phone.value = ''
-      const response = await pending
-      if (!response.ok) throw new Error('REQUEST_CODE_REJECTED')
-      setStatus('资料已安全提交，正在请求短信验证码…')
-      await refresh()
-    } catch {
-      phone.value = ''
-      requestCode.disabled = false
-      setStatus('未能发送验证码，请刷新授权状态后重试。', 'error')
-    }
+    popup.opener = null
+    openOfficial.textContent = '返回美团官网登录窗口'
+    setStatus('美团官网登录窗口已打开，请在该窗口内完成登录。')
   })
-  codeForm.addEventListener('submit', async (event) => {
-    event.preventDefault()
-    const value = answer.value.trim()
-    if (!/^\\d{4,8}$/.test(value)) {
-      setStatus('请输入4至8位数字短信验证码。', 'error')
-      return
-    }
-    submit.disabled = true
+  void refresh()
+  setInterval(() => { if (repairToken) void refresh() }, 1500)
+})()`
+
+export const renderBieyanghongOfficialLoginPage = () => `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <title>美团官网登录 · 001</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17332d;background:#e9eee9}*{box-sizing:border-box}body{margin:0}.bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid #cad4ce}.lock{color:#176b52;font-weight:800}.origin{font-size:14px;color:#51635d}.state{margin-left:auto;font-size:14px}.shell{max-width:1280px;margin:0 auto;padding:14px}.screen{overflow:auto;border:1px solid #879d93;border-radius:12px;background:#dce4df;min-height:360px;box-shadow:0 10px 28px rgba(20,44,38,.12)}.screen img{display:block;width:100%;height:auto;object-fit:contain;touch-action:none;user-select:none;-webkit-user-drag:none}.tools{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px;padding:12px;background:#fff;border:1px solid #cad4ce;border-radius:12px}.tools input{width:100%;font-size:18px;padding:12px;border:1px solid #9baba4;border-radius:9px}.tools button,.keys button{border:0;border-radius:9px;background:#176b52;color:#fff;font-weight:700;padding:12px 16px}.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}.hint,.message{line-height:1.55}.hint{color:#61706c;font-size:13px}.message{padding:10px 12px;margin:10px 0;border-radius:10px;background:#fff8e8}.error{color:#9e2c22;background:#fff0ed}.success{color:#126044;background:#eaf7f0}.hidden{display:none}@media(max-width:620px){.bar{align-items:flex-start;flex-wrap:wrap}.state{margin-left:0;width:100%}.shell{padding:8px}.screen{min-height:260px}.screen img{width:200%;max-width:none}.tools{grid-template-columns:1fr}.tools button{width:100%}.keys{grid-template-columns:repeat(3,1fr)}}
+  </style>
+  <script src="/api/v1/bieyanghong-repair/official.js" defer></script>
+</head>
+<body>
+  <header class="bar"><span class="lock">安全连接</span><span class="origin">美团官方：pms.meituan.com</span><span id="state" class="state">正在启动…</span></header>
+  <main class="shell">
+    <div id="message" class="message">正在连接001门店的专属官方登录会话…</div>
+    <div id="screen" class="screen hidden"><img id="vendor-screen" alt="美团官方登录页面" draggable="false"></div>
+    <form id="text-form" class="tools hidden" autocomplete="off">
+      <input id="text-value" type="password" maxlength="64" autocomplete="off" aria-label="向当前美团官方输入框输入" placeholder="点选上方官方输入框后，在这里输入并发送">
+      <button id="text-send" type="submit">发送到官方输入框</button>
+    </form>
+    <div id="keys" class="keys hidden">
+      <button type="button" data-key="Backspace">退格</button><button type="button" data-key="Tab">下一项</button><button type="button" data-key="Enter">确认</button><button type="button" data-key="Escape">返回</button><button id="refresh-screen" type="button">刷新画面</button>
+    </div>
+    <p class="hint">这是001门店云端隔离浏览器中的美团官方页面。可直接点按、拖动；如需输入，先点上方官方输入框，再在下方输入并发送。输入框默认遮蔽，发送后立即清空；画面和输入均不保存。</p>
+  </main>
+</body>
+</html>`
+
+export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
+  let repairToken = location.hash.slice(1)
+  history.replaceState(null, '', location.pathname)
+  const state = document.getElementById('state')
+  const message = document.getElementById('message')
+  const screen = document.getElementById('screen')
+  const vendorScreen = document.getElementById('vendor-screen')
+  const textForm = document.getElementById('text-form')
+  const textValue = document.getElementById('text-value')
+  const textSend = document.getElementById('text-send')
+  const keys = document.getElementById('keys')
+  const refreshScreen = document.getElementById('refresh-screen')
+  let frameBusy = false
+  let actionTail = Promise.resolve()
+  let frameUrl = ''
+  let pointerStart = null
+  let started = false
+  let frameLoadedOnce = false
+  const headers = () => ({ Authorization: 'Repair ' + repairToken })
+  const setMessage = (value, kind = '') => {
+    message.textContent = value
+    message.className = 'message' + (kind ? ' ' + kind : '')
+  }
+  const showOfficial = (visible) => {
+    screen.classList.toggle('hidden', !visible)
+    textForm.classList.toggle('hidden', !visible)
+    keys.classList.toggle('hidden', !visible)
+  }
+  const loadFrame = async () => {
+    if (!repairToken || frameBusy || screen.classList.contains('hidden')) return
+    frameBusy = true
     try {
-      const response = await fetch('/api/v1/bieyanghong-repair/submit', {
-        method: 'POST',
-        headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: value })
-      })
-      answer.value = ''
-      if (!response.ok) throw new Error('SUBMIT_REJECTED')
-      setStatus('验证码已安全提交，正在验证…')
-      await refresh()
+      const response = await fetch('/api/v1/bieyanghong-repair/visual/frame', { headers: headers(), cache: 'no-store' })
+      if (response.status === 202) {
+        setMessage('美团登录已确认，正在核验门店并恢复采集播报…', 'success')
+        await refresh()
+        return
+      }
+      if (!response.ok || !(response.headers.get('content-type') || '').includes('image/png')) throw new Error('FRAME')
+      const nextUrl = URL.createObjectURL(await response.blob())
+      vendorScreen.src = nextUrl
+      await vendorScreen.decode().catch(() => {})
+      await new Promise((resolve) => requestAnimationFrame(
+        () => requestAnimationFrame(resolve),
+      ))
+      if (!frameLoadedOnce && innerWidth <= 620) {
+        screen.scrollLeft = Math.max(0, (screen.scrollWidth - screen.clientWidth) / 2)
+      }
+      frameLoadedOnce = true
+      if (frameUrl) URL.revokeObjectURL(frameUrl)
+      frameUrl = nextUrl
     } catch {
-      submit.disabled = false
-      setStatus('提交未成功，请刷新授权状态后重试。', 'error')
+      setMessage('官方页面画面暂时未更新，请点击“刷新画面”。', 'error')
+    } finally {
+      frameBusy = false
     }
-  })
+  }
+  const sendAction = (action) => {
+    if (!repairToken) return Promise.resolve()
+    const operation = actionTail.catch(() => {}).then(async () => {
+      try {
+        const response = await fetch('/api/v1/bieyanghong-repair/visual/interact', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(action) })
+        if (!response.ok) throw new Error('ACTION')
+        const data = (await response.json()).data
+        if (data.authenticationDetected) setMessage('美团登录已确认，正在恢复001采集播报…', 'success')
+        await loadFrame()
+        await refresh()
+      } catch {
+        setMessage('本次操作未送达官方页面，请刷新画面后重试。', 'error')
+      }
+    })
+    actionTail = operation
+    return operation
+  }
+  const begin = async () => {
+    if (started) return
+    started = true
+    const response = await fetch('/api/v1/bieyanghong-repair/official/start', { method: 'POST', headers: headers() })
+    if (!response.ok) {
+      started = false
+      if (response.status !== 409) throw new Error('START')
+    }
+  }
+  const refresh = async () => {
+    if (!repairToken) {
+      showOfficial(false); state.textContent = '链接无效'; setMessage('授权链接无效或已被移除。', 'error'); return
+    }
+    try {
+      const response = await fetch('/api/v1/bieyanghong-repair/status', { headers: headers(), cache: 'no-store' })
+      if (!response.ok) throw new Error('STATUS')
+      const data = (await response.json()).data
+      if (data.status === 'WAITING_FOR_CREDENTIALS') {
+        showOfficial(false); state.textContent = '正在启动'; setMessage('正在启动001门店的美团官网登录会话…'); await begin()
+      } else if (data.status === 'OPENING_OFFICIAL_LOGIN') {
+        showOfficial(false); state.textContent = '加载官方页面'; setMessage('美团官方页面正在加载，请稍候…')
+      } else if (data.status === 'WAITING_FOR_INTERACTIVE_VERIFICATION') {
+        showOfficial(true); state.textContent = '001 · 官方登录中'; setMessage('请直接在下方美团官方页面完成登录。'); void loadFrame()
+      } else if (data.status === 'VERIFYING' || data.status === 'SUBMITTED') {
+        showOfficial(false); state.textContent = '正在核验'; setMessage('登录已确认，正在重新采集并补发001简报…')
+      } else if (data.status === 'COMPLETE') {
+        showOfficial(false); state.textContent = '已完成'; setMessage('授权修复完成，001简报已确认送达。可关闭此窗口。', 'success'); repairToken = ''
+      } else if (data.status === 'FAILED' || data.status === 'EXPIRED') {
+        showOfficial(false); state.textContent = '未完成'; setMessage(data.status === 'EXPIRED' ? '链接已过期，请等待新的授权通知。' : '本次授权未完成，请等待系统重新发起。' + (data.reasonCode ? '（' + data.reasonCode + '）' : ''), 'error')
+      }
+    } catch {
+      state.textContent = '连接异常'; setMessage('暂时无法连接授权服务，请稍后刷新本窗口。', 'error')
+    }
+  }
   vendorScreen.addEventListener('pointerdown', (event) => {
     const rect = vendorScreen.getBoundingClientRect()
-    pointerStart = {
-      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
-      at: Date.now()
-    }
-    vendorScreen.setPointerCapture?.(event.pointerId)
-    event.preventDefault()
+    pointerStart = { x: Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)), y: Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)), at: Date.now() }
+    vendorScreen.setPointerCapture?.(event.pointerId); event.preventDefault()
   })
   vendorScreen.addEventListener('pointerup', (event) => {
     if (!pointerStart) return
     const rect = vendorScreen.getBoundingClientRect()
-    const end = {
-      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
-    }
-    const start = pointerStart
-    pointerStart = null
-    const distance = Math.hypot(end.x - start.x, end.y - start.y)
-    void sendVisualAction(distance < 0.018
-      ? { kind: 'tap', x: end.x, y: end.y }
-      : {
-          kind: 'drag', fromX: start.x, fromY: start.y,
-          toX: end.x, toY: end.y,
-          durationMs: Math.max(250, Math.min(1500, Date.now() - start.at))
-        })
+    const end = { x: Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)), y: Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)) }
+    const start = pointerStart; pointerStart = null
+    const distance = Math.hypot(end.x-start.x,end.y-start.y)
+    void sendAction(distance < .018 ? { kind:'tap',x:end.x,y:end.y } : { kind:'drag',fromX:start.x,fromY:start.y,toX:end.x,toY:end.y,durationMs:Math.max(250,Math.min(2000,Date.now()-start.at)) })
     event.preventDefault()
   })
   vendorScreen.addEventListener('pointercancel', () => { pointerStart = null })
-  visualTextForm.addEventListener('submit', async (event) => {
-    event.preventDefault()
-    const value = visualText.value
-    if (!value || value.length > 64) {
-      setStatus('请先输入需要发送到官方页面的内容。', 'error')
-      return
-    }
-    visualText.value = ''
-    visualTextSend.disabled = true
-    await sendVisualAction({ kind: 'text', value: value })
-    visualTextSend.disabled = false
+  textForm.addEventListener('submit', async (event) => {
+    event.preventDefault(); const value = textValue.value
+    if (!value || value.length > 64) { setMessage('请先点选官方输入框，再输入内容。', 'error'); return }
+    textValue.value = ''; textSend.disabled = true
+    await sendAction({ kind:'text',value:value }); textSend.disabled = false
   })
-  document.querySelectorAll('[data-visual-key]').forEach((button) => {
-    button.addEventListener('click', () => {
-      void sendVisualAction({ kind: 'key', key: button.dataset.visualKey })
-    })
-  })
-  refreshScreen.addEventListener('click', () => { void updateVisualFrame() })
+  document.querySelectorAll('[data-key]').forEach((button) => button.addEventListener('click', () => { void sendAction({kind:'key',key:button.dataset.key}) }))
+  refreshScreen.addEventListener('click', () => { void loadFrame() })
   void refresh()
-  setInterval(() => { if (repairToken) void refresh() }, 1500)
+  setInterval(() => { if (repairToken) void refresh() }, 1200)
 })()`

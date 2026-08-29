@@ -25,7 +25,7 @@ const availablePort = async () => {
   return port
 }
 
-test('001 SMS authorization page is public but challenge data remains token-gated', async () => {
+test('001 official-login popup is public but challenge data remains token-gated', async () => {
   const runtimePath = await mkdtemp(join(os.tmpdir(), 'bieyanghong-repair-api-'))
   const port = await availablePort()
   const child = spawn(process.execPath, [apiScript], {
@@ -72,6 +72,10 @@ test('001 SMS authorization page is public but challenge data remains token-gate
       healthBody.bieyanghongAssistedRepair.pilotHotelCode,
       '001',
     )
+    assert.equal(
+      healthBody.bieyanghongAssistedRepair.credentialInputMode,
+      'CLOUD_OFFICIAL_LOGIN_POPUP',
+    )
 
     const page = await fetch(
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair`,
@@ -82,12 +86,10 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     const html = await page.text()
     assert.match(html, /别样红简报授权修复/u)
     assert.match(html, /本次处理管理员/u)
-    assert.match(html, /id="phone"/u)
-    assert.doesNotMatch(html, /id="password"|type="password"/u)
-    assert.match(html, /发送短信验证码/u)
-    assert.match(html, /不需要密码/u)
-    assert.match(html, /id="visual"/u)
-    assert.match(html, /美团官方安全验证/u)
+    assert.match(html, /id="open-official"/u)
+    assert.match(html, /打开美团官网登录窗口/u)
+    assert.match(html, /https:\/\/pms\.meituan\.com/u)
+    assert.doesNotMatch(html, /id="phone"|id="password"|发送短信验证码/u)
     assert.doesNotMatch(html, /手机号\s*1\d{10}|Cookie=/iu)
     assert.match(html, /\/api\/v1\/bieyanghong-repair\/client\.js/u)
 
@@ -98,20 +100,37 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     const clientScript = await client.text()
     assert.doesNotThrow(() => new Script(clientScript))
     assert.equal(
-      clientScript.includes('if (!/^\\d{11}$/.test(phoneValue)'),
+      clientScript.includes("window.open('/api/v1/bieyanghong-repair/official#'"),
       true,
     )
     assert.match(
       clientScript,
-      /\/api\/v1\/bieyanghong-repair\/request-code/u,
+      /WAITING_FOR_INTERACTIVE_VERIFICATION/u,
     )
-    assert.match(clientScript, /BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED/u)
-    assert.match(clientScript, /安全模式不会自动代选账号/u)
-    assert.match(clientScript, /bieyanghong-repair\/visual\/frame/u)
-    assert.match(clientScript, /bieyanghong-repair\/visual\/interact/u)
-    assert.match(clientScript, /WAITING_FOR_INTERACTIVE_VERIFICATION/u)
-    assert.doesNotMatch(clientScript, /passwordValue|JSON\.stringify\(\{ phone: phoneValue, password/u)
+    assert.doesNotMatch(clientScript, /request-code|phoneValue|passwordValue/u)
     assert.doesNotMatch(clientScript, /localStorage|sessionStorage/u)
+
+    const officialPage = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/official`,
+    )
+    assert.equal(officialPage.status, 200)
+    assert.match(officialPage.headers.get('cache-control'), /no-store/u)
+    const officialHtml = await officialPage.text()
+    assert.match(officialHtml, /美团官方：pms\.meituan\.com/u)
+    assert.match(officialHtml, /id="vendor-screen"/u)
+    assert.match(officialHtml, /type="password"/u)
+    assert.doesNotMatch(officialHtml, /管理员手机号|短信验证码/u)
+
+    const officialClient = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/official.js`,
+    )
+    assert.equal(officialClient.status, 200)
+    const officialClientScript = await officialClient.text()
+    assert.doesNotThrow(() => new Script(officialClientScript))
+    assert.match(officialClientScript, /bieyanghong-repair\/official\/start/u)
+    assert.match(officialClientScript, /bieyanghong-repair\/visual\/frame/u)
+    assert.match(officialClientScript, /bieyanghong-repair\/visual\/interact/u)
+    assert.doesNotMatch(officialClientScript, /localStorage|sessionStorage/u)
 
     const missing = await fetch(
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/status`,

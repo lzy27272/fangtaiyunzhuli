@@ -68,6 +68,30 @@ test('accepts a transient manager phone and SMS code without retaining them', ()
   )
 })
 
+test('starts a token-gated official login window without credentials', () => {
+  const store = createBieyanghongRepairChallengeStore({
+    now: () => new Date('2026-08-29T00:15:00Z'),
+    tokenBytes: () => Buffer.alloc(32, 10),
+  })
+  const created = store.create({
+    hotelId: 'hotel-001',
+    hotelCode: '001',
+    hotelName: '示例别样红门店',
+  })
+  store.setWaitingForCredentials(created.tokenSha256)
+
+  const opened = store.startOfficialLogin(created.token)
+  assert.equal(opened.record.status, 'OPENING_OFFICIAL_LOGIN')
+  assert.equal(opened.record.credentialRequestsUsed, 1)
+  assert.doesNotMatch(JSON.stringify(store.debugSnapshot()), /password|phone|code/u)
+  const waiting = store.setWaitingForInteractiveVerification(
+    created.tokenSha256,
+    'BIEYANGHONG_OFFICIAL_LOGIN_REQUIRED',
+  )
+  assert.equal(waiting.status, 'WAITING_FOR_INTERACTIVE_VERIFICATION')
+  assert.equal(waiting.reasonCode, 'BIEYANGHONG_OFFICIAL_LOGIN_REQUIRED')
+})
+
 test('expires after ten minutes and rejects unsafe public URLs', () => {
   let current = new Date('2026-08-29T00:15:00Z')
   const store = createBieyanghongRepairChallengeStore({

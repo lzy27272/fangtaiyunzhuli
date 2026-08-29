@@ -65,6 +65,8 @@ import {
   validateBieyanghongRepairPublicBaseUrl,
 } from './bieyanghong-repair-challenge.mjs'
 import {
+  renderBieyanghongOfficialLoginClientScript,
+  renderBieyanghongOfficialLoginPage,
   renderBieyanghongRepairClientScript,
   renderBieyanghongRepairPage,
 } from './bieyanghong-repair-page.mjs'
@@ -2559,6 +2561,37 @@ const bieyanghongRepairClientScript = (response) => {
   response.end(content)
 }
 
+const bieyanghongOfficialLoginHtml = (response) => {
+  const content = renderBieyanghongOfficialLoginPage()
+  response.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(content),
+    'cache-control': 'no-store, max-age=0',
+    'content-security-policy':
+      `default-src 'none'; base-uri 'none'; frame-ancestors 'none'; `
+      + `form-action 'self'; img-src 'self' blob:; connect-src 'self'; `
+      + `style-src 'unsafe-inline'; script-src 'self'`,
+    'permissions-policy':
+      'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+  })
+  response.end(content)
+}
+
+const bieyanghongOfficialLoginClientScript = (response) => {
+  const content = renderBieyanghongOfficialLoginClientScript()
+  response.writeHead(200, {
+    'content-type': 'application/javascript; charset=utf-8',
+    'content-length': Buffer.byteLength(content),
+    'cache-control': 'no-store, max-age=0',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  })
+  response.end(content)
+}
+
 const bieyanghongVisualFrame = (response, image) => {
   response.writeHead(200, {
     'content-type': 'image/png',
@@ -4737,12 +4770,12 @@ const startBieyanghongRepairChallenge = async (
       content: [
         '### 001别样红简报需要管理员授权',
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '请由本次处理管理员点击一次性链接，填写自己的手机号，发送并填写短信验证码；不需要密码：',
+        '请由本次处理管理员点击一次性链接，再打开“美团官网登录窗口”，直接在官方页面完成登录：',
         bieyanghongRepairLink(
           bieyanghongRepairPublicBaseUrl,
           created.token,
         ),
-        '有效期10分钟。账号资料最多提交2次，验证码最多提交3次；请勿转发或由多人同时操作。',
+        '有效期10分钟，官方窗口最多启动2次；请勿转发或由多人同时操作。',
       ].join('\n'),
     })
     if (delivery.deliveredPartCount < 1) {
@@ -4901,6 +4934,88 @@ const processBieyanghongRepairCodeRequest = ({
     }
   })()
   return requested.record
+}
+
+const processBieyanghongOfficialLoginStart = ({ token }) => {
+  const started = bieyanghongRepairChallengeStore.startOfficialLogin(token)
+  const challenge = bieyanghongRepairChallengeStore.getInternalByHash(
+    started.tokenSha256,
+  )
+  const handle = activeBieyanghongRepairsByHotel.get(challenge.hotelId)
+  if (!handle || handle.tokenSha256 !== started.tokenSha256) {
+    bieyanghongRepairChallengeStore.fail(
+      started.tokenSha256,
+      'BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE',
+    )
+    throw new Error('BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE')
+  }
+  process.stdout.write(
+    `${JSON.stringify({
+      event: 'BIEYANGHONG_OFFICIAL_LOGIN_WINDOW_STARTED',
+      hotelId: challenge.hotelId,
+      challengeId: challenge.challengeId,
+      windowAttempt: challenge.credentialRequestsUsed,
+    })}\n`,
+  )
+  void (async () => {
+    try {
+      await handle.login?.close().catch(() => {})
+      handle.login = await startBieyanghongAssistedLogin({
+        profileRoot: join(
+          bieyanghongBrowserProfileBase,
+          `hotel-${challenge.hotelCode}`,
+        ),
+        officialLogin: true,
+      })
+      if (handle.login.alreadyAuthenticated) {
+        await finishBieyanghongRepair({
+          hotelId: challenge.hotelId,
+          tokenSha256: started.tokenSha256,
+          cookieHeader: handle.login.cookieHeader,
+        })
+        return
+      }
+      bieyanghongRepairChallengeStore.setWaitingForInteractiveVerification(
+        started.tokenSha256,
+        'BIEYANGHONG_OFFICIAL_LOGIN_REQUIRED',
+      )
+      process.stdout.write(
+        `${JSON.stringify({
+          event: 'BIEYANGHONG_OFFICIAL_LOGIN_WINDOW_READY',
+          hotelId: challenge.hotelId,
+          challengeId: challenge.challengeId,
+        })}\n`,
+      )
+    } catch (error) {
+      await handle.login?.close().catch(() => {})
+      handle.login = null
+      const reasonCode = safeBieyanghongRepairReason(error)
+      const current = bieyanghongRepairChallengeStore.getInternalByHash(
+        started.tokenSha256,
+      )
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'BIEYANGHONG_OFFICIAL_LOGIN_WINDOW_FAILED',
+          hotelId: challenge.hotelId,
+          challengeId: challenge.challengeId,
+          reasonCode,
+        })}\n`,
+      )
+      if (
+        current
+        && current.credentialRequestsUsed < current.maxCredentialRequests
+      ) {
+        bieyanghongRepairChallengeStore.setWaitingForCredentials(
+          started.tokenSha256,
+          reasonCode,
+        )
+        return
+      }
+      activeBieyanghongRepairsByHotel.delete(challenge.hotelId)
+      bieyanghongRepairChallengeStore.fail(started.tokenSha256, reasonCode)
+    }
+  })()
+  return started.record
 }
 
 const bieyanghongInteractiveHandleFor = (token) => {
@@ -5879,7 +5994,7 @@ const server = createServer(async (request, response) => {
           ready: bieyanghongAssistedRepairReady(),
           reasonCode: bieyanghongRepairReasonCode(),
           pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
-          credentialInputMode: 'PER_ATTEMPT_MANAGER_SMS',
+          credentialInputMode: 'CLOUD_OFFICIAL_LOGIN_POPUP',
           webLinkReady: bieyanghongWebRepairReady,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
         },
@@ -5965,6 +6080,22 @@ const server = createServer(async (request, response) => {
 
     if (
       request.method === 'GET'
+      && path === '/api/v1/bieyanghong-repair/official'
+    ) {
+      bieyanghongOfficialLoginHtml(response)
+      return
+    }
+
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/bieyanghong-repair/official.js'
+    ) {
+      bieyanghongOfficialLoginClientScript(response)
+      return
+    }
+
+    if (
+      request.method === 'GET'
       && path === '/api/v1/bieyanghong-repair/status'
     ) {
       const challenge = bieyanghongRepairChallengeStore.get(
@@ -5977,6 +6108,17 @@ const server = createServer(async (request, response) => {
         return
       }
       json(response, 200, { data: challenge })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/bieyanghong-repair/official/start'
+    ) {
+      const accepted = processBieyanghongOfficialLoginStart({
+        token: repairTokenFrom(request),
+      })
+      json(response, 202, { data: accepted })
       return
     }
 

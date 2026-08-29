@@ -199,6 +199,25 @@ export const createBieyanghongRepairChallengeStore = ({
       })
     },
 
+    startOfficialLogin(token) {
+      const record = recordForToken(token)
+      if (!record) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
+      if (record.status !== 'WAITING_FOR_CREDENTIALS') {
+        throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_READY')
+      }
+      if (record.credentialRequestsUsed >= record.maxCredentialRequests) {
+        throw new Error('BIEYANGHONG_REPAIR_CREDENTIAL_REQUESTS_EXHAUSTED')
+      }
+      record.credentialRequestsUsed += 1
+      record.status = 'OPENING_OFFICIAL_LOGIN'
+      record.updatedAt = currentTime().toISOString()
+      record.reasonCode = null
+      return {
+        tokenSha256: record.tokenSha256,
+        record: publicRecord(record),
+      }
+    },
+
     requestCode(token, input) {
       const record = recordForToken(token)
       if (!record) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
@@ -243,7 +262,7 @@ export const createBieyanghongRepairChallengeStore = ({
     setWaitingForInteractiveVerification(hash, reasonCode) {
       return update(hash, (record) => {
         if (
-          record.status !== 'REQUESTING_CODE'
+          !['REQUESTING_CODE', 'OPENING_OFFICIAL_LOGIN'].includes(record.status)
           || record.credentialRequestsUsed < 1
         ) {
           throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
