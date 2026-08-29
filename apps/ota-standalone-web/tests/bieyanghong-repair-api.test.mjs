@@ -94,6 +94,10 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     assert.equal(client.status, 200)
     const clientScript = await client.text()
     assert.doesNotThrow(() => new Script(clientScript))
+    assert.equal(
+      clientScript.includes('if (!/^\\d{11}$/.test(phoneValue)'),
+      true,
+    )
     assert.match(
       clientScript,
       /\/api\/v1\/bieyanghong-repair\/request-code/u,

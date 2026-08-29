@@ -108,7 +108,7 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
     event.preventDefault()
     const phoneValue = phone.value.trim()
     const passwordValue = password.value
-    if (!/^\d{11}$/.test(phoneValue) || passwordValue.length < 1) {
+    if (!/^\\d{11}$/.test(phoneValue) || passwordValue.length < 1) {
       setStatus('请输入11位手机号和登录密码。', 'error')
       return
     }
