@@ -239,47 +239,70 @@ export const prepareBieyanghongCredentialLogin = async ({
   }
 
   const deadline = Date.now() + 30_000
+  let activeFrame = frame
   while (Date.now() < deadline) {
+    activeFrame = page.frames().find((candidate) =>
+      candidate.url().includes(bieyanghongLoginSelectors.loginFrameUrl))
+      ?? activeFrame
     const cookieHeader = await captureCookieHeader(context).catch(() => null)
     if (cookieHeader) {
-      await clearCredentialFields(frame)
-      return { alreadyAuthenticated: true, cookieHeader, frame }
+      await clearCredentialFields(activeFrame)
+      return { alreadyAuthenticated: true, cookieHeader, frame: activeFrame }
     }
-    const text = await pageText(frame)
+    const text = await pageText(activeFrame)
     const reasonCode = credentialFailureReason(text)
     if (reasonCode) {
-      await clearCredentialFields(frame)
+      await clearCredentialFields(activeFrame)
       throw new Error(reasonCode)
     }
-    const smsCode = frame.locator(bieyanghongLoginSelectors.smsCode).first()
+    const smsCode = activeFrame
+      .locator(bieyanghongLoginSelectors.smsCode)
+      .first()
     if (await smsCode.isVisible().catch(() => false)) {
-      const phoneInput = frame.locator(bieyanghongLoginSelectors.phone).first()
+      const phoneInput = activeFrame
+        .locator(bieyanghongLoginSelectors.phone)
+        .first()
       if (await phoneInput.isVisible().catch(() => false)) {
         await phoneInput.fill(phone)
       }
-      const requestCode = frame
+      await ensureAgreement(activeFrame)
+      const requestCode = activeFrame
         .locator(bieyanghongLoginSelectors.requestCode)
         .first()
+      let requestConfirmed = false
       if (await requestCode.isVisible().catch(() => false)) {
         const codeButtonText = await requestCode.innerText().catch(() => '')
         const className = await requestCode.getAttribute('class').catch(() => '')
-        if (
+        requestConfirmed =
+          /\d+秒后|重新获取/u.test(codeButtonText)
+          && String(className ?? '').includes('disabled')
+        if (!requestConfirmed && (
           /获取验证码|重新获取/u.test(codeButtonText)
           && !String(className ?? '').includes('disabled')
-        ) {
+        )) {
           await requestCode.click()
-          await frame.waitForTimeout(1_500)
+          await activeFrame.waitForTimeout(1_500)
+          const updatedText = await requestCode.innerText().catch(() => '')
+          const updatedClass = await requestCode
+            .getAttribute('class')
+            .catch(() => '')
+          requestConfirmed =
+            /\d+秒后/u.test(updatedText)
+            || String(updatedClass ?? '').includes('disabled')
         }
       }
-      const smsText = await pageText(frame)
+      const smsText = await pageText(activeFrame)
       const smsReasonCode = smsFailureReason(smsText)
-      await clearCredentialFields(frame)
+      await clearCredentialFields(activeFrame)
       if (smsReasonCode) throw new Error(smsReasonCode)
-      return { alreadyAuthenticated: false, frame }
+      if (!requestConfirmed) {
+        throw new Error('BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED')
+      }
+      return { alreadyAuthenticated: false, frame: activeFrame }
     }
     await page.waitForTimeout(500)
   }
-  await clearCredentialFields(frame)
+  await clearCredentialFields(activeFrame)
   throw new Error('BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED')
 }
 

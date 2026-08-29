@@ -10,45 +10,73 @@ import {
 const fakeLoginPage = () => {
   const calls = []
   let accountMode = false
-  let checked = false
-  let smsVisible = false
-  const element = (selector) => ({
-    first() { return this },
-    last() { return this },
-    filter() { return this },
-    fill: async (value) => calls.push({ action: 'fill', selector, value }),
-    isChecked: async () => checked,
-    isVisible: async () => {
-      if (selector === bieyanghongLoginSelectors.password) return accountMode
-      if (selector === bieyanghongLoginSelectors.smsCode) return smsVisible
-      if (selector === bieyanghongLoginSelectors.phone) return false
-      if (selector === bieyanghongLoginSelectors.requestCode) return smsVisible
-      return true
-    },
-    click: async () => {
-      calls.push({ action: 'click', selector })
-      if (selector === bieyanghongLoginSelectors.accountLoginTab) {
-        accountMode = true
-      }
-      if (selector === bieyanghongLoginSelectors.agreement) checked = true
-      if (selector === 'text:登录') smsVisible = true
-    },
-    waitFor: async () => {},
-    evaluate: async () => {},
-    innerText: async () => '获取验证码',
-    getAttribute: async () => 'timer-button',
-  })
-  const frame = {
-    url: () => `https://${bieyanghongLoginSelectors.loginFrameUrl}`,
-    locator: (selector) => element(selector),
-    getByText: (text) => element(`text:${text}`),
-    waitForTimeout: async () => {},
+  let codeRequested = false
+  let currentFrame
+  const createFrame = (kind) => {
+    const frameState = { checked: false }
+    const element = (selector) => ({
+      first() { return this },
+      last() { return this },
+      filter() { return this },
+      fill: async (value) => calls.push({
+        action: 'fill',
+        frame: kind,
+        selector,
+        value,
+      }),
+      isChecked: async () => frameState.checked,
+      isVisible: async () => {
+        if (selector === bieyanghongLoginSelectors.password) {
+          return kind === 'credential' && accountMode
+        }
+        if (selector === bieyanghongLoginSelectors.smsCode) {
+          return kind === 'verification'
+        }
+        if (selector === bieyanghongLoginSelectors.phone) {
+          return kind === 'verification'
+        }
+        if (selector === bieyanghongLoginSelectors.requestCode) {
+          return kind === 'verification'
+        }
+        return true
+      },
+      click: async () => {
+        calls.push({ action: 'click', frame: kind, selector })
+        if (selector === bieyanghongLoginSelectors.accountLoginTab) {
+          accountMode = true
+        }
+        if (selector === bieyanghongLoginSelectors.agreement) {
+          frameState.checked = true
+        }
+        if (selector === 'text:登录') {
+          currentFrame = createFrame('verification')
+        }
+        if (selector === bieyanghongLoginSelectors.requestCode) {
+          codeRequested = true
+        }
+      },
+      waitFor: async () => {},
+      evaluate: async () => {},
+      innerText: async () => codeRequested
+        ? '59秒后重新获取'
+        : '获取验证码',
+      getAttribute: async () => codeRequested
+        ? 'timer-button disabled'
+        : 'timer-button',
+    })
+    return {
+      url: () => `https://${bieyanghongLoginSelectors.loginFrameUrl}`,
+      locator: (selector) => element(selector),
+      getByText: (text) => element(`text:${text}`),
+      waitForTimeout: async () => {},
+    }
   }
+  currentFrame = createFrame('credential')
   return {
     calls,
     page: {
       goto: async (url) => calls.push({ action: 'goto', url }),
-      frames: () => [frame],
+      frames: () => [currentFrame],
       waitForTimeout: async () => {},
     },
     context: {
@@ -79,6 +107,7 @@ test('submits transient manager credentials before requesting the SMS code', asy
     && call.selector === bieyanghongLoginSelectors.agreement))
   assert.ok(calls.some((call) =>
     call.action === 'click'
+    && call.frame === 'verification'
     && call.selector === bieyanghongLoginSelectors.requestCode))
   assert.equal(prepared.alreadyAuthenticated, false)
 })
