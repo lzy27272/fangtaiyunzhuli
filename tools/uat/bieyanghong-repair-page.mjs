@@ -125,9 +125,9 @@ export const renderBieyanghongOfficialLoginPage = () => `<!doctype html>
       <button id="secret-send" type="submit">填写到官网密码/验证码框</button>
     </form>
     <div id="keys" class="keys hidden">
-      <button type="button" data-official-control="agreement">勾选登录协议</button><button type="button" data-official-control="requestCode">请求发送验证码</button><button type="button" data-key="Backspace">退格</button><button type="button" data-key="Tab">下一项</button><button type="button" data-key="Enter">确认</button><button type="button" data-key="Escape">返回</button><button id="refresh-screen" type="button">刷新画面</button>
+      <button type="button" data-official-control="agreement">勾选登录协议</button><button type="button" data-official-control="requestCode">请求发送验证码</button><button type="button" data-official-control="submitLogin">提交官网登录</button><button type="button" data-key="Backspace">退格</button><button type="button" data-key="Tab">下一项</button><button type="button" data-key="Enter">确认</button><button type="button" data-key="Escape">返回</button><button id="refresh-screen" type="button">刷新画面</button>
     </div>
-    <p class="hint">手机号无需先点准官网输入框：直接在第一栏填写并提交，再点“请求发送验证码”，系统会自动勾选登录协议并点击官网验证码按钮。收到验证码后用遮蔽的第二栏填写；画面和输入均不保存。</p>
+    <p class="hint">手机号无需先点准官网输入框：直接在第一栏填写并提交，再点“请求发送验证码”。收到验证码后用遮蔽的第二栏填写并提交，最后点“提交官网登录”。系统会自动勾选登录协议；画面和输入均不保存。</p>
   </main>
 </body>
 </html>`

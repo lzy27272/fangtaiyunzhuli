@@ -126,6 +126,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
     assert.match(officialHtml, /填写到官网手机号框/u)
     assert.match(officialHtml, /勾选登录协议/u)
     assert.match(officialHtml, /请求发送验证码/u)
+    assert.match(officialHtml, /提交官网登录/u)
     assert.match(officialHtml, /type="password"/u)
     assert.doesNotMatch(officialHtml, /管理员手机号|短信验证码/u)
 

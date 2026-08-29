@@ -61,7 +61,11 @@ const VISUAL_KEYS = new Set([
   'ArrowDown',
 ])
 const OFFICIAL_FIELDS = new Set(['account', 'secret'])
-const OFFICIAL_CONTROLS = new Set(['agreement', 'requestCode'])
+const OFFICIAL_CONTROLS = new Set([
+  'agreement',
+  'requestCode',
+  'submitLogin',
+])
 
 const visualCoordinate = (value) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
@@ -711,7 +715,7 @@ export const startBieyanghongAssistedLogin = async ({
           ?? activePage
         if (action.control === 'agreement') {
           await ensureAgreement(officialFrame)
-        } else {
+        } else if (action.control === 'requestCode') {
           await ensureAgreement(officialFrame)
           const requestCode = await firstVisibleOfficialLocator(
             officialFrame,
@@ -719,6 +723,26 @@ export const startBieyanghongAssistedLogin = async ({
           )
           await clickVendorControl(requestCode)
           await activePage.waitForTimeout(1_000)
+        } else {
+          await ensureAgreement(officialFrame)
+          const loginButtons = officialFrame.getByText('登录', { exact: true })
+          const loginButtonCount = Math.min(
+            await loginButtons.count().catch(() => 0),
+            8,
+          )
+          let loginButton = null
+          for (let index = loginButtonCount - 1; index >= 0; index -= 1) {
+            const candidate = loginButtons.nth(index)
+            if (await candidate.isVisible().catch(() => false)) {
+              loginButton = candidate
+              break
+            }
+          }
+          if (!loginButton) {
+            throw new Error('BIEYANGHONG_OFFICIAL_LOGIN_BUTTON_UNAVAILABLE')
+          }
+          await clickVendorControl(loginButton)
+          await activePage.waitForTimeout(2_000)
         }
       } else if (action.kind === 'text') {
         await activePage.keyboard.insertText(action.value)
