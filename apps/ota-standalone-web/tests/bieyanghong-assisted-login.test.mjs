@@ -41,7 +41,7 @@ const fakeLoginPage = ({
       },
       isChecked: async () => frameState.checked,
       isVisible: async () => {
-        if (selector === bieyanghongLoginSelectors.password) {
+        if (selector === bieyanghongLoginSelectors.secretInput) {
           return kind === 'credential' && accountMode
         }
         if (selector === bieyanghongLoginSelectors.smsCode) {
@@ -134,7 +134,7 @@ test('requests the SMS code with a phone number and no password', async () => {
     && call.selector === bieyanghongLoginSelectors.phone
     && call.value === '13800138000'))
   assert.equal(calls.some((call) =>
-    call.selector === bieyanghongLoginSelectors.password), false)
+    call.selector === bieyanghongLoginSelectors.secretInput), false)
   assert.ok(calls.some((call) =>
     call.action === 'click'
     && call.selector === bieyanghongLoginSelectors.agreement))
@@ -198,7 +198,7 @@ test('submits transient manager credentials before requesting the SMS code', asy
     && call.value === '13800138000'))
   assert.ok(calls.some((call) =>
     call.action === 'fill'
-    && call.selector === bieyanghongLoginSelectors.password
+    && call.selector === bieyanghongLoginSelectors.secretInput
     && call.value === 'temporary-example-password'))
   assert.ok(calls.some((call) =>
     call.action === 'click'

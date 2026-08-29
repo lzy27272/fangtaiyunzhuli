@@ -50,7 +50,7 @@ export const bieyanghongLoginSelectors = Object.freeze({
   loginFrameUrl: 'eepassport.meituan.com/portal/login',
   accountLoginTab: '.ep-tab_item',
   account: '#login, input[placeholder="输入账号"]',
-  password: '#password, input[placeholder="输入密码"]',
+  secretInput: '#password, input[placeholder="输入密码"]',
   phone: '#phone, input[placeholder="输入手机号"]',
   smsCode: 'input[placeholder="输入验证码"]',
   agreement: 'label[for="checkbox"]',
@@ -292,7 +292,7 @@ const selectAccountLogin = async (page, initialFrame) => {
       candidate.url().includes(bieyanghongLoginSelectors.loginFrameUrl))
       ?? frame
     const password = frame
-      .locator(bieyanghongLoginSelectors.password)
+      .locator(bieyanghongLoginSelectors.secretInput)
       .first()
     if (await password.isVisible().catch(() => false)) return frame
     const accountTab = frame
@@ -407,7 +407,7 @@ const clearCredentialFields = async (frame) => {
   await frame.locator(bieyanghongLoginSelectors.account).first()
     .fill('')
     .catch(() => {})
-  await frame.locator(bieyanghongLoginSelectors.password).first()
+  await frame.locator(bieyanghongLoginSelectors.secretInput).first()
     .fill('')
     .catch(() => {})
 }
@@ -492,7 +492,7 @@ export const prepareBieyanghongCredentialLogin = async ({
   frame = await selectAccountLogin(page, frame)
   try {
     await frame.locator(bieyanghongLoginSelectors.account).first().fill(phone)
-    await frame.locator(bieyanghongLoginSelectors.password).first()
+    await frame.locator(bieyanghongLoginSelectors.secretInput).first()
       .fill(password)
     await ensureAgreement(frame)
     await clickVendorControl(
@@ -764,7 +764,7 @@ export const startBieyanghongAssistedLogin = async ({
           ?? activePage
         const selectors = action.field === 'account'
           ? [bieyanghongLoginSelectors.phone, bieyanghongLoginSelectors.account]
-          : [bieyanghongLoginSelectors.smsCode, bieyanghongLoginSelectors.password]
+          : [bieyanghongLoginSelectors.smsCode, bieyanghongLoginSelectors.secretInput]
         const target = await firstVisibleOfficialLocator(
           officialFrame,
           selectors,
