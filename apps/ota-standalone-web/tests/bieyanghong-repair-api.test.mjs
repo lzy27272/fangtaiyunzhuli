@@ -123,6 +123,9 @@ test('001 official-login popup is public but challenge data remains token-gated'
     assert.match(officialHtml, /id="locate-login"/u)
     assert.match(officialHtml, /id="account-value"[^>]*type="text"/u)
     assert.match(officialHtml, /id="secret-value"[^>]*type="password"/u)
+    assert.match(officialHtml, /填写到官网手机号框/u)
+    assert.match(officialHtml, /勾选登录协议/u)
+    assert.match(officialHtml, /请求发送验证码/u)
     assert.match(officialHtml, /type="password"/u)
     assert.doesNotMatch(officialHtml, /管理员手机号|短信验证码/u)
 
@@ -135,6 +138,8 @@ test('001 official-login popup is public but challenge data remains token-gated'
     assert.match(officialClientScript, /bieyanghong-repair\/official\/start/u)
     assert.match(officialClientScript, /bieyanghong-repair\/visual\/frame/u)
     assert.match(officialClientScript, /bieyanghong-repair\/visual\/interact/u)
+    assert.match(officialClientScript, /kind:'field'/u)
+    assert.match(officialClientScript, /kind:'control'/u)
     assert.doesNotMatch(officialClientScript, /localStorage|sessionStorage/u)
 
     const missing = await fetch(

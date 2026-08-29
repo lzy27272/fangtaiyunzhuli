@@ -272,6 +272,21 @@ test('visual verification accepts only bounded pointer and keyboard actions', ()
     normalizeBieyanghongVisualInteraction({ kind: 'key', key: 'Enter' }),
     { kind: 'key', key: 'Enter' },
   )
+  assert.deepEqual(
+    normalizeBieyanghongVisualInteraction({
+      kind: 'field',
+      field: 'account',
+      value: '13800138000',
+    }),
+    { kind: 'field', field: 'account', value: '13800138000' },
+  )
+  assert.deepEqual(
+    normalizeBieyanghongVisualInteraction({
+      kind: 'control',
+      control: 'requestCode',
+    }),
+    { kind: 'control', control: 'requestCode' },
+  )
   assert.throws(
     () => normalizeBieyanghongVisualInteraction({
       kind: 'tap',

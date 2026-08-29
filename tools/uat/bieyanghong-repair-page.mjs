@@ -117,17 +117,17 @@ export const renderBieyanghongOfficialLoginPage = () => `<!doctype html>
     </div>
     <div id="screen" class="screen hidden"><img id="vendor-screen" alt="美团官方登录页面" draggable="false"></div>
     <form id="account-form" class="tools hidden" autocomplete="off">
-      <input id="account-value" type="text" inputmode="text" maxlength="64" autocomplete="off" aria-label="账号或手机号" placeholder="先点上方账号/手机号框，再在这里输入">
-      <button id="account-send" type="submit">发送账号/手机号</button>
+      <input id="account-value" type="text" inputmode="text" maxlength="64" autocomplete="off" aria-label="账号或手机号" placeholder="在这里填写手机号或账号">
+      <button id="account-send" type="submit">填写到官网手机号框</button>
     </form>
     <form id="secret-form" class="tools hidden" autocomplete="off">
-      <input id="secret-value" type="password" inputmode="text" maxlength="64" autocomplete="off" aria-label="密码或验证码" placeholder="先点上方密码/验证码框，再在这里输入">
-      <button id="secret-send" type="submit">发送密码/验证码</button>
+      <input id="secret-value" type="password" inputmode="text" maxlength="64" autocomplete="off" aria-label="密码或验证码" placeholder="在这里填写密码或验证码">
+      <button id="secret-send" type="submit">填写到官网密码/验证码框</button>
     </form>
     <div id="keys" class="keys hidden">
-      <button type="button" data-key="Backspace">退格</button><button type="button" data-key="Tab">下一项</button><button type="button" data-key="Enter">确认</button><button type="button" data-key="Escape">返回</button><button id="refresh-screen" type="button">刷新画面</button>
+      <button type="button" data-official-control="agreement">勾选登录协议</button><button type="button" data-official-control="requestCode">请求发送验证码</button><button type="button" data-key="Backspace">退格</button><button type="button" data-key="Tab">下一项</button><button type="button" data-key="Enter">确认</button><button type="button" data-key="Escape">返回</button><button id="refresh-screen" type="button">刷新画面</button>
     </div>
-    <p class="hint">手机操作：先选“移动画面”或“定位登录区”查看右侧登录框；再选“操作官网”点中官方输入框、勾选协议或点击“发送验证码”。账号/手机号用第一栏发送，密码/验证码用遮蔽的第二栏发送；发送后立即清空，画面和输入均不保存。</p>
+    <p class="hint">手机号无需先点准官网输入框：直接在第一栏填写并提交，再点“请求发送验证码”，系统会自动勾选登录协议并点击官网验证码按钮。收到验证码后用遮蔽的第二栏填写；画面和输入均不保存。</p>
   </main>
 </body>
 </html>`
@@ -298,20 +298,21 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
     event.preventDefault()
   })
   vendorScreen.addEventListener('pointercancel', () => { pointerStart = null })
-  const sendTypedValue = async ({ event, input, button }) => {
+  const sendTypedValue = async ({ event, input, button, field }) => {
     event.preventDefault(); const value = input.value
     if (!value || value.length > 64) { setMessage('请先点选官方输入框，再输入内容。', 'error'); return }
     input.value = ''; button.disabled = true
-    await sendAction({ kind:'text',value:value }); button.disabled = false
+    await sendAction({ kind:'field',field:field,value:value }); button.disabled = false
   }
-  accountForm.addEventListener('submit', (event) => sendTypedValue({ event, input: accountValue, button: accountSend }))
-  secretForm.addEventListener('submit', (event) => sendTypedValue({ event, input: secretValue, button: secretSend }))
+  accountForm.addEventListener('submit', (event) => sendTypedValue({ event, input: accountValue, button: accountSend, field:'account' }))
+  secretForm.addEventListener('submit', (event) => sendTypedValue({ event, input: secretValue, button: secretSend, field:'secret' }))
   panMode.addEventListener('click', () => applyInteractionMode('pan'))
   operateMode.addEventListener('click', () => applyInteractionMode('operate'))
   locateLogin.addEventListener('click', focusLoginArea)
   zoomOut.addEventListener('click', () => setZoom(zoomPercent - 50))
   zoomIn.addEventListener('click', () => setZoom(zoomPercent + 50))
   document.querySelectorAll('[data-key]').forEach((button) => button.addEventListener('click', () => { void sendAction({kind:'key',key:button.dataset.key}) }))
+  document.querySelectorAll('[data-official-control]').forEach((button) => button.addEventListener('click', () => { void sendAction({kind:'control',control:button.dataset.officialControl}) }))
   refreshScreen.addEventListener('click', () => { void loadFrame() })
   void refresh()
   setInterval(() => { if (repairToken) void refresh() }, 1200)

@@ -60,6 +60,8 @@ const VISUAL_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
 ])
+const OFFICIAL_FIELDS = new Set(['account', 'secret'])
+const OFFICIAL_CONTROLS = new Set(['agreement', 'requestCode'])
 
 const visualCoordinate = (value) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
@@ -97,6 +99,16 @@ export const normalizeBieyanghongVisualInteraction = (input) => {
       throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
     }
     return { kind: 'text', value }
+  }
+  if (input.kind === 'field' && OFFICIAL_FIELDS.has(input.field)) {
+    const value = typeof input.value === 'string' ? input.value : ''
+    if (!value || value.length > 64 || /[\r\n\u0000]/u.test(value)) {
+      throw new Error('BIEYANGHONG_VISUAL_INTERACTION_INVALID')
+    }
+    return { kind: 'field', field: input.field, value }
+  }
+  if (input.kind === 'control' && OFFICIAL_CONTROLS.has(input.control)) {
+    return { kind: 'control', control: input.control }
   }
   if (input.kind === 'key' && VISUAL_KEYS.has(input.key)) {
     return { kind: 'key', key: input.key }
@@ -330,6 +342,18 @@ const ensureAgreement = async (frame) => {
   if (!(await input.isChecked().catch(() => false))) {
     throw new Error('BIEYANGHONG_LOGIN_AGREEMENT_UNAVAILABLE')
   }
+}
+
+const firstVisibleOfficialLocator = async (frame, selectors) => {
+  for (const selector of selectors) {
+    const candidates = frame.locator(selector)
+    const count = Math.min(await candidates.count().catch(() => 0), 8)
+    for (let index = 0; index < count; index += 1) {
+      const candidate = candidates.nth(index)
+      if (await candidate.isVisible().catch(() => false)) return candidate
+    }
+  }
+  throw new Error('BIEYANGHONG_OFFICIAL_FIELD_UNAVAILABLE')
 }
 
 const clearCredentialFields = async (frame) => {
@@ -668,6 +692,34 @@ export const startBieyanghongAssistedLogin = async ({
           await activePage.waitForTimeout(Math.ceil(action.durationMs / steps))
         }
         await activePage.mouse.up()
+      } else if (action.kind === 'field') {
+        const officialFrame = activePage.frames().find((candidate) =>
+          candidate.url().includes(bieyanghongLoginSelectors.loginFrameUrl))
+          ?? activePage
+        const selectors = action.field === 'account'
+          ? [bieyanghongLoginSelectors.phone, bieyanghongLoginSelectors.account]
+          : [bieyanghongLoginSelectors.smsCode, bieyanghongLoginSelectors.password]
+        const target = await firstVisibleOfficialLocator(
+          officialFrame,
+          selectors,
+        )
+        await target.fill(action.value)
+        action.value = null
+      } else if (action.kind === 'control') {
+        const officialFrame = activePage.frames().find((candidate) =>
+          candidate.url().includes(bieyanghongLoginSelectors.loginFrameUrl))
+          ?? activePage
+        if (action.control === 'agreement') {
+          await ensureAgreement(officialFrame)
+        } else {
+          await ensureAgreement(officialFrame)
+          const requestCode = await firstVisibleOfficialLocator(
+            officialFrame,
+            [bieyanghongLoginSelectors.requestCode],
+          )
+          await clickVendorControl(requestCode)
+          await activePage.waitForTimeout(1_000)
+        }
       } else if (action.kind === 'text') {
         await activePage.keyboard.insertText(action.value)
       } else {
