@@ -12,10 +12,12 @@ import {
 const fakeLoginPage = ({
   riskAfterCredential = false,
   initialKind = 'credential',
+  smsReadyAfterChecks = 0,
 } = {}) => {
   const calls = []
   let accountMode = false
   let codeRequested = false
+  let smsReadinessChecks = 0
   let currentFrame
   const createFrame = (kind) => {
     const frameState = { checked: false }
@@ -36,12 +38,19 @@ const fakeLoginPage = ({
         }
         if (selector === bieyanghongLoginSelectors.smsCode) {
           return kind === 'verification'
+            && (smsReadyAfterChecks === 0
+              || smsReadinessChecks > smsReadyAfterChecks)
         }
         if (selector === bieyanghongLoginSelectors.phone) {
+          if (kind === 'verification') smsReadinessChecks += 1
           return kind === 'verification'
+            && (smsReadyAfterChecks === 0
+              || smsReadinessChecks > smsReadyAfterChecks)
         }
         if (selector === bieyanghongLoginSelectors.requestCode) {
           return kind === 'verification'
+            && (smsReadyAfterChecks === 0
+              || smsReadinessChecks > smsReadyAfterChecks)
         }
         return true
       },
@@ -124,6 +133,22 @@ test('requests the SMS code with a phone number and no password', async () => {
   assert.ok(calls.some((call) =>
     call.action === 'react-click'
     && call.selector === bieyanghongLoginSelectors.requestCode))
+  assert.equal(prepared.alreadyAuthenticated, false)
+})
+
+test('waits for the Meituan SMS form to finish rendering', async () => {
+  const { page, calls } = fakeLoginPage({
+    initialKind: 'verification',
+    smsReadyAfterChecks: 2,
+  })
+  const prepared = await prepareBieyanghongSmsLogin({
+    page,
+    phone: '13800138000',
+  })
+
+  assert.ok(calls.some((call) =>
+    call.action === 'fill'
+    && call.selector === bieyanghongLoginSelectors.phone))
   assert.equal(prepared.alreadyAuthenticated, false)
 })
 

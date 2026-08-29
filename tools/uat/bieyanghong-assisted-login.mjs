@@ -249,6 +249,54 @@ const selectAccountLogin = async (page, initialFrame) => {
   throw new Error('BIEYANGHONG_ACCOUNT_LOGIN_FORM_UNAVAILABLE')
 }
 
+const smsLoginFrameFor = async (page, initialFrame, timeoutMs = 15_000) => {
+  const deadline = Date.now() + timeoutMs
+  let frame = initialFrame
+  let nativeTabAttempted = false
+  let reactTabAttempted = false
+  while (Date.now() < deadline) {
+    frame = page.frames().find((candidate) =>
+      candidate.url().includes(bieyanghongLoginSelectors.loginFrameUrl))
+      ?? frame
+    const phoneVisible = await frame
+      .locator(bieyanghongLoginSelectors.phone)
+      .first()
+      .isVisible()
+      .catch(() => false)
+    const codeVisible = await frame
+      .locator(bieyanghongLoginSelectors.smsCode)
+      .first()
+      .isVisible()
+      .catch(() => false)
+    const requestVisible = await frame
+      .locator(bieyanghongLoginSelectors.requestCode)
+      .first()
+      .isVisible()
+      .catch(() => false)
+    if (phoneVisible && codeVisible && requestVisible) return frame
+
+    const smsTab = frame
+      .locator(bieyanghongLoginSelectors.accountLoginTab)
+      .filter({ hasText: '验证码登录' })
+      .first()
+    const smsTabVisible = await smsTab.isVisible().catch(() => false)
+    const smsTabClass = smsTabVisible
+      ? await smsTab.getAttribute('class').catch(() => '')
+      : ''
+    if (smsTabVisible && !String(smsTabClass ?? '').includes('active')) {
+      if (!nativeTabAttempted) {
+        nativeTabAttempted = true
+        await smsTab.click().catch(() => {})
+      } else if (!reactTabAttempted) {
+        reactTabAttempted = true
+        await clickVendorControl(smsTab).catch(() => {})
+      }
+    }
+    await page.waitForTimeout(250)
+  }
+  throw new Error('BIEYANGHONG_SMS_LOGIN_FORM_UNAVAILABLE')
+}
+
 const ensureAgreement = async (frame) => {
   const input = frame.locator(bieyanghongLoginSelectors.agreementInput).first()
   if (await input.isChecked().catch(() => false)) return
@@ -290,21 +338,16 @@ export const prepareBieyanghongSmsLogin = async ({
     waitUntil: 'domcontentloaded',
     timeout: 45_000,
   })
-  const frame = await loginFrameFor(page)
+  let frame = await loginFrameFor(page)
+  frame = await smsLoginFrameFor(page, frame)
   const requestCode = frame
     .locator(bieyanghongLoginSelectors.requestCode)
     .first()
   let requestConfirmed = false
   try {
     const phoneInput = frame.locator(bieyanghongLoginSelectors.phone).first()
-    if (!(await phoneInput.isVisible().catch(() => false))) {
-      throw new Error('BIEYANGHONG_LOGIN_FORM_UNAVAILABLE')
-    }
     await phoneInput.fill(phone)
     await ensureAgreement(frame)
-    if (!(await requestCode.isVisible().catch(() => false))) {
-      throw new Error('BIEYANGHONG_LOGIN_FORM_UNAVAILABLE')
-    }
     const beforeText = await requestCode.innerText().catch(() => '')
     const beforeClass = await requestCode.getAttribute('class').catch(() => '')
     requestConfirmed =
