@@ -54,6 +54,16 @@ import {
   renderLuopanRepairClientScript,
   renderLuopanRepairPage,
 } from './luopan-repair-page.mjs'
+import { startBieyanghongAssistedLogin } from './bieyanghong-assisted-login.mjs'
+import {
+  bieyanghongRepairLink,
+  createBieyanghongRepairChallengeStore,
+  validateBieyanghongRepairPublicBaseUrl,
+} from './bieyanghong-repair-challenge.mjs'
+import {
+  renderBieyanghongRepairClientScript,
+  renderBieyanghongRepairPage,
+} from './bieyanghong-repair-page.mjs'
 import {
   appendAndPersistSnapshot,
   collectLiveReports,
@@ -151,6 +161,30 @@ const luopanWebRepairReady =
   luopanAssistedRepairEnabled
   && Boolean(luopanRepairPublicBaseUrl)
   && !luopanWebRepairConfigurationReason
+const BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE = '001'
+const bieyanghongAssistedRepairEnabled =
+  process.env.OTA_REVIEW_BIEYANGHONG_ASSISTED_REAUTH_ENABLED === 'true'
+let bieyanghongRepairPublicBaseUrl = null
+let bieyanghongRepairConfigurationReason =
+  bieyanghongAssistedRepairEnabled
+    ? 'BIEYANGHONG_REPAIR_PUBLIC_URL_REQUIRED'
+    : 'BIEYANGHONG_REPAIR_DISABLED'
+try {
+  bieyanghongRepairPublicBaseUrl =
+    validateBieyanghongRepairPublicBaseUrl(
+      process.env.OTA_REVIEW_BIEYANGHONG_REPAIR_PUBLIC_BASE_URL,
+    )
+  if (bieyanghongAssistedRepairEnabled && bieyanghongRepairPublicBaseUrl) {
+    bieyanghongRepairConfigurationReason = null
+  }
+} catch {
+  bieyanghongRepairConfigurationReason =
+    'BIEYANGHONG_REPAIR_PUBLIC_URL_INVALID'
+}
+const bieyanghongWebRepairReady =
+  bieyanghongAssistedRepairEnabled
+  && Boolean(bieyanghongRepairPublicBaseUrl)
+  && !bieyanghongRepairConfigurationReason
 const liveSnapshotPath = dataPath
   ? join(dirname(dataPath), 'live-report-snapshots.json')
   : null
@@ -178,6 +212,9 @@ const luopanBrowserConfigPath = dataPath
 const luopanSessionSecretPath = dataPath
   ? join(dirname(dataPath), 'luopan-session-secrets.json')
   : null
+const bieyanghongBrowserProfileBase =
+  process.env.BIEYANGHONG_BROWSER_PROFILE_BASE?.trim()
+  || (dataPath ? join(dirname(dataPath), 'bieyanghong-browser-profiles') : null)
 const weComConfigPath = dataPath
   ? join(dirname(dataPath), 'wecom-configs.json')
   : null
@@ -332,6 +369,9 @@ const briefingHealthAudits = []
 const lastScheduledCollectionSlotByHotel = new Map()
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
+const bieyanghongRepairChallengeStore =
+  createBieyanghongRepairChallengeStore()
+const activeBieyanghongRepairsByHotel = new Map()
 const weComRepairBotPairingStore = createWeComRepairBotPairingStore()
 const seenWeComRepairBotMessageHashes = new Map()
 const lastScheduledLuopanRecoveryAtByHotel = new Map()
@@ -354,6 +394,7 @@ const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
 const BRIEFING_HEALTH_AUDIT_RETENTION_MS = 366 * 24 * 60 * 60_000
 const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
 const LUOPAN_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
+const BIEYANGHONG_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 
 const SIMULATION_HOTEL_CODE = /^[A-Z0-9][A-Z0-9_-]{0,15}$/
 const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -921,11 +962,18 @@ const normalizePmsLoginCredentials = (credentials) => {
 
 const pmsLoginConfigFor = (hotelId) => {
   const record = pmsLoginSecretsByHotel.get(hotelId)
+  const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
+  const bieyanghongPilot =
+    hotel?.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+    && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
   return {
     configured: Boolean(record),
     updatedAt: record?.updatedAt ?? null,
-    loginMode: 'CONTROLLED_BROWSER',
-    loginExecutionEnabled: false,
+    loginMode: bieyanghongPilot
+      ? 'CONTROLLED_BROWSER_SMS_AUTHORIZATION'
+      : 'CONTROLLED_BROWSER',
+    loginExecutionEnabled:
+      bieyanghongPilot && bieyanghongAssistedRepairEnabled,
   }
 }
 
@@ -2021,6 +2069,41 @@ const luopanRepairReasonCode = () => {
   return 'LUOPAN_REPAIR_NOT_READY'
 }
 
+const bieyanghongPilotHotel = () => hotels.find((hotel) =>
+  hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+  && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG') ?? null
+
+const bieyanghongAssistedRepairReady = () => {
+  const hotel = bieyanghongPilotHotel()
+  return bieyanghongAssistedRepairEnabled
+    && bieyanghongWebRepairReady
+    && Boolean(bieyanghongBrowserProfileBase)
+    && Boolean(hotel && pmsLoginSecretsByHotel.has(hotel.hotelId))
+    && weComRepairBotReady()
+}
+
+const bieyanghongRepairReasonCode = () => {
+  if (!bieyanghongAssistedRepairEnabled) {
+    return 'BIEYANGHONG_REPAIR_DISABLED'
+  }
+  if (!bieyanghongPilotHotel()) {
+    return 'BIEYANGHONG_REPAIR_PILOT_HOTEL_NOT_FOUND'
+  }
+  if (!bieyanghongWebRepairReady) {
+    return bieyanghongRepairConfigurationReason
+  }
+  if (!bieyanghongBrowserProfileBase) {
+    return 'BIEYANGHONG_BROWSER_PROFILE_BASE_REQUIRED'
+  }
+  if (!pmsLoginSecretsByHotel.has(bieyanghongPilotHotel().hotelId)) {
+    return 'PMS_LOGIN_CREDENTIALS_MISSING'
+  }
+  if (!weComRepairBotReady()) {
+    return 'WECOM_REPAIR_BOT_NOT_CONNECTED'
+  }
+  return null
+}
+
 if (weComRepairBotConfigPath && existsSync(weComRepairBotConfigPath)) {
   try {
     const persisted = JSON.parse(
@@ -2433,6 +2516,37 @@ const repairHtml = (response) => {
 
 const repairClientScript = (response) => {
   const content = renderLuopanRepairClientScript()
+  response.writeHead(200, {
+    'content-type': 'application/javascript; charset=utf-8',
+    'content-length': Buffer.byteLength(content),
+    'cache-control': 'no-store, max-age=0',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  })
+  response.end(content)
+}
+
+const bieyanghongRepairHtml = (response) => {
+  const content = renderBieyanghongRepairPage()
+  response.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(content),
+    'cache-control': 'no-store, max-age=0',
+    'content-security-policy':
+      `default-src 'none'; base-uri 'none'; frame-ancestors 'none'; `
+      + `form-action 'self'; connect-src 'self'; style-src 'unsafe-inline'; `
+      + `script-src 'self'`,
+    'permissions-policy':
+      'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+  })
+  response.end(content)
+}
+
+const bieyanghongRepairClientScript = (response) => {
+  const content = renderBieyanghongRepairClientScript()
   response.writeHead(200, {
     'content-type': 'application/javascript; charset=utf-8',
     'content-length': Buffer.byteLength(content),
@@ -3344,6 +3458,9 @@ const collectLiveFor = async (
   if (activeLuopanRepairsByHotel.has(hotelId)) {
     throw new Error('LUOPAN_REAUTH_IN_PROGRESS')
   }
+  if (activeBieyanghongRepairsByHotel.has(hotelId)) {
+    throw new Error('BIEYANGHONG_REAUTH_IN_PROGRESS')
+  }
   const running = liveCollectionLocks.get(hotelId)
   if (running) return running
 
@@ -3431,7 +3548,21 @@ const collectLiveFor = async (
       ...result,
       otaRefreshes,
     }
-  })()
+  })().catch((error) => {
+    const hotel = selectedHotel(hotelId)
+    if (
+      error?.message === 'PMS_SESSION_REAUTH_REQUIRED'
+      && hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+      && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+      && !isNightlyRepairDeferred()
+    ) {
+      void startBieyanghongRepairChallenge(
+        hotelId,
+        'SCHEDULED_COLLECTION_FAILURE',
+      ).catch(() => {})
+    }
+    throw error
+  })
   liveCollectionLocks.set(hotelId, operation)
   try {
     return await operation
@@ -4352,6 +4483,355 @@ const processLuopanRepairSubmissionByHash = ({ tokenSha256, captcha }) =>
     luopanRepairChallengeStore.submitByHash(tokenSha256, captcha),
   )
 
+const safeBieyanghongRepairReason = (error) => {
+  const candidate = String(error?.message ?? '')
+  return /^[A-Z][A-Z0-9_]{2,80}$/u.test(candidate)
+    ? candidate
+    : 'BIEYANGHONG_REPAIR_FAILED'
+}
+
+const pmsCookieValue = (cookieHeader, name) => {
+  for (const part of String(cookieHeader ?? '').split(';')) {
+    const [candidate, ...value] = part.trim().split('=')
+    if (candidate === name) return value.join('=').trim() || null
+  }
+  return null
+}
+
+const expectedBieyanghongHotelScope = (hotelId) => {
+  const sources = reportSourcesByHotel.get(hotelId) ?? []
+  const encryptedSecrets = secretsForHotel(hotelId)
+  for (const source of sources) {
+    const record = encryptedSecrets[source.sourceId]
+    if (!record) continue
+    const existingCookie = decryptCookie(
+      record,
+      cookieSecretKey,
+      cookieScope(hotelId, source.sourceId),
+    )
+    const expectedHotelId = pmsCookieValue(
+      existingCookie,
+      'hotelpms_login_hotel_id',
+    )
+    if (expectedHotelId) return expectedHotelId
+  }
+  throw new Error('BIEYANGHONG_EXPECTED_STORE_SCOPE_UNAVAILABLE')
+}
+
+const replaceBieyanghongReportCookies = (hotelId, cookieHeader) => {
+  const hotel = selectedHotel(hotelId)
+  if (
+    hotel.hotelCode !== BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+    || hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
+  ) {
+    throw new Error('BIEYANGHONG_REPAIR_PILOT_SCOPE_INVALID')
+  }
+  const expectedHotelId = expectedBieyanghongHotelScope(hotelId)
+  const authenticatedHotelId = pmsCookieValue(
+    cookieHeader,
+    'hotelpms_login_hotel_id',
+  )
+  if (!authenticatedHotelId || authenticatedHotelId !== expectedHotelId) {
+    throw new Error('BIEYANGHONG_STORE_SCOPE_INVALID')
+  }
+  const sources = reportSourcesByHotel.get(hotelId) ?? []
+  const previous = { ...secretsForHotel(hotelId) }
+  const next = { ...previous }
+  let replaced = 0
+  for (const source of sources) {
+    let endpoint
+    try {
+      endpoint = new URL(source.endpointUrl)
+    } catch {
+      continue
+    }
+    if (endpoint.hostname !== 'pms.meituan.com') continue
+    next[source.sourceId] = encryptCookie(
+      cookieHeader,
+      cookieSecretKey,
+      cookieScope(hotelId, source.sourceId),
+    )
+    replaced += 1
+  }
+  if (replaced < 1) {
+    throw new Error('BIEYANGHONG_REPORT_SOURCE_NOT_CONFIGURED')
+  }
+  cookieSecretsByHotel.set(hotelId, next)
+  persistCookieSecrets()
+  return { previous, replaced }
+}
+
+const finishBieyanghongRepair = async ({
+  hotelId,
+  tokenSha256,
+  cookieHeader: inputCookieHeader,
+}) => {
+  const handle = activeBieyanghongRepairsByHotel.get(hotelId)
+  if (!handle || handle.tokenSha256 !== tokenSha256) {
+    throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
+  }
+  bieyanghongRepairChallengeStore.markVerifying(tokenSha256)
+  await handle.login?.close().catch(() => {})
+  activeBieyanghongRepairsByHotel.delete(hotelId)
+  let cookieHeader = inputCookieHeader
+  let previousSecrets = null
+  let collectionSucceeded = false
+  try {
+    const replacement = replaceBieyanghongReportCookies(hotelId, cookieHeader)
+    previousSecrets = replacement.previous
+    cookieHeader = null
+    const collection = await collectLiveFor(hotelId)
+    collectionSucceeded = true
+    const today = await deliverWeComSnapshot({
+      hotelId,
+      snapshot: collection.snapshot,
+      messageKey:
+        `${hotelId}:BIEYANGHONG_RECOVERY:${collection.snapshot.collectionRunId}:TODAY`,
+      messagePrefix: '别样红会话修复后补发简报',
+      deliveryType: 'TODAY_REVENUE',
+    })
+    const future = await deliverWeComSnapshot({
+      hotelId,
+      snapshot: collection.snapshot,
+      messageKey:
+        `${hotelId}:BIEYANGHONG_RECOVERY:${collection.snapshot.collectionRunId}:FUTURE_14D_V1`,
+      messagePrefix: '别样红会话修复后补发远期房态',
+      deliveryType: 'FUTURE_14D',
+      payloadFactory: ({ hotel: selected, snapshot: current }) =>
+        futureBookingPayloads({
+          hotel: selected,
+          snapshot: current,
+          messagePrefix: '别样红会话修复后补发远期房态',
+        }),
+    })
+    if (
+      today.deliveryStatus !== 'DELIVERED'
+      || future.deliveryStatus !== 'DELIVERED'
+    ) {
+      throw new Error('BIEYANGHONG_REPAIR_DELIVERY_NOT_CONFIRMED')
+    }
+    bieyanghongRepairChallengeStore.complete(tokenSha256)
+    updateLatestPendingBriefingHealthAudit(hotelId, {
+      resolutionStatus: 'RESOLVED',
+      resolvedAt: new Date().toISOString(),
+      reasonCode: 'BIEYANGHONG_REPAIR_VERIFIED',
+    })
+    const hotel = selectedHotel(hotelId)
+    await deliverWeComRepairBotDirectMessage({
+      hotelId,
+      messageKey:
+        `${hotelId}:BIEYANGHONG_REPAIR_COMPLETE:${collection.snapshot.collectionRunId}`,
+      deliveryType: 'BIEYANGHONG_REPAIR_COMPLETE',
+      content: [
+        '### 别样红简报授权修复完成',
+        `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+        '短信授权、会话刷新、数据采集及两类简报补发均已完成。',
+      ].join('\n'),
+    }).catch(() => {})
+  } catch (error) {
+    cookieHeader = null
+    if (previousSecrets && !collectionSucceeded) {
+      cookieSecretsByHotel.set(hotelId, previousSecrets)
+      persistCookieSecrets()
+    }
+    const reasonCode = safeBieyanghongRepairReason(error)
+    bieyanghongRepairChallengeStore.fail(tokenSha256, reasonCode)
+    updateLatestPendingBriefingHealthAudit(hotelId, {
+      resolutionStatus: 'FAILED',
+      reasonCode,
+    })
+    const hotel = selectedHotel(hotelId)
+    await deliverWeComRepairBotDirectMessage({
+      hotelId,
+      messageKey:
+        `${hotelId}:BIEYANGHONG_REPAIR_FAILED:${tokenSha256.slice(0, 16)}`,
+      deliveryType: 'BIEYANGHONG_REPAIR_FAILED',
+      content: [
+        '### 别样红简报授权修复未完成',
+        `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+        `状态码：${reasonCode}`,
+        '系统已停止本次尝试，未向其他门店写入任何会话。',
+      ].join('\n'),
+    }).catch(() => {})
+  }
+}
+
+const startBieyanghongRepairChallenge = async (
+  hotelId,
+  trigger = 'MANUAL_PILOT',
+) => {
+  if (!bieyanghongAssistedRepairReady()) return null
+  const active = activeBieyanghongRepairsByHotel.get(hotelId)
+  if (active) {
+    return bieyanghongRepairChallengeStore
+      .getInternalByHash(active.tokenSha256)
+  }
+  const hotel = selectedHotel(hotelId)
+  if (
+    hotel.hotelCode !== BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+    || hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
+  ) return null
+
+  const created = bieyanghongRepairChallengeStore.create({
+    hotelId,
+    hotelCode: hotel.hotelCode,
+    hotelName: hotel.hotelName,
+  })
+  const handle = {
+    hotelId,
+    tokenSha256: created.tokenSha256,
+    challengeId: created.record.challengeId,
+    login: null,
+  }
+  activeBieyanghongRepairsByHotel.set(hotelId, handle)
+  try {
+    let credentials = pmsLoginCredentialsFor(hotelId)
+    handle.login = await startBieyanghongAssistedLogin({
+      profileRoot: join(
+        bieyanghongBrowserProfileBase,
+        `hotel-${hotel.hotelCode}`,
+      ),
+      credentials,
+    })
+    credentials = null
+    if (handle.login.alreadyAuthenticated) {
+      void finishBieyanghongRepair({
+        hotelId,
+        tokenSha256: created.tokenSha256,
+        cookieHeader: handle.login.cookieHeader,
+      })
+      return created.record
+    }
+    bieyanghongRepairChallengeStore.setWaiting(created.tokenSha256)
+    const delivery = await deliverWeComRepairBotDirectMessage({
+      hotelId,
+      messageKey:
+        `${hotelId}:BIEYANGHONG_REPAIR_REQUIRED:${created.record.challengeId}`,
+      deliveryType: 'BIEYANGHONG_REPAIR_REQUIRED',
+      content: [
+        '### 001别样红简报需要短信授权',
+        `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+        '美团登录短信验证码已发送至后台配置手机号。',
+        '请点击下方一次性链接填写验证码：',
+        bieyanghongRepairLink(
+          bieyanghongRepairPublicBaseUrl,
+          created.token,
+        ),
+        '有效期10分钟，最多提交3次。请勿转发。',
+      ].join('\n'),
+    })
+    if (delivery.deliveredPartCount < 1) {
+      throw new Error('BIEYANGHONG_REPAIR_NOTICE_NOT_DELIVERED')
+    }
+    process.stdout.write(
+      `${JSON.stringify({
+        event: 'BIEYANGHONG_REPAIR_CHALLENGE_STARTED',
+        hotelId,
+        trigger,
+        expiresAt: created.record.expiresAt,
+      })}\n`,
+    )
+    return created.record
+  } catch (error) {
+    const reasonCode = safeBieyanghongRepairReason(error)
+    await handle.login?.close().catch(() => {})
+    activeBieyanghongRepairsByHotel.delete(hotelId)
+    bieyanghongRepairChallengeStore.fail(created.tokenSha256, reasonCode)
+    process.stderr.write(
+      `${JSON.stringify({
+        event: 'BIEYANGHONG_REPAIR_CHALLENGE_FAILED',
+        hotelId,
+        trigger,
+        reasonCode,
+      })}\n`,
+    )
+    throw new Error(reasonCode)
+  }
+}
+
+const processBieyanghongRepairSubmission = ({ token, code }) => {
+  const submitted = bieyanghongRepairChallengeStore.submit(token, code)
+  const challenge = bieyanghongRepairChallengeStore.getInternalByHash(
+    submitted.tokenSha256,
+  )
+  const handle = activeBieyanghongRepairsByHotel.get(challenge.hotelId)
+  if (!handle || handle.tokenSha256 !== submitted.tokenSha256) {
+    bieyanghongRepairChallengeStore.fail(
+      submitted.tokenSha256,
+      'BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE',
+    )
+    throw new Error('BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE')
+  }
+  bieyanghongRepairChallengeStore.markVerifying(submitted.tokenSha256)
+  process.stdout.write(
+    `${JSON.stringify({
+      event: 'BIEYANGHONG_REPAIR_CODE_SUBMITTED',
+      hotelId: challenge.hotelId,
+      challengeId: challenge.challengeId,
+    })}\n`,
+  )
+  void (async () => {
+    let answer = submitted.answer
+    try {
+      let timeoutId = null
+      const result = await Promise.race([
+        handle.login.submit(answer),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('BIEYANGHONG_REPAIR_SUBMISSION_TIMEOUT')),
+            BIEYANGHONG_REPAIR_SUBMISSION_TIMEOUT_MS,
+          )
+          timeoutId.unref?.()
+        }),
+      ]).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId)
+      })
+      answer = null
+      if (!result.authenticated) {
+        if (
+          result.reasonCode === 'BIEYANGHONG_SMS_CODE_REJECTED'
+          && challenge.attemptsUsed < challenge.maxAttempts
+        ) {
+          bieyanghongRepairChallengeStore.setWaiting(
+            submitted.tokenSha256,
+            result.reasonCode,
+          )
+          return
+        }
+        throw new Error(result.reasonCode)
+      }
+      await finishBieyanghongRepair({
+        hotelId: challenge.hotelId,
+        tokenSha256: submitted.tokenSha256,
+        cookieHeader: result.cookieHeader,
+      })
+    } catch (error) {
+      answer = null
+      const reasonCode = safeBieyanghongRepairReason(error)
+      await handle.login?.close().catch(() => {})
+      activeBieyanghongRepairsByHotel.delete(challenge.hotelId)
+      bieyanghongRepairChallengeStore.fail(
+        submitted.tokenSha256,
+        reasonCode,
+      )
+      const hotel = selectedHotel(challenge.hotelId)
+      await deliverWeComRepairBotDirectMessage({
+        hotelId: challenge.hotelId,
+        messageKey:
+          `${challenge.hotelId}:BIEYANGHONG_REPAIR_SUBMISSION_FAILED:${challenge.challengeId}:${challenge.attemptsUsed}`,
+        deliveryType: 'BIEYANGHONG_REPAIR_FAILED',
+        content: [
+          '### 别样红短信授权未完成',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          `状态码：${reasonCode}`,
+          '系统已停止本次尝试，请等待新的授权链接。',
+        ].join('\n'),
+      }).catch(() => {})
+    }
+  })()
+  return submitted.record
+}
+
 const handleWeComRepairBotText = async (frame, replyText) => {
   const body = frame?.body
   const userId = typeof body?.from?.userid === 'string'
@@ -4581,6 +5061,16 @@ const expireLuopanRepairSessions = async () => {
       activeLuopanRepairsByHotel.delete(hotelId)
     }
   }
+  bieyanghongRepairChallengeStore.cleanupExpired()
+  for (const [hotelId, handle] of activeBieyanghongRepairsByHotel) {
+    const challenge = bieyanghongRepairChallengeStore.getInternalByHash(
+      handle.tokenSha256,
+    )
+    if (!challenge || challenge.status === 'EXPIRED') {
+      await handle.login?.close().catch(() => {})
+      activeBieyanghongRepairsByHotel.delete(hotelId)
+    }
+  }
 }
 
 const briefingHealthAuditFor = (hotel, date) => auditBriefingStore({
@@ -4673,14 +5163,30 @@ const repairNightlyBriefingHealthAudit = async ({
   })
   try {
     if (auditRecord.status === 'REAUTH_REQUIRED') {
-      const challenge = await startLuopanRepairChallenge(
-        hotel.hotelId,
-        'DAILY_07_30_REPAIR',
-      )
-      if (!challenge) throw new Error('LUOPAN_REPAIR_NOT_STARTED')
+      const bieyanghongPilot =
+        hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+        && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+      const challenge = bieyanghongPilot
+        ? await startBieyanghongRepairChallenge(
+          hotel.hotelId,
+          'DAILY_07_30_REPAIR',
+        )
+        : await startLuopanRepairChallenge(
+          hotel.hotelId,
+          'DAILY_07_30_REPAIR',
+        )
+      if (!challenge) {
+        throw new Error(
+          bieyanghongPilot
+            ? 'BIEYANGHONG_REPAIR_NOT_STARTED'
+            : 'LUOPAN_REPAIR_NOT_STARTED',
+        )
+      }
       updateBriefingHealthAudit(auditRecord.auditId, {
         resolutionStatus: 'WAITING_CAPTCHA',
-        reasonCode: 'LUOPAN_REPAIR_WAITING_CAPTCHA',
+        reasonCode: bieyanghongPilot
+          ? 'BIEYANGHONG_REPAIR_WAITING_SMS_CODE'
+          : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
       })
       return
     }
@@ -4737,10 +5243,15 @@ const repairNightlyBriefingHealthAudit = async ({
       ].join('\n'),
     }).catch(() => {})
   } catch (error) {
-    if (activeLuopanRepairsByHotel.has(hotel.hotelId)) {
+    if (
+      activeLuopanRepairsByHotel.has(hotel.hotelId)
+      || activeBieyanghongRepairsByHotel.has(hotel.hotelId)
+    ) {
       updateBriefingHealthAudit(auditRecord.auditId, {
         resolutionStatus: 'WAITING_CAPTCHA',
-        reasonCode: 'LUOPAN_REPAIR_WAITING_CAPTCHA',
+        reasonCode: activeBieyanghongRepairsByHotel.has(hotel.hotelId)
+          ? 'BIEYANGHONG_REPAIR_WAITING_SMS_CODE'
+          : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
       })
       return
     }
@@ -5124,6 +5635,14 @@ const server = createServer(async (request, response) => {
           webLinkReady: luopanWebRepairReady,
           weComRepairBot: weComRepairBotStatus(),
         },
+        bieyanghongAssistedRepair: {
+          enabled: bieyanghongAssistedRepairEnabled,
+          ready: bieyanghongAssistedRepairReady(),
+          reasonCode: bieyanghongRepairReasonCode(),
+          pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
+          webLinkReady: bieyanghongWebRepairReady,
+          activeChallengeCount: activeBieyanghongRepairsByHotel.size,
+        },
       })
       return
     }
@@ -5183,6 +5702,53 @@ const server = createServer(async (request, response) => {
       const accepted = processLuopanRepairSubmission({
         token,
         captcha: body.captcha,
+      })
+      json(response, 202, { data: accepted })
+      return
+    }
+
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/bieyanghong-repair'
+    ) {
+      bieyanghongRepairHtml(response)
+      return
+    }
+
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/bieyanghong-repair/client.js'
+    ) {
+      bieyanghongRepairClientScript(response)
+      return
+    }
+
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/bieyanghong-repair/status'
+    ) {
+      const challenge = bieyanghongRepairChallengeStore.get(
+        repairTokenFrom(request),
+      )
+      if (!challenge) {
+        json(response, 404, {
+          code: 'BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND',
+        })
+        return
+      }
+      json(response, 200, { data: challenge })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/bieyanghong-repair/submit'
+    ) {
+      const token = repairTokenFrom(request)
+      const body = await readBody(request)
+      const accepted = processBieyanghongRepairSubmission({
+        token,
+        code: body.code,
       })
       json(response, 202, { data: accepted })
       return
@@ -5439,6 +6005,24 @@ const server = createServer(async (request, response) => {
         || selected.tenantId !== requestTenantId
       ) {
         json(response, 404, { code: 'REVIEW_HOTEL_NOT_FOUND' })
+        return
+      }
+
+      if (
+        request.method === 'POST'
+        && suffix === '/bieyanghong-repair'
+      ) {
+        const challenge = await startBieyanghongRepairChallenge(
+          hotelId,
+          'ADMIN_PILOT_TEST',
+        )
+        if (!challenge) {
+          throw new Error(
+            bieyanghongRepairReasonCode()
+            ?? 'BIEYANGHONG_REPAIR_NOT_STARTED',
+          )
+        }
+        json(response, 202, { data: challenge })
         return
       }
 
@@ -6195,6 +6779,7 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('FUTURE_')
                     || error.message.startsWith('OTA_')
                     || error.message.startsWith('LUOPAN_')
+                    || error.message.startsWith('BIEYANGHONG_')
                   )
                     ? error.message
            : 'REVIEW_API_FAILED_CLOSED'
@@ -6233,6 +6818,12 @@ server.listen(port, host, () => {
 
 const shutdown = () => {
   weComRepairBotRuntime?.disconnect()
+  for (const handle of activeLuopanRepairsByHotel.values()) {
+    void handle.login?.close().catch(() => {})
+  }
+  for (const handle of activeBieyanghongRepairsByHotel.values()) {
+    void handle.login?.close().catch(() => {})
+  }
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 2_000).unref()
 }

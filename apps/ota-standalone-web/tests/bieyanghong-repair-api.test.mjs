@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import os from 'node:os'
+import { join } from 'node:path'
+import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const apiScript = fileURLToPath(
+  new URL('../../../tools/uat/ota-standalone-review-api.mjs', import.meta.url),
+)
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
+
+const availablePort = async () => {
+  const server = createServer()
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  const port = typeof address === 'object' ? address.port : 0
+  server.close()
+  await once(server, 'close')
+  return port
+}
+
+test('001 SMS authorization page is public but challenge data remains token-gated', async () => {
+  const runtimePath = await mkdtemp(join(os.tmpdir(), 'bieyanghong-repair-api-'))
+  const port = await availablePort()
+  const child = spawn(process.execPath, [apiScript], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      OTA_REVIEW_API_PORT: String(port),
+      OTA_REVIEW_USERNAME: 'repair-test',
+      OTA_REVIEW_PASSWORD: 'example-Repair-Test-Password-42',
+      OTA_REVIEW_ACCESS_TOKEN: 'repair-test-token',
+      OTA_REVIEW_DATA_PATH: join(runtimePath, 'report-sources.json'),
+      OTA_REVIEW_COOKIE_SECRETS_PATH: join(
+        runtimePath,
+        'report-source-cookie-secrets.json',
+      ),
+      OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 13).toString('base64url'),
+      OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
+    },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  let stderr = ''
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString('utf8')
+  })
+  try {
+    let health
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (child.exitCode !== null) {
+        throw new Error(`BIEYANGHONG_API_EXITED:${stderr.slice(-500)}`)
+      }
+      try {
+        health = await fetch(`http://127.0.0.1:${port}/health`)
+        if (health.ok) break
+      } catch {
+        // Retry while the local API starts.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    assert.equal(health?.ok, true)
+    const healthBody = await health.json()
+    assert.equal(healthBody.bieyanghongAssistedRepair.enabled, false)
+    assert.equal(healthBody.bieyanghongAssistedRepair.ready, false)
+    assert.equal(
+      healthBody.bieyanghongAssistedRepair.pilotHotelCode,
+      '001',
+    )
+
+    const page = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair`,
+    )
+    assert.equal(page.status, 200)
+    assert.match(page.headers.get('cache-control'), /no-store/u)
+    assert.match(page.headers.get('content-security-policy'), /default-src 'none'/u)
+    const html = await page.text()
+    assert.match(html, /别样红简报授权修复/u)
+    assert.doesNotMatch(html, /手机号\s*1\d{10}|Cookie=/iu)
+    assert.match(html, /\/api\/v1\/bieyanghong-repair\/client\.js/u)
+
+    const missing = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/status`,
+      { headers: { Authorization: 'Repair invalid' } },
+    )
+    assert.equal(missing.status, 404)
+  } finally {
+    if (child.exitCode === null) {
+      child.kill()
+      await once(child, 'exit')
+    }
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
