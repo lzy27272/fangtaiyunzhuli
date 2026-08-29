@@ -974,7 +974,7 @@ const pmsLoginConfigFor = (hotelId) => {
     configured: Boolean(record),
     updatedAt: record?.updatedAt ?? null,
     loginMode: bieyanghongPilot
-      ? 'CONTROLLED_BROWSER_SMS_AUTHORIZATION'
+      ? 'CONTROLLED_BROWSER_CREDENTIALS_THEN_SMS_AUTHORIZATION'
       : 'CONTROLLED_BROWSER',
     loginExecutionEnabled:
       bieyanghongPilot && bieyanghongAssistedRepairEnabled,
@@ -2082,7 +2082,7 @@ const bieyanghongAssistedRepairReady = () => {
   return bieyanghongAssistedRepairEnabled
     && bieyanghongWebRepairReady
     && Boolean(bieyanghongBrowserProfileBase)
-    && Boolean(hotel && pmsLoginSecretsByHotel.has(hotel.hotelId))
+    && Boolean(hotel)
     && weComRepairBotReady()
 }
 
@@ -2098,9 +2098,6 @@ const bieyanghongRepairReasonCode = () => {
   }
   if (!bieyanghongBrowserProfileBase) {
     return 'BIEYANGHONG_BROWSER_PROFILE_BASE_REQUIRED'
-  }
-  if (!pmsLoginSecretsByHotel.has(bieyanghongPilotHotel().hotelId)) {
-    return 'PMS_LOGIN_CREDENTIALS_MISSING'
   }
   if (!weComRepairBotReady()) {
     return 'WECOM_REPAIR_BOT_NOT_CONNECTED'
@@ -4712,39 +4709,23 @@ const startBieyanghongRepairChallenge = async (
   }
   activeBieyanghongRepairsByHotel.set(hotelId, handle)
   try {
-    let credentials = pmsLoginCredentialsFor(hotelId)
-    handle.login = await startBieyanghongAssistedLogin({
-      profileRoot: join(
-        bieyanghongBrowserProfileBase,
-        `hotel-${hotel.hotelCode}`,
-      ),
-      credentials,
-    })
-    credentials = null
-    if (handle.login.alreadyAuthenticated) {
-      void finishBieyanghongRepair({
-        hotelId,
-        tokenSha256: created.tokenSha256,
-        cookieHeader: handle.login.cookieHeader,
-      })
-      return created.record
-    }
-    bieyanghongRepairChallengeStore.setWaiting(created.tokenSha256)
+    bieyanghongRepairChallengeStore.setWaitingForCredentials(
+      created.tokenSha256,
+    )
     const delivery = await deliverWeComRepairBotDirectMessage({
       hotelId,
       messageKey:
         `${hotelId}:BIEYANGHONG_REPAIR_REQUIRED:${created.record.challengeId}`,
       deliveryType: 'BIEYANGHONG_REPAIR_REQUIRED',
       content: [
-        '### 001别样红简报需要短信授权',
+        '### 001别样红简报需要管理员授权',
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '美团登录短信验证码已发送至后台配置手机号。',
-        '请点击下方一次性链接填写验证码：',
+        '请由本次处理管理员点击一次性链接，临时填写自己的手机号和密码，手动发送验证码后再填写验证码登录：',
         bieyanghongRepairLink(
           bieyanghongRepairPublicBaseUrl,
           created.token,
         ),
-        '有效期10分钟，最多提交3次。请勿转发。',
+        '有效期10分钟。账号资料最多提交2次，验证码最多提交3次；请勿转发或由多人同时操作。',
       ].join('\n'),
     })
     if (delivery.deliveredPartCount < 1) {
@@ -4774,6 +4755,118 @@ const startBieyanghongRepairChallenge = async (
     )
     throw new Error(reasonCode)
   }
+}
+
+const processBieyanghongRepairCodeRequest = ({
+  token,
+  phone: inputPhone,
+  password: inputPassword,
+}) => {
+  let phone = inputPhone
+  let password = inputPassword
+  const requested = bieyanghongRepairChallengeStore.requestCode(token, {
+    phone,
+    password,
+  })
+  phone = null
+  password = null
+  const challenge = bieyanghongRepairChallengeStore.getInternalByHash(
+    requested.tokenSha256,
+  )
+  const handle = activeBieyanghongRepairsByHotel.get(challenge.hotelId)
+  if (!handle || handle.tokenSha256 !== requested.tokenSha256) {
+    requested.credentials.phone = ''
+    requested.credentials.password = ''
+    bieyanghongRepairChallengeStore.fail(
+      requested.tokenSha256,
+      'BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE',
+    )
+    throw new Error('BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE')
+  }
+  process.stdout.write(
+    `${JSON.stringify({
+      event: 'BIEYANGHONG_REPAIR_CODE_REQUEST_STARTED',
+      hotelId: challenge.hotelId,
+      challengeId: challenge.challengeId,
+      credentialRequest: challenge.credentialRequestsUsed,
+    })}\n`,
+  )
+  void (async () => {
+    let credentials = requested.credentials
+    try {
+      handle.login = await startBieyanghongAssistedLogin({
+        profileRoot: join(
+          bieyanghongBrowserProfileBase,
+          `hotel-${challenge.hotelCode}`,
+        ),
+        phone: credentials.phone,
+        password: credentials.password,
+      })
+      credentials.phone = ''
+      credentials.password = ''
+      credentials = null
+      if (handle.login.alreadyAuthenticated) {
+        await finishBieyanghongRepair({
+          hotelId: challenge.hotelId,
+          tokenSha256: requested.tokenSha256,
+          cookieHeader: handle.login.cookieHeader,
+        })
+        return
+      }
+      bieyanghongRepairChallengeStore.setWaitingForCode(
+        requested.tokenSha256,
+      )
+      process.stdout.write(
+        `${JSON.stringify({
+          event: 'BIEYANGHONG_REPAIR_CODE_REQUESTED',
+          hotelId: challenge.hotelId,
+          challengeId: challenge.challengeId,
+        })}\n`,
+      )
+    } catch (error) {
+      if (credentials) {
+        credentials.phone = ''
+        credentials.password = ''
+        credentials = null
+      }
+      await handle.login?.close().catch(() => {})
+      handle.login = null
+      const reasonCode = safeBieyanghongRepairReason(error)
+      const current = bieyanghongRepairChallengeStore.getInternalByHash(
+        requested.tokenSha256,
+      )
+      if (
+        reasonCode === 'BIEYANGHONG_LOGIN_CREDENTIALS_REJECTED'
+        && current
+        && current.credentialRequestsUsed < current.maxCredentialRequests
+      ) {
+        bieyanghongRepairChallengeStore.setWaitingForCredentials(
+          requested.tokenSha256,
+          reasonCode,
+        )
+        return
+      }
+      activeBieyanghongRepairsByHotel.delete(challenge.hotelId)
+      bieyanghongRepairChallengeStore.fail(
+        requested.tokenSha256,
+        reasonCode,
+      )
+      const hotel = selectedHotel(challenge.hotelId)
+      await deliverWeComRepairBotDirectMessage({
+        hotelId: challenge.hotelId,
+        messageKey:
+          `${challenge.hotelId}:BIEYANGHONG_REPAIR_CODE_REQUEST_FAILED:${challenge.challengeId}:${challenge.credentialRequestsUsed}`,
+        deliveryType: 'BIEYANGHONG_REPAIR_FAILED',
+        content: [
+          '### 别样红管理员授权未完成',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          `状态码：${reasonCode}`,
+          '系统已停止本次尝试，请等待新的授权链接。',
+        ].join('\n'),
+      }).catch(() => {})
+    }
+  })()
+  return requested.record
 }
 
 const processBieyanghongRepairSubmission = ({ token, code }) => {
@@ -4819,7 +4912,7 @@ const processBieyanghongRepairSubmission = ({ token, code }) => {
           result.reasonCode === 'BIEYANGHONG_SMS_CODE_REJECTED'
           && challenge.attemptsUsed < challenge.maxAttempts
         ) {
-          bieyanghongRepairChallengeStore.setWaiting(
+          bieyanghongRepairChallengeStore.setWaitingForCode(
             submitted.tokenSha256,
             result.reasonCode,
           )
@@ -5212,7 +5305,7 @@ const repairNightlyBriefingHealthAudit = async ({
       updateBriefingHealthAudit(auditRecord.auditId, {
         resolutionStatus: 'WAITING_CAPTCHA',
         reasonCode: bieyanghongPilot
-          ? 'BIEYANGHONG_REPAIR_WAITING_SMS_CODE'
+          ? 'BIEYANGHONG_REPAIR_WAITING_MANAGER_AUTHORIZATION'
           : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
       })
       return
@@ -5277,7 +5370,7 @@ const repairNightlyBriefingHealthAudit = async ({
       updateBriefingHealthAudit(auditRecord.auditId, {
         resolutionStatus: 'WAITING_CAPTCHA',
         reasonCode: activeBieyanghongRepairsByHotel.has(hotel.hotelId)
-          ? 'BIEYANGHONG_REPAIR_WAITING_SMS_CODE'
+          ? 'BIEYANGHONG_REPAIR_WAITING_MANAGER_AUTHORIZATION'
           : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
       })
       return
@@ -5667,6 +5760,7 @@ const server = createServer(async (request, response) => {
           ready: bieyanghongAssistedRepairReady(),
           reasonCode: bieyanghongRepairReasonCode(),
           pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
+          credentialInputMode: 'PER_ATTEMPT_MANAGER_INPUT',
           webLinkReady: bieyanghongWebRepairReady,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
         },
@@ -5764,6 +5858,30 @@ const server = createServer(async (request, response) => {
         return
       }
       json(response, 200, { data: challenge })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/bieyanghong-repair/request-code'
+    ) {
+      const token = repairTokenFrom(request)
+      const body = await readBody(request)
+      let phone = body.phone
+      let password = body.password
+      body.phone = null
+      body.password = null
+      try {
+        const accepted = processBieyanghongRepairCodeRequest({
+          token,
+          phone,
+          password,
+        })
+        json(response, 202, { data: accepted })
+      } finally {
+        phone = null
+        password = null
+      }
       return
     }
 

@@ -6,9 +6,11 @@ import {
 import { isIP } from 'node:net'
 
 const CODE_PATTERN = /^\d{4,8}$/u
+const PHONE_PATTERN = /^\d{11}$/u
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{40,96}$/u
 const DEFAULT_TTL_MS = 10 * 60 * 1000
 const DEFAULT_MAX_ATTEMPTS = 3
+const DEFAULT_MAX_CREDENTIAL_REQUESTS = 2
 
 const tokenHash = (token) =>
   createHash('sha256').update(token).digest('hex')
@@ -25,6 +27,11 @@ const publicRecord = (record) => ({
   attemptsRemaining: Math.max(
     0,
     record.maxAttempts - record.attemptsUsed,
+  ),
+  credentialRequestsUsed: record.credentialRequestsUsed,
+  credentialRequestsRemaining: Math.max(
+    0,
+    record.maxCredentialRequests - record.credentialRequestsUsed,
   ),
   reasonCode: record.reasonCode,
 })
@@ -67,6 +74,7 @@ export const createBieyanghongRepairChallengeStore = ({
   tokenBytes = () => randomBytes(32),
   ttlMs = DEFAULT_TTL_MS,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
+  maxCredentialRequests = DEFAULT_MAX_CREDENTIAL_REQUESTS,
 } = {}) => {
   if (
     !Number.isInteger(ttlMs)
@@ -75,6 +83,9 @@ export const createBieyanghongRepairChallengeStore = ({
     || !Number.isInteger(maxAttempts)
     || maxAttempts < 1
     || maxAttempts > 5
+    || !Number.isInteger(maxCredentialRequests)
+    || maxCredentialRequests < 1
+    || maxCredentialRequests > 3
   ) {
     throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CONFIG_INVALID')
   }
@@ -148,6 +159,8 @@ export const createBieyanghongRepairChallengeStore = ({
         expiresAt: new Date(createdAt.getTime() + ttlMs).toISOString(),
         attemptsUsed: 0,
         maxAttempts,
+        credentialRequestsUsed: 0,
+        maxCredentialRequests,
         reasonCode: null,
       }
       recordsByHash.set(hash, record)
@@ -168,7 +181,58 @@ export const createBieyanghongRepairChallengeStore = ({
       return record ? { ...record } : null
     },
 
-    setWaiting(hash, reasonCode = null) {
+    setWaitingForCredentials(hash, reasonCode = null) {
+      return update(hash, (record) => {
+        if (
+          ['COMPLETE', 'FAILED', 'EXPIRED'].includes(record.status)
+          || record.credentialRequestsUsed >= record.maxCredentialRequests
+        ) {
+          throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
+        }
+        record.status = 'WAITING_FOR_CREDENTIALS'
+        record.reasonCode = reasonCode
+      })
+    },
+
+    requestCode(token, input) {
+      const record = recordForToken(token)
+      if (!record) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
+      if (record.status !== 'WAITING_FOR_CREDENTIALS') {
+        throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_READY')
+      }
+      let phone = typeof input?.phone === 'string'
+        ? input.phone.trim()
+        : ''
+      let password = typeof input?.password === 'string'
+        ? input.password
+        : ''
+      if (
+        !PHONE_PATTERN.test(phone)
+        || password.length < 1
+        || password.length > 256
+        || /[\r\n\u0000]/u.test(password)
+      ) {
+        phone = ''
+        password = ''
+        throw new Error('BIEYANGHONG_LOGIN_CREDENTIALS_INVALID')
+      }
+      if (record.credentialRequestsUsed >= record.maxCredentialRequests) {
+        phone = ''
+        password = ''
+        throw new Error('BIEYANGHONG_REPAIR_CREDENTIAL_REQUESTS_EXHAUSTED')
+      }
+      record.credentialRequestsUsed += 1
+      record.status = 'REQUESTING_CODE'
+      record.updatedAt = currentTime().toISOString()
+      record.reasonCode = null
+      return {
+        credentials: { phone, password },
+        tokenSha256: record.tokenSha256,
+        record: publicRecord(record),
+      }
+    },
+
+    setWaitingForCode(hash, reasonCode = null) {
       return update(hash, (record) => {
         if (
           ['COMPLETE', 'FAILED', 'EXPIRED'].includes(record.status)
@@ -207,7 +271,12 @@ export const createBieyanghongRepairChallengeStore = ({
 
     markVerifying(hash) {
       return update(hash, (record) => {
-        if (!['PREPARING', 'SUBMITTED', 'VERIFYING'].includes(record.status)) {
+        if (![
+          'PREPARING',
+          'REQUESTING_CODE',
+          'SUBMITTED',
+          'VERIFYING',
+        ].includes(record.status)) {
           throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_SUBMITTED')
         }
         record.status = 'VERIFYING'

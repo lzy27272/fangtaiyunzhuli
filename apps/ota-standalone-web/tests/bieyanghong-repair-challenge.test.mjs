@@ -28,7 +28,7 @@ test('creates a fragment-only 001 repair link and stores only a token hash', () 
   assert.match(snapshot, /"tokenSha256":"[a-f0-9]{64}"/u)
 })
 
-test('accepts bounded numeric SMS codes without retaining them', () => {
+test('accepts transient manager credentials and SMS codes without retaining them', () => {
   const store = createBieyanghongRepairChallengeStore({
     now: () => new Date('2026-08-29T00:15:00Z'),
     tokenBytes: () => Buffer.alloc(32, 9),
@@ -38,7 +38,17 @@ test('accepts bounded numeric SMS codes without retaining them', () => {
     hotelCode: '001',
     hotelName: '示例别样红门店',
   })
-  store.setWaiting(created.tokenSha256)
+  store.setWaitingForCredentials(created.tokenSha256)
+  const requested = store.requestCode(created.token, {
+    phone: '13800138000',
+    password: 'temporary-example-password',
+  })
+  assert.equal(requested.record.status, 'REQUESTING_CODE')
+  assert.equal(requested.record.credentialRequestsUsed, 1)
+  const credentialSnapshot = JSON.stringify(store.debugSnapshot())
+  assert.equal(credentialSnapshot.includes('13800138000'), false)
+  assert.equal(credentialSnapshot.includes('temporary-example-password'), false)
+  store.setWaitingForCode(created.tokenSha256)
   const submitted = store.submit(created.token, '123456')
   assert.equal(submitted.record.attemptsUsed, 1)
   assert.equal(JSON.stringify(store.debugSnapshot()).includes('123456'), false)
@@ -59,7 +69,7 @@ test('expires after ten minutes and rejects unsafe public URLs', () => {
     hotelCode: '001',
     hotelName: '示例别样红门店',
   })
-  store.setWaiting(created.tokenSha256)
+  store.setWaitingForCredentials(created.tokenSha256)
   current = new Date('2026-08-29T00:25:00Z')
   assert.equal(store.get(created.token).status, 'EXPIRED')
 

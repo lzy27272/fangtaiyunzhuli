@@ -39,6 +39,9 @@ const browserExecutableFor = () =>
 
 export const bieyanghongLoginSelectors = Object.freeze({
   loginFrameUrl: 'eepassport.meituan.com/portal/login',
+  accountLoginTab: '.ep-tab_item',
+  account: '#login, input[placeholder="输入账号"]',
+  password: '#password, input[placeholder="输入密码"]',
   phone: '#phone, input[placeholder="输入手机号"]',
   smsCode: 'input[placeholder="输入验证码"]',
   agreement: 'label[for="checkbox"]',
@@ -107,6 +110,68 @@ const loginFailureReason = (text) => {
     ?? 'BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED'
 }
 
+const credentialFailureReason = (text) => {
+  if (
+    /账号或密码.{0,8}(错误|不正确)|密码.{0,8}(错误|不正确)|账号.{0,8}(不存在|无效)|登录失败/u
+      .test(text)
+  ) {
+    return 'BIEYANGHONG_LOGIN_CREDENTIALS_REJECTED'
+  }
+  return smsFailureReason(text)
+}
+
+const selectAccountLogin = async (frame) => {
+  const password = frame.locator(bieyanghongLoginSelectors.password).first()
+  if (await password.isVisible().catch(() => false)) return
+  const tabs = frame.locator(bieyanghongLoginSelectors.accountLoginTab)
+  await tabs.filter({ hasText: '账号登录' }).first().click().catch(() => {})
+  if (await password.isVisible().catch(() => false)) return
+
+  // The vendor page currently ignores synthetic tab clicks in headless Chrome.
+  // Invoke the same React onClick handler only to select the official tab.
+  await tabs.filter({ hasText: '账号登录' }).first().evaluate((element) => {
+    const key = Object.keys(element)
+      .find((candidate) => candidate.startsWith('__reactProps'))
+    const onClick = key ? element[key]?.onClick : null
+    if (typeof onClick !== 'function') throw new Error('TAB_HANDLER_MISSING')
+    onClick({ preventDefault() {} })
+  }).catch(() => {})
+  await password.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => {})
+  if (!(await password.isVisible().catch(() => false))) {
+    throw new Error('BIEYANGHONG_ACCOUNT_LOGIN_FORM_UNAVAILABLE')
+  }
+}
+
+const ensureAgreement = async (frame) => {
+  const input = frame.locator(bieyanghongLoginSelectors.agreementInput).first()
+  if (await input.isChecked().catch(() => false)) return
+  await frame.locator(bieyanghongLoginSelectors.agreement).first()
+    .click()
+    .catch(() => {})
+  if (await input.isChecked().catch(() => false)) return
+  await input.evaluate((element) => {
+    const key = Object.keys(element)
+      .find((candidate) => candidate.startsWith('__reactProps'))
+    const onChange = key ? element[key]?.onChange : null
+    if (typeof onChange !== 'function') {
+      throw new Error('AGREEMENT_HANDLER_MISSING')
+    }
+    onChange({ target: { checked: true } })
+  }).catch(() => {})
+  if (!(await input.isChecked().catch(() => false))) {
+    throw new Error('BIEYANGHONG_LOGIN_AGREEMENT_UNAVAILABLE')
+  }
+}
+
+const clearCredentialFields = async (frame) => {
+  await frame.locator(bieyanghongLoginSelectors.account).first()
+    .fill('')
+    .catch(() => {})
+  await frame.locator(bieyanghongLoginSelectors.password).first()
+    .fill('')
+    .catch(() => {})
+}
+
 export const prepareBieyanghongSmsLogin = async ({
   page,
   phone,
@@ -140,17 +205,98 @@ export const prepareBieyanghongSmsLogin = async ({
   return frame
 }
 
+export const prepareBieyanghongCredentialLogin = async ({
+  page,
+  context,
+  phone,
+  password,
+}) => {
+  if (
+    !/^\d{11}$/u.test(String(phone ?? ''))
+    || typeof password !== 'string'
+    || password.length < 1
+    || password.length > 256
+    || /[\r\n\u0000]/u.test(password)
+  ) {
+    throw new Error('BIEYANGHONG_LOGIN_CREDENTIALS_INVALID')
+  }
+  await page.goto(LOGIN_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 45_000,
+  })
+  const frame = await loginFrameFor(page)
+  await selectAccountLogin(frame)
+  try {
+    await frame.locator(bieyanghongLoginSelectors.account).first().fill(phone)
+    await frame.locator(bieyanghongLoginSelectors.password).first()
+      .fill(password)
+    await ensureAgreement(frame)
+    await frame.getByText('登录', { exact: true }).last().click()
+  } catch (error) {
+    await clearCredentialFields(frame)
+    if (String(error?.message ?? '').startsWith('BIEYANGHONG_')) throw error
+    throw new Error('BIEYANGHONG_ACCOUNT_LOGIN_FORM_UNAVAILABLE')
+  }
+
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const cookieHeader = await captureCookieHeader(context).catch(() => null)
+    if (cookieHeader) {
+      await clearCredentialFields(frame)
+      return { alreadyAuthenticated: true, cookieHeader, frame }
+    }
+    const text = await pageText(frame)
+    const reasonCode = credentialFailureReason(text)
+    if (reasonCode) {
+      await clearCredentialFields(frame)
+      throw new Error(reasonCode)
+    }
+    const smsCode = frame.locator(bieyanghongLoginSelectors.smsCode).first()
+    if (await smsCode.isVisible().catch(() => false)) {
+      const phoneInput = frame.locator(bieyanghongLoginSelectors.phone).first()
+      if (await phoneInput.isVisible().catch(() => false)) {
+        await phoneInput.fill(phone)
+      }
+      const requestCode = frame
+        .locator(bieyanghongLoginSelectors.requestCode)
+        .first()
+      if (await requestCode.isVisible().catch(() => false)) {
+        const codeButtonText = await requestCode.innerText().catch(() => '')
+        const className = await requestCode.getAttribute('class').catch(() => '')
+        if (
+          /获取验证码|重新获取/u.test(codeButtonText)
+          && !String(className ?? '').includes('disabled')
+        ) {
+          await requestCode.click()
+          await frame.waitForTimeout(1_500)
+        }
+      }
+      const smsText = await pageText(frame)
+      const smsReasonCode = smsFailureReason(smsText)
+      await clearCredentialFields(frame)
+      if (smsReasonCode) throw new Error(smsReasonCode)
+      return { alreadyAuthenticated: false, frame }
+    }
+    await page.waitForTimeout(500)
+  }
+  await clearCredentialFields(frame)
+  throw new Error('BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED')
+}
+
 export const startBieyanghongAssistedLogin = async ({
   profileRoot,
-  credentials,
+  phone,
+  password,
   chromium = chromiumFor(),
   browserExecutable = browserExecutableFor(),
 }) => {
   if (
     typeof profileRoot !== 'string'
     || !profileRoot
-    || !credentials
-    || !/^\d{11}$/u.test(String(credentials.username ?? ''))
+    || !/^\d{11}$/u.test(String(phone ?? ''))
+    || typeof password !== 'string'
+    || password.length < 1
+    || password.length > 256
   ) {
     throw new Error('BIEYANGHONG_LOGIN_CONFIGURATION_INVALID')
   }
@@ -181,6 +327,8 @@ export const startBieyanghongAssistedLogin = async ({
     const existingCookieHeader = await captureCookieHeader(context)
       .catch(() => null)
     if (existingCookieHeader) {
+      phone = null
+      password = null
       return {
         alreadyAuthenticated: true,
         cookieHeader: existingCookieHeader,
@@ -188,11 +336,22 @@ export const startBieyanghongAssistedLogin = async ({
       }
     }
 
-    const frame = await prepareBieyanghongSmsLogin({
+    const prepared = await prepareBieyanghongCredentialLogin({
       page,
-      phone: credentials.username,
+      context,
+      phone,
+      password,
     })
-    credentials = null
+    phone = null
+    password = null
+    if (prepared.alreadyAuthenticated) {
+      return {
+        alreadyAuthenticated: true,
+        cookieHeader: prepared.cookieHeader,
+        close,
+      }
+    }
+    const frame = prepared.frame
     return {
       alreadyAuthenticated: false,
       close,
@@ -229,7 +388,8 @@ export const startBieyanghongAssistedLogin = async ({
       },
     }
   } catch (error) {
-    credentials = null
+    phone = null
+    password = null
     await close()
     throw error
   }

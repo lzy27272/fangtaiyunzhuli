@@ -7,6 +7,7 @@ import os from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { Script } from 'node:vm'
 
 const apiScript = fileURLToPath(
   new URL('../../../tools/uat/ota-standalone-review-api.mjs', import.meta.url),
@@ -80,8 +81,24 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     assert.match(page.headers.get('content-security-policy'), /default-src 'none'/u)
     const html = await page.text()
     assert.match(html, /别样红简报授权修复/u)
+    assert.match(html, /本次处理管理员/u)
+    assert.match(html, /id="phone"/u)
+    assert.match(html, /id="password" type="password"/u)
+    assert.match(html, /发送验证码/u)
     assert.doesNotMatch(html, /手机号\s*1\d{10}|Cookie=/iu)
     assert.match(html, /\/api\/v1\/bieyanghong-repair\/client\.js/u)
+
+    const client = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/client.js`,
+    )
+    assert.equal(client.status, 200)
+    const clientScript = await client.text()
+    assert.doesNotThrow(() => new Script(clientScript))
+    assert.match(
+      clientScript,
+      /\/api\/v1\/bieyanghong-repair\/request-code/u,
+    )
+    assert.doesNotMatch(clientScript, /localStorage|sessionStorage/u)
 
     const missing = await fetch(
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/status`,
