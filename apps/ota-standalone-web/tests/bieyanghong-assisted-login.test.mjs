@@ -56,7 +56,17 @@ const fakeLoginPage = () => {
         }
       },
       waitFor: async () => {},
-      evaluate: async () => {},
+      evaluate: async () => {
+        calls.push({ action: 'react-click', frame: kind, selector })
+        if (selector === 'text:登录') {
+          currentFrame = createFrame('verification')
+        }
+        if (selector === bieyanghongLoginSelectors.requestCode) {
+          codeRequested = true
+        }
+        return true
+      },
+      count: async () => 0,
       innerText: async () => codeRequested
         ? '59秒后重新获取'
         : '获取验证码',
@@ -106,9 +116,13 @@ test('submits transient manager credentials before requesting the SMS code', asy
     call.action === 'click'
     && call.selector === bieyanghongLoginSelectors.agreement))
   assert.ok(calls.some((call) =>
-    call.action === 'click'
+    call.action === 'react-click'
     && call.frame === 'verification'
     && call.selector === bieyanghongLoginSelectors.requestCode))
+  assert.ok(calls.some((call) =>
+    call.action === 'react-click'
+    && call.frame === 'credential'
+    && call.selector === 'text:登录'))
   assert.equal(prepared.alreadyAuthenticated, false)
 })
 

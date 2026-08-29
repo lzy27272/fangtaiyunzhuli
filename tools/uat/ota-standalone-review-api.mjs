@@ -4832,6 +4832,15 @@ const processBieyanghongRepairCodeRequest = ({
       await handle.login?.close().catch(() => {})
       handle.login = null
       const reasonCode = safeBieyanghongRepairReason(error)
+      process.stderr.write(
+        `${JSON.stringify({
+          event: 'BIEYANGHONG_REPAIR_CODE_REQUEST_FAILED',
+          hotelId: challenge.hotelId,
+          challengeId: challenge.challengeId,
+          credentialRequest: challenge.credentialRequestsUsed,
+          reasonCode,
+        })}\n`,
+      )
       const current = bieyanghongRepairChallengeStore.getInternalByHash(
         requested.tokenSha256,
       )

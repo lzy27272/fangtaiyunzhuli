@@ -47,6 +47,7 @@ export const bieyanghongLoginSelectors = Object.freeze({
   agreement: 'label[for="checkbox"]',
   agreementInput: '#checkbox',
   requestCode: '.timer-button',
+  accountCard: '.account-card',
 })
 
 const loginFrameFor = async (page, timeoutMs = 20_000) => {
@@ -88,6 +89,22 @@ const captureCookieHeader = async (context) => {
 
 const pageText = (frame) =>
   frame.locator('body').innerText().catch(() => '')
+
+// Meituan's login controls are React-managed. In the production headless
+// browser a synthetic Playwright click can leave the control visually
+// unchanged, so prefer the vendor control's own React handler and fall back to
+// a normal click only when that handler is unavailable.
+const clickVendorControl = async (locator) => {
+  const reactHandled = await locator.evaluate((element) => {
+    const key = Object.keys(element)
+      .find((candidate) => candidate.startsWith('__reactProps'))
+    const onClick = key ? element[key]?.onClick : null
+    if (typeof onClick !== 'function') return false
+    onClick()
+    return true
+  }).catch(() => false)
+  if (!reactHandled) await locator.click()
+}
 
 const smsFailureReason = (text) => {
   if (/操作频繁|过于频繁|稍后再试|次数过多|达到上限/u.test(text)) {
@@ -231,7 +248,9 @@ export const prepareBieyanghongCredentialLogin = async ({
     await frame.locator(bieyanghongLoginSelectors.password).first()
       .fill(password)
     await ensureAgreement(frame)
-    await frame.getByText('登录', { exact: true }).last().click()
+    await clickVendorControl(
+      frame.getByText('登录', { exact: true }).last(),
+    )
   } catch (error) {
     await clearCredentialFields(frame)
     if (String(error?.message ?? '').startsWith('BIEYANGHONG_')) throw error
@@ -254,6 +273,18 @@ export const prepareBieyanghongCredentialLogin = async ({
     if (reasonCode) {
       await clearCredentialFields(activeFrame)
       throw new Error(reasonCode)
+    }
+    if (/选择账号/u.test(text)) {
+      const accountCards = activeFrame
+        .locator(bieyanghongLoginSelectors.accountCard)
+      const accountCardCount = await accountCards.count().catch(() => 0)
+      if (accountCardCount === 1) {
+        await clickVendorControl(accountCards.first())
+        await page.waitForTimeout(500)
+        continue
+      }
+      await clearCredentialFields(activeFrame)
+      throw new Error('BIEYANGHONG_ACCOUNT_SELECTION_REQUIRED')
     }
     const smsCode = activeFrame
       .locator(bieyanghongLoginSelectors.smsCode)
@@ -280,8 +311,8 @@ export const prepareBieyanghongCredentialLogin = async ({
           /获取验证码|重新获取/u.test(codeButtonText)
           && !String(className ?? '').includes('disabled')
         )) {
-          await requestCode.click()
-          await activeFrame.waitForTimeout(1_500)
+          await clickVendorControl(requestCode)
+          await activeFrame.waitForTimeout(2_500)
           const updatedText = await requestCode.innerText().catch(() => '')
           const updatedClass = await requestCode
             .getAttribute('class')
@@ -388,7 +419,9 @@ export const startBieyanghongAssistedLogin = async ({
         await frame.locator(bieyanghongLoginSelectors.smsCode)
           .first()
           .fill(String(code))
-        await frame.getByText('登录', { exact: true }).last().click()
+        await clickVendorControl(
+          frame.getByText('登录', { exact: true }).last(),
+        )
 
         const deadline = Date.now() + 35_000
         while (Date.now() < deadline) {

@@ -102,6 +102,8 @@ test('001 SMS authorization page is public but challenge data remains token-gate
       clientScript,
       /\/api\/v1\/bieyanghong-repair\/request-code/u,
     )
+    assert.match(clientScript, /BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED/u)
+    assert.match(clientScript, /安全模式不会自动代选账号/u)
     assert.doesNotMatch(clientScript, /localStorage|sessionStorage/u)
 
     const missing = await fetch(

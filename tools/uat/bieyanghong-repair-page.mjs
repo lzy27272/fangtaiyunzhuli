@@ -49,6 +49,15 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
     status.textContent = message
     status.className = 'status' + (kind ? ' ' + kind : '')
   }
+  const failureMessage = (reasonCode) => ({
+    BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED: '美团账号登录页未进入短信验证步骤。',
+    BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED: '美团页面未确认短信验证码已发送。',
+    BIEYANGHONG_LOGIN_CREDENTIALS_REJECTED: '账号或密码未通过美团校验。',
+    BIEYANGHONG_LOGIN_ACCOUNT_REJECTED: '手机号未通过美团校验。',
+    BIEYANGHONG_SMS_RATE_LIMITED: '美团已限制验证码发送频率，请稍后再试。',
+    BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED: '美团要求额外安全验证，自动流程已停止。',
+    BIEYANGHONG_ACCOUNT_SELECTION_REQUIRED: '该手机号关联多个美团账号，安全模式不会自动代选账号。'
+  }[reasonCode] || '本次授权未完成。')
   const refresh = async () => {
     if (!repairToken) {
       setStatus('链接无效，请等待系统重新发送授权通知。', 'error')
@@ -92,7 +101,12 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
       } else if (data.status === 'FAILED' || data.status === 'EXPIRED') {
         credentialForm.classList.add('hidden')
         codeForm.classList.add('hidden')
-        setStatus(data.status === 'EXPIRED' ? '链接已过期，请等待新的授权通知。' : '本次授权未完成，请等待系统重新发起。', 'error')
+        setStatus(
+          data.status === 'EXPIRED'
+            ? '链接已过期，请等待新的授权通知。'
+            : failureMessage(data.reasonCode) + ' 请等待系统重新发起。' + (data.reasonCode ? '（' + data.reasonCode + '）' : ''),
+          'error'
+        )
       } else {
         credentialForm.classList.add('hidden')
         codeForm.classList.add('hidden')
