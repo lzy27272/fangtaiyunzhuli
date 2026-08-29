@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import {
+  createHash,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -2574,6 +2578,29 @@ const repairTokenFrom = (request) => {
   return authorization.startsWith('Repair ')
     ? authorization.slice('Repair '.length).trim()
     : ''
+}
+
+const loopbackPilotTriggerAuthorized = (request) => {
+  const remoteAddress = String(request.socket?.remoteAddress ?? '')
+  const forwarded =
+    request.headers['x-forwarded-for']
+    || request.headers['x-real-ip']
+    || request.headers.forwarded
+  const authorization = String(request.headers.authorization ?? '')
+  const supplied = authorization.startsWith('Pilot ')
+    ? authorization.slice('Pilot '.length).trim()
+    : ''
+  if (
+    forwarded
+    || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remoteAddress)
+    || !supplied
+    || !bootstrapAccessToken
+  ) return false
+  const suppliedHash = createHash('sha256').update(supplied).digest()
+  const expectedHash = createHash('sha256')
+    .update(bootstrapAccessToken)
+    .digest()
+  return timingSafeEqual(suppliedHash, expectedHash)
 }
 
 const readBody = async (request) => {
@@ -5751,6 +5778,31 @@ const server = createServer(async (request, response) => {
         code: body.code,
       })
       json(response, 202, { data: accepted })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/bieyanghong-repair/start'
+    ) {
+      if (!loopbackPilotTriggerAuthorized(request)) {
+        json(response, 404, { code: 'REVIEW_ROUTE_NOT_FOUND' })
+        return
+      }
+      const hotel = bieyanghongPilotHotel()
+      const challenge = hotel
+        ? await startBieyanghongRepairChallenge(
+          hotel.hotelId,
+          'LOOPBACK_PILOT_TEST',
+        )
+        : null
+      if (!challenge) {
+        throw new Error(
+          bieyanghongRepairReasonCode()
+          ?? 'BIEYANGHONG_REPAIR_NOT_STARTED',
+        )
+      }
+      json(response, 202, { data: challenge })
       return
     }
 

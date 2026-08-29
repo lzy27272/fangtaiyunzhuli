@@ -88,6 +88,31 @@ test('001 SMS authorization page is public but challenge data remains token-gate
       { headers: { Authorization: 'Repair invalid' } },
     )
     assert.equal(missing.status, 404)
+
+    const proxiedTrigger = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/start`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Pilot repair-test-token',
+          'X-Forwarded-For': '203.0.113.10',
+        },
+      },
+    )
+    assert.equal(proxiedTrigger.status, 404)
+
+    const localTrigger = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/start`,
+      {
+        method: 'POST',
+        headers: { Authorization: 'Pilot repair-test-token' },
+      },
+    )
+    assert.equal(localTrigger.status, 400)
+    assert.equal(
+      (await localTrigger.json()).code,
+      'BIEYANGHONG_REPAIR_DISABLED',
+    )
   } finally {
     if (child.exitCode === null) {
       child.kill()
