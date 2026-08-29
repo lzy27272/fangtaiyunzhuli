@@ -83,8 +83,9 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     assert.match(html, /别样红简报授权修复/u)
     assert.match(html, /本次处理管理员/u)
     assert.match(html, /id="phone"/u)
-    assert.match(html, /id="password" type="password"/u)
-    assert.match(html, /发送验证码/u)
+    assert.doesNotMatch(html, /id="password"|type="password"/u)
+    assert.match(html, /发送短信验证码/u)
+    assert.match(html, /不需要密码/u)
     assert.match(html, /id="visual"/u)
     assert.match(html, /美团官方安全验证/u)
     assert.doesNotMatch(html, /手机号\s*1\d{10}|Cookie=/iu)
@@ -109,6 +110,7 @@ test('001 SMS authorization page is public but challenge data remains token-gate
     assert.match(clientScript, /bieyanghong-repair\/visual\/frame/u)
     assert.match(clientScript, /bieyanghong-repair\/visual\/interact/u)
     assert.match(clientScript, /WAITING_FOR_INTERACTIVE_VERIFICATION/u)
+    assert.doesNotMatch(clientScript, /passwordValue|JSON\.stringify\(\{ phone: phoneValue, password/u)
     assert.doesNotMatch(clientScript, /localStorage|sessionStorage/u)
 
     const missing = await fetch(

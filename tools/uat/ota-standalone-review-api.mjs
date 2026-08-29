@@ -4737,7 +4737,7 @@ const startBieyanghongRepairChallenge = async (
       content: [
         '### 001别样红简报需要管理员授权',
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '请由本次处理管理员点击一次性链接，临时填写自己的手机号和密码；如美团要求额外安全验证，请直接在链接中的官方画面手动完成：',
+        '请由本次处理管理员点击一次性链接，填写自己的手机号，发送并填写短信验证码；不需要密码：',
         bieyanghongRepairLink(
           bieyanghongRepairPublicBaseUrl,
           created.token,
@@ -4777,23 +4777,18 @@ const startBieyanghongRepairChallenge = async (
 const processBieyanghongRepairCodeRequest = ({
   token,
   phone: inputPhone,
-  password: inputPassword,
 }) => {
   let phone = inputPhone
-  let password = inputPassword
   const requested = bieyanghongRepairChallengeStore.requestCode(token, {
     phone,
-    password,
   })
   phone = null
-  password = null
   const challenge = bieyanghongRepairChallengeStore.getInternalByHash(
     requested.tokenSha256,
   )
   const handle = activeBieyanghongRepairsByHotel.get(challenge.hotelId)
   if (!handle || handle.tokenSha256 !== requested.tokenSha256) {
     requested.credentials.phone = ''
-    requested.credentials.password = ''
     bieyanghongRepairChallengeStore.fail(
       requested.tokenSha256,
       'BIEYANGHONG_REPAIR_SESSION_UNAVAILABLE',
@@ -4817,10 +4812,8 @@ const processBieyanghongRepairCodeRequest = ({
           `hotel-${challenge.hotelCode}`,
         ),
         phone: credentials.phone,
-        password: credentials.password,
       })
       credentials.phone = ''
-      credentials.password = ''
       credentials = null
       if (handle.login.alreadyAuthenticated) {
         await finishBieyanghongRepair({
@@ -4859,7 +4852,6 @@ const processBieyanghongRepairCodeRequest = ({
     } catch (error) {
       if (credentials) {
         credentials.phone = ''
-        credentials.password = ''
         credentials = null
       }
       await handle.login?.close().catch(() => {})
@@ -4878,7 +4870,7 @@ const processBieyanghongRepairCodeRequest = ({
         requested.tokenSha256,
       )
       if (
-        reasonCode === 'BIEYANGHONG_LOGIN_CREDENTIALS_REJECTED'
+        reasonCode === 'BIEYANGHONG_LOGIN_ACCOUNT_REJECTED'
         && current
         && current.credentialRequestsUsed < current.maxCredentialRequests
       ) {
@@ -5887,7 +5879,7 @@ const server = createServer(async (request, response) => {
           ready: bieyanghongAssistedRepairReady(),
           reasonCode: bieyanghongRepairReasonCode(),
           pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
-          credentialInputMode: 'PER_ATTEMPT_MANAGER_INPUT',
+          credentialInputMode: 'PER_ATTEMPT_MANAGER_SMS',
           webLinkReady: bieyanghongWebRepairReady,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
         },
@@ -5995,19 +5987,16 @@ const server = createServer(async (request, response) => {
       const token = repairTokenFrom(request)
       const body = await readBody(request)
       let phone = body.phone
-      let password = body.password
       body.phone = null
       body.password = null
       try {
         const accepted = processBieyanghongRepairCodeRequest({
           token,
           phone,
-          password,
         })
         json(response, 202, { data: accepted })
       } finally {
         phone = null
-        password = null
       }
       return
     }

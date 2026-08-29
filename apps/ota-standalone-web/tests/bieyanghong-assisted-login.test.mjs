@@ -6,9 +6,13 @@ import {
   bieyanghongLoginSelectors,
   normalizeBieyanghongVisualInteraction,
   prepareBieyanghongCredentialLogin,
+  prepareBieyanghongSmsLogin,
 } from '../../../tools/uat/bieyanghong-assisted-login.mjs'
 
-const fakeLoginPage = ({ riskAfterCredential = false } = {}) => {
+const fakeLoginPage = ({
+  riskAfterCredential = false,
+  initialKind = 'credential',
+} = {}) => {
   const calls = []
   let accountMode = false
   let codeRequested = false
@@ -87,7 +91,7 @@ const fakeLoginPage = ({ riskAfterCredential = false } = {}) => {
       waitForTimeout: async () => {},
     }
   }
-  currentFrame = createFrame('credential')
+  currentFrame = createFrame(initialKind)
   return {
     calls,
     page: {
@@ -100,6 +104,28 @@ const fakeLoginPage = ({ riskAfterCredential = false } = {}) => {
     },
   }
 }
+
+test('requests the SMS code with a phone number and no password', async () => {
+  const { page, calls } = fakeLoginPage({ initialKind: 'verification' })
+  const prepared = await prepareBieyanghongSmsLogin({
+    page,
+    phone: '13800138000',
+  })
+
+  assert.ok(calls.some((call) =>
+    call.action === 'fill'
+    && call.selector === bieyanghongLoginSelectors.phone
+    && call.value === '13800138000'))
+  assert.equal(calls.some((call) =>
+    call.selector === bieyanghongLoginSelectors.password), false)
+  assert.ok(calls.some((call) =>
+    call.action === 'click'
+    && call.selector === bieyanghongLoginSelectors.agreement))
+  assert.ok(calls.some((call) =>
+    call.action === 'react-click'
+    && call.selector === bieyanghongLoginSelectors.requestCode))
+  assert.equal(prepared.alreadyAuthenticated, false)
+})
 
 test('submits transient manager credentials before requesting the SMS code', async () => {
   const { page, context, calls } = fakeLoginPage()

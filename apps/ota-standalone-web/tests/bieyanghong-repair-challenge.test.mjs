@@ -28,7 +28,7 @@ test('creates a fragment-only 001 repair link and stores only a token hash', () 
   assert.match(snapshot, /"tokenSha256":"[a-f0-9]{64}"/u)
 })
 
-test('accepts transient manager credentials and SMS codes without retaining them', () => {
+test('accepts a transient manager phone and SMS code without retaining them', () => {
   const store = createBieyanghongRepairChallengeStore({
     now: () => new Date('2026-08-29T00:15:00Z'),
     tokenBytes: () => Buffer.alloc(32, 9),
@@ -41,13 +41,12 @@ test('accepts transient manager credentials and SMS codes without retaining them
   store.setWaitingForCredentials(created.tokenSha256)
   const requested = store.requestCode(created.token, {
     phone: '13800138000',
-    password: 'temporary-example-password',
   })
   assert.equal(requested.record.status, 'REQUESTING_CODE')
   assert.equal(requested.record.credentialRequestsUsed, 1)
   const credentialSnapshot = JSON.stringify(store.debugSnapshot())
   assert.equal(credentialSnapshot.includes('13800138000'), false)
-  assert.equal(credentialSnapshot.includes('temporary-example-password'), false)
+  assert.deepEqual(requested.credentials, { phone: '13800138000' })
   const interactive = store.setWaitingForInteractiveVerification(
     created.tokenSha256,
     'BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED',

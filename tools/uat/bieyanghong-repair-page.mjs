@@ -12,14 +12,12 @@ export const renderBieyanghongRepairPage = () => `<!doctype html>
 <body>
 <main>
   <h1>别样红简报授权修复</h1>
-  <p class="hint">请由本次处理管理员填写自己的手机号和密码，再手动发送验证码。首次发送后本链接会锁定到本次登录流程，请勿转发或由多人同时操作。</p>
+  <p class="hint">请由本次处理管理员填写自己的手机号，手动发送并填写短信验证码。不需要密码；首次发送后本链接会锁定到本次登录流程，请勿转发或由多人同时操作。</p>
   <div id="store" class="store">正在读取门店信息…</div>
   <form id="credential-form" class="hidden" autocomplete="off">
     <label for="phone">管理员手机号</label>
     <input id="phone" type="tel" inputmode="numeric" pattern="[0-9]*" minlength="11" maxlength="11" required autocomplete="off">
-    <label for="password">管理员密码</label>
-    <input id="password" type="password" minlength="1" maxlength="256" required autocomplete="off">
-    <button id="request-code" type="submit">发送验证码</button>
+    <button id="request-code" type="submit">发送短信验证码</button>
   </form>
   <form id="code-form" class="hidden" autocomplete="off">
     <label for="answer">短信验证码</label>
@@ -42,7 +40,7 @@ export const renderBieyanghongRepairPage = () => `<!doctype html>
     </div>
   </section>
   <div id="status" class="status">正在连接云端服务…</div>
-  <p class="foot">链接仅限001门店试点，10分钟内有效；账号资料最多提交2次，验证码最多提交3次。手机号、密码和验证码只在本次内存会话中使用，不保存、不回显、不写入日志，到期立即清除。罗盘门店不使用此页面。</p>
+  <p class="foot">链接仅限001门店试点，10分钟内有效；手机号最多提交2次，验证码最多提交3次。手机号和验证码只在本次内存会话中使用，不保存、不回显、不写入日志，到期立即清除。罗盘门店不使用此页面。</p>
 </main>
 </body>
 </html>`
@@ -53,7 +51,6 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
   const store = document.getElementById('store')
   const credentialForm = document.getElementById('credential-form')
   const phone = document.getElementById('phone')
-  const password = document.getElementById('password')
   const requestCode = document.getElementById('request-code')
   const codeForm = document.getElementById('code-form')
   const answer = document.getElementById('answer')
@@ -75,9 +72,8 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
     status.className = 'status' + (kind ? ' ' + kind : '')
   }
   const failureMessage = (reasonCode) => ({
-    BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED: '美团账号登录页未进入短信验证步骤。',
+    BIEYANGHONG_AUTHENTICATION_NOT_COMPLETED: '美团短信登录未建立有效会话。',
     BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED: '美团页面未确认短信验证码已发送。',
-    BIEYANGHONG_LOGIN_CREDENTIALS_REJECTED: '账号或密码未通过美团校验。',
     BIEYANGHONG_LOGIN_ACCOUNT_REJECTED: '手机号未通过美团校验。',
     BIEYANGHONG_SMS_RATE_LIMITED: '美团已限制验证码发送频率，请稍后再试。',
     BIEYANGHONG_LOGIN_RISK_CHALLENGE_REQUIRED: '美团要求额外安全验证，自动流程已停止。',
@@ -155,14 +151,14 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
         showOnly(credentialForm)
         requestCode.disabled = false
         setStatus(
-          data.reasonCode === 'BIEYANGHONG_LOGIN_CREDENTIALS_REJECTED'
-            ? '账号或密码未通过美团校验，请核对后重试。剩余 ' + data.credentialRequestsRemaining + ' 次。'
-            : '请填写当前管理员本人的手机号和密码，并手动发送验证码。剩余 ' + data.credentialRequestsRemaining + ' 次。',
+          data.reasonCode === 'BIEYANGHONG_LOGIN_ACCOUNT_REJECTED'
+            ? '手机号未通过美团校验，请核对后重试。剩余 ' + data.credentialRequestsRemaining + ' 次。'
+            : '请填写当前管理员本人的手机号，并手动发送短信验证码。不需要密码。剩余 ' + data.credentialRequestsRemaining + ' 次。',
           data.reasonCode ? 'error' : ''
         )
       } else if (data.status === 'REQUESTING_CODE') {
         showOnly(null)
-        setStatus('正在通过美团官方登录页校验账号并请求短信验证码…')
+        setStatus('正在通过美团官方短信登录入口请求验证码…')
       } else if (data.status === 'WAITING_FOR_CODE') {
         showOnly(codeForm)
         submit.disabled = false
@@ -202,9 +198,8 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
   credentialForm.addEventListener('submit', async (event) => {
     event.preventDefault()
     const phoneValue = phone.value.trim()
-    const passwordValue = password.value
-    if (!/^\\d{11}$/.test(phoneValue) || passwordValue.length < 1) {
-      setStatus('请输入11位手机号和登录密码。', 'error')
+    if (!/^\\d{11}$/.test(phoneValue)) {
+      setStatus('请输入11位手机号。', 'error')
       return
     }
     requestCode.disabled = true
@@ -212,17 +207,15 @@ export const renderBieyanghongRepairClientScript = () => `(() => {
       const pending = fetch('/api/v1/bieyanghong-repair/request-code', {
         method: 'POST',
         headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phoneValue, password: passwordValue })
+        body: JSON.stringify({ phone: phoneValue })
       })
       phone.value = ''
-      password.value = ''
       const response = await pending
       if (!response.ok) throw new Error('REQUEST_CODE_REJECTED')
       setStatus('资料已安全提交，正在请求短信验证码…')
       await refresh()
     } catch {
       phone.value = ''
-      password.value = ''
       requestCode.disabled = false
       setStatus('未能发送验证码，请刷新授权状态后重试。', 'error')
     }

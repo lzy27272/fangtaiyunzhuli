@@ -208,22 +208,12 @@ export const createBieyanghongRepairChallengeStore = ({
       let phone = typeof input?.phone === 'string'
         ? input.phone.trim()
         : ''
-      let password = typeof input?.password === 'string'
-        ? input.password
-        : ''
-      if (
-        !PHONE_PATTERN.test(phone)
-        || password.length < 1
-        || password.length > 256
-        || /[\r\n\u0000]/u.test(password)
-      ) {
+      if (!PHONE_PATTERN.test(phone)) {
         phone = ''
-        password = ''
-        throw new Error('BIEYANGHONG_LOGIN_CREDENTIALS_INVALID')
+        throw new Error('BIEYANGHONG_LOGIN_PHONE_INVALID')
       }
       if (record.credentialRequestsUsed >= record.maxCredentialRequests) {
         phone = ''
-        password = ''
         throw new Error('BIEYANGHONG_REPAIR_CREDENTIAL_REQUESTS_EXHAUSTED')
       }
       record.credentialRequestsUsed += 1
@@ -231,7 +221,7 @@ export const createBieyanghongRepairChallengeStore = ({
       record.updatedAt = currentTime().toISOString()
       record.reasonCode = null
       return {
-        credentials: { phone, password },
+        credentials: { phone },
         tokenSha256: record.tokenSha256,
         record: publicRecord(record),
       }

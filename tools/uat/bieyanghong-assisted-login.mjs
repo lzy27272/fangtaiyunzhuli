@@ -291,25 +291,45 @@ export const prepareBieyanghongSmsLogin = async ({
     timeout: 45_000,
   })
   const frame = await loginFrameFor(page)
+  const requestCode = frame
+    .locator(bieyanghongLoginSelectors.requestCode)
+    .first()
+  let requestConfirmed = false
   try {
-    await frame.locator(bieyanghongLoginSelectors.phone).first().fill(phone)
-    const checked = await frame
-      .locator(bieyanghongLoginSelectors.agreementInput)
-      .first()
-      .isChecked()
-      .catch(() => false)
-    if (!checked) {
-      await frame.locator(bieyanghongLoginSelectors.agreement).first().click()
+    const phoneInput = frame.locator(bieyanghongLoginSelectors.phone).first()
+    if (!(await phoneInput.isVisible().catch(() => false))) {
+      throw new Error('BIEYANGHONG_LOGIN_FORM_UNAVAILABLE')
     }
-    await frame.locator(bieyanghongLoginSelectors.requestCode).first().click()
-    await frame.waitForTimeout(1_500)
-  } catch {
+    await phoneInput.fill(phone)
+    await ensureAgreement(frame)
+    if (!(await requestCode.isVisible().catch(() => false))) {
+      throw new Error('BIEYANGHONG_LOGIN_FORM_UNAVAILABLE')
+    }
+    const beforeText = await requestCode.innerText().catch(() => '')
+    const beforeClass = await requestCode.getAttribute('class').catch(() => '')
+    requestConfirmed =
+      /\d+秒后/u.test(beforeText)
+      || String(beforeClass ?? '').includes('disabled')
+    if (!requestConfirmed) {
+      await clickVendorControl(requestCode)
+      await frame.waitForTimeout(2_500)
+      const afterText = await requestCode.innerText().catch(() => '')
+      const afterClass = await requestCode.getAttribute('class').catch(() => '')
+      requestConfirmed =
+        /\d+秒后/u.test(afterText)
+        || String(afterClass ?? '').includes('disabled')
+    }
+  } catch (error) {
+    if (String(error?.message ?? '').startsWith('BIEYANGHONG_')) throw error
     throw new Error('BIEYANGHONG_LOGIN_FORM_UNAVAILABLE')
   }
   const text = await pageText(frame)
   const reasonCode = smsFailureReason(text)
   if (reasonCode) throw new Error(reasonCode)
-  return frame
+  if (!requestConfirmed) {
+    throw new Error('BIEYANGHONG_SMS_REQUEST_NOT_CONFIRMED')
+  }
+  return { alreadyAuthenticated: false, frame }
 }
 
 export const prepareBieyanghongCredentialLogin = async ({
@@ -450,7 +470,6 @@ export const prepareBieyanghongCredentialLogin = async ({
 export const startBieyanghongAssistedLogin = async ({
   profileRoot,
   phone,
-  password,
   chromium = chromiumFor(),
   browserExecutable = browserExecutableFor(),
 }) => {
@@ -458,9 +477,6 @@ export const startBieyanghongAssistedLogin = async ({
     typeof profileRoot !== 'string'
     || !profileRoot
     || !/^\d{11}$/u.test(String(phone ?? ''))
-    || typeof password !== 'string'
-    || password.length < 1
-    || password.length > 256
   ) {
     throw new Error('BIEYANGHONG_LOGIN_CONFIGURATION_INVALID')
   }
@@ -517,7 +533,6 @@ export const startBieyanghongAssistedLogin = async ({
       .catch(() => null)
     if (existingCookieHeader) {
       phone = null
-      password = null
       return {
         alreadyAuthenticated: true,
         cookieHeader: existingCookieHeader,
@@ -525,14 +540,11 @@ export const startBieyanghongAssistedLogin = async ({
       }
     }
 
-    const prepared = await prepareBieyanghongCredentialLogin({
+    const prepared = await prepareBieyanghongSmsLogin({
       page,
-      context,
       phone,
-      password,
     })
     phone = null
-    password = null
     if (prepared.alreadyAuthenticated) {
       return {
         alreadyAuthenticated: true,
@@ -646,7 +658,6 @@ export const startBieyanghongAssistedLogin = async ({
     }
   } catch (error) {
     phone = null
-    password = null
     await close()
     throw error
   }
