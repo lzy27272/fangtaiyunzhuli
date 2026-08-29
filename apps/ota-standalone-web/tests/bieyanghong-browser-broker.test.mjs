@@ -6,6 +6,10 @@ import test, { mock } from 'node:test'
 const moduleMocksAvailable = typeof mock.module === 'function'
 const brokerSecret = 'S'.repeat(48)
 const socketPath = '/run/sifangguan-test/browser-broker.sock'
+const webSocketAuthorization = `Basic ${Buffer.from(
+  `viewer:${'A'.repeat(43)}`,
+  'latin1',
+).toString('base64')}`
 
 const setBrokerEnvironment = () => {
   const previous = new Map([
@@ -13,11 +17,13 @@ const setBrokerEnvironment = () => {
     ['BIEYANGHONG_BROWSER_BROKER_SOCKET_PATH', process.env.BIEYANGHONG_BROWSER_BROKER_SOCKET_PATH],
     ['BIEYANGHONG_BROWSER_BROKER_SECRET', process.env.BIEYANGHONG_BROWSER_BROKER_SECRET],
     ['BIEYANGHONG_BROWSER_PROFILE_ROOT', process.env.BIEYANGHONG_BROWSER_PROFILE_ROOT],
+    ['BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT', process.env.BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT],
   ])
   process.env.BIEYANGHONG_BROWSER_BROKER_ENABLED = 'true'
   process.env.BIEYANGHONG_BROWSER_BROKER_SOCKET_PATH = socketPath
   process.env.BIEYANGHONG_BROWSER_BROKER_SECRET = brokerSecret
   process.env.BIEYANGHONG_BROWSER_PROFILE_ROOT = '/var/lib/sifangguan-login/hotel-001'
+  process.env.BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT = '6081'
   return () => {
     for (const [name, value] of previous) {
       if (value === undefined) delete process.env[name]
@@ -115,15 +121,20 @@ test('broker client authenticates fake socket requests and enforces close/timeou
           assert.equal(options.headers.authorization, `Broker ${brokerSecret}`)
           if (options.path === '/session/start') {
             startCalls += 1
-            if (startCalls === 2) return { timeout: true }
+            if (startCalls === 3) return { timeout: true }
             return {
               statusCode: 201,
               body: {
                 data: {
                   sessionId,
-                  alreadyAuthenticated: true,
-                  cookieHeader: 'session=fake-initial',
-                  remoteDesktop: { webSocketPort: 6081 },
+                  alreadyAuthenticated: false,
+                  cookieHeader: null,
+                  remoteDesktop: {
+                    width: 1280,
+                    height: 800,
+                    webSocketPort: startCalls === 2 ? 6082 : 6081,
+                    webSocketAuthorization,
+                  },
                 },
               },
             }
@@ -158,9 +169,14 @@ test('broker client authenticates fake socket requests and enforces close/timeou
     )
     assert.equal(client.bieyanghongBrowserBrokerReady(), true)
     const login = await client.startBieyanghongBrokeredLogin()
-    assert.equal(login.alreadyAuthenticated, true)
-    assert.equal(login.cookieHeader, 'session=fake-initial')
-    assert.deepEqual(login.remoteDesktop, { webSocketPort: 6081 })
+    assert.equal(login.alreadyAuthenticated, false)
+    assert.equal(login.cookieHeader, null)
+    assert.deepEqual(login.remoteDesktop, {
+      width: 1280,
+      height: 800,
+      webSocketPort: 6081,
+      webSocketAuthorization,
+    })
     assert.deepEqual(await login.detectAuthentication(), {
       authenticated: false,
     })
@@ -177,6 +193,12 @@ test('broker client authenticates fake socket requests and enforces close/timeou
       login.detectAuthentication(),
       { message: 'BIEYANGHONG_REPAIR_CHALLENGE_CLOSED' },
     )
+    await assert.rejects(
+      client.startBieyanghongBrokeredLogin(),
+      { message: 'BIEYANGHONG_BROWSER_BROKER_RESPONSE_INVALID' },
+    )
+    assert.equal(calls.filter(({ options }) =>
+      options.path === '/session/close').length, 2)
     await assert.rejects(
       client.startBieyanghongBrokeredLogin(),
       { message: 'BIEYANGHONG_BROWSER_BROKER_TIMEOUT' },
@@ -212,8 +234,10 @@ test('broker server hides unauthorized access and keeps only one active session'
       chmodSync: () => {},
       existsSync: () => false,
       lstatSync: () => ({
+        isDirectory: () => true,
         isSocket: () => true,
         isSymbolicLink: () => false,
+        mode: 0o40700,
       }),
       mkdirSync: () => {},
       realpathSync: (path) => path,
@@ -242,7 +266,12 @@ test('broker server hides unauthorized access and keeps only one active session'
         const login = {
           alreadyAuthenticated: false,
           cookieHeader: null,
-          remoteDesktop: { webSocketPort: 6081 },
+          remoteDesktop: {
+            width: 1280,
+            height: 800,
+            webSocketPort: 6081,
+            webSocketAuthorization,
+          },
           closeCalls: 0,
           detectCalls: 0,
           async close() { this.closeCalls += 1 },

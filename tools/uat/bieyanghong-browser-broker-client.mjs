@@ -4,6 +4,10 @@ import { request as httpRequest } from 'node:http'
 const DEFAULT_SOCKET_PATH = '/run/sifangguan-bieyanghong/broker.sock'
 const BROKER_SECRET_PATTERN = /^[A-Za-z0-9_-]{40,128}$/u
 const SESSION_ID_PATTERN = /^[0-9a-f-]{36}$/iu
+const expectedWebSocketPort = Number.parseInt(
+  process.env.BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT ?? '',
+  10,
+)
 
 export const bieyanghongBrowserBrokerConfig = Object.freeze({
   enabled: process.env.BIEYANGHONG_BROWSER_BROKER_ENABLED === 'true',
@@ -11,6 +15,7 @@ export const bieyanghongBrowserBrokerConfig = Object.freeze({
     process.env.BIEYANGHONG_BROWSER_BROKER_SOCKET_PATH?.trim()
     || DEFAULT_SOCKET_PATH,
   secret: process.env.BIEYANGHONG_BROWSER_BROKER_SECRET?.trim() || '',
+  expectedWebSocketPort,
 })
 
 export const bieyanghongBrowserBrokerReady = () =>
@@ -19,7 +24,42 @@ export const bieyanghongBrowserBrokerReady = () =>
     bieyanghongBrowserBrokerConfig.socketPath,
   )
   && BROKER_SECRET_PATTERN.test(bieyanghongBrowserBrokerConfig.secret)
+  && Number.isInteger(bieyanghongBrowserBrokerConfig.expectedWebSocketPort)
+  && bieyanghongBrowserBrokerConfig.expectedWebSocketPort >= 1024
+  && bieyanghongBrowserBrokerConfig.expectedWebSocketPort <= 65535
   && existsSync(bieyanghongBrowserBrokerConfig.socketPath)
+
+const validatedRemoteDesktop = (candidate) => {
+  if (
+    !candidate
+    || !Number.isInteger(candidate.width)
+    || candidate.width < 960
+    || candidate.width > 1920
+    || !Number.isInteger(candidate.height)
+    || candidate.height < 640
+    || candidate.height > 1200
+    || candidate.webSocketPort
+      !== bieyanghongBrowserBrokerConfig.expectedWebSocketPort
+    || typeof candidate.webSocketAuthorization !== 'string'
+    || !/^Basic [A-Za-z0-9+/]{40,256}={0,2}$/u
+      .test(candidate.webSocketAuthorization)
+  ) {
+    throw new Error('BIEYANGHONG_BROWSER_BROKER_RESPONSE_INVALID')
+  }
+  const decoded = Buffer.from(
+    candidate.webSocketAuthorization.slice('Basic '.length),
+    'base64',
+  ).toString('latin1')
+  if (!/^viewer:[A-Za-z0-9_-]{40,128}$/u.test(decoded)) {
+    throw new Error('BIEYANGHONG_BROWSER_BROKER_RESPONSE_INVALID')
+  }
+  return Object.freeze({
+    width: candidate.width,
+    height: candidate.height,
+    webSocketPort: candidate.webSocketPort,
+    webSocketAuthorization: candidate.webSocketAuthorization,
+  })
+}
 
 const brokerRequest = ({ path, body = {}, timeoutMs = 60_000 }) =>
   new Promise((resolve, reject) => {
@@ -86,6 +126,22 @@ export const startBieyanghongBrokeredLogin = async () => {
   ) {
     throw new Error('BIEYANGHONG_BROWSER_BROKER_RESPONSE_INVALID')
   }
+  let remoteDesktop
+  try {
+    remoteDesktop = started.alreadyAuthenticated
+      ? null
+      : validatedRemoteDesktop(started.remoteDesktop)
+  } catch (error) {
+    started.cookieHeader = null
+    started.remoteDesktop = null
+    await brokerRequest({
+      path: '/session/close',
+      body: { sessionId: started.sessionId },
+      timeoutMs: 10_000,
+    }).catch(() => {})
+    throw error
+  }
+  started.remoteDesktop = null
   let sessionId = started.sessionId
   let closed = false
   let initialCookieHeader = typeof started.cookieHeader === 'string'
@@ -126,7 +182,7 @@ export const startBieyanghongBrokeredLogin = async () => {
   return {
     alreadyAuthenticated: started.alreadyAuthenticated,
     cookieHeader: initialCookieHeader,
-    remoteDesktop: started.remoteDesktop ?? null,
+    remoteDesktop,
     detectAuthentication,
     close,
   }

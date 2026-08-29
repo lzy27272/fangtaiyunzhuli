@@ -829,6 +829,7 @@ export const startBieyanghongAssistedLogin = async ({
             width: remoteDesktop.width,
             height: remoteDesktop.height,
             webSocketPort: remoteDesktop.webSocketPort,
+            webSocketAuthorization: remoteDesktop.webSocketAuthorization,
           }
         : null,
       detectAuthentication,

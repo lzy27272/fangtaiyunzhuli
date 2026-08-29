@@ -102,6 +102,7 @@ update_env(runtime_path, {
     'BIEYANGHONG_REMOTE_DESKTOP_ENABLED': 'true',
     'BIEYANGHONG_NOVNC_ROOT': '/usr/share/novnc',
     'BIEYANGHONG_BROWSER_BROKER_ENABLED': 'true',
+    'BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT': '6081',
 }, 0o600)
 update_env(browser_path, {
     **shared,
@@ -111,7 +112,6 @@ update_env(browser_path, {
     'BIEYANGHONG_REMOTE_DESKTOP_DISPLAY': ':91',
     'BIEYANGHONG_REMOTE_DESKTOP_WIDTH': '1280',
     'BIEYANGHONG_REMOTE_DESKTOP_HEIGHT': '800',
-    'BIEYANGHONG_REMOTE_DESKTOP_VNC_PORT': '5901',
     'BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT': '6081',
     'HOME': '/var/lib/sifangguan-login',
     'XDG_CACHE_HOME': '/var/lib/sifangguan-login/xdg-cache',
@@ -120,6 +120,7 @@ update_env(browser_path, {
     'LANG': 'C.UTF-8',
     'LC_ALL': 'C.UTF-8',
     'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    'PYTHONPATH': '/opt/sifangguan-ota/current/tools/uat',
 }, 0o600)
 PY
 

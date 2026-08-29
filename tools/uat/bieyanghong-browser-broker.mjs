@@ -25,6 +25,7 @@ const profileRoot =
 const secretPattern = /^[A-Za-z0-9_-]{40,128}$/u
 const sessionIdPattern = /^[0-9a-f-]{36}$/iu
 const maxSessionMs = 10 * 60_000
+const runtimeDirectory = dirname(socketPath)
 
 if (
   !/^\/run\/[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+\.sock$/u.test(socketPath)
@@ -34,20 +35,37 @@ if (
   throw new Error('BIEYANGHONG_BROWSER_BROKER_CONFIGURATION_INVALID')
 }
 
-mkdirSync(profileRoot, { recursive: true, mode: 0o700 })
-if (
-  lstatSync(profileRoot).isSymbolicLink()
-  || realpathSync(profileRoot) !== profileRoot
-) {
-  throw new Error('BIEYANGHONG_BROWSER_BROKER_PROFILE_UNSAFE')
+const assertOwnedDirectory = (path, { groupReadable = false } = {}) => {
+  const metadata = lstatSync(path)
+  const currentUid = process.getuid?.()
+  const currentGid = process.getgid?.()
+  if (
+    !metadata.isDirectory()
+    || metadata.isSymbolicLink()
+    || realpathSync(path) !== path
+    || (Number.isInteger(currentUid) && metadata.uid !== currentUid)
+    || (Number.isInteger(currentGid) && metadata.gid !== currentGid)
+    || (
+      Number.isInteger(metadata.mode)
+      && (groupReadable
+        ? (metadata.mode & 0o027) !== 0
+        : (metadata.mode & 0o077) !== 0)
+    )
+  ) {
+    throw new Error('BIEYANGHONG_BROWSER_BROKER_DIRECTORY_UNSAFE')
+  }
 }
+
+assertOwnedDirectory(runtimeDirectory, { groupReadable: true })
+
+mkdirSync(profileRoot, { recursive: true, mode: 0o700 })
+assertOwnedDirectory(profileRoot)
 
 const remoteDesktopConfig = Object.freeze({
   enabled: true,
   display: process.env.BIEYANGHONG_REMOTE_DESKTOP_DISPLAY?.trim() || ':91',
   width: process.env.BIEYANGHONG_REMOTE_DESKTOP_WIDTH,
   height: process.env.BIEYANGHONG_REMOTE_DESKTOP_HEIGHT,
-  vncPort: process.env.BIEYANGHONG_REMOTE_DESKTOP_VNC_PORT,
   webSocketPort: process.env.BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT,
   xvfbExecutable: '/usr/bin/Xvfb',
   x11vncExecutable: '/usr/bin/x11vnc',
@@ -134,7 +152,9 @@ const startSession = async () => {
     remoteDesktopConfig,
   })
   active = { sessionId, login }
-  idleTimer = setTimeout(() => { void closeActive(sessionId) }, maxSessionMs)
+  idleTimer = setTimeout(() => {
+    void serializeSessionOperation(() => closeActive(sessionId))
+  }, maxSessionMs)
   idleTimer.unref()
   process.stdout.write(`${JSON.stringify({
     event: 'BIEYANGHONG_BROWSER_BROKER_SESSION_STARTED',
@@ -211,7 +231,6 @@ if (existsSync(socketPath)) {
   }
   unlinkSync(socketPath)
 }
-mkdirSync(dirname(socketPath), { recursive: true, mode: 0o750 })
 server.listen(socketPath, () => {
   chmodSync(socketPath, 0o660)
   process.stdout.write(`${JSON.stringify({
@@ -224,7 +243,7 @@ let shuttingDown = false
 const shutdown = async () => {
   if (shuttingDown) return
   shuttingDown = true
-  await closeActive()
+  await serializeSessionOperation(() => closeActive())
   server.close(() => {
     if (existsSync(socketPath) && lstatSync(socketPath).isSocket()) {
       unlinkSync(socketPath)

@@ -1,5 +1,14 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  openSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createConnection } from 'node:net'
 import { once } from 'node:events'
 
@@ -7,8 +16,11 @@ const DEFAULTS = Object.freeze({
   display: ':91',
   width: 1280,
   height: 800,
-  vncPort: 5901,
   webSocketPort: 6081,
+  vncSocketPath: '/run/sifangguan-bieyanghong/vnc.sock',
+  websockifyAuthPath: '/run/sifangguan-bieyanghong/websockify.auth',
+  websockifyAuthPlugin:
+    'bieyanghong_websockify_auth.FileBasicHTTPAuth',
   xvfbExecutable: '/usr/bin/Xvfb',
   x11vncExecutable: '/usr/bin/x11vnc',
   websockifyExecutable: '/usr/bin/websockify',
@@ -30,20 +42,32 @@ export const normalizeBieyanghongRemoteDesktopConfig = (input = {}) => {
       : DEFAULTS.display,
     width: integerInRange(input.width, DEFAULTS.width, 960, 1920),
     height: integerInRange(input.height, DEFAULTS.height, 640, 1200),
-    vncPort: integerInRange(input.vncPort, DEFAULTS.vncPort, 1024, 65535),
     webSocketPort: integerInRange(
       input.webSocketPort,
       DEFAULTS.webSocketPort,
       1024,
       65535,
     ),
+    vncSocketPath:
+      typeof input.vncSocketPath === 'string'
+      && /^\/run\/sifangguan-bieyanghong\/[A-Za-z0-9_.-]+\.sock$/u
+        .test(input.vncSocketPath)
+        ? input.vncSocketPath
+        : DEFAULTS.vncSocketPath,
+    websockifyAuthPath:
+      typeof input.websockifyAuthPath === 'string'
+      && /^\/run\/sifangguan-bieyanghong\/[A-Za-z0-9_.-]+\.auth$/u
+        .test(input.websockifyAuthPath)
+        ? input.websockifyAuthPath
+        : DEFAULTS.websockifyAuthPath,
+    websockifyAuthPlugin:
+      input.websockifyAuthPlugin === DEFAULTS.websockifyAuthPlugin
+        ? input.websockifyAuthPlugin
+        : DEFAULTS.websockifyAuthPlugin,
     xvfbExecutable: input.xvfbExecutable ?? DEFAULTS.xvfbExecutable,
     x11vncExecutable: input.x11vncExecutable ?? DEFAULTS.x11vncExecutable,
     websockifyExecutable:
       input.websockifyExecutable ?? DEFAULTS.websockifyExecutable,
-  }
-  if (config.vncPort === config.webSocketPort) {
-    throw new Error('BIEYANGHONG_REMOTE_DESKTOP_PORT_CONFLICT')
   }
   if (enabled) {
     for (const executable of [
@@ -127,16 +151,58 @@ const stopProcess = async (child) => {
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
 }
 
+const defaultRuntimeFileOps = Object.freeze({
+  exists: existsSync,
+  createExclusive(path, content) {
+    const descriptor = openSync(path, 'wx', 0o600)
+    let failure = null
+    try {
+      writeFileSync(descriptor, content, 'utf8')
+    } catch (error) {
+      failure = error
+    }
+    try {
+      closeSync(descriptor)
+    } catch (error) {
+      failure ??= error
+    }
+    if (failure) {
+      if (existsSync(path)) unlinkSync(path)
+      throw failure
+    }
+  },
+  chmod: chmodSync,
+  inspect: lstatSync,
+  unlink: unlinkSync,
+})
+
+const unlinkRuntimeFile = (path, allowedType, runtimeFileOps) => {
+  if (!runtimeFileOps.exists(path)) return
+  const stats = runtimeFileOps.inspect(path)
+  if (
+    stats.isSymbolicLink()
+    || (allowedType === 'file' && !stats.isFile())
+    || (allowedType === 'socket' && !stats.isSocket())
+  ) {
+    throw new Error('BIEYANGHONG_REMOTE_DESKTOP_RUNTIME_PATH_UNSAFE')
+  }
+  runtimeFileOps.unlink(path)
+}
+
 export const startBieyanghongRemoteDesktop = async ({
   config: inputConfig,
   spawnProcess = spawn,
   portProbe = portAccepting,
   displaySocketReady = existsSync,
+  runtimeFileOps = defaultRuntimeFileOps,
+  randomBytesFactory = randomBytes,
 } = {}) => {
   const config = normalizeBieyanghongRemoteDesktopConfig(inputConfig)
   if (!config.enabled) return null
   const processes = []
   const childFailures = new WeakMap()
+  let authFileCreated = false
+  let vncSocketCreated = false
   const launch = (executable, args) => {
     const child = spawnProcess(executable, args, {
       stdio: 'ignore',
@@ -148,13 +214,22 @@ export const startBieyanghongRemoteDesktop = async ({
   }
   const close = async () => {
     for (const child of [...processes].reverse()) await stopProcess(child)
+    if (vncSocketCreated) {
+      unlinkRuntimeFile(config.vncSocketPath, 'socket', runtimeFileOps)
+      vncSocketCreated = false
+    }
+    if (authFileCreated) {
+      unlinkRuntimeFile(config.websockifyAuthPath, 'file', runtimeFileOps)
+      authFileCreated = false
+    }
   }
   try {
     const displayNumber = config.display.slice(1)
     const displaySocketPath = `/tmp/.X11-unix/X${displayNumber}`
     if (
       displaySocketReady(displaySocketPath)
-      || await portProbe(config.vncPort)
+      || runtimeFileOps.exists(config.vncSocketPath)
+      || runtimeFileOps.exists(config.websockifyAuthPath)
       || await portProbe(config.webSocketPort)
     ) {
       throw new Error('BIEYANGHONG_REMOTE_DESKTOP_RESOURCE_IN_USE')
@@ -174,29 +249,45 @@ export const startBieyanghongRemoteDesktop = async ({
       displaySocketReady,
       displaySocketPath,
     })
+    let webSocketPassword = randomBytesFactory(32).toString('base64url')
+    let webSocketAuthorization = `Basic ${Buffer.from(
+      `viewer:${webSocketPassword}`,
+      'latin1',
+    ).toString('base64')}`
+    runtimeFileOps.createExclusive(
+      config.websockifyAuthPath,
+      `viewer:${webSocketPassword}\n`,
+    )
+    webSocketPassword = null
+    authFileCreated = true
     const x11vnc = launch(config.x11vncExecutable, [
       '-display',
       config.display,
-      '-localhost',
       '-nopw',
       '-forever',
       '-noshared',
       '-repeat',
       '-noxdamage',
+      '-unixsock',
+      config.vncSocketPath,
       '-rfbport',
-      String(config.vncPort),
+      '0',
       '-quiet',
     ])
-    await waitForPort({
+    vncSocketCreated = true
+    await waitForDisplay({
       child: x11vnc,
       childFailures,
-      port: config.vncPort,
-      portProbe,
+      displaySocketReady,
+      displaySocketPath: config.vncSocketPath,
     })
+    runtimeFileOps.chmod(config.vncSocketPath, 0o600)
     const websockify = launch(config.websockifyExecutable, [
       '--heartbeat=30',
+      `--auth-plugin=${config.websockifyAuthPlugin}`,
+      `--auth-source=${config.websockifyAuthPath}`,
+      `--unix-target=${config.vncSocketPath}`,
       `127.0.0.1:${config.webSocketPort}`,
-      `127.0.0.1:${config.vncPort}`,
     ])
     await waitForPort({
       child: websockify,
@@ -204,11 +295,14 @@ export const startBieyanghongRemoteDesktop = async ({
       port: config.webSocketPort,
       portProbe,
     })
+    unlinkRuntimeFile(config.websockifyAuthPath, 'file', runtimeFileOps)
+    authFileCreated = false
     return {
       display: config.display,
       width: config.width,
       height: config.height,
       webSocketPort: config.webSocketPort,
+      webSocketAuthorization,
       close,
     }
   } catch (error) {

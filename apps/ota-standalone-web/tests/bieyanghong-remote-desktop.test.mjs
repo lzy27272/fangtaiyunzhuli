@@ -9,33 +9,87 @@ import {
 } from '../../../tools/uat/bieyanghong-remote-desktop.mjs'
 
 const existingExecutable = fileURLToPath(import.meta.url)
+const defaultVncSocketPath = '/run/sifangguan-bieyanghong/vnc.sock'
+const defaultAuthPath = '/run/sifangguan-bieyanghong/websockify.auth'
+const defaultAuthPlugin = 'bieyanghong_websockify_auth.FileBasicHTTPAuth'
 
 const enabledConfig = (overrides = {}) => ({
   enabled: true,
+  vncSocketPath: defaultVncSocketPath,
+  websockifyAuthPath: defaultAuthPath,
+  websockifyAuthPlugin: defaultAuthPlugin,
   xvfbExecutable: existingExecutable,
   x11vncExecutable: existingExecutable,
   websockifyExecutable: existingExecutable,
   ...overrides,
 })
 
-const readinessProbes = ({ display = ':92', vncPort, webSocketPort }) => {
+const readinessProbes = ({
+  display = ':92',
+  vncSocketPath = defaultVncSocketPath,
+  webSocketPort,
+  onVncSocketReady = () => {},
+}) => {
   const displaySocketPath = `/tmp/.X11-unix/X${display.slice(1)}`
-  const displayCalls = []
+  const displayCalls = new Map()
   const portCalls = new Map()
   return {
     displayCalls,
     portCalls,
     displaySocketReady: (path) => {
-      displayCalls.push(path)
-      return displayCalls.length > 1
+      const calls = (displayCalls.get(path) ?? 0) + 1
+      displayCalls.set(path, calls)
+      if (path === vncSocketPath) {
+        onVncSocketReady(path)
+        return true
+      }
+      assert.equal(path, displaySocketPath)
+      return calls > 1
     },
     portProbe: async (port) => {
       const calls = (portCalls.get(port) ?? 0) + 1
       portCalls.set(port, calls)
-      assert.ok(port === vncPort || port === webSocketPort)
+      assert.equal(port, webSocketPort)
       return calls > 1
     },
     displaySocketPath,
+  }
+}
+
+const runtimeFiles = ({ existing = [] } = {}) => {
+  const files = new Map(existing.map(({ path, type }) => [path, { type }]))
+  const calls = {
+    createExclusive: [],
+    chmod: [],
+    inspect: [],
+    unlink: [],
+  }
+  return {
+    calls,
+    files,
+    markSocket: (path) => files.set(path, { type: 'socket' }),
+    operations: {
+      exists: (path) => files.has(path),
+      createExclusive: (path, content) => {
+        if (files.has(path)) throw new Error('exclusive create conflict')
+        calls.createExclusive.push({ path, content })
+        files.set(path, { type: 'file', content, mode: 0o600 })
+      },
+      chmod: (path, mode) => calls.chmod.push({ path, mode }),
+      inspect: (path) => {
+        calls.inspect.push(path)
+        const type = files.get(path)?.type
+        return {
+          isSymbolicLink: () => false,
+          isFile: () => type === 'file',
+          isSocket: () => type === 'socket',
+        }
+      },
+      unlink: (path) => {
+        calls.unlink.push(path)
+        files.delete(path)
+      },
+    },
   }
 }
 
@@ -61,7 +115,6 @@ test('normalizes the disabled remote desktop configuration to safe defaults', ()
     display: ':1234',
     width: 959,
     height: 1201,
-    vncPort: 80,
     webSocketPort: 70_000,
     xvfbExecutable: null,
     x11vncExecutable: undefined,
@@ -71,8 +124,10 @@ test('normalizes the disabled remote desktop configuration to safe defaults', ()
     display: ':91',
     width: 1280,
     height: 800,
-    vncPort: 5901,
     webSocketPort: 6081,
+    vncSocketPath: defaultVncSocketPath,
+    websockifyAuthPath: defaultAuthPath,
+    websockifyAuthPlugin: defaultAuthPlugin,
     xvfbExecutable: '/usr/bin/Xvfb',
     x11vncExecutable: '/usr/bin/x11vnc',
     websockifyExecutable: '/usr/bin/websockify',
@@ -104,16 +159,6 @@ test('returns null without checking runtimes or spawning when disabled', async (
   assert.equal(spawnCalls, 0)
 })
 
-test('rejects a conflicting VNC and WebSocket port', () => {
-  assert.throws(
-    () => normalizeBieyanghongRemoteDesktopConfig({
-      vncPort: 6201,
-      webSocketPort: '6201',
-    }),
-    { message: 'BIEYANGHONG_REMOTE_DESKTOP_PORT_CONFLICT' },
-  )
-})
-
 test('rejects an enabled configuration when a runtime is unavailable', () => {
   assert.throws(
     () => normalizeBieyanghongRemoteDesktopConfig({
@@ -124,10 +169,9 @@ test('rejects an enabled configuration when a runtime is unavailable', () => {
   )
 })
 
-test('rejects startup when a display socket or port is already in use', async (t) => {
+test('rejects startup when a display, runtime file, or WebSocket port is in use', async (t) => {
   const config = enabledConfig({
     display: ':92',
-    vncPort: 5902,
     webSocketPort: 6082,
   })
 
@@ -137,6 +181,7 @@ test('rejects startup when a display socket or port is already in use', async (t
       startBieyanghongRemoteDesktop({
         config,
         displaySocketReady: () => true,
+        runtimeFileOps: runtimeFiles().operations,
         portProbe: async () => {
           throw new Error('port probe must be short-circuited')
         },
@@ -150,14 +195,23 @@ test('rejects startup when a display socket or port is already in use', async (t
     assert.equal(spawnCalls, 0)
   })
 
-  for (const occupiedPort of [config.vncPort, config.webSocketPort]) {
-    await t.test(`occupied port ${occupiedPort}`, async () => {
+  for (const occupiedPath of [config.vncSocketPath, config.websockifyAuthPath]) {
+    await t.test(`occupied runtime path ${occupiedPath}`, async () => {
       let spawnCalls = 0
+      const files = runtimeFiles({
+        existing: [{
+          path: occupiedPath,
+          type: occupiedPath.endsWith('.sock') ? 'socket' : 'file',
+        }],
+      })
       await assert.rejects(
         startBieyanghongRemoteDesktop({
           config,
           displaySocketReady: () => false,
-          portProbe: async (port) => port === occupiedPort,
+          runtimeFileOps: files.operations,
+          portProbe: async () => {
+            throw new Error('port probe must be short-circuited')
+          },
           spawnProcess: () => {
             spawnCalls += 1
             throw new Error('must not spawn')
@@ -168,22 +222,50 @@ test('rejects startup when a display socket or port is already in use', async (t
       assert.equal(spawnCalls, 0)
     })
   }
+
+  await t.test(`occupied port ${config.webSocketPort}`, async () => {
+    let spawnCalls = 0
+    await assert.rejects(
+      startBieyanghongRemoteDesktop({
+        config,
+        displaySocketReady: () => false,
+        runtimeFileOps: runtimeFiles().operations,
+        portProbe: async (port) => port === config.webSocketPort,
+        spawnProcess: () => {
+          spawnCalls += 1
+          throw new Error('must not spawn')
+        },
+      }),
+      { message: 'BIEYANGHONG_REMOTE_DESKTOP_RESOURCE_IN_USE' },
+    )
+    assert.equal(spawnCalls, 0)
+  })
 })
 
 test('starts mocked processes and closes them in reverse launch order', async () => {
   const display = ':92'
-  const vncPort = 5902
   const webSocketPort = 6082
-  const probes = readinessProbes({ display, vncPort, webSocketPort })
+  const files = runtimeFiles()
+  const probes = readinessProbes({
+    display,
+    webSocketPort,
+    onVncSocketReady: files.markSocket,
+  })
   const launchCalls = []
   const killCalls = []
+  const randomBytesCalls = []
+  const passwordBytes = Buffer.alloc(32, 0x5a)
+  const expectedPassword = passwordBytes.toString('base64url')
+  const expectedAuthorization = `Basic ${Buffer.from(
+    `viewer:${expectedPassword}`,
+    'latin1',
+  ).toString('base64')}`
 
   const desktop = await startBieyanghongRemoteDesktop({
     config: enabledConfig({
       display,
       width: 1440,
       height: 900,
-      vncPort,
       webSocketPort,
     }),
     spawnProcess: (executable, args, options) => {
@@ -193,6 +275,11 @@ test('starts mocked processes and closes them in reverse launch order', async ()
     },
     portProbe: probes.portProbe,
     displaySocketReady: probes.displaySocketReady,
+    runtimeFileOps: files.operations,
+    randomBytesFactory: (size) => {
+      randomBytesCalls.push(size)
+      return passwordBytes
+    },
   })
 
   assert.deepEqual({
@@ -200,11 +287,13 @@ test('starts mocked processes and closes them in reverse launch order', async ()
     width: desktop.width,
     height: desktop.height,
     webSocketPort: desktop.webSocketPort,
+    webSocketAuthorization: desktop.webSocketAuthorization,
   }, {
     display,
     width: 1440,
     height: 900,
     webSocketPort,
+    webSocketAuthorization: expectedAuthorization,
   })
   assert.equal(launchCalls.length, 3)
   assert.deepEqual(launchCalls.map(({ options }) => options), [
@@ -221,20 +310,43 @@ test('starts mocked processes and closes them in reverse launch order', async ()
     'tcp',
     '-noreset',
   ])
-  assert.ok(launchCalls[1].args.includes('-noshared'))
-  assert.ok(!launchCalls[1].args.includes('-shared'))
-  assert.equal(launchCalls[1].args.at(-2), String(vncPort))
+  assert.deepEqual(launchCalls[1].args, [
+    '-display',
+    display,
+    '-nopw',
+    '-forever',
+    '-noshared',
+    '-repeat',
+    '-noxdamage',
+    '-unixsock',
+    defaultVncSocketPath,
+    '-rfbport',
+    '0',
+    '-quiet',
+  ])
+  assert.ok(!launchCalls[1].args.includes('-localhost'))
   assert.deepEqual(launchCalls[2].args, [
     '--heartbeat=30',
+    `--auth-plugin=${defaultAuthPlugin}`,
+    `--auth-source=${defaultAuthPath}`,
+    `--unix-target=${defaultVncSocketPath}`,
     `127.0.0.1:${webSocketPort}`,
-    `127.0.0.1:${vncPort}`,
   ])
-  assert.deepEqual(probes.displayCalls, [
-    probes.displaySocketPath,
-    probes.displaySocketPath,
-  ])
-  assert.equal(probes.portCalls.get(vncPort), 2)
+  assert.ok(!launchCalls[2].args.some((argument) =>
+    /^127\.0\.0\.1:59\d+$/u.test(argument)))
+  assert.equal(probes.displayCalls.get(probes.displaySocketPath), 2)
+  assert.equal(probes.displayCalls.get(defaultVncSocketPath), 1)
   assert.equal(probes.portCalls.get(webSocketPort), 2)
+  assert.deepEqual(randomBytesCalls, [32])
+  assert.deepEqual(files.calls.createExclusive, [{
+    path: defaultAuthPath,
+    content: `viewer:${expectedPassword}\n`,
+  }])
+  assert.deepEqual(files.calls.chmod, [{
+    path: defaultVncSocketPath,
+    mode: 0o600,
+  }])
+  assert.ok(!launchCalls.flatMap(({ args }) => args).includes(expectedPassword))
 
   await desktop.close()
   assert.deepEqual(killCalls, [
@@ -242,19 +354,29 @@ test('starts mocked processes and closes them in reverse launch order', async ()
     { name: 'child-1', signal: 'SIGTERM' },
     { name: 'child-0', signal: 'SIGTERM' },
   ])
+  assert.equal(files.files.has(defaultAuthPath), false)
+  assert.equal(files.files.has(defaultVncSocketPath), false)
+  assert.deepEqual(new Set(files.calls.unlink), new Set([
+    defaultAuthPath,
+    defaultVncSocketPath,
+  ]))
 })
 
 test('fails when a child process exits before its resource is ready', async () => {
   const display = ':92'
-  const vncPort = 5902
   const webSocketPort = 6082
-  const probes = readinessProbes({ display, vncPort, webSocketPort })
+  const files = runtimeFiles()
+  const probes = readinessProbes({
+    display,
+    webSocketPort,
+    onVncSocketReady: files.markSocket,
+  })
   const killCalls = []
   let launchCount = 0
 
   await assert.rejects(
     startBieyanghongRemoteDesktop({
-      config: enabledConfig({ display, vncPort, webSocketPort }),
+      config: enabledConfig({ display, webSocketPort }),
       spawnProcess: () => {
         const child = new MockChildProcess(`child-${launchCount}`, killCalls)
         launchCount += 1
@@ -263,24 +385,27 @@ test('fails when a child process exits before its resource is ready', async () =
       },
       portProbe: probes.portProbe,
       displaySocketReady: probes.displaySocketReady,
+      runtimeFileOps: files.operations,
+      randomBytesFactory: () => Buffer.alloc(32, 0x31),
     }),
     { message: 'BIEYANGHONG_REMOTE_DESKTOP_CHILD_EXITED' },
   )
 
   assert.equal(launchCount, 2)
   assert.deepEqual(killCalls, [{ name: 'child-0', signal: 'SIGTERM' }])
+  assert.equal(files.files.has(defaultAuthPath), false)
 })
 
 test('maps a mocked launch failure and cleans up previously started processes', async () => {
   const killCalls = []
   let launchCount = 0
   let displayProbeCalls = 0
+  const files = runtimeFiles()
 
   await assert.rejects(
     startBieyanghongRemoteDesktop({
       config: enabledConfig({
         display: ':92',
-        vncPort: 5902,
         webSocketPort: 6082,
       }),
       spawnProcess: () => {
@@ -289,6 +414,8 @@ test('maps a mocked launch failure and cleans up previously started processes', 
         return new MockChildProcess('xvfb', killCalls)
       },
       portProbe: async () => false,
+      runtimeFileOps: files.operations,
+      randomBytesFactory: () => Buffer.alloc(32, 0x32),
       displaySocketReady: () => {
         displayProbeCalls += 1
         return displayProbeCalls > 1
@@ -299,4 +426,5 @@ test('maps a mocked launch failure and cleans up previously started processes', 
 
   assert.equal(launchCount, 2)
   assert.deepEqual(killCalls, [{ name: 'xvfb', signal: 'SIGTERM' }])
+  assert.equal(files.files.has(defaultAuthPath), false)
 })

@@ -7701,7 +7701,20 @@ server.on('upgrade', (request, socket, head) => {
     return
   }
   const targetPort = handle.login.remoteDesktop.webSocketPort
-  if (!Number.isInteger(targetPort) || targetPort < 1024 || targetPort > 65535) {
+  const expectedTargetPort = Number.parseInt(
+    String(bieyanghongRemoteDesktopConfig.webSocketPort ?? ''),
+    10,
+  )
+  const upstreamAuthorization =
+    handle.login.remoteDesktop.webSocketAuthorization
+  if (
+    !Number.isInteger(targetPort)
+    || targetPort !== expectedTargetPort
+    || targetPort < 1024
+    || targetPort > 65535
+    || typeof upstreamAuthorization !== 'string'
+    || !/^Basic [A-Za-z0-9+/]{40,256}={0,2}$/u.test(upstreamAuthorization)
+  ) {
     rejectBieyanghongVncUpgrade(socket)
     return
   }
@@ -7743,6 +7756,7 @@ server.on('upgrade', (request, socket, head) => {
       'Connection: Upgrade',
       `Sec-WebSocket-Key: ${websocketKey}`,
       'Sec-WebSocket-Version: 13',
+      `Authorization: ${upstreamAuthorization}`,
     ]
     if (protocol) lines.push(`Sec-WebSocket-Protocol: ${protocol}`)
     upstream.write(`${lines.join('\r\n')}\r\n\r\n`)
