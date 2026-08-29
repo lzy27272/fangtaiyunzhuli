@@ -118,6 +118,11 @@ test('001 official-login popup is public but challenge data remains token-gated'
     const officialHtml = await officialPage.text()
     assert.match(officialHtml, /美团官方：pms\.meituan\.com/u)
     assert.match(officialHtml, /id="vendor-screen"/u)
+    assert.match(officialHtml, /id="pan-mode"/u)
+    assert.match(officialHtml, /id="operate-mode"/u)
+    assert.match(officialHtml, /id="locate-login"/u)
+    assert.match(officialHtml, /id="account-value"[^>]*type="text"/u)
+    assert.match(officialHtml, /id="secret-value"[^>]*type="password"/u)
     assert.match(officialHtml, /type="password"/u)
     assert.doesNotMatch(officialHtml, /管理员手机号|短信验证码/u)
 

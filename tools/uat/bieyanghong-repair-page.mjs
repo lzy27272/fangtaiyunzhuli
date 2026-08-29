@@ -104,7 +104,7 @@ export const renderBieyanghongOfficialLoginPage = () => `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>美团官网登录 · 001</title>
   <style>
-    :root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17332d;background:#e9eee9}*{box-sizing:border-box}body{margin:0}.bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid #cad4ce}.lock{color:#176b52;font-weight:800}.origin{font-size:14px;color:#51635d}.state{margin-left:auto;font-size:14px}.shell{max-width:1280px;margin:0 auto;padding:14px}.screen{overflow:auto;border:1px solid #879d93;border-radius:12px;background:#dce4df;min-height:360px;box-shadow:0 10px 28px rgba(20,44,38,.12)}.screen img{display:block;width:100%;height:auto;object-fit:contain;touch-action:none;user-select:none;-webkit-user-drag:none}.tools{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px;padding:12px;background:#fff;border:1px solid #cad4ce;border-radius:12px}.tools input{width:100%;font-size:18px;padding:12px;border:1px solid #9baba4;border-radius:9px}.tools button,.keys button{border:0;border-radius:9px;background:#176b52;color:#fff;font-weight:700;padding:12px 16px}.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}.hint,.message{line-height:1.55}.hint{color:#61706c;font-size:13px}.message{padding:10px 12px;margin:10px 0;border-radius:10px;background:#fff8e8}.error{color:#9e2c22;background:#fff0ed}.success{color:#126044;background:#eaf7f0}.hidden{display:none}@media(max-width:620px){.bar{align-items:flex-start;flex-wrap:wrap}.state{margin-left:0;width:100%}.shell{padding:8px}.screen{min-height:260px}.screen img{width:200%;max-width:none}.tools{grid-template-columns:1fr}.tools button{width:100%}.keys{grid-template-columns:repeat(3,1fr)}}
+    :root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17332d;background:#e9eee9}*{box-sizing:border-box}body{margin:0}.bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid #cad4ce}.lock{color:#176b52;font-weight:800}.origin{font-size:14px;color:#51635d}.state{margin-left:auto;font-size:14px}.shell{max-width:1280px;margin:0 auto;padding:14px}.interaction-toolbar{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0}.interaction-toolbar button,.tools button,.keys button{border:0;border-radius:9px;background:#176b52;color:#fff;font-weight:700;padding:12px 10px}.interaction-toolbar button.active{background:#ff5a00}.screen{overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;border:1px solid #879d93;border-radius:12px;background:#dce4df;min-height:360px;box-shadow:0 10px 28px rgba(20,44,38,.12)}.screen img{display:block;width:100%;max-width:none;height:auto;object-fit:contain;touch-action:none;user-select:none;-webkit-user-drag:none}.screen.pan-mode img{touch-action:pan-x pan-y;cursor:grab}.tools{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:10px;padding:10px;background:#fff;border:1px solid #cad4ce;border-radius:12px}.tools input{width:100%;font-size:18px;padding:12px;border:1px solid #9baba4;border-radius:9px}.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}.hint,.message{line-height:1.55}.hint{color:#61706c;font-size:13px}.message{padding:10px 12px;margin:10px 0;border-radius:10px;background:#fff8e8}.error{color:#9e2c22;background:#fff0ed}.success{color:#126044;background:#eaf7f0}.hidden{display:none}@media(max-width:620px){.bar{align-items:flex-start;flex-wrap:wrap}.state{margin-left:0;width:100%}.shell{padding:8px}.interaction-toolbar{grid-template-columns:repeat(3,1fr)}.screen{min-height:260px}.tools{grid-template-columns:1fr}.tools button{width:100%}.keys{grid-template-columns:repeat(3,1fr)}}
   </style>
   <script src="/api/v1/bieyanghong-repair/official.js" defer></script>
 </head>
@@ -112,15 +112,22 @@ export const renderBieyanghongOfficialLoginPage = () => `<!doctype html>
   <header class="bar"><span class="lock">安全连接</span><span class="origin">美团官方：pms.meituan.com</span><span id="state" class="state">正在启动…</span></header>
   <main class="shell">
     <div id="message" class="message">正在连接001门店的专属官方登录会话…</div>
+    <div id="interaction-toolbar" class="interaction-toolbar hidden">
+      <button id="pan-mode" type="button">移动画面</button><button id="operate-mode" type="button">操作官网</button><button id="locate-login" type="button">定位登录区</button><button id="zoom-out" type="button">缩小</button><button id="zoom-in" type="button">放大</button>
+    </div>
     <div id="screen" class="screen hidden"><img id="vendor-screen" alt="美团官方登录页面" draggable="false"></div>
-    <form id="text-form" class="tools hidden" autocomplete="off">
-      <input id="text-value" type="password" maxlength="64" autocomplete="off" aria-label="向当前美团官方输入框输入" placeholder="点选上方官方输入框后，在这里输入并发送">
-      <button id="text-send" type="submit">发送到官方输入框</button>
+    <form id="account-form" class="tools hidden" autocomplete="off">
+      <input id="account-value" type="text" inputmode="text" maxlength="64" autocomplete="off" aria-label="账号或手机号" placeholder="先点上方账号/手机号框，再在这里输入">
+      <button id="account-send" type="submit">发送账号/手机号</button>
+    </form>
+    <form id="secret-form" class="tools hidden" autocomplete="off">
+      <input id="secret-value" type="password" inputmode="text" maxlength="64" autocomplete="off" aria-label="密码或验证码" placeholder="先点上方密码/验证码框，再在这里输入">
+      <button id="secret-send" type="submit">发送密码/验证码</button>
     </form>
     <div id="keys" class="keys hidden">
       <button type="button" data-key="Backspace">退格</button><button type="button" data-key="Tab">下一项</button><button type="button" data-key="Enter">确认</button><button type="button" data-key="Escape">返回</button><button id="refresh-screen" type="button">刷新画面</button>
     </div>
-    <p class="hint">这是001门店云端隔离浏览器中的美团官方页面。可直接点按、拖动；如需输入，先点上方官方输入框，再在下方输入并发送。输入框默认遮蔽，发送后立即清空；画面和输入均不保存。</p>
+    <p class="hint">手机操作：先选“移动画面”或“定位登录区”查看右侧登录框；再选“操作官网”点中官方输入框、勾选协议或点击“发送验证码”。账号/手机号用第一栏发送，密码/验证码用遮蔽的第二栏发送；发送后立即清空，画面和输入均不保存。</p>
   </main>
 </body>
 </html>`
@@ -130,11 +137,20 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
   history.replaceState(null, '', location.pathname)
   const state = document.getElementById('state')
   const message = document.getElementById('message')
+  const interactionToolbar = document.getElementById('interaction-toolbar')
   const screen = document.getElementById('screen')
   const vendorScreen = document.getElementById('vendor-screen')
-  const textForm = document.getElementById('text-form')
-  const textValue = document.getElementById('text-value')
-  const textSend = document.getElementById('text-send')
+  const panMode = document.getElementById('pan-mode')
+  const operateMode = document.getElementById('operate-mode')
+  const locateLogin = document.getElementById('locate-login')
+  const zoomOut = document.getElementById('zoom-out')
+  const zoomIn = document.getElementById('zoom-in')
+  const accountForm = document.getElementById('account-form')
+  const accountValue = document.getElementById('account-value')
+  const accountSend = document.getElementById('account-send')
+  const secretForm = document.getElementById('secret-form')
+  const secretValue = document.getElementById('secret-value')
+  const secretSend = document.getElementById('secret-send')
   const keys = document.getElementById('keys')
   const refreshScreen = document.getElementById('refresh-screen')
   let frameBusy = false
@@ -143,16 +159,48 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
   let pointerStart = null
   let started = false
   let frameLoadedOnce = false
+  let interactionMode = innerWidth <= 620 ? 'pan' : 'operate'
+  let zoomPercent = innerWidth <= 620 ? 200 : 100
   const headers = () => ({ Authorization: 'Repair ' + repairToken })
   const setMessage = (value, kind = '') => {
     message.textContent = value
     message.className = 'message' + (kind ? ' ' + kind : '')
   }
   const showOfficial = (visible) => {
+    interactionToolbar.classList.toggle('hidden', !visible)
     screen.classList.toggle('hidden', !visible)
-    textForm.classList.toggle('hidden', !visible)
+    accountForm.classList.toggle('hidden', !visible)
+    secretForm.classList.toggle('hidden', !visible)
     keys.classList.toggle('hidden', !visible)
   }
+  const applyInteractionMode = (nextMode, announce = true) => {
+    interactionMode = nextMode === 'operate' ? 'operate' : 'pan'
+    screen.classList.toggle('pan-mode', interactionMode === 'pan')
+    panMode.classList.toggle('active', interactionMode === 'pan')
+    operateMode.classList.toggle('active', interactionMode === 'operate')
+    if (announce) setMessage(interactionMode === 'pan'
+      ? '移动画面模式：可左右滑动查看完整登录区。'
+      : '操作官网模式：可点按、勾选或拖动美团官方页面。')
+  }
+  const setZoom = (nextPercent) => {
+    const previousWidth = Math.max(1, screen.scrollWidth)
+    const centerRatio = (screen.scrollLeft + screen.clientWidth / 2) / previousWidth
+    zoomPercent = Math.max(100, Math.min(300, nextPercent))
+    vendorScreen.style.width = zoomPercent + '%'
+    requestAnimationFrame(() => {
+      screen.scrollLeft = Math.max(0, centerRatio * screen.scrollWidth - screen.clientWidth / 2)
+    })
+  }
+  const focusLoginArea = () => {
+    applyInteractionMode('pan', false)
+    requestAnimationFrame(() => {
+      screen.scrollLeft = Math.max(0, screen.scrollWidth - screen.clientWidth)
+      screen.scrollTop = 0
+      setMessage('已定位右侧登录区；查看后请选择“操作官网”再点击输入框或发送验证码。')
+    })
+  }
+  vendorScreen.style.width = zoomPercent + '%'
+  applyInteractionMode(interactionMode, false)
   const loadFrame = async () => {
     if (!repairToken || frameBusy || screen.classList.contains('hidden')) return
     frameBusy = true
@@ -171,7 +219,7 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
         () => requestAnimationFrame(resolve),
       ))
       if (!frameLoadedOnce && innerWidth <= 620) {
-        screen.scrollLeft = Math.max(0, (screen.scrollWidth - screen.clientWidth) / 2)
+        screen.scrollLeft = Math.max(0, screen.scrollWidth - screen.clientWidth)
       }
       frameLoadedOnce = true
       if (frameUrl) URL.revokeObjectURL(frameUrl)
@@ -234,11 +282,13 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
     }
   }
   vendorScreen.addEventListener('pointerdown', (event) => {
+    if (interactionMode !== 'operate') return
     const rect = vendorScreen.getBoundingClientRect()
     pointerStart = { x: Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)), y: Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)), at: Date.now() }
     vendorScreen.setPointerCapture?.(event.pointerId); event.preventDefault()
   })
   vendorScreen.addEventListener('pointerup', (event) => {
+    if (interactionMode !== 'operate') return
     if (!pointerStart) return
     const rect = vendorScreen.getBoundingClientRect()
     const end = { x: Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)), y: Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)) }
@@ -248,12 +298,19 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
     event.preventDefault()
   })
   vendorScreen.addEventListener('pointercancel', () => { pointerStart = null })
-  textForm.addEventListener('submit', async (event) => {
-    event.preventDefault(); const value = textValue.value
+  const sendTypedValue = async ({ event, input, button }) => {
+    event.preventDefault(); const value = input.value
     if (!value || value.length > 64) { setMessage('请先点选官方输入框，再输入内容。', 'error'); return }
-    textValue.value = ''; textSend.disabled = true
-    await sendAction({ kind:'text',value:value }); textSend.disabled = false
-  })
+    input.value = ''; button.disabled = true
+    await sendAction({ kind:'text',value:value }); button.disabled = false
+  }
+  accountForm.addEventListener('submit', (event) => sendTypedValue({ event, input: accountValue, button: accountSend }))
+  secretForm.addEventListener('submit', (event) => sendTypedValue({ event, input: secretValue, button: secretSend }))
+  panMode.addEventListener('click', () => applyInteractionMode('pan'))
+  operateMode.addEventListener('click', () => applyInteractionMode('operate'))
+  locateLogin.addEventListener('click', focusLoginArea)
+  zoomOut.addEventListener('click', () => setZoom(zoomPercent - 50))
+  zoomIn.addEventListener('click', () => setZoom(zoomPercent + 50))
   document.querySelectorAll('[data-key]').forEach((button) => button.addEventListener('click', () => { void sendAction({kind:'key',key:button.dataset.key}) }))
   refreshScreen.addEventListener('click', () => { void loadFrame() })
   void refresh()
