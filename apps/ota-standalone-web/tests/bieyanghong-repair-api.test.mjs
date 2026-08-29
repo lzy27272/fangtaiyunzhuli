@@ -115,20 +115,23 @@ test('001 official-login popup is public but challenge data remains token-gated'
     )
     assert.equal(officialPage.status, 200)
     assert.match(officialPage.headers.get('cache-control'), /no-store/u)
+    const officialCsp = officialPage.headers.get('content-security-policy')
+    assert.match(officialCsp, /frame-src 'self'/u)
+    assert.match(officialCsp, /connect-src 'self'/u)
+    assert.doesNotMatch(officialCsp, /wss:/u)
     const officialHtml = await officialPage.text()
-    assert.match(officialHtml, /美团官方：pms\.meituan\.com/u)
-    assert.match(officialHtml, /id="vendor-screen"/u)
-    assert.match(officialHtml, /id="pan-mode"/u)
-    assert.match(officialHtml, /id="operate-mode"/u)
-    assert.match(officialHtml, /id="locate-login"/u)
-    assert.match(officialHtml, /id="account-value"[^>]*type="text"/u)
-    assert.match(officialHtml, /id="secret-value"[^>]*type="password"/u)
-    assert.match(officialHtml, /填写到官网手机号框/u)
-    assert.match(officialHtml, /勾选登录协议/u)
-    assert.match(officialHtml, /请求发送验证码/u)
-    assert.match(officialHtml, /提交官网登录/u)
-    assert.match(officialHtml, /type="password"/u)
-    assert.doesNotMatch(officialHtml, /管理员手机号|短信验证码/u)
+    assert.match(officialHtml, /直接操作美团官方页面/u)
+    assert.match(officialHtml, /id="official-frame"/u)
+    assert.match(officialHtml, /class="official-frame hidden"/u)
+    assert.match(officialHtml, /width:100%;height:100%/u)
+    assert.doesNotMatch(
+      officialHtml,
+      /vendor-screen|pan-mode|operate-mode|locate-login/u,
+    )
+    assert.doesNotMatch(
+      officialHtml,
+      /account-value|secret-value|type="password"|手机号|验证码/u,
+    )
 
     const officialClient = await fetch(
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/official.js`,
@@ -137,10 +140,17 @@ test('001 official-login popup is public but challenge data remains token-gated'
     const officialClientScript = await officialClient.text()
     assert.doesNotThrow(() => new Script(officialClientScript))
     assert.match(officialClientScript, /bieyanghong-repair\/official\/start/u)
-    assert.match(officialClientScript, /bieyanghong-repair\/visual\/frame/u)
-    assert.match(officialClientScript, /bieyanghong-repair\/visual\/interact/u)
-    assert.match(officialClientScript, /kind:'field'/u)
-    assert.match(officialClientScript, /kind:'control'/u)
+    assert.match(officialClientScript, /bieyanghong-repair\/vnc\/session/u)
+    assert.match(officialClientScript, /bieyanghong-repair\/vnc\/check/u)
+    assert.match(officialClientScript, /bieyanghong-repair\/novnc\/vnc\.html/u)
+    assert.match(
+      officialClientScript,
+      /if \(!sessionResponse\.ok\)[\s\S]*?repairToken = ''[\s\S]*?officialFrame\.src = noVncUrl/u,
+    )
+    assert.doesNotMatch(
+      officialClientScript,
+      /bieyanghong-repair\/visual\/(?:frame|interact)|kind:'(?:field|control)'/u,
+    )
     assert.doesNotMatch(officialClientScript, /localStorage|sessionStorage/u)
 
     const missing = await fetch(
@@ -149,14 +159,28 @@ test('001 official-login popup is public but challenge data remains token-gated'
     )
     assert.equal(missing.status, 404)
 
-    const visualMissing = await fetch(
-      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/visual/frame`,
+    const vncCheckMissing = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/vnc/check`,
     )
-    assert.equal(visualMissing.status, 400)
+    assert.equal(vncCheckMissing.status, 401)
     assert.equal(
-      (await visualMissing.json()).code,
-      'BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND',
+      (await vncCheckMissing.json()).code,
+      'BIEYANGHONG_REMOTE_DESKTOP_SESSION_REQUIRED',
     )
+
+    for (const assetPath of [
+      'missing-test-asset.html',
+      '%2e%2e%2fpackage.json',
+    ]) {
+      const missingAsset = await fetch(
+        `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/novnc/${assetPath}`,
+      )
+      assert.equal(missingAsset.status, 404)
+      assert.equal(
+        (await missingAsset.json()).code,
+        'BIEYANGHONG_NOVNC_ASSET_NOT_FOUND',
+      )
+    }
 
     const proxiedTrigger = await fetch(
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/start`,

@@ -66,7 +66,7 @@ export const bieyanghongRepairLink = (baseUrl, token) => {
   if (!origin || !TOKEN_PATTERN.test(String(token ?? ''))) {
     throw new Error('BIEYANGHONG_REPAIR_LINK_INVALID')
   }
-  return `${origin}/api/v1/bieyanghong-repair#${token}`
+  return `${origin}/api/v1/bieyanghong-repair/official#${token}`
 }
 
 export const createBieyanghongRepairChallengeStore = ({

@@ -21,7 +21,7 @@ test('creates a fragment-only 001 repair link and stores only a token hash', () 
 
   assert.equal(
     link,
-    `https://ota.example.com/api/v1/bieyanghong-repair#${created.token}`,
+    `https://ota.example.com/api/v1/bieyanghong-repair/official#${created.token}`,
   )
   const snapshot = JSON.stringify(store.debugSnapshot())
   assert.equal(snapshot.includes(created.token), false)

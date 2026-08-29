@@ -3,6 +3,7 @@
 import { createServer } from 'node:http'
 import {
   createHash,
+  randomBytes,
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto'
@@ -10,10 +11,13 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { createConnection } from 'node:net'
+import { dirname, extname, join, resolve, sep } from 'node:path'
 import {
   decryptCookie,
   encryptCookie,
@@ -59,6 +63,11 @@ import {
   renderLuopanRepairPage,
 } from './luopan-repair-page.mjs'
 import { startBieyanghongAssistedLogin } from './bieyanghong-assisted-login.mjs'
+import {
+  bieyanghongBrowserBrokerConfig,
+  bieyanghongBrowserBrokerReady,
+  startBieyanghongBrokeredLogin,
+} from './bieyanghong-browser-broker-client.mjs'
 import {
   bieyanghongRepairLink,
   createBieyanghongRepairChallengeStore,
@@ -221,6 +230,30 @@ const luopanSessionSecretPath = dataPath
 const bieyanghongBrowserProfileBase =
   process.env.BIEYANGHONG_BROWSER_PROFILE_BASE?.trim()
   || (dataPath ? join(dirname(dataPath), 'bieyanghong-browser-profiles') : null)
+const bieyanghongRemoteDesktopConfig = Object.freeze({
+  enabled: process.env.BIEYANGHONG_REMOTE_DESKTOP_ENABLED === 'true',
+  display: process.env.BIEYANGHONG_REMOTE_DESKTOP_DISPLAY?.trim() || ':91',
+  width: process.env.BIEYANGHONG_REMOTE_DESKTOP_WIDTH,
+  height: process.env.BIEYANGHONG_REMOTE_DESKTOP_HEIGHT,
+  vncPort: process.env.BIEYANGHONG_REMOTE_DESKTOP_VNC_PORT,
+  webSocketPort: process.env.BIEYANGHONG_REMOTE_DESKTOP_WEBSOCKET_PORT,
+  xvfbExecutable:
+    process.env.BIEYANGHONG_XVFB_EXECUTABLE?.trim() || '/usr/bin/Xvfb',
+  x11vncExecutable:
+    process.env.BIEYANGHONG_X11VNC_EXECUTABLE?.trim() || '/usr/bin/x11vnc',
+  websockifyExecutable:
+    process.env.BIEYANGHONG_WEBSOCKIFY_EXECUTABLE?.trim()
+    || '/usr/bin/websockify',
+})
+const bieyanghongNoVncRoot =
+  process.env.BIEYANGHONG_NOVNC_ROOT?.trim() || '/usr/share/novnc'
+const bieyanghongRemoteDesktopReady = () =>
+  !bieyanghongRemoteDesktopConfig.enabled
+  || (
+    existsSync(bieyanghongNoVncRoot)
+    && bieyanghongBrowserBrokerConfig.enabled
+    && bieyanghongBrowserBrokerReady()
+  )
 const weComConfigPath = dataPath
   ? join(dirname(dataPath), 'wecom-configs.json')
   : null
@@ -401,6 +434,24 @@ const BRIEFING_HEALTH_AUDIT_RETENTION_MS = 366 * 24 * 60 * 60_000
 const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
 const LUOPAN_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 const BIEYANGHONG_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
+const BIEYANGHONG_VNC_COOKIE = 'sfg_bieyanghong_vnc'
+const BIEYANGHONG_VNC_COOKIE_PATH = '/api/v1/bieyanghong-repair/vnc'
+const BIEYANGHONG_NOVNC_ROUTE_PREFIX =
+  '/api/v1/bieyanghong-repair/novnc/'
+const BIEYANGHONG_VNC_SESSION_TTL_MS = 10 * 60_000
+const BIEYANGHONG_NOVNC_CONTENT_TYPES = Object.freeze({
+  '.css': 'text/css; charset=utf-8',
+  '.gif': 'image/gif',
+  '.html': 'text/html; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+})
 
 const SIMULATION_HOTEL_CODE = /^[A-Z0-9][A-Z0-9_-]{0,15}$/
 const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -2084,6 +2135,7 @@ const bieyanghongAssistedRepairReady = () => {
   return bieyanghongAssistedRepairEnabled
     && bieyanghongWebRepairReady
     && Boolean(bieyanghongBrowserProfileBase)
+    && bieyanghongRemoteDesktopReady()
     && Boolean(hotel)
     && weComRepairBotReady()
 }
@@ -2100,6 +2152,11 @@ const bieyanghongRepairReasonCode = () => {
   }
   if (!bieyanghongBrowserProfileBase) {
     return 'BIEYANGHONG_BROWSER_PROFILE_BASE_REQUIRED'
+  }
+  if (!bieyanghongRemoteDesktopReady()) {
+    return bieyanghongRemoteDesktopConfig.enabled
+      ? 'BIEYANGHONG_BROWSER_BROKER_UNAVAILABLE'
+      : 'BIEYANGHONG_REMOTE_DESKTOP_RUNTIME_UNAVAILABLE'
   }
   if (!weComRepairBotReady()) {
     return 'WECOM_REPAIR_BOT_NOT_CONNECTED'
@@ -2477,7 +2534,7 @@ const persistFutureDemandRiskStates = () => {
   renameSync(temporaryPath, futureDemandRiskStatePath)
 }
 
-const json = (response, status, body) => {
+const json = (response, status, body, headers = {}) => {
   const content = JSON.stringify(body)
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -2485,15 +2542,17 @@ const json = (response, status, body) => {
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'x-ota-review-mode': 'local-live-pilot',
+    ...headers,
   })
   response.end(content)
 }
 
-const empty = (response, status = 204) => {
+const empty = (response, status = 204, headers = {}) => {
   response.writeHead(status, {
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'x-ota-review-mode': 'local-live-pilot',
+    ...headers,
   })
   response.end()
 }
@@ -2569,7 +2628,8 @@ const bieyanghongOfficialLoginHtml = (response) => {
     'cache-control': 'no-store, max-age=0',
     'content-security-policy':
       `default-src 'none'; base-uri 'none'; frame-ancestors 'none'; `
-      + `form-action 'self'; img-src 'self' blob:; connect-src 'self'; `
+      + `form-action 'self'; img-src 'self' blob:; `
+      + `connect-src 'self'; frame-src 'self'; `
       + `style-src 'unsafe-inline'; script-src 'self'`,
     'permissions-policy':
       'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
@@ -2590,6 +2650,68 @@ const bieyanghongOfficialLoginClientScript = (response) => {
     'x-content-type-options': 'nosniff',
   })
   response.end(content)
+}
+
+const serveBieyanghongNoVncAsset = (response, requestPath) => {
+  if (
+    !requestPath.startsWith(BIEYANGHONG_NOVNC_ROUTE_PREFIX)
+    || !existsSync(bieyanghongNoVncRoot)
+  ) return false
+  let relativePath
+  try {
+    relativePath = decodeURIComponent(
+      requestPath.slice(BIEYANGHONG_NOVNC_ROUTE_PREFIX.length),
+    )
+  } catch {
+    return false
+  }
+  if (!relativePath) relativePath = 'vnc.html'
+  if (
+    relativePath.includes('\0')
+    || relativePath.includes('\\')
+    || relativePath.startsWith('/')
+    || !(
+      relativePath === 'vnc.html'
+      || relativePath.startsWith('app/')
+      || relativePath.startsWith('core/')
+      || relativePath.startsWith('vendor/')
+    )
+  ) return false
+  try {
+    const root = realpathSync(bieyanghongNoVncRoot)
+    const candidate = resolve(root, relativePath)
+    if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
+      return false
+    }
+    const actual = realpathSync(candidate)
+    if (actual !== root && !actual.startsWith(`${root}${sep}`)) return false
+    const stats = statSync(actual)
+    if (!stats.isFile() || stats.size > 8 * 1024 * 1024) return false
+    const content = readFileSync(actual)
+    const contentType =
+      BIEYANGHONG_NOVNC_CONTENT_TYPES[extname(actual).toLowerCase()]
+      ?? 'application/octet-stream'
+    const headers = {
+      'content-type': contentType,
+      'content-length': content.length,
+      'cache-control': 'no-store, max-age=0',
+      'cross-origin-resource-policy': 'same-origin',
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+    }
+    if (contentType.startsWith('text/html')) {
+      headers['content-security-policy'] =
+        `default-src 'self'; base-uri 'none'; object-src 'none'; `
+        + `frame-ancestors 'self'; connect-src 'self'; `
+        + `img-src 'self' data:; style-src 'self' 'unsafe-inline'; `
+        + `script-src 'self'; font-src 'self'`
+    }
+    response.writeHead(200, headers)
+    response.end(content)
+    return true
+  } catch {
+    return false
+  }
 }
 
 const bieyanghongVisualFrame = (response, image) => {
@@ -4642,6 +4764,7 @@ const finishBieyanghongRepair = async ({
     throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
   }
   bieyanghongRepairChallengeStore.markVerifying(tokenSha256)
+  revokeBieyanghongVncSession(handle)
   await handle.login?.close().catch(() => {})
   activeBieyanghongRepairsByHotel.delete(hotelId)
   let cookieHeader = inputCookieHeader
@@ -4739,6 +4862,7 @@ const startBieyanghongRepairChallenge = async (
       return bieyanghongRepairChallengeStore
         .getInternalByHash(active.tokenSha256)
     }
+    revokeBieyanghongVncSession(active)
     await active.login?.close().catch(() => {})
     bieyanghongRepairChallengeStore.fail(
       active.tokenSha256,
@@ -4770,6 +4894,11 @@ const startBieyanghongRepairChallenge = async (
     tokenSha256: created.tokenSha256,
     challengeId: created.record.challengeId,
     login: null,
+    vncSessionSha256: null,
+    vncSessionExpiresAt: 0,
+    vncViewerConnected: false,
+    vncConnectionsUsed: 0,
+    vncSocket: null,
     visualOperation: null,
     visualFrameLastAt: 0,
     finishing: false,
@@ -4787,7 +4916,7 @@ const startBieyanghongRepairChallenge = async (
       content: [
         '### 001别样红简报需要管理员授权',
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '请由本次处理管理员点击一次性链接，再打开“美团官网登录窗口”，直接在官方页面完成登录：',
+        '请由本次处理管理员点击一次性链接，直接在美团官方页面完成登录：',
         bieyanghongRepairLink(
           bieyanghongRepairPublicBaseUrl,
           created.token,
@@ -4809,6 +4938,7 @@ const startBieyanghongRepairChallenge = async (
     return created.record
   } catch (error) {
     const reasonCode = safeBieyanghongRepairReason(error)
+    revokeBieyanghongVncSession(handle)
     await handle.login?.close().catch(() => {})
     activeBieyanghongRepairsByHotel.delete(hotelId)
     bieyanghongRepairChallengeStore.fail(created.tokenSha256, reasonCode)
@@ -4976,14 +5106,18 @@ const processBieyanghongOfficialLoginStart = ({ token }) => {
   )
   void (async () => {
     try {
+      revokeBieyanghongVncSession(handle)
       await handle.login?.close().catch(() => {})
-      handle.login = await startBieyanghongAssistedLogin({
-        profileRoot: join(
-          bieyanghongBrowserProfileBase,
-          `hotel-${challenge.hotelCode}`,
-        ),
-        officialLogin: true,
-      })
+      handle.login = bieyanghongRemoteDesktopConfig.enabled
+        ? await startBieyanghongBrokeredLogin()
+        : await startBieyanghongAssistedLogin({
+            profileRoot: join(
+              bieyanghongBrowserProfileBase,
+              `hotel-${challenge.hotelCode}`,
+            ),
+            officialLogin: true,
+            remoteDesktopConfig: bieyanghongRemoteDesktopConfig,
+          })
       if (handle.login.alreadyAuthenticated) {
         await finishBieyanghongRepair({
           hotelId: challenge.hotelId,
@@ -5004,6 +5138,7 @@ const processBieyanghongOfficialLoginStart = ({ token }) => {
         })}\n`,
       )
     } catch (error) {
+      revokeBieyanghongVncSession(handle)
       await handle.login?.close().catch(() => {})
       handle.login = null
       const reasonCode = safeBieyanghongRepairReason(error)
@@ -5062,6 +5197,136 @@ const queueBieyanghongVisualOperation = (handle, operation) => {
   return current.finally(() => {
     if (handle.visualOperation === current) handle.visualOperation = null
   })
+}
+
+const bieyanghongVncCookieValue = (request) => {
+  const header = String(request.headers.cookie ?? '')
+  if (!header || header.length > 4_096) return ''
+  for (const segment of header.split(';')) {
+    const separator = segment.indexOf('=')
+    if (separator < 1) continue
+    if (segment.slice(0, separator).trim() !== BIEYANGHONG_VNC_COOKIE) continue
+    const value = segment.slice(separator + 1).trim()
+    return /^[A-Za-z0-9_-]{40,96}$/u.test(value) ? value : ''
+  }
+  return ''
+}
+
+const bieyanghongVncHashMatches = (left, right) => {
+  if (
+    typeof left !== 'string'
+    || typeof right !== 'string'
+    || !/^[a-f0-9]{64}$/u.test(left)
+    || !/^[a-f0-9]{64}$/u.test(right)
+  ) return false
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'))
+}
+
+const revokeBieyanghongVncSession = (handle) => {
+  if (!handle) return
+  handle.vncSessionSha256 = null
+  handle.vncSessionExpiresAt = 0
+  handle.vncViewerConnected = false
+  handle.vncConnectionsUsed = 0
+  handle.vncSocket?.destroy()
+  handle.vncSocket = null
+}
+
+const releaseBieyanghongVncViewer = (handle, socket) => {
+  if (!handle || handle.vncSocket !== socket) return
+  handle.vncViewerConnected = false
+  handle.vncSocket = null
+}
+
+const bieyanghongRemoteDesktopHandleFor = (token) => {
+  const challenge = bieyanghongRepairChallengeStore.getInternal(token)
+  if (!challenge) {
+    throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_NOT_FOUND')
+  }
+  if (challenge.status !== 'WAITING_FOR_INTERACTIVE_VERIFICATION') {
+    throw new Error('BIEYANGHONG_INTERACTIVE_VERIFICATION_NOT_READY')
+  }
+  const handle = activeBieyanghongRepairsByHotel.get(challenge.hotelId)
+  if (
+    !handle
+    || handle.tokenSha256 !== challenge.tokenSha256
+    || !handle.login?.remoteDesktop?.webSocketPort
+    || !handle.login?.detectAuthentication
+  ) {
+    throw new Error('BIEYANGHONG_REMOTE_DESKTOP_SESSION_UNAVAILABLE')
+  }
+  return { challenge, handle }
+}
+
+const createBieyanghongVncSession = (token) => {
+  const { challenge, handle } = bieyanghongRemoteDesktopHandleFor(token)
+  const now = Date.now()
+  const challengeExpiresAt = new Date(challenge.expiresAt).getTime()
+  const expiresAt = Math.min(
+    challengeExpiresAt,
+    now + BIEYANGHONG_VNC_SESSION_TTL_MS,
+  )
+  if (!Number.isFinite(expiresAt) || expiresAt <= now + 1_000) {
+    throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_EXPIRED')
+  }
+  revokeBieyanghongVncSession(handle)
+  let sessionToken = randomBytes(32).toString('base64url')
+  handle.vncSessionSha256 = createHash('sha256')
+    .update(sessionToken)
+    .digest('hex')
+  handle.vncSessionExpiresAt = expiresAt
+  handle.vncConnectionsUsed = 0
+  return {
+    sessionToken,
+    maxAgeSeconds: Math.max(1, Math.floor((expiresAt - now) / 1_000)),
+    clear() {
+      sessionToken = null
+    },
+  }
+}
+
+const bieyanghongVncHandleForRequest = (request) => {
+  const cookieValue = bieyanghongVncCookieValue(request)
+  if (!cookieValue) {
+    throw new Error('BIEYANGHONG_REMOTE_DESKTOP_SESSION_REQUIRED')
+  }
+  const suppliedHash = createHash('sha256').update(cookieValue).digest('hex')
+  const now = Date.now()
+  for (const handle of activeBieyanghongRepairsByHotel.values()) {
+    if (
+      !bieyanghongVncHashMatches(handle.vncSessionSha256, suppliedHash)
+      || handle.vncSessionExpiresAt <= now
+      || !handle.login?.remoteDesktop?.webSocketPort
+    ) continue
+    const challenge = bieyanghongRepairChallengeStore.getInternalByHash(
+      handle.tokenSha256,
+    )
+    if (
+      challenge
+      && challenge.hotelId === handle.hotelId
+      && challenge.status === 'WAITING_FOR_INTERACTIVE_VERIFICATION'
+    ) return { challenge, handle }
+  }
+  throw new Error('BIEYANGHONG_REMOTE_DESKTOP_SESSION_REQUIRED')
+}
+
+const processBieyanghongRemoteAuthenticationCheck = async (request) => {
+  const { challenge, handle } = bieyanghongVncHandleForRequest(request)
+  const result = await queueBieyanghongVisualOperation(
+    handle,
+    () => handle.login.detectAuthentication(),
+  )
+  if (!result.authenticated) {
+    return { authenticationDetected: false, status: challenge.status }
+  }
+  revokeBieyanghongVncSession(handle)
+  beginBieyanghongInteractiveFinish({
+    challenge,
+    handle,
+    cookieHeader: result.cookieHeader,
+  })
+  result.cookieHeader = null
+  return { authenticationDetected: true, status: 'VERIFYING' }
 }
 
 const beginBieyanghongInteractiveFinish = ({ challenge, handle, cookieHeader }) => {
@@ -5438,6 +5703,7 @@ const expireLuopanRepairSessions = async () => {
       handle.tokenSha256,
     )
     if (!challenge || challenge.status === 'EXPIRED') {
+      revokeBieyanghongVncSession(handle)
       await handle.login?.close().catch(() => {})
       activeBieyanghongRepairsByHotel.delete(hotelId)
     }
@@ -6011,7 +6277,17 @@ const server = createServer(async (request, response) => {
           ready: bieyanghongAssistedRepairReady(),
           reasonCode: bieyanghongRepairReasonCode(),
           pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
-          credentialInputMode: 'CLOUD_OFFICIAL_LOGIN_POPUP',
+          credentialInputMode: bieyanghongRemoteDesktopConfig.enabled
+            ? 'REMOTE_NATIVE_OFFICIAL_LOGIN'
+            : 'CLOUD_OFFICIAL_LOGIN_POPUP',
+          remoteDesktop: {
+            enabled: bieyanghongRemoteDesktopConfig.enabled,
+            ready: bieyanghongRemoteDesktopReady(),
+            isolatedBroker: {
+              enabled: bieyanghongBrowserBrokerConfig.enabled,
+              ready: bieyanghongBrowserBrokerReady(),
+            },
+          },
           webLinkReady: bieyanghongWebRepairReady,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
         },
@@ -6113,6 +6389,16 @@ const server = createServer(async (request, response) => {
 
     if (
       request.method === 'GET'
+      && path.startsWith(BIEYANGHONG_NOVNC_ROUTE_PREFIX)
+    ) {
+      if (!serveBieyanghongNoVncAsset(response, path)) {
+        json(response, 404, { code: 'BIEYANGHONG_NOVNC_ASSET_NOT_FOUND' })
+      }
+      return
+    }
+
+    if (
+      request.method === 'GET'
       && path === '/api/v1/bieyanghong-repair/status'
     ) {
       const challenge = bieyanghongRepairChallengeStore.get(
@@ -6136,6 +6422,67 @@ const server = createServer(async (request, response) => {
         token: repairTokenFrom(request),
       })
       json(response, 202, { data: accepted })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/bieyanghong-repair/vnc/session'
+    ) {
+      const session = createBieyanghongVncSession(repairTokenFrom(request))
+      try {
+        empty(response, 204, {
+          'set-cookie':
+            `${BIEYANGHONG_VNC_COOKIE}=${session.sessionToken}; `
+            + `Path=${BIEYANGHONG_VNC_COOKIE_PATH}; `
+            + `Max-Age=${session.maxAgeSeconds}; HttpOnly; Secure; `
+            + `SameSite=Strict`,
+        })
+      } finally {
+        session.clear()
+      }
+      return
+    }
+
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/bieyanghong-repair/vnc/check'
+    ) {
+      try {
+        const result = await processBieyanghongRemoteAuthenticationCheck(request)
+        json(
+          response,
+          result.authenticationDetected ? 200 : 202,
+          { data: result },
+          result.authenticationDetected
+            ? {
+                'set-cookie':
+                  `${BIEYANGHONG_VNC_COOKIE}=; `
+                  + `Path=${BIEYANGHONG_VNC_COOKIE_PATH}; Max-Age=0; `
+                  + `HttpOnly; Secure; SameSite=Strict`,
+              }
+            : {},
+        )
+      } catch (error) {
+        if (
+          error?.message
+          === 'BIEYANGHONG_REMOTE_DESKTOP_SESSION_REQUIRED'
+        ) {
+          json(
+            response,
+            401,
+            { code: error.message },
+            {
+              'set-cookie':
+                `${BIEYANGHONG_VNC_COOKIE}=; `
+                + `Path=${BIEYANGHONG_VNC_COOKIE_PATH}; Max-Age=0; `
+                + `HttpOnly; Secure; SameSite=Strict`,
+            },
+          )
+          return
+        }
+        throw error
+      }
       return
     }
 
@@ -7270,6 +7617,142 @@ const server = createServer(async (request, response) => {
   }
 })
 
+const rejectBieyanghongVncUpgrade = (socket, status = '401 Unauthorized') => {
+  if (!socket.destroyed) {
+    socket.end(
+      `HTTP/1.1 ${status}\r\nConnection: close\r\n`
+      + `Content-Length: 0\r\nCache-Control: no-store\r\n\r\n`,
+    )
+  }
+}
+
+const bieyanghongVncUpgradeOriginValid = (request) => {
+  if (!bieyanghongRepairPublicBaseUrl) return false
+  try {
+    const expected = new URL(bieyanghongRepairPublicBaseUrl)
+    const origin = new URL(String(request.headers.origin ?? ''))
+    const hostHeader = String(request.headers.host ?? '').toLowerCase()
+    return origin.origin === expected.origin
+      && hostHeader === expected.host.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
+server.on('upgrade', (request, socket, head) => {
+  let url
+  try {
+    url = new URL(request.url ?? '/', `http://${host}:${port}`)
+  } catch {
+    rejectBieyanghongVncUpgrade(socket, '400 Bad Request')
+    return
+  }
+  if (
+    url.pathname !== BIEYANGHONG_VNC_COOKIE_PATH
+    || url.search
+    || !bieyanghongVncUpgradeOriginValid(request)
+  ) {
+    rejectBieyanghongVncUpgrade(socket, '404 Not Found')
+    return
+  }
+  const websocketKey = String(request.headers['sec-websocket-key'] ?? '')
+  const websocketVersion = String(
+    request.headers['sec-websocket-version'] ?? '',
+  )
+  const protocol = String(request.headers['sec-websocket-protocol'] ?? '')
+  let decodedKey = null
+  try {
+    decodedKey = Buffer.from(websocketKey, 'base64')
+  } catch {
+    decodedKey = null
+  }
+  if (
+    request.method !== 'GET'
+    || String(request.headers.upgrade ?? '').toLowerCase() !== 'websocket'
+    || !String(request.headers.connection ?? '').toLowerCase()
+      .split(',')
+      .map((value) => value.trim())
+      .includes('upgrade')
+    || websocketVersion !== '13'
+    || decodedKey?.length !== 16
+    || websocketKey.length > 64
+    || (
+      protocol
+      && !['binary', 'base64'].includes(protocol)
+    )
+  ) {
+    rejectBieyanghongVncUpgrade(socket, '400 Bad Request')
+    return
+  }
+  let match
+  try {
+    match = bieyanghongVncHandleForRequest(request)
+  } catch {
+    rejectBieyanghongVncUpgrade(socket)
+    return
+  }
+  const { handle } = match
+  if (handle.vncViewerConnected || handle.vncSocket) {
+    rejectBieyanghongVncUpgrade(socket, '409 Conflict')
+    return
+  }
+  if (handle.vncConnectionsUsed >= 3) {
+    rejectBieyanghongVncUpgrade(socket, '429 Too Many Requests')
+    return
+  }
+  const targetPort = handle.login.remoteDesktop.webSocketPort
+  if (!Number.isInteger(targetPort) || targetPort < 1024 || targetPort > 65535) {
+    rejectBieyanghongVncUpgrade(socket)
+    return
+  }
+
+  handle.vncViewerConnected = true
+  handle.vncConnectionsUsed += 1
+  handle.vncSocket = socket
+  socket.pause()
+  const upstream = createConnection({ host: '127.0.0.1', port: targetPort })
+  let released = false
+  let upstreamConnected = false
+  const release = () => {
+    if (released) return
+    released = true
+    upstream.destroy()
+    releaseBieyanghongVncViewer(handle, socket)
+  }
+  socket.once('error', release)
+  socket.once('close', release)
+  upstream.once('error', () => {
+    if (!upstreamConnected && !socket.destroyed) {
+      rejectBieyanghongVncUpgrade(socket, '502 Bad Gateway')
+    }
+    release()
+  })
+  upstream.setTimeout(5_000, () => {
+    if (!socket.destroyed) {
+      rejectBieyanghongVncUpgrade(socket, '504 Gateway Timeout')
+    }
+    release()
+  })
+  upstream.once('connect', () => {
+    upstreamConnected = true
+    upstream.setTimeout(0)
+    const lines = [
+      'GET /websockify HTTP/1.1',
+      `Host: 127.0.0.1:${targetPort}`,
+      'Upgrade: websocket',
+      'Connection: Upgrade',
+      `Sec-WebSocket-Key: ${websocketKey}`,
+      'Sec-WebSocket-Version: 13',
+    ]
+    if (protocol) lines.push(`Sec-WebSocket-Protocol: ${protocol}`)
+    upstream.write(`${lines.join('\r\n')}\r\n\r\n`)
+    if (head?.length) upstream.write(head)
+    socket.pipe(upstream)
+    upstream.pipe(socket)
+    socket.resume()
+  })
+})
+
 server.listen(port, host, () => {
   process.stdout.write(
     `${JSON.stringify({
@@ -7299,17 +7782,23 @@ server.listen(port, host, () => {
   initialScheduler.unref()
 })
 
-const shutdown = () => {
+let shuttingDown = false
+const shutdown = async () => {
+  if (shuttingDown) return
+  shuttingDown = true
   weComRepairBotRuntime?.disconnect()
+  const closeOperations = []
   for (const handle of activeLuopanRepairsByHotel.values()) {
-    void handle.login?.close().catch(() => {})
+    closeOperations.push(handle.login?.close().catch(() => {}))
   }
   for (const handle of activeBieyanghongRepairsByHotel.values()) {
-    void handle.login?.close().catch(() => {})
+    revokeBieyanghongVncSession(handle)
+    closeOperations.push(handle.login?.close().catch(() => {}))
   }
+  await Promise.allSettled(closeOperations.filter(Boolean))
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 2_000).unref()
 }
 
-process.once('SIGINT', shutdown)
-process.once('SIGTERM', shutdown)
+process.once('SIGINT', () => { void shutdown() })
+process.once('SIGTERM', () => { void shutdown() })

@@ -1,0 +1,53 @@
+[Unit]
+Description=Sifangguan Bieyanghong isolated login browser
+Wants=network-online.target
+After=network-online.target
+Before=sifangguan-ota-api.service
+
+[Service]
+Type=simple
+User=sifangguan-login
+Group=sifangguan-browser
+WorkingDirectory=/opt/sifangguan-ota/current
+EnvironmentFile=/etc/sifangguan-ota/bieyanghong-browser.env
+ExecStart=/opt/sifangguan-ota/runtime/node/bin/node /opt/sifangguan-ota/current/tools/uat/bieyanghong-browser-broker.mjs
+
+RuntimeDirectory=sifangguan-bieyanghong
+RuntimeDirectoryMode=0750
+StateDirectory=sifangguan-login
+StateDirectoryMode=0700
+UMask=0007
+
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/sifangguan-login /run/sifangguan-bieyanghong
+
+LimitNOFILE=16384
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

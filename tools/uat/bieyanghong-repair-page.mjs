@@ -101,33 +101,19 @@ export const renderBieyanghongOfficialLoginPage = () => `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
   <title>美团官网登录 · 001</title>
   <style>
-    :root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17332d;background:#e9eee9}*{box-sizing:border-box}body{margin:0}.bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid #cad4ce}.lock{color:#176b52;font-weight:800}.origin{font-size:14px;color:#51635d}.state{margin-left:auto;font-size:14px}.shell{max-width:1280px;margin:0 auto;padding:14px}.interaction-toolbar{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0}.interaction-toolbar button,.tools button,.keys button{border:0;border-radius:9px;background:#176b52;color:#fff;font-weight:700;padding:12px 10px}.interaction-toolbar button.active{background:#ff5a00}.screen{overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;border:1px solid #879d93;border-radius:12px;background:#dce4df;min-height:360px;box-shadow:0 10px 28px rgba(20,44,38,.12)}.screen img{display:block;width:100%;max-width:none;height:auto;object-fit:contain;touch-action:none;user-select:none;-webkit-user-drag:none}.screen.pan-mode img{touch-action:pan-x pan-y;cursor:grab}.tools{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:10px;padding:10px;background:#fff;border:1px solid #cad4ce;border-radius:12px}.tools input{width:100%;font-size:18px;padding:12px;border:1px solid #9baba4;border-radius:9px}.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}.hint,.message{line-height:1.55}.hint{color:#61706c;font-size:13px}.message{padding:10px 12px;margin:10px 0;border-radius:10px;background:#fff8e8}.error{color:#9e2c22;background:#fff0ed}.success{color:#126044;background:#eaf7f0}.hidden{display:none}@media(max-width:620px){.bar{align-items:flex-start;flex-wrap:wrap}.state{margin-left:0;width:100%}.shell{padding:8px}.interaction-toolbar{grid-template-columns:repeat(3,1fr)}.screen{min-height:260px}.tools{grid-template-columns:1fr}.tools button{width:100%}.keys{grid-template-columns:repeat(3,1fr)}}
+    :root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17332d;background:#fff}*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{display:grid;grid-template-rows:auto minmax(0,1fr);padding-top:env(safe-area-inset-top);background:#fff}.bar{min-height:32px;display:flex;align-items:center;gap:7px;padding:5px max(9px,env(safe-area-inset-right)) 5px max(9px,env(safe-area-inset-left));background:#f5faf7;border-bottom:1px solid #d4ded8;font-size:12px;line-height:1.3;white-space:nowrap}.lock{color:#176b52;font-weight:800}.origin{min-width:0;overflow:hidden;color:#53645e;text-overflow:ellipsis}.state{margin-left:auto;color:#52635d}.workspace{position:relative;min-width:0;min-height:0;background:#fff}.official-frame{display:block;width:100%;height:100%;border:0;background:#fff}.notice{position:absolute;z-index:2;inset:50% auto auto 50%;width:min(88vw,420px);transform:translate(-50%,-50%);padding:15px 18px;border:1px solid #d9dfdb;border-radius:14px;background:rgba(255,255,255,.96);box-shadow:0 12px 32px rgba(20,44,38,.13);text-align:center;line-height:1.65}.notice.error{color:#9e2c22;background:#fff3f1;border-color:#efc7c0}.notice.success{color:#126044;background:#eef9f3;border-color:#bfdfcf}.hidden{display:none}@media(max-width:620px){.bar{min-height:29px;padding-top:4px;padding-bottom:4px;font-size:11px}.notice{width:calc(100vw - 28px);padding:13px 15px;border-radius:12px}}
   </style>
   <script src="/api/v1/bieyanghong-repair/official.js" defer></script>
 </head>
 <body>
-  <header class="bar"><span class="lock">安全连接</span><span class="origin">美团官方：pms.meituan.com</span><span id="state" class="state">正在启动…</span></header>
-  <main class="shell">
-    <div id="message" class="message">正在连接001门店的专属官方登录会话…</div>
-    <div id="interaction-toolbar" class="interaction-toolbar hidden">
-      <button id="pan-mode" type="button">移动画面</button><button id="operate-mode" type="button">操作官网</button><button id="locate-login" type="button">定位登录区</button><button id="zoom-out" type="button">缩小</button><button id="zoom-in" type="button">放大</button>
-    </div>
-    <div id="screen" class="screen hidden"><img id="vendor-screen" alt="美团官方登录页面" draggable="false"></div>
-    <form id="account-form" class="tools hidden" autocomplete="off">
-      <input id="account-value" type="text" inputmode="text" maxlength="64" autocomplete="off" aria-label="账号或手机号" placeholder="在这里填写手机号或账号">
-      <button id="account-send" type="submit">填写到官网手机号框</button>
-    </form>
-    <form id="secret-form" class="tools hidden" autocomplete="off">
-      <input id="secret-value" type="password" inputmode="text" maxlength="64" autocomplete="off" aria-label="密码或验证码" placeholder="在这里填写密码或验证码">
-      <button id="secret-send" type="submit">填写到官网密码/验证码框</button>
-    </form>
-    <div id="keys" class="keys hidden">
-      <button type="button" data-official-control="agreement">勾选登录协议</button><button type="button" data-official-control="requestCode">请求发送验证码</button><button type="button" data-official-control="submitLogin">提交官网登录</button><button type="button" data-key="Backspace">退格</button><button type="button" data-key="Tab">下一项</button><button type="button" data-key="Enter">确认</button><button type="button" data-key="Escape">返回</button><button id="refresh-screen" type="button">刷新画面</button>
-    </div>
-    <p class="hint">手机号无需先点准官网输入框：直接在第一栏填写并提交，再点“请求发送验证码”。收到验证码后用遮蔽的第二栏填写并提交，最后点“提交官网登录”。系统会自动勾选登录协议；画面和输入均不保存。</p>
+  <header class="bar"><span class="lock">安全连接</span><span class="origin">直接操作美团官方页面，请勿转发</span><span id="state" class="state">正在连接…</span></header>
+  <main class="workspace">
+    <iframe id="official-frame" class="official-frame hidden" title="美团官方登录页面" referrerpolicy="no-referrer"></iframe>
+    <div id="message" class="notice">正在建立001门店的一次性官网登录会话…</div>
   </main>
 </body>
 </html>`
@@ -137,183 +123,144 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
   history.replaceState(null, '', location.pathname)
   const state = document.getElementById('state')
   const message = document.getElementById('message')
-  const interactionToolbar = document.getElementById('interaction-toolbar')
-  const screen = document.getElementById('screen')
-  const vendorScreen = document.getElementById('vendor-screen')
-  const panMode = document.getElementById('pan-mode')
-  const operateMode = document.getElementById('operate-mode')
-  const locateLogin = document.getElementById('locate-login')
-  const zoomOut = document.getElementById('zoom-out')
-  const zoomIn = document.getElementById('zoom-in')
-  const accountForm = document.getElementById('account-form')
-  const accountValue = document.getElementById('account-value')
-  const accountSend = document.getElementById('account-send')
-  const secretForm = document.getElementById('secret-form')
-  const secretValue = document.getElementById('secret-value')
-  const secretSend = document.getElementById('secret-send')
-  const keys = document.getElementById('keys')
-  const refreshScreen = document.getElementById('refresh-screen')
-  let frameBusy = false
-  let actionTail = Promise.resolve()
-  let frameUrl = ''
-  let pointerStart = null
-  let started = false
-  let frameLoadedOnce = false
-  let interactionMode = innerWidth <= 620 ? 'pan' : 'operate'
-  let zoomPercent = innerWidth <= 620 ? 200 : 100
+  const officialFrame = document.getElementById('official-frame')
+  const noVncUrl = '/api/v1/bieyanghong-repair/novnc/vnc.html?autoconnect=true&resize=scale&shared=false&reconnect=false&path=api%2Fv1%2Fbieyanghong-repair%2Fvnc'
+  let finished = false
+  let vncSessionActive = false
   const headers = () => ({ Authorization: 'Repair ' + repairToken })
+  const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
   const setMessage = (value, kind = '') => {
     message.textContent = value
-    message.className = 'message' + (kind ? ' ' + kind : '')
+    message.className = 'notice' + (kind ? ' ' + kind : '')
+    message.classList.remove('hidden')
   }
-  const showOfficial = (visible) => {
-    interactionToolbar.classList.toggle('hidden', !visible)
-    screen.classList.toggle('hidden', !visible)
-    accountForm.classList.toggle('hidden', !visible)
-    secretForm.classList.toggle('hidden', !visible)
-    keys.classList.toggle('hidden', !visible)
+  const responseData = async (response) => {
+    const payload = await response.json().catch(() => ({}))
+    return payload && typeof payload === 'object' && payload.data
+      ? payload.data
+      : payload
   }
-  const applyInteractionMode = (nextMode, announce = true) => {
-    interactionMode = nextMode === 'operate' ? 'operate' : 'pan'
-    screen.classList.toggle('pan-mode', interactionMode === 'pan')
-    panMode.classList.toggle('active', interactionMode === 'pan')
-    operateMode.classList.toggle('active', interactionMode === 'operate')
-    if (announce) setMessage(interactionMode === 'pan'
-      ? '移动画面模式：可左右滑动查看完整登录区。'
-      : '操作官网模式：可点按、勾选或拖动美团官方页面。')
+  const fail = (text) => {
+    vncSessionActive = false
+    officialFrame.classList.add('hidden')
+    officialFrame.removeAttribute('src')
+    state.textContent = '未完成'
+    setMessage(text, 'error')
   }
-  const setZoom = (nextPercent) => {
-    const previousWidth = Math.max(1, screen.scrollWidth)
-    const centerRatio = (screen.scrollLeft + screen.clientWidth / 2) / previousWidth
-    zoomPercent = Math.max(100, Math.min(300, nextPercent))
-    vendorScreen.style.width = zoomPercent + '%'
-    requestAnimationFrame(() => {
-      screen.scrollLeft = Math.max(0, centerRatio * screen.scrollWidth - screen.clientWidth / 2)
-    })
+  const complete = () => {
+    if (finished) return
+    finished = true
+    vncSessionActive = false
+    officialFrame.classList.add('hidden')
+    officialFrame.removeAttribute('src')
+    state.textContent = '已完成'
+    setMessage('官网登录已完成，正在恢复001门店的数据采集与播报。此窗口将自动关闭。', 'success')
+    repairToken = ''
+    setTimeout(() => {
+      if (window.WeixinJSBridge && typeof window.WeixinJSBridge.call === 'function') {
+        window.WeixinJSBridge.call('closeWindow')
+      } else {
+        window.close()
+      }
+      setTimeout(() => {
+        if (!window.closed) setMessage('官网登录已完成，请手动关闭此窗口。', 'success')
+      }, 450)
+    }, 750)
   }
-  const focusLoginArea = () => {
-    applyInteractionMode('pan', false)
-    requestAnimationFrame(() => {
-      screen.scrollLeft = Math.max(0, screen.scrollWidth - screen.clientWidth)
-      screen.scrollTop = 0
-      setMessage('已定位右侧登录区；查看后请选择“操作官网”再点击输入框或发送验证码。')
-    })
-  }
-  vendorScreen.style.width = zoomPercent + '%'
-  applyInteractionMode(interactionMode, false)
-  const loadFrame = async () => {
-    if (!repairToken || frameBusy || screen.classList.contains('hidden')) return
-    frameBusy = true
-    try {
-      const response = await fetch('/api/v1/bieyanghong-repair/visual/frame', { headers: headers(), cache: 'no-store' })
-      if (response.status === 202) {
-        setMessage('美团登录已确认，正在核验门店并恢复采集播报…', 'success')
-        await refresh()
+  const waitForInteractiveVerification = async () => {
+    while (repairToken && !finished) {
+      const response = await fetch('/api/v1/bieyanghong-repair/status', {
+        headers: headers(),
+        cache: 'no-store'
+      })
+      if (!response.ok) throw new Error('STATUS')
+      const data = await responseData(response) || {}
+      if (data.status === 'WAITING_FOR_INTERACTIVE_VERIFICATION') return
+      if (data.status === 'COMPLETE') {
+        complete()
         return
       }
-      if (!response.ok || !(response.headers.get('content-type') || '').includes('image/png')) throw new Error('FRAME')
-      const nextUrl = URL.createObjectURL(await response.blob())
-      vendorScreen.src = nextUrl
-      await vendorScreen.decode().catch(() => {})
-      await new Promise((resolve) => requestAnimationFrame(
-        () => requestAnimationFrame(resolve),
-      ))
-      if (!frameLoadedOnce && innerWidth <= 620) {
-        screen.scrollLeft = Math.max(0, screen.scrollWidth - screen.clientWidth)
+      if (data.status === 'FAILED' || data.status === 'EXPIRED') {
+        throw new Error(data.status === 'EXPIRED' ? 'EXPIRED' : 'FAILED')
       }
-      frameLoadedOnce = true
-      if (frameUrl) URL.revokeObjectURL(frameUrl)
-      frameUrl = nextUrl
-    } catch {
-      setMessage('官方页面画面暂时未更新，请点击“刷新画面”。', 'error')
-    } finally {
-      frameBusy = false
+      state.textContent = data.status === 'OPENING_OFFICIAL_LOGIN'
+        ? '加载官网'
+        : '准备会话'
+      await sleep(1500)
     }
   }
-  const sendAction = (action) => {
-    if (!repairToken) return Promise.resolve()
-    const operation = actionTail.catch(() => {}).then(async () => {
+  const checkUntilComplete = async () => {
+    while (vncSessionActive && !finished) {
+      await sleep(1500)
       try {
-        const response = await fetch('/api/v1/bieyanghong-repair/visual/interact', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(action) })
-        if (!response.ok) throw new Error('ACTION')
-        const data = (await response.json()).data
-        if (data.authenticationDetected) setMessage('美团登录已确认，正在恢复001采集播报…', 'success')
-        await loadFrame()
-        await refresh()
-      } catch {
-        setMessage('本次操作未送达官方页面，请刷新画面后重试。', 'error')
+        const response = await fetch('/api/v1/bieyanghong-repair/vnc/check', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        })
+        if (!response.ok) {
+          if (response.status >= 500) continue
+          throw new Error('CHECK')
+        }
+        const data = await responseData(response) || {}
+        if (
+          response.status === 204
+          || data.complete === true
+          || data.success === true
+          || data.authenticated === true
+          || data.authenticationDetected === true
+          || data.status === 'COMPLETE'
+        ) {
+          complete()
+          return
+        }
+        if (data.status === 'FAILED' || data.status === 'EXPIRED') {
+          throw new Error(data.status)
+        }
+      } catch (error) {
+        if (
+          String(error.message) === 'CHECK'
+          || String(error.message) === 'FAILED'
+          || String(error.message) === 'EXPIRED'
+        ) throw error
+        state.textContent = '正在重连'
       }
-    })
-    actionTail = operation
-    return operation
-  }
-  const begin = async () => {
-    if (started) return
-    started = true
-    const response = await fetch('/api/v1/bieyanghong-repair/official/start', { method: 'POST', headers: headers() })
-    if (!response.ok) {
-      started = false
-      if (response.status !== 409) throw new Error('START')
     }
   }
-  const refresh = async () => {
+  const run = async () => {
     if (!repairToken) {
-      showOfficial(false); state.textContent = '链接无效'; setMessage('授权链接无效或已被移除。', 'error'); return
+      fail('授权链接无效，请等待系统重新发送。')
+      return
     }
     try {
-      const response = await fetch('/api/v1/bieyanghong-repair/status', { headers: headers(), cache: 'no-store' })
-      if (!response.ok) throw new Error('STATUS')
-      const data = (await response.json()).data
-      if (data.status === 'WAITING_FOR_CREDENTIALS') {
-        showOfficial(false); state.textContent = '正在启动'; setMessage('正在启动001门店的美团官网登录会话…'); await begin()
-      } else if (data.status === 'OPENING_OFFICIAL_LOGIN') {
-        showOfficial(false); state.textContent = '加载官方页面'; setMessage('美团官方页面正在加载，请稍候…')
-      } else if (data.status === 'WAITING_FOR_INTERACTIVE_VERIFICATION') {
-        showOfficial(true); state.textContent = '001 · 官方登录中'; setMessage('请直接在下方美团官方页面完成登录。'); void loadFrame()
-      } else if (data.status === 'VERIFYING' || data.status === 'SUBMITTED') {
-        showOfficial(false); state.textContent = '正在核验'; setMessage('登录已确认，正在重新采集并补发001简报…')
-      } else if (data.status === 'COMPLETE') {
-        showOfficial(false); state.textContent = '已完成'; setMessage('授权修复完成，001简报已确认送达。可关闭此窗口。', 'success'); repairToken = ''
-      } else if (data.status === 'FAILED' || data.status === 'EXPIRED') {
-        showOfficial(false); state.textContent = '未完成'; setMessage(data.status === 'EXPIRED' ? '链接已过期，请等待新的授权通知。' : '本次授权未完成，请等待系统重新发起。' + (data.reasonCode ? '（' + data.reasonCode + '）' : ''), 'error')
-      }
-    } catch {
-      state.textContent = '连接异常'; setMessage('暂时无法连接授权服务，请稍后刷新本窗口。', 'error')
+      state.textContent = '启动会话'
+      const startResponse = await fetch('/api/v1/bieyanghong-repair/official/start', {
+        method: 'POST',
+        headers: headers()
+      })
+      if (!startResponse.ok && startResponse.status !== 409) throw new Error('START')
+      setMessage('正在加载美团官方登录页面…')
+      await waitForInteractiveVerification()
+      if (!repairToken || finished) return
+      state.textContent = '连接官网'
+      const sessionResponse = await fetch('/api/v1/bieyanghong-repair/vnc/session', {
+        method: 'POST',
+        headers: headers()
+      })
+      if (!sessionResponse.ok) throw new Error('VNC_SESSION')
+      repairToken = ''
+      vncSessionActive = true
+      officialFrame.src = noVncUrl
+      officialFrame.classList.remove('hidden')
+      message.classList.add('hidden')
+      state.textContent = '001 · 官网登录中'
+      await checkUntilComplete()
+    } catch (error) {
+      if (finished) return
+      const reason = String(error.message)
+      fail(reason === 'EXPIRED'
+        ? '授权链接已过期，请等待系统重新发送。'
+        : '暂时无法建立美团官网登录会话，请关闭窗口后使用最新链接重试。')
     }
   }
-  vendorScreen.addEventListener('pointerdown', (event) => {
-    if (interactionMode !== 'operate') return
-    const rect = vendorScreen.getBoundingClientRect()
-    pointerStart = { x: Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)), y: Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)), at: Date.now() }
-    vendorScreen.setPointerCapture?.(event.pointerId); event.preventDefault()
-  })
-  vendorScreen.addEventListener('pointerup', (event) => {
-    if (interactionMode !== 'operate') return
-    if (!pointerStart) return
-    const rect = vendorScreen.getBoundingClientRect()
-    const end = { x: Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)), y: Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)) }
-    const start = pointerStart; pointerStart = null
-    const distance = Math.hypot(end.x-start.x,end.y-start.y)
-    void sendAction(distance < .018 ? { kind:'tap',x:end.x,y:end.y } : { kind:'drag',fromX:start.x,fromY:start.y,toX:end.x,toY:end.y,durationMs:Math.max(250,Math.min(2000,Date.now()-start.at)) })
-    event.preventDefault()
-  })
-  vendorScreen.addEventListener('pointercancel', () => { pointerStart = null })
-  const sendTypedValue = async ({ event, input, button, field }) => {
-    event.preventDefault(); const value = input.value
-    if (!value || value.length > 64) { setMessage('请先点选官方输入框，再输入内容。', 'error'); return }
-    input.value = ''; button.disabled = true
-    await sendAction({ kind:'field',field:field,value:value }); button.disabled = false
-  }
-  accountForm.addEventListener('submit', (event) => sendTypedValue({ event, input: accountValue, button: accountSend, field:'account' }))
-  secretForm.addEventListener('submit', (event) => sendTypedValue({ event, input: secretValue, button: secretSend, field:'secret' }))
-  panMode.addEventListener('click', () => applyInteractionMode('pan'))
-  operateMode.addEventListener('click', () => applyInteractionMode('operate'))
-  locateLogin.addEventListener('click', focusLoginArea)
-  zoomOut.addEventListener('click', () => setZoom(zoomPercent - 50))
-  zoomIn.addEventListener('click', () => setZoom(zoomPercent + 50))
-  document.querySelectorAll('[data-key]').forEach((button) => button.addEventListener('click', () => { void sendAction({kind:'key',key:button.dataset.key}) }))
-  document.querySelectorAll('[data-official-control]').forEach((button) => button.addEventListener('click', () => { void sendAction({kind:'control',control:button.dataset.officialControl}) }))
-  refreshScreen.addEventListener('click', () => { void loadFrame() })
-  void refresh()
-  setInterval(() => { if (repairToken) void refresh() }, 1200)
+  void run()
 })()`

@@ -1,10 +1,19 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import process from 'node:process'
+import {
+  startBieyanghongRemoteDesktop,
+} from './bieyanghong-remote-desktop.mjs'
 
 const require = createRequire(import.meta.url)
 const LOGIN_URL = 'https://pms.meituan.com/pms-web/account/login'
 const PMS_ORIGIN = 'https://pms.meituan.com/'
+const OFFICIAL_RESOURCE_HOST_SUFFIXES = Object.freeze([
+  'meituan.com',
+  'meituan.net',
+  'dianping.com',
+  'dpfile.com',
+])
 const REQUIRED_COOKIE_NAMES = Object.freeze([
   '_lxsdk_cuid',
   'hotelpms_login_hotel_id',
@@ -169,6 +178,40 @@ const captureCookieHeader = async (context) => {
     throw new Error('BIEYANGHONG_SESSION_COOKIE_INVALID')
   }
   return header
+}
+
+const officialResourceUrlAllowed = (value, { topLevel = false } = {}) => {
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (['about:', 'blob:', 'data:'].includes(url.protocol)) return true
+  if (url.protocol !== 'https:' || url.username || url.password) return false
+  const hostname = url.hostname.toLowerCase()
+  if (topLevel) return /(^|\.)meituan\.com$/u.test(hostname)
+  return OFFICIAL_RESOURCE_HOST_SUFFIXES.some(
+    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
+  )
+}
+
+const remoteBrowserEnvironment = (display) => {
+  const result = { DISPLAY: display }
+  for (const name of [
+    'HOME',
+    'XDG_CONFIG_HOME',
+    'XDG_CACHE_HOME',
+    'TMPDIR',
+    'LANG',
+    'LC_ALL',
+    'PATH',
+  ]) {
+    if (typeof process.env[name] === 'string' && process.env[name]) {
+      result[name] = process.env[name]
+    }
+  }
+  return result
 }
 
 const officialInteractivePage = (context, fallbackPage) => {
@@ -567,6 +610,8 @@ export const startBieyanghongAssistedLogin = async ({
   officialLogin = false,
   chromium = chromiumFor(),
   browserExecutable = browserExecutableFor(),
+  remoteDesktopConfig = { enabled: false },
+  remoteDesktopFactory = startBieyanghongRemoteDesktop,
 }) => {
   if (
     typeof profileRoot !== 'string'
@@ -575,44 +620,53 @@ export const startBieyanghongAssistedLogin = async ({
   ) {
     throw new Error('BIEYANGHONG_LOGIN_CONFIGURATION_INVALID')
   }
-  const context = await chromium.launchPersistentContext(profileRoot, {
-    headless: true,
-    executablePath: browserExecutable,
-    acceptDownloads: false,
-    locale: 'zh-CN',
-    timezoneId: 'Asia/Shanghai',
-    args: [
-      '--disable-dev-shm-usage',
-      '--disable-background-networking',
-      '--disable-default-apps',
-      '--disable-extensions',
-      '--disable-sync',
-      '--no-first-run',
-      '--no-sandbox',
-    ],
-  })
+  const remoteDesktop = officialLogin
+    ? await remoteDesktopFactory({ config: remoteDesktopConfig })
+    : null
+  let context
+  try {
+    context = await chromium.launchPersistentContext(profileRoot, {
+      headless: !remoteDesktop,
+      executablePath: browserExecutable,
+      chromiumSandbox: Boolean(remoteDesktop),
+      serviceWorkers: 'block',
+      acceptDownloads: false,
+      locale: 'zh-CN',
+      timezoneId: 'Asia/Shanghai',
+      viewport: remoteDesktop
+        ? { width: remoteDesktop.width, height: remoteDesktop.height }
+        : undefined,
+      env: remoteDesktop
+        ? remoteBrowserEnvironment(remoteDesktop.display)
+        : undefined,
+      args: [
+        '--disable-dev-shm-usage',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-sync',
+        '--no-first-run',
+        ...(remoteDesktop
+          ? [
+              '--kiosk',
+              `--window-size=${remoteDesktop.width},${remoteDesktop.height}`,
+            ]
+          : []),
+      ],
+    })
+  } catch (error) {
+    await remoteDesktop?.close().catch(() => {})
+    throw error
+  }
   const page = context.pages()[0] ?? await context.newPage()
   await context.route('**/*', async (route) => {
     const request = route.request()
-    if (request.isNavigationRequest()) {
-      const frame = request.frame()
-      const topLevel = frame === frame.page().mainFrame()
-      if (topLevel) {
-        let destination
-        try {
-          destination = new URL(request.url())
-        } catch {
-          await route.abort()
-          return
-        }
-        if (
-          destination.protocol !== 'https:'
-          || !/(^|\.)meituan\.com$/iu.test(destination.hostname)
-        ) {
-          await route.abort()
-          return
-        }
-      }
+    const frame = request.frame()
+    const topLevel = request.isNavigationRequest()
+      && frame === frame.page().mainFrame()
+    if (!officialResourceUrlAllowed(request.url(), { topLevel })) {
+      await route.abort()
+      return
     }
     await route.continue()
   })
@@ -622,6 +676,7 @@ export const startBieyanghongAssistedLogin = async ({
     if (closed) return
     closed = true
     await context.close().catch(() => {})
+    await remoteDesktop?.close().catch(() => {})
   }
   try {
     const existingCookieHeader = await captureCookieHeader(context)
@@ -664,6 +719,13 @@ export const startBieyanghongAssistedLogin = async ({
         width: viewport.width,
         height: viewport.height,
       }
+    }
+    const detectAuthentication = async () => {
+      if (closed) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
+      const cookieHeader = await captureCookieHeader(context).catch(() => null)
+      return cookieHeader
+        ? { authenticated: true, cookieHeader }
+        : { authenticated: false }
     }
     const interactVisually = async (input) => {
       if (closed) throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_CLOSED')
@@ -762,6 +824,14 @@ export const startBieyanghongAssistedLogin = async ({
         prepared.interactiveVerificationRequired === true,
       interactiveReasonCode: prepared.interactiveReasonCode ?? null,
       close,
+      remoteDesktop: remoteDesktop
+        ? {
+            width: remoteDesktop.width,
+            height: remoteDesktop.height,
+            webSocketPort: remoteDesktop.webSocketPort,
+          }
+        : null,
+      detectAuthentication,
       captureVisualState,
       interactVisually,
       submit: async (code) => {
