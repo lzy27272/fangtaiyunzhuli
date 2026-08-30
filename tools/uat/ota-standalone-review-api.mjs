@@ -2714,11 +2714,20 @@ const serveBieyanghongNoVncAsset = (response, requestPath) => {
       'x-content-type-options': 'nosniff',
     }
     if (contentType.startsWith('text/html')) {
+      const inlineScriptHashes = relativePath === 'vnc_lite.html'
+        ? [...content.toString('utf8').matchAll(
+            /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/giu,
+          )].map((match) =>
+            `'sha256-${createHash('sha256')
+              .update(match[1], 'utf8')
+              .digest('base64')}'`)
+        : []
+      const scriptSources = ["'self'", ...inlineScriptHashes].join(' ')
       headers['content-security-policy'] =
         `default-src 'self'; base-uri 'none'; object-src 'none'; `
         + `frame-ancestors 'self'; connect-src 'self'; `
         + `img-src 'self' data:; style-src 'self' 'unsafe-inline'; `
-        + `script-src 'self'; font-src 'self'`
+        + `script-src ${scriptSources}; font-src 'self'`
     }
     response.writeHead(200, headers)
     response.end(content)

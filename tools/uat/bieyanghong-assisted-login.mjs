@@ -6,7 +6,7 @@ import {
 } from './bieyanghong-remote-desktop.mjs'
 
 const require = createRequire(import.meta.url)
-const LOGIN_URL = 'https://pms.meituan.com/pms-web/account/login'
+const LOGIN_URL = 'https://pms.meituan.com/'
 const PMS_ORIGIN = 'https://pms.meituan.com/'
 const OFFICIAL_RESOURCE_HOST_SUFFIXES = Object.freeze([
   'meituan.com',

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -28,10 +29,12 @@ const availablePort = async () => {
 test('001 official-login popup is public but challenge data remains token-gated', async () => {
   const runtimePath = await mkdtemp(join(os.tmpdir(), 'bieyanghong-repair-api-'))
   const noVncRoot = join(runtimePath, 'novnc')
+  const liteInlineScript = '\nwindow.__NOVNC_LITE_STARTED__ = true\n'
   await mkdir(noVncRoot)
   await writeFile(
     join(noVncRoot, 'vnc_lite.html'),
-    '<!doctype html><title>noVNC lite fixture</title>',
+    '<!doctype html><title>noVNC lite fixture</title>'
+      + `<script type="module">${liteInlineScript}</script>`,
     'utf8',
   )
   const port = await availablePort()
@@ -174,6 +177,15 @@ test('001 official-login popup is public but challenge data remains token-gated'
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/novnc/vnc_lite.html`,
     )
     assert.equal(liteClient.status, 200)
+    const expectedInlineHash = createHash('sha256')
+      .update(liteInlineScript, 'utf8')
+      .digest('base64')
+    const liteCsp = liteClient.headers.get('content-security-policy')
+    assert.equal(
+      liteCsp.includes(`'sha256-${expectedInlineHash}'`),
+      true,
+    )
+    assert.doesNotMatch(liteCsp, /script-src[^;]*'unsafe-inline'/u)
     assert.match(await liteClient.text(), /noVNC lite fixture/u)
 
     const missing = await fetch(
