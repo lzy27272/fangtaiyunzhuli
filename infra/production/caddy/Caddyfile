@@ -35,6 +35,13 @@ www.sfgzt.cn {
 		reverse_proxy 127.0.0.1:8091
 	}
 
+	# Store 001 trusted-device enrollment and signed data intake.
+	# Keep this matcher exact: all other API traffic still requires Core API auth.
+	@trusted_device path /api/v1/trusted-device/enroll /api/v1/trusted-device/config /api/v1/trusted-device/snapshots
+	handle @trusted_device {
+		reverse_proxy 127.0.0.1:8091
+	}
+
 	# The Pilot browser sends the bearer token in this non-standard header.
 	# Convert it only when present, so normal Authorization clients still work.
 	@api_with_pilot_bearer {

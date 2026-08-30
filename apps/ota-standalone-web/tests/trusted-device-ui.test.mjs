@@ -38,3 +38,16 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(installer, /\$taskCommand = .*collect-if-due/u)
   assert.doesNotMatch(agent, /console\.log\(.*cookie|writeFileSync\(.*cookie/iu)
 })
+
+test('public proxy exposes only the three signed trusted-device intake paths', async () => {
+  const caddyfile = await readSource('../../../infra/production/caddy/Caddyfile')
+  const route = caddyfile.match(
+    /@trusted_device path[^\n]+[\s\S]+?handle @trusted_device \{[\s\S]+?\n\t\}/u,
+  )?.[0] ?? ''
+
+  assert.match(route, /\/api\/v1\/trusted-device\/enroll/u)
+  assert.match(route, /\/api\/v1\/trusted-device\/config/u)
+  assert.match(route, /\/api\/v1\/trusted-device\/snapshots/u)
+  assert.match(route, /reverse_proxy 127\.0\.0\.1:8091/u)
+  assert.doesNotMatch(route, /\/api\/v1\/trusted-device\/\*/u)
+})
