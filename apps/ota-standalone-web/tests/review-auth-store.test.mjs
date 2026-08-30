@@ -195,5 +195,13 @@ test('version one administrator state migrates without changing the login passwo
   assert.ok(loginSession)
   assert.ok(loginSession.account.roles.includes('PLATFORM_ADMIN'))
   assert.equal(loginSession.account.hotelIds, null)
+  assert.match(await readFile(fixture.statePath, 'utf8'), /"version"\s*:\s*1/u)
+  migrated.createAccount({
+    username: 'migration-operator',
+    displayName: '迁移测试人员',
+    password: 'example-Migration-Operator-Password-42',
+    roles: ['OTA_OPERATION_MANAGER'],
+    hotelIds: ['20000000-0000-4000-8000-000000000001'],
+  })
   assert.match(await readFile(fixture.statePath, 'utf8'), /"version": 2/u)
 })

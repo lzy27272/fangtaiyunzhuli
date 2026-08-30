@@ -246,7 +246,6 @@ export const createReviewAuthStore = ({
     const parsed = JSON.parse(readFileSync(statePath, 'utf8'))
     const migrated = migrateVersionOneState(parsed)
     state = migrated ?? normalizePersistedState(parsed)
-    if (migrated) persistState(statePath, state)
     initialToken = randomBytes(32).toString('hex')
   } else {
     const now = new Date().toISOString()
