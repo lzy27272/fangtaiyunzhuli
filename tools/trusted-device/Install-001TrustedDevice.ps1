@@ -17,11 +17,20 @@ New-Item -ItemType Directory -Path $resolvedRoot -Force | Out-Null
 function Resolve-NodeRuntime([string]$RequestedNodePath) {
   $node = Get-Command $RequestedNodePath -ErrorAction SilentlyContinue
   if ($node) { return $node.Source }
+  $knownNodePaths = @(
+    (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe')
+  )
+  foreach ($knownNodePath in $knownNodePaths) {
+    if (Test-Path -LiteralPath $knownNodePath -PathType Leaf) {
+      return $knownNodePath
+    }
+  }
   $winget = Get-Command 'winget.exe' -ErrorAction SilentlyContinue
   if (-not $winget) {
     throw '未检测到Node.js，且系统没有winget。请先安装Node.js LTS后重试。'
   }
-  Write-Output '未检测到Node.js，正在通过Windows软件源安装Node.js LTS…'
+  Write-Host '[1/5] 未检测到Node.js，正在通过Windows软件源安装Node.js LTS…'
   & $winget.Source install --id OpenJS.NodeJS.LTS --exact --silent `
     --accept-package-agreements --accept-source-agreements
   if ($LASTEXITCODE -ne 0) {
@@ -30,10 +39,16 @@ function Resolve-NodeRuntime([string]$RequestedNodePath) {
   $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + `
     [Environment]::GetEnvironmentVariable('Path', 'User')
   $node = Get-Command 'node.exe' -ErrorAction SilentlyContinue
-  if (-not $node) { throw 'Node.js安装完成，但当前会话尚未找到node.exe。请重新打开安装文件。' }
-  return $node.Source
+  if ($node) { return $node.Source }
+  foreach ($knownNodePath in $knownNodePaths) {
+    if (Test-Path -LiteralPath $knownNodePath -PathType Leaf) {
+      return $knownNodePath
+    }
+  }
+  throw 'Node.js安装完成，但当前会话尚未找到node.exe。请重新打开安装文件。'
 }
 
+Write-Host '[1/5] 正在检查Node.js运行环境…'
 $resolvedNodePath = Resolve-NodeRuntime $NodePath
 $resolvedNpmPath = Join-Path (Split-Path $resolvedNodePath) 'npm.cmd'
 if (-not (Test-Path -LiteralPath $resolvedNpmPath -PathType Leaf)) {
@@ -41,6 +56,7 @@ if (-not (Test-Path -LiteralPath $resolvedNpmPath -PathType Leaf)) {
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+Write-Host '[2/5] 正在安装001门店采集器文件…'
 $files = @(
   'tools\trusted-device\trusted-device-agent.mjs',
   'tools\trusted-device\package.json',
@@ -59,8 +75,10 @@ foreach ($relative in $files) {
 $packageRoot = Join-Path $resolvedRoot 'tools\trusted-device'
 Push-Location $packageRoot
 try {
+  Write-Host '[3/5] 正在安装受控浏览器依赖，首次可能需要1至2分钟…'
   & $resolvedNpmPath install --omit=dev --ignore-scripts --no-audit --no-fund
   if ($LASTEXITCODE -ne 0) { throw "依赖安装失败，退出码：$LASTEXITCODE" }
+  Write-Host '[4/5] 正在注册001门店可信设备…'
   & $resolvedNodePath '.\trusted-device-agent.mjs' enroll --code $EnrollmentCode --server $ServerOrigin
   if ($LASTEXITCODE -ne 0) { throw "可信设备注册失败，退出码：$LASTEXITCODE" }
 } finally {
@@ -86,6 +104,6 @@ $stateRoot = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001'
 & icacls.exe $stateRoot /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "本机凭据目录权限收紧失败，退出码：$LASTEXITCODE" }
 
-Write-Output '安装完成。正在打开美团官方登录页面；以后可从后台直接进入登录。'
+Write-Host '[5/5] 安装完成，正在打开美团官方登录页面…'
 & $resolvedNodePath $agentPath login
 if ($LASTEXITCODE -ne 0) { throw "001可信设备登录未完成，退出码：$LASTEXITCODE" }

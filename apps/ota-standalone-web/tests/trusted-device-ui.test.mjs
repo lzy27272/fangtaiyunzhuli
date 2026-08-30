@@ -29,6 +29,12 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(agent, /launchPersistentContext/u)
   assert.match(installer, /HKCU:\\Software\\Classes\\sfgtrusted001/u)
   assert.match(installer, /Node\.js LTS/u)
+  assert.match(installer, /\$env:ProgramFiles/u)
+  const resolver = installer.match(
+    /function Resolve-NodeRuntime[\s\S]+?\n\}\n\nWrite-Host/u,
+  )?.[0] ?? ''
+  assert.match(resolver, /Write-Host/u)
+  assert.doesNotMatch(resolver, /Write-Output/u)
   assert.match(installer, /\$taskCommand = .*collect-if-due/u)
   assert.doesNotMatch(agent, /console\.log\(.*cookie|writeFileSync\(.*cookie/iu)
 })
