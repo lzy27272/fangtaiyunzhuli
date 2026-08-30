@@ -952,6 +952,15 @@ details.history-card { display: block; }
 }
 .trusted-device-card > .field-error,
 .trusted-device-card > .success-note { margin: 0 1rem 1rem; }
+.trusted-device-install-note {
+  margin: 0 1rem 1rem;
+  border-left: 3px solid #d5a942;
+  padding: .65rem .8rem;
+  color: #675d47;
+  background: #fffaf0;
+  font-size: .75rem;
+  line-height: 1.55;
+}
 .inline-toggle { display: flex; align-items: center; gap: .4rem; font-weight: 800; }
 .report-source-form {
   display: grid;
@@ -1083,6 +1092,124 @@ details.history-card { display: block; }
   justify-content: flex-end;
   margin-top: 1rem;
 }
+.account-management-section {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+  border-top: 1px solid #dce5e1;
+  padding-top: 1.5rem;
+}
+.account-management-heading,
+.managed-account-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.account-management-heading h3,
+.account-management-heading p { margin: 0; }
+.account-management-heading p {
+  margin-top: .25rem;
+  color: #68756f;
+  font-size: .78rem;
+}
+.account-management-heading > span {
+  border-radius: 999px;
+  padding: .4rem .65rem;
+  color: #285b4d;
+  background: #eaf5f1;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.managed-account-create,
+.managed-account-card {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid #cbdcd6;
+  border-radius: .9rem;
+  padding: 1rem;
+  background: #fbfdfc;
+}
+.managed-account-card > header > div {
+  display: grid;
+  gap: .2rem;
+}
+.managed-account-card > header span {
+  color: #6a7772;
+  font-size: .75rem;
+}
+.managed-account-enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .78rem;
+  font-weight: 800;
+}
+.managed-account-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .8rem;
+}
+.managed-account-card .managed-account-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.managed-account-fields label {
+  display: grid;
+  gap: .35rem;
+  color: #4f625b;
+  font-size: .75rem;
+  font-weight: 800;
+}
+.managed-account-fields input {
+  min-width: 0;
+  border: 1px solid #c8d2ce;
+  border-radius: .6rem;
+  padding: .7rem .75rem;
+  background: #fff;
+}
+.managed-account-create fieldset,
+.managed-account-card fieldset {
+  margin: 0;
+  border: 1px solid #d8e2de;
+  border-radius: .7rem;
+  padding: .8rem;
+}
+.managed-account-create legend,
+.managed-account-card legend {
+  padding: 0 .35rem;
+  color: #3f5e54;
+  font-size: .75rem;
+  font-weight: 900;
+}
+.permission-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem .9rem;
+}
+.permission-checkboxes label {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  color: #40564f;
+  font-size: .75rem;
+  font-weight: 700;
+}
+.hotel-scope-checkboxes label {
+  border: 1px solid #d5e1dc;
+  border-radius: 999px;
+  padding: .35rem .55rem;
+  background: #fff;
+}
+.managed-account-list {
+  display: grid;
+  gap: .8rem;
+}
+.platform-account-card { background: #eef7f4; }
+.platform-account-card p {
+  margin: 0;
+  color: #5b6f68;
+  font-size: .78rem;
+}
 
 @media (max-width: 760px) {
   .login-layout { grid-template-columns: 1fr; }
@@ -1100,7 +1227,7 @@ details.history-card { display: block; }
   .simulation-banner { align-items: flex-start; flex-direction: column; gap: .35rem; }
   .context-bar { grid-template-columns: 1fr; }
   .simulation-hotel-creator > div { grid-template-columns: 1fr; }
-  .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row, .wecom-config-grid, .account-security-grid { grid-template-columns: 1fr; }
+  .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row, .wecom-config-grid, .account-security-grid, .managed-account-fields, .managed-account-card .managed-account-fields { grid-template-columns: 1fr; }
   .real-prep-heading, .rehearsal-heading { flex-direction: column; }
   .rehearsal-boundary-grid { grid-template-columns: 1fr; }
   .monitor-summary { grid-template-columns: repeat(2, 1fr); }
@@ -1111,6 +1238,7 @@ details.history-card { display: block; }
   .trusted-device-body { align-items: stretch; flex-direction: column; }
   .trusted-device-actions > * { width: 100%; justify-content: center; }
   .trusted-device-enrollment { grid-template-columns: 1fr; }
+  .account-management-heading, .managed-account-card > header { align-items: flex-start; flex-direction: column; }
   .mapping-list article, .inventory-list header, .inventory-list article > div { grid-template-columns: 1fr; }
   .save-row { grid-template-columns: 1fr; }
 }

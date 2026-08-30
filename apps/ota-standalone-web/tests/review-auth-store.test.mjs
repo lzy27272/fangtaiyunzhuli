@@ -129,3 +129,71 @@ test('a malformed persisted auth state fails closed', async (t) => {
     /REVIEW_AUTH_STATE_INVALID/,
   )
 })
+
+test('managed accounts keep independent sessions and hotel scopes', async (t) => {
+  const fixture = await createFixture()
+  t.after(() => rm(fixture.directory, { recursive: true, force: true }))
+  const hotel001 = '20000000-0000-4000-8000-000000000001'
+  const hotel002 = '20000000-0000-4000-8000-000000000002'
+
+  const created = fixture.store.createAccount({
+    username: 'hotel-operator',
+    displayName: '001门店管理员',
+    password: 'example-Hotel-Operator-Password-42',
+    roles: ['OTA_OPERATION_MANAGER'],
+    hotelIds: [hotel001],
+  })
+  assert.deepEqual(created.hotelIds, [hotel001])
+  assert.equal(created.enabled, true)
+
+  const session = fixture.store.login(
+    'hotel-operator',
+    'example-Hotel-Operator-Password-42',
+  )
+  assert.ok(session)
+  assert.deepEqual(session.account.hotelIds, [hotel001])
+  assert.equal(fixture.store.principal(session.accessToken).displayName, '001门店管理员')
+
+  const updated = fixture.store.updateAccount({
+    accountId: created.id,
+    displayName: '002门店管理员',
+    roles: ['OTA_OPERATION_MANAGER'],
+    hotelIds: [hotel002],
+    enabled: true,
+    newPassword: '',
+  })
+  assert.deepEqual(updated.hotelIds, [hotel002])
+  assert.equal(fixture.store.authenticate(session.accessToken), false)
+
+  const persisted = await readFile(fixture.statePath, 'utf8')
+  assert.doesNotMatch(persisted, /example-Hotel-Operator-Password-42/u)
+  assert.match(persisted, /"version": 2/u)
+})
+
+test('version one administrator state migrates without changing the login password', async (t) => {
+  const fixture = await createFixture()
+  t.after(() => rm(fixture.directory, { recursive: true, force: true }))
+  const versionTwo = JSON.parse(await readFile(fixture.statePath, 'utf8'))
+  const admin = versionTwo.accounts[0]
+  await writeFile(fixture.statePath, `${JSON.stringify({
+    version: 1,
+    username: admin.username,
+    passwordDigest: admin.passwordDigest,
+    updatedAt: admin.updatedAt,
+  })}\n`)
+
+  const migrated = createReviewAuthStore({
+    statePath: fixture.statePath,
+    bootstrapUsername: 'ignored-admin',
+    bootstrapPassword: 'example-Ignored-Password-42',
+    bootstrapAccessToken: 'example-ignored-access-token',
+  })
+  const loginSession = migrated.login(
+    'review-admin',
+    'example-Initial-Password-42',
+  )
+  assert.ok(loginSession)
+  assert.ok(loginSession.account.roles.includes('PLATFORM_ADMIN'))
+  assert.equal(loginSession.account.hotelIds, null)
+  assert.match(await readFile(fixture.statePath, 'utf8'), /"version": 2/u)
+})

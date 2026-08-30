@@ -14,6 +14,32 @@ if (-not $resolvedRoot.StartsWith([System.IO.Path]::GetFullPath($env:LOCALAPPDAT
 }
 New-Item -ItemType Directory -Path $resolvedRoot -Force | Out-Null
 
+function Resolve-NodeRuntime([string]$RequestedNodePath) {
+  $node = Get-Command $RequestedNodePath -ErrorAction SilentlyContinue
+  if ($node) { return $node.Source }
+  $winget = Get-Command 'winget.exe' -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    throw '未检测到Node.js，且系统没有winget。请先安装Node.js LTS后重试。'
+  }
+  Write-Output '未检测到Node.js，正在通过Windows软件源安装Node.js LTS…'
+  & $winget.Source install --id OpenJS.NodeJS.LTS --exact --silent `
+    --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) {
+    throw "Node.js LTS安装失败，退出码：$LASTEXITCODE"
+  }
+  $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + `
+    [Environment]::GetEnvironmentVariable('Path', 'User')
+  $node = Get-Command 'node.exe' -ErrorAction SilentlyContinue
+  if (-not $node) { throw 'Node.js安装完成，但当前会话尚未找到node.exe。请重新打开安装文件。' }
+  return $node.Source
+}
+
+$resolvedNodePath = Resolve-NodeRuntime $NodePath
+$resolvedNpmPath = Join-Path (Split-Path $resolvedNodePath) 'npm.cmd'
+if (-not (Test-Path -LiteralPath $resolvedNpmPath -PathType Leaf)) {
+  throw 'Node.js安装目录中未找到npm.cmd。'
+}
+
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $files = @(
   'tools\trusted-device\trusted-device-agent.mjs',
@@ -33,9 +59,9 @@ foreach ($relative in $files) {
 $packageRoot = Join-Path $resolvedRoot 'tools\trusted-device'
 Push-Location $packageRoot
 try {
-  & npm.cmd install --omit=dev --ignore-scripts --no-audit --no-fund
+  & $resolvedNpmPath install --omit=dev --ignore-scripts --no-audit --no-fund
   if ($LASTEXITCODE -ne 0) { throw "依赖安装失败，退出码：$LASTEXITCODE" }
-  & $NodePath '.\trusted-device-agent.mjs' enroll --code $EnrollmentCode --server $ServerOrigin
+  & $resolvedNodePath '.\trusted-device-agent.mjs' enroll --code $EnrollmentCode --server $ServerOrigin
   if ($LASTEXITCODE -ne 0) { throw "可信设备注册失败，退出码：$LASTEXITCODE" }
 } finally {
   Pop-Location
@@ -43,12 +69,23 @@ try {
 
 $taskName = 'Sifangguan-001-Trusted-Collector'
 $agentPath = Join-Path $packageRoot 'trusted-device-agent.mjs'
-$taskCommand = '"' + $NodePath + '" "' + $agentPath + '" collect-if-due'
+$taskCommand = '"' + $resolvedNodePath + '" "' + $agentPath + '" collect-if-due'
 & schtasks.exe /Create /TN $taskName /SC MINUTE /MO 5 /TR $taskCommand /F | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "计划任务创建失败，退出码：$LASTEXITCODE" }
+
+$protocolRoot = 'HKCU:\Software\Classes\sfgtrusted001'
+$protocolCommand = Join-Path $protocolRoot 'shell\open\command'
+New-Item -Path $protocolCommand -Force | Out-Null
+Set-Item -Path $protocolRoot -Value 'URL:Sifangguan 001 Trusted Device'
+New-ItemProperty -Path $protocolRoot -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
+$loginScript = Join-Path $packageRoot 'Start-001Login.ps1'
+$openCommand = '"powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "' + $loginScript + '" -NodePath "' + $resolvedNodePath + '"'
+Set-Item -Path $protocolCommand -Value $openCommand
 
 $stateRoot = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001'
 & icacls.exe $stateRoot /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "本机凭据目录权限收紧失败，退出码：$LASTEXITCODE" }
 
-Write-Output '安装完成。下一步请运行 Start-001Login.ps1，在美团官方页面人工登录。'
+Write-Output '安装完成。正在打开美团官方登录页面；以后可从后台直接进入登录。'
+& $resolvedNodePath $agentPath login
+if ($LASTEXITCODE -ne 0) { throw "001可信设备登录未完成，退出码：$LASTEXITCODE" }

@@ -96,6 +96,7 @@ import {
   createTrustedDeviceIntakeStore,
   TRUSTED_DEVICE_PILOT_HOTEL_CODE,
 } from './trusted-device-intake.mjs'
+import { renderTrustedDeviceBootstrapCommand } from './trusted-device-bootstrap.mjs'
 import {
   briefingCycleSnapshots,
   briefingSnapshotsObservedAfter,
@@ -250,6 +251,21 @@ const bieyanghongBrowserProfileBase =
 const trustedDeviceStatePath = dataPath
   ? join(dirname(dataPath), 'trusted-device-registry.json')
   : null
+const trustedDevicePublicOrigin = (() => {
+  const configured =
+    process.env.OTA_REVIEW_TRUSTED_DEVICE_PUBLIC_BASE_URL?.trim()
+    || 'https://www.sfgzt.cn'
+  try {
+    const parsed = new URL(configured)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      throw new Error('TRUSTED_DEVICE_SERVER_ORIGIN_INVALID')
+    }
+    return parsed.origin
+  } catch {
+    process.stderr.write('TRUSTED_DEVICE_SERVER_ORIGIN_INVALID\n')
+    process.exit(2)
+  }
+})()
 const bieyanghongRemoteDesktopConfig = Object.freeze({
   enabled: process.env.BIEYANGHONG_REMOTE_DESKTOP_ENABLED === 'true',
   display: process.env.BIEYANGHONG_REMOTE_DESKTOP_DISPLAY?.trim() || ':91',
@@ -2589,6 +2605,20 @@ const empty = (response, status = 204, headers = {}) => {
     ...headers,
   })
   response.end()
+}
+
+const attachment = (response, fileName, content, headers = {}) => {
+  const body = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8')
+  response.writeHead(200, {
+    'content-type': 'application/octet-stream',
+    'content-length': body.length,
+    'content-disposition': `attachment; filename="${fileName}"`,
+    'cache-control': 'no-store, max-age=0',
+    'x-content-type-options': 'nosniff',
+    'x-ota-review-mode': 'local-live-pilot',
+    ...headers,
+  })
+  response.end(body)
 }
 
 const repairHtml = (response) => {
@@ -6705,16 +6735,39 @@ const acceptTrustedDeviceSnapshot = ({ deviceId, snapshot }) => {
   return { duplicate }
 }
 
-const requireAuth = (request, response) => {
+const bearerTokenFor = (request) => {
   const authorization = request.headers.authorization ?? ''
-  const token = authorization.startsWith('Bearer ')
+  return authorization.startsWith('Bearer ')
     ? authorization.slice('Bearer '.length)
     : ''
-  if (!authStore.authenticate(token)) {
+}
+
+const requireAuth = (request, response) => {
+  const principal = authStore.principal(bearerTokenFor(request))
+  if (!principal) {
     json(response, 401, { code: 'REVIEW_SESSION_REQUIRED' })
-    return false
+    return null
   }
-  return true
+  return principal
+}
+
+const isPlatformAdmin = (principal) =>
+  Boolean(principal?.roles?.includes('PLATFORM_ADMIN'))
+
+const canConfigureHotels = (principal) => Boolean(
+  principal?.roles?.some((role) => [
+    'PLATFORM_ADMIN',
+    'OTA_OPERATION_MANAGER',
+    'REVENUE_MANAGER',
+  ].includes(role)),
+)
+
+const canAccessHotel = (principal, hotelId) =>
+  isPlatformAdmin(principal)
+  || Boolean(principal?.hotelIds?.includes(hotelId))
+
+const rejectForbidden = (response) => {
+  json(response, 403, { code: 'REVIEW_ACCOUNT_SCOPE_FORBIDDEN' })
 }
 
 const server = createServer(async (request, response) => {
@@ -7156,20 +7209,7 @@ const server = createServer(async (request, response) => {
         json(response, 401, { code: 'REVIEW_LOGIN_FAILED' })
         return
       }
-      json(response, 200, {
-        ...authSession,
-        account: {
-          id: '90000000-0000-4000-8000-000000000001',
-          displayName: '本机评审管理员',
-          roles: [
-            'PLATFORM_ADMIN',
-            'OTA_OPERATION_MANAGER',
-            'CEO',
-            'REGIONAL_MANAGER',
-            'REVENUE_MANAGER',
-          ],
-        },
-      })
+      json(response, 200, authSession)
       return
     }
 
@@ -7177,28 +7217,17 @@ const server = createServer(async (request, response) => {
       request.method === 'POST'
       && path === '/api/v1/auth/credentials'
     ) {
-      if (!requireAuth(request, response)) return
+      const principal = requireAuth(request, response)
+      if (!principal) return
       const body = await readBody(request)
       try {
         const authSession = authStore.changeCredentials({
+          accessToken: bearerTokenFor(request),
           currentPassword: String(body.currentPassword ?? ''),
           newUsername: String(body.newUsername ?? ''),
           newPassword: String(body.newPassword ?? ''),
         })
-        json(response, 200, {
-          ...authSession,
-          account: {
-            id: '90000000-0000-4000-8000-000000000001',
-            displayName: '\u672c\u673a\u8bc4\u5ba1\u7ba1\u7406\u5458',
-            roles: [
-              'PLATFORM_ADMIN',
-              'OTA_OPERATION_MANAGER',
-              'CEO',
-              'REGIONAL_MANAGER',
-              'REVENUE_MANAGER',
-            ],
-          },
-        })
+        json(response, 200, authSession)
       } catch (reason) {
         const code = reason instanceof Error ? reason.message : ''
         if (code === 'REVIEW_AUTH_CURRENT_PASSWORD_INVALID') {
@@ -7218,19 +7247,102 @@ const server = createServer(async (request, response) => {
       return
     }
 
+    if (
+      request.method === 'GET'
+      && path === '/api/v1/auth/accounts'
+    ) {
+      const principal = requireAuth(request, response)
+      if (!principal) return
+      if (!isPlatformAdmin(principal)) {
+        rejectForbidden(response)
+        return
+      }
+      json(response, 200, { data: authStore.listAccounts() })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/auth/accounts'
+    ) {
+      const principal = requireAuth(request, response)
+      if (!principal) return
+      if (!isPlatformAdmin(principal)) {
+        rejectForbidden(response)
+        return
+      }
+      const body = await readBody(request)
+      const roles = Array.isArray(body.roles) ? body.roles : []
+      const hotelIds = Array.isArray(body.hotelIds) ? body.hotelIds : []
+      if (
+        roles.includes('PLATFORM_ADMIN')
+        || hotelIds.some((hotelId) =>
+          !hotels.some((hotel) => hotel.hotelId === hotelId))
+      ) throw new Error('REVIEW_AUTH_HOTEL_SCOPE_INVALID')
+      const account = authStore.createAccount({
+        username: body.username,
+        displayName: body.displayName,
+        password: body.password,
+        roles,
+        hotelIds,
+      })
+      json(response, 201, { data: account })
+      return
+    }
+
+    const managedAccountMatch = path.match(
+      /^\/api\/v1\/auth\/accounts\/([0-9a-f-]{36})$/iu,
+    )
+    if (request.method === 'PATCH' && managedAccountMatch) {
+      const principal = requireAuth(request, response)
+      if (!principal) return
+      if (!isPlatformAdmin(principal)) {
+        rejectForbidden(response)
+        return
+      }
+      const body = await readBody(request)
+      const roles = Array.isArray(body.roles) ? body.roles : []
+      const hotelIds = Array.isArray(body.hotelIds) ? body.hotelIds : []
+      const existing = authStore.listAccounts().find((account) =>
+        account.id === managedAccountMatch[1])
+      if (!existing) throw new Error('REVIEW_AUTH_ACCOUNT_NOT_FOUND')
+      if (
+        (!existing.roles.includes('PLATFORM_ADMIN') && roles.includes('PLATFORM_ADMIN'))
+        || hotelIds.some((hotelId) =>
+          !hotels.some((hotel) => hotel.hotelId === hotelId))
+      ) throw new Error('REVIEW_AUTH_HOTEL_SCOPE_INVALID')
+      const account = authStore.updateAccount({
+        accountId: managedAccountMatch[1],
+        displayName: body.displayName,
+        roles,
+        hotelIds,
+        enabled: body.enabled,
+        newPassword: body.newPassword,
+      })
+      json(response, 200, { data: account })
+      return
+    }
+
     if (request.method === 'POST' && path === '/api/v1/auth/logout') {
+      authStore.logout(bearerTokenFor(request))
       empty(response)
       return
     }
 
-    if (path.startsWith('/api/v1/ota/') && !requireAuth(request, response)) {
-      return
+    let requestPrincipal = null
+    if (path.startsWith('/api/v1/ota/')) {
+      requestPrincipal = requireAuth(request, response)
+      if (!requestPrincipal) return
     }
 
     if (
       request.method === 'GET'
       && path === '/api/v1/ota/wecom-repair-bot-config'
     ) {
+      if (!isPlatformAdmin(requestPrincipal)) {
+        rejectForbidden(response)
+        return
+      }
       json(response, 200, { data: weComRepairBotStatus() })
       return
     }
@@ -7239,6 +7351,10 @@ const server = createServer(async (request, response) => {
       request.method === 'POST'
       && path === '/api/v1/ota/wecom-repair-bot-config'
     ) {
+      if (!isPlatformAdmin(requestPrincipal)) {
+        rejectForbidden(response)
+        return
+      }
       const status = applyWeComRepairBotConfigUpdate(await readBody(request))
       json(response, 200, { data: status })
       return
@@ -7248,6 +7364,10 @@ const server = createServer(async (request, response) => {
       request.method === 'POST'
       && path === '/api/v1/ota/wecom-repair-bot-pairing'
     ) {
+      if (!isPlatformAdmin(requestPrincipal)) {
+        rejectForbidden(response)
+        return
+      }
       const body = await readBody(request)
       if (
         body?.reasonCode !== 'START_WECOM_REPAIR_BOT_PAIRING'
@@ -7280,8 +7400,16 @@ const server = createServer(async (request, response) => {
       request.method === 'GET'
       && path === '/api/v1/ota/simulation/hotels'
     ) {
+      const visibleHotels = hotels.filter((hotel) =>
+        canAccessHotel(requestPrincipal, hotel.hotelId))
       json(response, 200, {
-        data: { coverage: 'LOCAL_REVIEW', hotels, failedTenantIds: [] },
+        data: {
+          coverage: isPlatformAdmin(requestPrincipal)
+            ? 'LOCAL_REVIEW'
+            : 'ACCOUNT_HOTEL_SCOPE',
+          hotels: visibleHotels,
+          failedTenantIds: [],
+        },
       })
       return
     }
@@ -7289,6 +7417,10 @@ const server = createServer(async (request, response) => {
       request.method === 'POST'
       && path === '/api/v1/ota/simulation/hotels'
     ) {
+      if (!isPlatformAdmin(requestPrincipal)) {
+        rejectForbidden(response)
+        return
+      }
       const input = normalizeSimulationHotelInput(await readBody(request))
       if (!input) throw new Error('SIMULATION_HOTEL_INVALID')
       const tenant = hotels.find(
@@ -7395,8 +7527,17 @@ const server = createServer(async (request, response) => {
       if (
         !selected
         || selected.tenantId !== requestTenantId
+        || !canAccessHotel(requestPrincipal, selected.hotelId)
       ) {
         json(response, 404, { code: 'REVIEW_HOTEL_NOT_FOUND' })
+        return
+      }
+
+      if (
+        !['GET', 'HEAD'].includes(request.method ?? '')
+        && !canConfigureHotels(requestPrincipal)
+      ) {
+        rejectForbidden(response)
         return
       }
 
@@ -7444,6 +7585,37 @@ const server = createServer(async (request, response) => {
           expiresAt: enrollment.expiresAt,
         })}\n`)
         json(response, 201, { data: enrollment })
+        return
+      }
+
+      if (
+        request.method === 'POST'
+        && suffix === '/trusted-device/bootstrap'
+      ) {
+        if (
+          !trustedDevicePilotEnabled
+          || selected.hotelCode !== TRUSTED_DEVICE_PILOT_HOTEL_CODE
+          || selected.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
+        ) throw new Error('TRUSTED_DEVICE_PILOT_SCOPE_INVALID')
+        const body = await readBody(request)
+        const enrollment = trustedDeviceIntakeStore.createEnrollment({
+          label: body.label,
+        })
+        const command = renderTrustedDeviceBootstrapCommand({
+          enrollmentCode: enrollment.enrollmentCode,
+          serverOrigin: trustedDevicePublicOrigin,
+        })
+        process.stdout.write(`${JSON.stringify({
+          event: 'TRUSTED_DEVICE_BOOTSTRAP_DOWNLOADED',
+          hotelId: selected.hotelId,
+          expiresAt: enrollment.expiresAt,
+        })}\n`)
+        attachment(
+          response,
+          'Sifangguan-001-Setup.cmd',
+          command,
+          { 'x-sfg-enrollment-expires-at': enrollment.expiresAt },
+        )
         return
       }
 
@@ -8292,6 +8464,7 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('LUOPAN_')
                     || error.message.startsWith('BIEYANGHONG_')
                     || error.message.startsWith('TRUSTED_DEVICE_')
+                    || error.message.startsWith('REVIEW_AUTH_')
                   )
                     ? error.message
            : 'REVIEW_API_FAILED_CLOSED'

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   createTrustedDeviceEnrollment,
+  downloadTrustedDeviceBootstrap,
   loadTrustedDeviceStatus,
   revokeTrustedDevice,
   type TrustedDeviceEnrollment,
@@ -72,6 +73,41 @@ export function TrustedDevicePanel({
     }
   }
 
+  const downloadAndInstall = async () => {
+    if (!canConfigure || loading) return
+    setLoading(true)
+    setError('')
+    setNotice('')
+    try {
+      const download = await downloadTrustedDeviceBootstrap(context)
+      const href = URL.createObjectURL(download.blob)
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = download.fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(href), 30_000)
+      await refresh()
+      setEnrollment(null)
+      setNotice(
+        `安装文件已下载${download.expiresAt ? `，请在${formatTime(download.expiresAt)}前` : ''}`
+        + '打开一次。安装完成后会自动进入美团官方登录页面。',
+      )
+      onStatusChanged()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '下载安装文件生成失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openInstalledLogin = () => {
+    setError('')
+    setNotice('正在调用本机001采集器打开美团官方登录；浏览器询问时请选择“打开”。')
+    window.location.href = 'sfgtrusted001://login'
+  }
+
   const revoke = async () => {
     if (!canConfigure || loading || !status.device) return
     setLoading(true)
@@ -112,20 +148,35 @@ export function TrustedDevicePanel({
           <strong>登录会话只留在门店电脑，云端只接收签名业务数据</strong>
           <p>
             管理员直接在门店电脑的美团官方页面登录。Cookie、账号、密码、验证码和
-            设备私钥不上传；Cookie失效时只需在同一电脑重新登录。
+            设备私钥不上传；首次打开下载文件安装一次，以后直接从这里进入登录。
           </p>
         </div>
         <div className="trusted-device-actions">
-          <a
-            href="https://github.com/lzy27272/fangtaiyunzhuli/tree/8.18-gongwang/tools/trusted-device"
-            rel="noreferrer"
-            target="_blank"
-          >查看安装文件</a>
+          {status.device ? (
+            <button type="button" onClick={openInstalledLogin}>
+              直接进入美团登录
+            </button>
+          ) : (
+            <button
+              disabled={!canConfigure || loading}
+              type="button"
+              onClick={() => void downloadAndInstall()}
+            >{loading ? '正在生成安装文件…' : '下载安装并进入登录'}</button>
+          )}
+          {status.device ? (
+            <button
+              className="secondary"
+              disabled={!canConfigure || loading}
+              type="button"
+              onClick={() => void downloadAndInstall()}
+            >重新下载安装</button>
+          ) : null}
           <button
+            className="secondary"
             disabled={!canConfigure || loading}
             type="button"
             onClick={() => void generateEnrollment()}
-          >{loading ? '处理中…' : '生成15分钟安装码'}</button>
+          >仅生成安装码</button>
           {status.device ? (
             <button
               className="danger-outline"
@@ -144,6 +195,9 @@ export function TrustedDevicePanel({
           <button type="button" onClick={() => void copyEnrollment()}>复制安装码</button>
         </div>
       ) : null}
+      <p className="trusted-device-install-note">
+        Windows不允许网页静默执行安装文件：首次下载后请打开一次；安装器会自动安装采集器并跳转到美团官网。已安装电脑不再下载。
+      </p>
       <div className="trusted-device-policy">
         <span>门店范围：仅001</span>
         <span>认证：Ed25519设备签名</span>

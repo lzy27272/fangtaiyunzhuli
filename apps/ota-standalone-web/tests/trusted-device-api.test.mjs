@@ -107,6 +107,28 @@ test('001 trusted device API enrolls, verifies and accepts a scoped snapshot', a
     assert.ok(hotel001)
     const scoped = `/api/v1/ota/tenants/${encodeURIComponent(hotel001.tenantId)}`
       + `/hotels/${encodeURIComponent(hotel001.hotelId)}`
+    const bootstrapResponse = await fetch(
+      `http://127.0.0.1:${port}${scoped}/trusted-device/bootstrap`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ label: '001 bootstrap test' }),
+      },
+    )
+    assert.equal(bootstrapResponse.status, 200)
+    assert.match(
+      bootstrapResponse.headers.get('content-disposition') ?? '',
+      /Sifangguan-001-Setup\.cmd/u,
+    )
+    assert.match(bootstrapResponse.headers.get('x-sfg-enrollment-expires-at') ?? '', /^\d{4}-/u)
+    const bootstrap = await bootstrapResponse.text()
+    assert.match(bootstrap, /SFG_B64/u)
+    assert.match(bootstrap, /ExecutionPolicy Bypass/u)
+    assert.doesNotMatch(bootstrap, /password|cookie|手机号|验证码/iu)
+
     const enrollmentResponse = await fetch(
       `http://127.0.0.1:${port}${scoped}/trusted-device/enrollment`,
       {

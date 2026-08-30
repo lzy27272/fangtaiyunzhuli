@@ -35,6 +35,12 @@ export interface TrustedDeviceEnrollment {
   label: string
 }
 
+export interface TrustedDeviceBootstrapDownload {
+  blob: Blob
+  fileName: 'Sifangguan-001-Setup.cmd'
+  expiresAt: string | null
+}
+
 const requestId = (): string =>
   globalThis.crypto?.randomUUID?.()
   ?? `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -107,6 +113,52 @@ export const createTrustedDeviceEnrollment = (
     body: JSON.stringify({ label }),
   },
 )
+
+const downloadBootstrap = async (
+  context: HotelContext,
+  label: string,
+  allowRefresh = true,
+): Promise<TrustedDeviceBootstrapDownload> => {
+  const session = getSession()
+  if (!session) throw new Error('会话已失效，请重新登录')
+  const response = await fetch(
+    `${API_BASE_URL}${pathFor(context, '/trusted-device/bootstrap')}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/octet-stream',
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': requestId(),
+        'X-Correlation-ID': requestId(),
+      },
+      body: JSON.stringify({ label }),
+    },
+  )
+  if (response.status === 401 && allowRefresh) {
+    try {
+      const refreshed = await refreshSession()
+      setSession(refreshed)
+      return downloadBootstrap(context, label, false)
+    } catch (cause) {
+      clearSession()
+      throw cause
+    }
+  }
+  if (!response.ok) throw new Error(await failureCode(response))
+  return {
+    blob: await response.blob(),
+    fileName: 'Sifangguan-001-Setup.cmd',
+    expiresAt: response.headers.get('x-sfg-enrollment-expires-at'),
+  }
+}
+
+export const downloadTrustedDeviceBootstrap = (
+  context: HotelContext,
+  label = '001门店采集电脑',
+): Promise<TrustedDeviceBootstrapDownload> =>
+  downloadBootstrap(context, label)
 
 export const revokeTrustedDevice = (
   context: HotelContext,

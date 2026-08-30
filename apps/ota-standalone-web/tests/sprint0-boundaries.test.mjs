@@ -114,7 +114,7 @@ test('platform administrators can rotate their own login credentials', () => {
   assert.match(appSource, /code: 'security'/)
   assert.match(
     appSource,
-    /item\.code !== 'security' \|\| canAdminConfigure/,
+    /item\.code !== 'security' \|\| canManageAccounts/,
   )
   assert.match(accountSecuritySource, /changeCredentials/)
   assert.match(accountSecuritySource, /currentPassword/)
@@ -128,6 +128,9 @@ test('platform administrators can rotate their own login credentials', () => {
     /Authorization: `Bearer \$\{session\.accessToken\}`/,
   )
   assert.doesNotMatch(accountSecuritySource, /localStorage|sessionStorage/)
+  assert.match(accountSecuritySource, /新增账号并绑定门店/u)
+  assert.match(accountSecuritySource, /服务端强隔离/u)
+  assert.match(authApiSource, /\/auth\/accounts/u)
 })
 
 test('page startup and token expiry use one cookie-authenticated refresh flight', () => {

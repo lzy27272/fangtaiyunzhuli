@@ -6,15 +6,21 @@ Chrome 用户目录和设备私钥只保存在门店 Windows 用户目录中；�
 
 ## 安装
 
-1. 在项目后台的“001 门店可信设备”卡片生成 15 分钟安装码。
-2. 在能正常登录美团 PMS 的门店 Windows 电脑上，以当前业务用户运行：
+1. 在项目后台的“001 门店可信设备”卡片点击“下载安装并进入登录”。
+2. 打开浏览器下载的 `Sifangguan-001-Setup.cmd`。Windows 不允许网页静默
+   执行安装程序，因此首次需要人工打开这一个文件；脚本会自动安装采集器、
+   注册本机登录入口并打开美团官方页面。
+3. 只在打开的美团官方页面完成人工登录。以后 Cookie 失效时，在后台点击
+   “直接进入美团登录”即可，不会重复下载安装。
+
+如需离线安装，也可在后台仅生成 15 分钟安装码，然后运行：
 
 ```powershell
 .\Install-001TrustedDevice.ps1 -EnrollmentCode '001-XXXX-XXXX-XXXX'
 ```
 
-3. 运行 `Start-001Login.ps1`，只在打开的美团官方页面完成人工登录。
-4. 首次执行 `node trusted-device-agent.mjs collect-once` 验证采集和签名上报。
+安装脚本在缺少 Node.js 时会调用 Windows 软件源安装 Node.js LTS；没有
+`winget` 的旧版 Windows 需先人工安装 Node.js LTS。
 
 安装脚本每 5 分钟检查一次动态采集时间表，但只在应采集的整点前 5 分钟内
 执行一次。门店电脑须在计划采集时间保持开机联网；Cookie 失效时重新运行

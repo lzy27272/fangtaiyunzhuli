@@ -129,8 +129,10 @@ function SprintOneShell({
   const [otaAttentionSourceId, setOtaAttentionSourceId] =
     useState<string | null>(null)
   const canAdminConfigure = session.account.roles.includes('PLATFORM_ADMIN')
+    || session.account.roles.includes('OTA_OPERATION_MANAGER')
   const canRevenueConfigure = canAdminConfigure
     || session.account.roles.includes('REVENUE_MANAGER')
+  const canManageAccounts = session.account.roles.includes('PLATFORM_ADMIN')
   const roleSummary = getRoleSummary(session.account.roles)
   const fullRoleList = session.account.roles.map((role) => ROLE_LABELS[role]).join(' · ')
 
@@ -157,7 +159,7 @@ function SprintOneShell({
         </div>
         <nav aria-label="业务页面">
           {NAVIGATION
-            .filter((item) => item.code !== 'security' || canAdminConfigure)
+            .filter((item) => item.code !== 'security' || canManageAccounts)
             .map((item) => (
             <button
               className={page === item.code ? 'active' : ''}
@@ -201,7 +203,7 @@ function SprintOneShell({
 
         {logoutError ? <div className="shell-error" role="alert">{logoutError}，当前会话仍保留。</div> : null}
         <HotelContextBar
-          canCreate={session.account.roles.includes('PLATFORM_ADMIN')}
+          canCreate={canManageAccounts}
           context={context}
           onApply={(nextContext) => {
             setReportSourceAttention([])
@@ -240,7 +242,7 @@ function SprintOneShell({
             canConfigure={canAdminConfigure}
           />
         ) : null}
-        {page === 'security' && canAdminConfigure ? (
+        {page === 'security' && canManageAccounts ? (
           <AccountSecurityPage
             session={session}
             onSessionChange={onSessionChange}

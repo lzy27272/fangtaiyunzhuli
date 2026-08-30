@@ -1,4 +1,4 @@
-import type { AuthSession } from '../auth/session'
+import type { AuthSession, OtaRole } from '../auth/session'
 
 const API_BASE_URL = (import.meta.env.VITE_OTA_API_BASE_URL ?? '/api/v1').replace(/\/$/, '')
 
@@ -139,3 +139,109 @@ export async function changeCredentials(
   }
   return (await response.json()) as AuthSession
 }
+
+export interface ManagedAccount {
+  id: string
+  username: string
+  displayName: string
+  roles: OtaRole[]
+  hotelIds: string[] | null
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ManagedAccountInput {
+  username: string
+  displayName: string
+  password: string
+  roles: OtaRole[]
+  hotelIds: string[]
+}
+
+export interface ManagedAccountUpdate {
+  displayName: string
+  roles: OtaRole[]
+  hotelIds: string[]
+  enabled: boolean
+  newPassword?: string
+}
+
+async function managedAccountRequest<T>(
+  session: AuthSession,
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${session.accessToken}`,
+      ...init.headers,
+    },
+  })
+  if (!response.ok) {
+    let code = ''
+    try {
+      code = String(((await response.json()) as { code?: string }).code ?? '')
+    } catch {
+      // Fall through to the generic message.
+    }
+    const messages: Record<string, string> = {
+      REVIEW_AUTH_USERNAME_INVALID: '账号需为3–64位，可使用中英文、数字及 . _ @ -',
+      REVIEW_AUTH_USERNAME_CONFLICT: '该登录账号已存在',
+      REVIEW_AUTH_DISPLAY_NAME_INVALID: '人员名称需为2–60位',
+      REVIEW_AUTH_PASSWORD_WEAK: '密码需为10–128位，并至少包含三类字符',
+      REVIEW_AUTH_ROLES_INVALID: '请至少选择一项账号角色',
+      REVIEW_AUTH_HOTEL_SCOPE_INVALID: '请至少分配一家有效门店',
+      REVIEW_AUTH_ACCOUNT_NOT_FOUND: '账号不存在或已被移除',
+      REVIEW_AUTH_LAST_PLATFORM_ADMIN_REQUIRED: '必须保留至少一个启用的平台管理员',
+      REVIEW_ACCOUNT_SCOPE_FORBIDDEN: '当前账号无权管理人员账号',
+    }
+    throw new ApiError(
+      messages[code]
+      ?? (response.status === 401 ? '会话已失效，请重新登录' : '账号配置保存失败'),
+      response.status,
+    )
+  }
+  const body = await response.json() as { data?: T }
+  if (!Object.hasOwn(body, 'data')) {
+    throw new ApiError('服务响应缺少data字段', response.status)
+  }
+  return body.data as T
+}
+
+export const listManagedAccounts = (
+  session: AuthSession,
+): Promise<ManagedAccount[]> => managedAccountRequest(
+  session,
+  '/auth/accounts',
+)
+
+export const createManagedAccount = (
+  session: AuthSession,
+  input: ManagedAccountInput,
+): Promise<ManagedAccount> => managedAccountRequest(
+  session,
+  '/auth/accounts',
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  },
+)
+
+export const updateManagedAccount = (
+  session: AuthSession,
+  accountId: string,
+  input: ManagedAccountUpdate,
+): Promise<ManagedAccount> => managedAccountRequest(
+  session,
+  `/auth/accounts/${encodeURIComponent(accountId)}`,
+  {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  },
+)

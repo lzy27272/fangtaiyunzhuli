@@ -11,6 +11,7 @@ export interface AuthenticatedAccount {
   id: string
   displayName: string
   roles: OtaRole[]
+  hotelIds: string[] | null
 }
 
 export interface AuthSession {
@@ -32,6 +33,9 @@ export function setSession(session: AuthSession): void {
     account: Object.freeze({
       ...session.account,
       roles: Object.freeze([...session.account.roles]) as OtaRole[],
+      hotelIds: session.account.hotelIds
+        ? Object.freeze([...session.account.hotelIds]) as string[]
+        : null,
     }),
   })
 }
