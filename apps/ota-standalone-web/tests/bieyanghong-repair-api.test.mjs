@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import os from 'node:os'
 import { join } from 'node:path'
@@ -27,6 +27,13 @@ const availablePort = async () => {
 
 test('001 official-login popup is public but challenge data remains token-gated', async () => {
   const runtimePath = await mkdtemp(join(os.tmpdir(), 'bieyanghong-repair-api-'))
+  const noVncRoot = join(runtimePath, 'novnc')
+  await mkdir(noVncRoot)
+  await writeFile(
+    join(noVncRoot, 'vnc_lite.html'),
+    '<!doctype html><title>noVNC lite fixture</title>',
+    'utf8',
+  )
   const port = await availablePort()
   const child = spawn(process.execPath, [apiScript], {
     cwd: repoRoot,
@@ -43,6 +50,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 13).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
+      BIEYANGHONG_NOVNC_ROOT: noVncRoot,
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
@@ -142,7 +150,16 @@ test('001 official-login popup is public but challenge data remains token-gated'
     assert.match(officialClientScript, /bieyanghong-repair\/official\/start/u)
     assert.match(officialClientScript, /bieyanghong-repair\/vnc\/session/u)
     assert.match(officialClientScript, /bieyanghong-repair\/vnc\/check/u)
-    assert.match(officialClientScript, /bieyanghong-repair\/novnc\/vnc\.html/u)
+    assert.match(
+      officialClientScript,
+      /bieyanghong-repair\/novnc\/vnc_lite\.html\?scale=true/u,
+    )
+    assert.match(officialClientScript, /topBar\.hidden = true/u)
+    assert.match(
+      officialClientScript,
+      /officialFrame\.addEventListener\('load', simplifyRemoteView\)/u,
+    )
+    assert.doesNotMatch(officialClientScript, /novnc\/vnc\.html/u)
     assert.match(
       officialClientScript,
       /if \(!sessionResponse\.ok\)[\s\S]*?repairToken = ''[\s\S]*?officialFrame\.src = noVncUrl/u,
@@ -152,6 +169,12 @@ test('001 official-login popup is public but challenge data remains token-gated'
       /bieyanghong-repair\/visual\/(?:frame|interact)|kind:'(?:field|control)'/u,
     )
     assert.doesNotMatch(officialClientScript, /localStorage|sessionStorage/u)
+
+    const liteClient = await fetch(
+      `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/novnc/vnc_lite.html`,
+    )
+    assert.equal(liteClient.status, 200)
+    assert.match(await liteClient.text(), /noVNC lite fixture/u)
 
     const missing = await fetch(
       `http://127.0.0.1:${port}/api/v1/bieyanghong-repair/status`,

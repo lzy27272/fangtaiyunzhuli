@@ -101,7 +101,7 @@ export const renderBieyanghongOfficialLoginPage = () => `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
   <title>美团官网登录 · 001</title>
   <style>
@@ -124,7 +124,7 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
   const state = document.getElementById('state')
   const message = document.getElementById('message')
   const officialFrame = document.getElementById('official-frame')
-  const noVncUrl = '/api/v1/bieyanghong-repair/novnc/vnc.html?autoconnect=true&resize=scale&shared=false&reconnect=false&path=api%2Fv1%2Fbieyanghong-repair%2Fvnc'
+  const noVncUrl = '/api/v1/bieyanghong-repair/novnc/vnc_lite.html?scale=true&view_only=false&path=api%2Fv1%2Fbieyanghong-repair%2Fvnc'
   let finished = false
   let vncSessionActive = false
   const headers = () => ({ Authorization: 'Repair ' + repairToken })
@@ -140,6 +140,25 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
       ? payload.data
       : payload
   }
+  const simplifyRemoteView = () => {
+    try {
+      const remoteDocument = officialFrame.contentDocument
+      if (!remoteDocument) return
+      const topBar = remoteDocument.getElementById('top_bar')
+      const screen = remoteDocument.getElementById('screen')
+      if (topBar) topBar.hidden = true
+      remoteDocument.documentElement.style.background = '#fff'
+      remoteDocument.body.style.background = '#fff'
+      if (screen) {
+        screen.style.background = '#fff'
+        screen.style.flex = '1 1 auto'
+      }
+      officialFrame.contentWindow?.focus()
+    } catch {
+      state.textContent = '001 · 官网登录中'
+    }
+  }
+  officialFrame.addEventListener('load', simplifyRemoteView)
   const fail = (text) => {
     vncSessionActive = false
     officialFrame.classList.add('hidden')

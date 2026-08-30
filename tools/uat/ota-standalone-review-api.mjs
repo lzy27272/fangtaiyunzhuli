@@ -2685,6 +2685,7 @@ const serveBieyanghongNoVncAsset = (response, requestPath) => {
     || relativePath.startsWith('/')
     || !(
       relativePath === 'vnc.html'
+      || relativePath === 'vnc_lite.html'
       || relativePath.startsWith('app/')
       || relativePath.startsWith('core/')
       || relativePath.startsWith('vendor/')
