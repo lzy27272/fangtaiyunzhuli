@@ -179,7 +179,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
 
 至少备份：
 
-- `/var/lib/sifangguan-ota`：门店、接口、快照、发送记录和加密后的凭据；
+- `/var/lib/sifangguan-ota`：门店、接口、快照、发送记录、加密后的凭据和001可信设备公钥注册表；
 - `/etc/sifangguan-ota/runtime.env`：解密密钥与后台登录秘密。
 
 两者必须一起备份并加密保存；缺少 `runtime.env` 时，历史加密凭据不可恢复。

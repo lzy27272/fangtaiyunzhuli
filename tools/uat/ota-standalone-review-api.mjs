@@ -93,6 +93,10 @@ import {
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
 import {
+  createTrustedDeviceIntakeStore,
+  TRUSTED_DEVICE_PILOT_HOTEL_CODE,
+} from './trusted-device-intake.mjs'
+import {
   briefingCycleSnapshots,
   briefingSnapshotsObservedAfter,
   collectionSlotFor,
@@ -211,6 +215,8 @@ const bieyanghongWebRepairReady =
   bieyanghongAssistedRepairEnabled
   && Boolean(bieyanghongRepairPublicBaseUrl)
   && !bieyanghongRepairConfigurationReason
+const trustedDevicePilotEnabled =
+  process.env.OTA_REVIEW_TRUSTED_DEVICE_001_ENABLED !== 'false'
 const liveSnapshotPath = dataPath
   ? join(dirname(dataPath), 'live-report-snapshots.json')
   : null
@@ -241,6 +247,9 @@ const luopanSessionSecretPath = dataPath
 const bieyanghongBrowserProfileBase =
   process.env.BIEYANGHONG_BROWSER_PROFILE_BASE?.trim()
   || (dataPath ? join(dirname(dataPath), 'bieyanghong-browser-profiles') : null)
+const trustedDeviceStatePath = dataPath
+  ? join(dirname(dataPath), 'trusted-device-registry.json')
+  : null
 const bieyanghongRemoteDesktopConfig = Object.freeze({
   enabled: process.env.BIEYANGHONG_REMOTE_DESKTOP_ENABLED === 'true',
   display: process.env.BIEYANGHONG_REMOTE_DESKTOP_DISPLAY?.trim() || ':91',
@@ -630,6 +639,18 @@ if (simulationHotelPath && existsSync(simulationHotelPath)) {
     process.stderr.write('REVIEW_SIMULATION_HOTEL_STORE_IGNORED\n')
   }
 }
+
+const trustedDevicePilotHotel = () => hotels.find((hotel) =>
+  hotel.hotelCode === TRUSTED_DEVICE_PILOT_HOTEL_CODE
+  && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG') ?? null
+const trustedDevicePilotHotelRecord = trustedDevicePilotHotel()
+if (!trustedDevicePilotHotelRecord) {
+  throw new Error('TRUSTED_DEVICE_PILOT_HOTEL_NOT_FOUND')
+}
+const trustedDeviceIntakeStore = createTrustedDeviceIntakeStore({
+  path: trustedDeviceStatePath,
+  hotel: trustedDevicePilotHotelRecord,
+})
 
 const defaultReportSources = () => [
   {
@@ -3703,6 +3724,13 @@ const collectLiveFor = async (
       )
     }
     const hotel = selectedHotel(hotelId)
+    if (
+      trustedDevicePilotEnabled
+      && hotel.hotelCode === TRUSTED_DEVICE_PILOT_HOTEL_CODE
+      && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+    ) {
+      throw new Error('TRUSTED_DEVICE_COLLECTION_REQUIRED')
+    }
     const businessDayControl = businessDayControlFor(hotelId)
     if (!reportSourcesByHotel.has(hotelId)) {
       synchronizeReportSourcesFromPrimary()
@@ -3805,6 +3833,13 @@ const scheduledCollectionTick = async () => {
   const slot = collectionSlotFor()
   if (!slot) return
   for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+    if (
+      trustedDevicePilotEnabled
+      && hotel.hotelCode === TRUSTED_DEVICE_PILOT_HOTEL_CODE
+      && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+    ) {
+      continue
+    }
     const luopanConfig = luopanBrowserConfigRecordFor(hotel.hotelId)
     if (
       Object.keys(secretsForHotel(hotel.hotelId)).length === 0
@@ -4896,6 +4931,9 @@ const startBieyanghongRepairChallenge = async (
     includeWorkspaceUrl = false,
   } = {},
 ) => {
+  if (trustedDevicePilotEnabled) {
+    throw new Error('BIEYANGHONG_TRUSTED_DEVICE_MODE')
+  }
   if (includeWorkspaceUrl && notifyManager) {
     throw new Error('BIEYANGHONG_WORKSPACE_MODE_INVALID')
   }
@@ -6591,6 +6629,82 @@ const briefFor = (hotelId) => {
   }
 }
 
+const trustedDeviceCollectionConfig = () => {
+  const hotel = trustedDevicePilotHotel()
+  if (!hotel || !trustedDevicePilotEnabled) {
+    throw new Error('TRUSTED_DEVICE_PILOT_DISABLED')
+  }
+  if (!reportSourcesByHotel.has(hotel.hotelId)) {
+    synchronizeReportSourcesFromPrimary()
+  }
+  return {
+    schemaVersion: 1,
+    hotel: {
+      tenantId: hotel.tenantId,
+      hotelId: hotel.hotelId,
+      hotelCode: hotel.hotelCode,
+      hotelName: hotel.hotelName,
+      timezone: hotel.timezone,
+    },
+    sources: (reportSourcesByHotel.get(hotel.hotelId) ?? []).map((source) => ({
+      sourceId: source.sourceId,
+      displayName: source.displayName,
+      endpointUrl: source.endpointUrl,
+      reportType: source.reportType,
+      calculationRole: source.calculationRole,
+      pollIntervalMinutes: source.pollIntervalMinutes,
+      requestPayloadJson: source.requestPayloadJson,
+      enabled: source.enabled,
+    })),
+    hotSellingRoomTypeCodes:
+      hotSellingRoomTypesFor(hotel.hotelId).roomTypeCodes,
+    schedule: 'DYNAMIC_SHANGHAI_V1',
+  }
+}
+
+const acceptTrustedDeviceSnapshot = ({ deviceId, snapshot }) => {
+  const hotel = trustedDevicePilotHotel()
+  if (!hotel || !trustedDevicePilotEnabled) {
+    throw new Error('TRUSTED_DEVICE_PILOT_DISABLED')
+  }
+  trustedDeviceIntakeStore.acceptSnapshot({ deviceId, snapshot })
+  const prior = liveSnapshotStore[hotel.hotelId] ?? []
+  const duplicate = prior.some((candidate) =>
+    candidate?.collectionRunId === snapshot.collectionRunId)
+  if (!duplicate) {
+    appendAndPersistSnapshot(
+      liveSnapshotStore,
+      liveSnapshotPath,
+      snapshot,
+    )
+  }
+  const currentControl = businessDayControlFor(hotel.hotelId)
+  if (
+    currentControl.businessDate !== snapshot.businessDate
+    || currentControl.mode !== 'PMS_CONFIRMED'
+    || currentControl.businessDateStartedAt !== snapshot.businessDateStartedAt
+  ) {
+    businessDayControlsByHotel.set(hotel.hotelId, {
+      businessDate: snapshot.businessDate,
+      mode: 'PMS_CONFIRMED',
+      source: 'PMS_NIGHT_AUDIT_API',
+      businessDateStartedAt: snapshot.businessDateStartedAt ?? null,
+      updatedAt: new Date().toISOString(),
+    })
+    persistBusinessDayControls()
+  }
+  process.stdout.write(`${JSON.stringify({
+    event: duplicate
+      ? 'TRUSTED_DEVICE_SNAPSHOT_REPLAYED'
+      : 'TRUSTED_DEVICE_SNAPSHOT_ACCEPTED',
+    hotelId: hotel.hotelId,
+    deviceId,
+    collectionRunId: snapshot.collectionRunId,
+    completeness: snapshot.completeness,
+  })}\n`)
+  return { duplicate }
+}
+
 const requireAuth = (request, response) => {
   const authorization = request.headers.authorization ?? ''
   const token = authorization.startsWith('Bearer ')
@@ -6625,9 +6739,13 @@ const server = createServer(async (request, response) => {
           weComRepairBot: weComRepairBotStatus(),
         },
         bieyanghongAssistedRepair: {
-          enabled: bieyanghongAssistedRepairEnabled,
-          ready: bieyanghongAssistedRepairReady(),
-          reasonCode: bieyanghongRepairReasonCode(),
+          enabled:
+            bieyanghongAssistedRepairEnabled && !trustedDevicePilotEnabled,
+          ready:
+            bieyanghongAssistedRepairReady() && !trustedDevicePilotEnabled,
+          reasonCode: trustedDevicePilotEnabled
+            ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
+            : bieyanghongRepairReasonCode(),
           pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
           credentialInputMode: bieyanghongRemoteDesktopConfig.enabled
             ? 'REMOTE_NATIVE_OFFICIAL_LOGIN'
@@ -6640,11 +6758,81 @@ const server = createServer(async (request, response) => {
               ready: bieyanghongBrowserBrokerReady(),
             },
           },
-          webLinkReady: bieyanghongWebRepairReady,
-          adminWorkspaceReady: bieyanghongAssistedRepairReady(),
+          webLinkReady:
+            bieyanghongWebRepairReady && !trustedDevicePilotEnabled,
+          adminWorkspaceReady:
+            bieyanghongAssistedRepairReady() && !trustedDevicePilotEnabled,
           adminWorkspaceTtlMinutes:
             BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
+        },
+        trustedDevice001: {
+          enabled: trustedDevicePilotEnabled,
+          ...trustedDeviceIntakeStore.status(),
+        },
+      })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/trusted-device/enroll'
+    ) {
+      if (!trustedDevicePilotEnabled) {
+        throw new Error('TRUSTED_DEVICE_PILOT_DISABLED')
+      }
+      const body = await readBody(request)
+      const device = trustedDeviceIntakeStore.enroll({
+        hotelCode: body.hotelCode,
+        enrollmentCode: body.enrollmentCode,
+        publicKeyPem: body.publicKeyPem,
+        label: body.label,
+      })
+      process.stdout.write(`${JSON.stringify({
+        event: 'TRUSTED_DEVICE_ENROLLED',
+        hotelCode: TRUSTED_DEVICE_PILOT_HOTEL_CODE,
+        deviceId: device.deviceId,
+      })}\n`)
+      json(response, 201, { data: device })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/trusted-device/config'
+    ) {
+      const body = await readBody(request)
+      trustedDeviceIntakeStore.verifyRequest({
+        method: request.method,
+        path,
+        body,
+        headers: request.headers,
+      })
+      json(response, 200, { data: trustedDeviceCollectionConfig() })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/trusted-device/snapshots'
+    ) {
+      const body = await readBody(request)
+      const device = trustedDeviceIntakeStore.verifyRequest({
+        method: request.method,
+        path,
+        body,
+        headers: request.headers,
+      })
+      const result = acceptTrustedDeviceSnapshot({
+        deviceId: device.deviceId,
+        snapshot: body.snapshot,
+      })
+      json(response, result.duplicate ? 200 : 202, {
+        data: {
+          accepted: true,
+          replayed: result.duplicate,
+          collectionRunId: body.snapshot.collectionRunId,
+          device: trustedDeviceIntakeStore.status().device,
         },
       })
       return
@@ -7214,9 +7402,76 @@ const server = createServer(async (request, response) => {
 
       if (
         request.method === 'GET'
+        && suffix === '/trusted-device'
+      ) {
+        const eligible =
+          trustedDevicePilotEnabled
+          && selected.hotelCode === TRUSTED_DEVICE_PILOT_HOTEL_CODE
+          && selected.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+        json(response, 200, {
+          data: eligible
+            ? trustedDeviceIntakeStore.status()
+            : {
+                eligible: false,
+                mode: 'NOT_APPLICABLE',
+                hotelCode: selected.hotelCode,
+                hotelName: selected.hotelName,
+                enrollmentTtlMinutes: 15,
+                enrollmentPending: false,
+                enrollmentExpiresAt: null,
+                device: null,
+              },
+        })
+        return
+      }
+
+      if (
+        request.method === 'POST'
+        && suffix === '/trusted-device/enrollment'
+      ) {
+        if (
+          !trustedDevicePilotEnabled
+          || selected.hotelCode !== TRUSTED_DEVICE_PILOT_HOTEL_CODE
+          || selected.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
+        ) throw new Error('TRUSTED_DEVICE_PILOT_SCOPE_INVALID')
+        const body = await readBody(request)
+        const enrollment = trustedDeviceIntakeStore.createEnrollment({
+          label: body.label,
+        })
+        process.stdout.write(`${JSON.stringify({
+          event: 'TRUSTED_DEVICE_ENROLLMENT_CREATED',
+          hotelId: selected.hotelId,
+          expiresAt: enrollment.expiresAt,
+        })}\n`)
+        json(response, 201, { data: enrollment })
+        return
+      }
+
+      if (
+        request.method === 'DELETE'
+        && suffix === '/trusted-device'
+      ) {
+        if (
+          !trustedDevicePilotEnabled
+          || selected.hotelCode !== TRUSTED_DEVICE_PILOT_HOTEL_CODE
+        ) throw new Error('TRUSTED_DEVICE_PILOT_SCOPE_INVALID')
+        const revoked = trustedDeviceIntakeStore.revoke()
+        json(response, 200, {
+          data: {
+            revoked: Boolean(revoked),
+            status: trustedDeviceIntakeStore.status(),
+          },
+        })
+        return
+      }
+
+      if (
+        request.method === 'GET'
         && suffix === '/bieyanghong-workspace'
       ) {
         const eligible =
+          !trustedDevicePilotEnabled
+          &&
           selected.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
           && selected.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         json(response, 200, {
@@ -7225,9 +7480,11 @@ const server = createServer(async (request, response) => {
             ready: eligible && bieyanghongAssistedRepairReady(),
             hotelCode: selected.hotelCode,
             hotelName: selected.hotelName,
-            reasonCode: eligible
-              ? bieyanghongRepairReasonCode()
-              : 'BIEYANGHONG_WORKSPACE_HOTEL_NOT_ELIGIBLE',
+            reasonCode: trustedDevicePilotEnabled
+              ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
+              : eligible
+                ? bieyanghongRepairReasonCode()
+                : 'BIEYANGHONG_WORKSPACE_HOTEL_NOT_ELIGIBLE',
             workspaceTtlMinutes:
               BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
           },
@@ -7239,6 +7496,9 @@ const server = createServer(async (request, response) => {
         request.method === 'POST'
         && suffix === '/bieyanghong-workspace'
       ) {
+        if (trustedDevicePilotEnabled) {
+          throw new Error('BIEYANGHONG_TRUSTED_DEVICE_MODE')
+        }
         const workspace = await startBieyanghongRepairChallenge(
           hotelId,
           'ADMIN_FIXED_WORKSPACE',
@@ -8031,6 +8291,7 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('OTA_')
                     || error.message.startsWith('LUOPAN_')
                     || error.message.startsWith('BIEYANGHONG_')
+                    || error.message.startsWith('TRUSTED_DEVICE_')
                   )
                     ? error.message
            : 'REVIEW_API_FAILED_CLOSED'

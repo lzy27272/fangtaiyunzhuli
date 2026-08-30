@@ -20,7 +20,7 @@ import {
   type ReportSourceAttention,
 } from './reportSourceAttention'
 import { DataAccessOverviewPanel } from './DataAccessOverviewPanel'
-import { BieyanghongCloudWorkspacePanel } from './BieyanghongCloudWorkspacePanel'
+import { TrustedDevicePanel } from './TrustedDevicePanel'
 
 interface Props {
   context: HotelContext | null
@@ -468,7 +468,7 @@ export function ReportSourceConfigPage({
             reportSources={sources}
           />
 
-          <BieyanghongCloudWorkspacePanel
+          <TrustedDevicePanel
             canConfigure={canConfigure}
             context={context}
             onStatusChanged={() =>

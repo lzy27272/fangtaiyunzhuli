@@ -246,7 +246,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
     assert.equal(localTrigger.status, 400)
     assert.equal(
       (await localTrigger.json()).code,
-      'BIEYANGHONG_REPAIR_DISABLED',
+      'BIEYANGHONG_TRUSTED_DEVICE_MODE',
     )
 
     const anonymousWorkspace = await fetch(
@@ -290,7 +290,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
     assert.equal(fixedWorkspace.status, 400)
     assert.equal(
       (await fixedWorkspace.json()).code,
-      'BIEYANGHONG_REPAIR_DISABLED',
+      'BIEYANGHONG_TRUSTED_DEVICE_MODE',
     )
 
     const recoveryPath =

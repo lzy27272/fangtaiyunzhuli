@@ -80,6 +80,7 @@ $runtimeSourcePaths = @(
     'tools/uat/bieyanghong_websockify_auth.py',
     'tools/uat/live-report-collector.mjs',
     'tools/uat/report-schedule.mjs',
+    'tools/uat/trusted-device-intake.mjs',
     'tools/uat/send-combined-operations-test.mjs',
     'tools/uat/wecom/src/combined-operations-brief.mjs',
     'tools/uat/wecom/src/delivery-claim.mjs',
@@ -464,6 +465,7 @@ $forbiddenNames = @(
     'ota-source-secrets.json',
     'wecom-webhook-secrets.json',
     'wecom-repair-bot-secrets.json',
+    'trusted-device-registry.json',
     'runtime.env'
 )
 $stagedItems = @(

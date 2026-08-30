@@ -32,6 +32,7 @@ protected_paths=(
   /var/lib/sifangguan-ota/wecom-webhook-secrets.json
   /var/lib/sifangguan-ota/wecom-repair-bot-config.json
   /var/lib/sifangguan-ota/wecom-repair-bot-secrets.json
+  /var/lib/sifangguan-ota/trusted-device-registry.json
 )
 
 cleanup_temporary_files() {
@@ -66,7 +67,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "${listing_file}"; then
   exit 2
 fi
 if grep -Eiq \
-  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|runtime\.env)$' \
+  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry\.json|runtime\.env)$' \
   "${listing_file}"; then
   echo "RELEASE_ARCHIVE_FORBIDDEN_CONTENT" >&2
   exit 2
