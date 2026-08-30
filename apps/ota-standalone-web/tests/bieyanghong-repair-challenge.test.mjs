@@ -123,3 +123,39 @@ test('expires after ten minutes and rejects unsafe public URLs', () => {
     )
   }
 })
+
+test('allows a fixed admin workspace to request a bounded 45 minute session', () => {
+  let current = new Date('2026-08-30T01:00:00Z')
+  const store = createBieyanghongRepairChallengeStore({
+    now: () => current,
+    tokenBytes: () => Buffer.alloc(32, 11),
+  })
+  const created = store.create({
+    hotelId: 'hotel-001',
+    hotelCode: '001',
+    hotelName: '示例别样红门店',
+    challengeTtlMs: 45 * 60_000,
+  })
+  store.setWaitingForCredentials(created.tokenSha256)
+  assert.equal(
+    created.record.expiresAt,
+    '2026-08-30T01:45:00.000Z',
+  )
+  assert.equal(
+    store.getByHash(created.tokenSha256).status,
+    'WAITING_FOR_CREDENTIALS',
+  )
+  current = new Date('2026-08-30T01:44:59Z')
+  assert.equal(store.get(created.token).status, 'WAITING_FOR_CREDENTIALS')
+  current = new Date('2026-08-30T01:45:00Z')
+  assert.equal(store.get(created.token).status, 'EXPIRED')
+  assert.throws(
+    () => store.create({
+      hotelId: 'hotel-001',
+      hotelCode: '001',
+      hotelName: '示例别样红门店',
+      challengeTtlMs: 61 * 60_000,
+    }),
+    /BIEYANGHONG_REPAIR_CHALLENGE_INPUT_INVALID/u,
+  )
+})

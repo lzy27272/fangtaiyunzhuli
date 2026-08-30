@@ -24,7 +24,10 @@ const profileRoot =
   || '/var/lib/sifangguan-login/hotel-001'
 const secretPattern = /^[A-Za-z0-9_-]{40,128}$/u
 const sessionIdPattern = /^[0-9a-f-]{36}$/iu
-const maxSessionMs = 10 * 60_000
+// The browser profile is long-lived, while each operator desktop session is
+// bounded. A full hour gives an administrator enough time to complete vendor
+// MFA or risk verification without keeping Chrome alive indefinitely.
+const maxSessionMs = 60 * 60_000
 const runtimeDirectory = dirname(socketPath)
 
 if (

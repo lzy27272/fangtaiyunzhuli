@@ -9,6 +9,7 @@ const CODE_PATTERN = /^\d{4,8}$/u
 const PHONE_PATTERN = /^\d{11}$/u
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{40,96}$/u
 const DEFAULT_TTL_MS = 10 * 60 * 1000
+const MAX_TTL_MS = 60 * 60 * 1000
 const DEFAULT_MAX_ATTEMPTS = 3
 const DEFAULT_MAX_CREDENTIAL_REQUESTS = 2
 
@@ -79,7 +80,7 @@ export const createBieyanghongRepairChallengeStore = ({
   if (
     !Number.isInteger(ttlMs)
     || ttlMs < 60_000
-    || ttlMs > 30 * 60_000
+    || ttlMs > MAX_TTL_MS
     || !Number.isInteger(maxAttempts)
     || maxAttempts < 1
     || maxAttempts > 5
@@ -131,13 +132,16 @@ export const createBieyanghongRepairChallengeStore = ({
   }
 
   return {
-    create({ hotelId, hotelCode, hotelName }) {
+    create({ hotelId, hotelCode, hotelName, challengeTtlMs = ttlMs }) {
       if (
         typeof hotelId !== 'string'
         || !hotelId
         || !/^\d{3}$/u.test(String(hotelCode ?? ''))
         || typeof hotelName !== 'string'
         || !hotelName.trim()
+        || !Number.isInteger(challengeTtlMs)
+        || challengeTtlMs < 60_000
+        || challengeTtlMs > MAX_TTL_MS
       ) {
         throw new Error('BIEYANGHONG_REPAIR_CHALLENGE_INPUT_INVALID')
       }
@@ -156,7 +160,9 @@ export const createBieyanghongRepairChallengeStore = ({
         status: 'PREPARING',
         createdAt: createdAt.toISOString(),
         updatedAt: createdAt.toISOString(),
-        expiresAt: new Date(createdAt.getTime() + ttlMs).toISOString(),
+        expiresAt: new Date(
+          createdAt.getTime() + challengeTtlMs,
+        ).toISOString(),
         attemptsUsed: 0,
         maxAttempts,
         credentialRequestsUsed: 0,
@@ -173,6 +179,11 @@ export const createBieyanghongRepairChallengeStore = ({
 
     get(token) {
       const record = recordForToken(token)
+      return record ? publicRecord(record) : null
+    },
+
+    getByHash(hash) {
+      const record = recordForHash(hash)
       return record ? publicRecord(record) : null
     },
 

@@ -844,6 +844,44 @@ details.history-card { display: block; }
 .pms-login-card > .cookie-clear-option input { width: auto; }
 .pms-login-card > .field-error,
 .pms-login-card > .success-note { margin: .8rem 1rem; }
+.bieyanghong-workspace-card {
+  margin: 1.2rem 0;
+  border-color: #a8c7bc;
+  background: #f8fcfa;
+}
+.bieyanghong-workspace-card > header { background: #eaf4f0; }
+.bieyanghong-workspace-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  padding: 1rem;
+}
+.bieyanghong-workspace-body div { display: grid; gap: .35rem; }
+.bieyanghong-workspace-body p {
+  max-width: 58rem;
+  margin: 0;
+  color: #5c6863;
+  line-height: 1.6;
+}
+.bieyanghong-workspace-body button { flex: 0 0 auto; }
+.bieyanghong-workspace-policy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+  padding: 0 1rem 1rem;
+}
+.bieyanghong-workspace-policy span {
+  border: 1px solid #cfe0da;
+  border-radius: 999px;
+  padding: .35rem .6rem;
+  color: #35584f;
+  background: #fff;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.bieyanghong-workspace-card > .field-error,
+.bieyanghong-workspace-card > .success-note { margin: 0 1rem 1rem; }
 .inline-toggle { display: flex; align-items: center; gap: .4rem; font-weight: 800; }
 .report-source-form {
   display: grid;
@@ -998,6 +1036,8 @@ details.history-card { display: block; }
   .monitor-summary { grid-template-columns: repeat(2, 1fr); }
   .mapping-editor { grid-template-columns: 1fr 1fr; }
   .report-source-form, .report-source-actions, .delivery-policy-grid { grid-template-columns: 1fr; }
+  .bieyanghong-workspace-body { align-items: stretch; flex-direction: column; }
+  .bieyanghong-workspace-body button { width: 100%; }
   .mapping-list article, .inventory-list header, .inventory-list article > div { grid-template-columns: 1fr; }
   .save-row { grid-template-columns: 1fr; }
 }

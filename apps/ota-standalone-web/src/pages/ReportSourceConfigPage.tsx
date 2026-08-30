@@ -20,6 +20,7 @@ import {
   type ReportSourceAttention,
 } from './reportSourceAttention'
 import { DataAccessOverviewPanel } from './DataAccessOverviewPanel'
+import { BieyanghongCloudWorkspacePanel } from './BieyanghongCloudWorkspacePanel'
 
 interface Props {
   context: HotelContext | null
@@ -465,6 +466,13 @@ export function ReportSourceConfigPage({
             pmsLoginConfigured={pmsLoginConfig?.configured ?? false}
             refreshVersion={overviewVersion}
             reportSources={sources}
+          />
+
+          <BieyanghongCloudWorkspacePanel
+            canConfigure={canConfigure}
+            context={context}
+            onStatusChanged={() =>
+              setOverviewVersion((current) => current + 1)}
           />
 
           <OtaSourceConfigPanel

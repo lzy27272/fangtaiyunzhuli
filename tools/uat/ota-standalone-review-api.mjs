@@ -187,6 +187,7 @@ const luopanWebRepairReady =
   && Boolean(luopanRepairPublicBaseUrl)
   && !luopanWebRepairConfigurationReason
 const BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE = '001'
+const BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS = 45 * 60_000
 const bieyanghongAssistedRepairEnabled =
   process.env.OTA_REVIEW_BIEYANGHONG_ASSISTED_REAUTH_ENABLED === 'true'
 let bieyanghongRepairPublicBaseUrl = null
@@ -4866,13 +4867,21 @@ const startBieyanghongRepairChallenge = async (
   hotelId,
   trigger = 'MANUAL_PILOT',
   replaceActive = false,
+  {
+    notifyManager = true,
+    challengeTtlMs,
+    includeWorkspaceUrl = false,
+  } = {},
 ) => {
+  if (includeWorkspaceUrl && notifyManager) {
+    throw new Error('BIEYANGHONG_WORKSPACE_MODE_INVALID')
+  }
   if (!bieyanghongAssistedRepairReady()) return null
   const active = activeBieyanghongRepairsByHotel.get(hotelId)
   if (active) {
     if (!replaceActive) {
       return bieyanghongRepairChallengeStore
-        .getInternalByHash(active.tokenSha256)
+        .getByHash(active.tokenSha256)
     }
     revokeBieyanghongVncSession(active)
     await active.login?.close().catch(() => {})
@@ -4900,6 +4909,7 @@ const startBieyanghongRepairChallenge = async (
     hotelId,
     hotelCode: hotel.hotelCode,
     hotelName: hotel.hotelName,
+    challengeTtlMs,
   })
   const handle = {
     hotelId,
@@ -4920,24 +4930,26 @@ const startBieyanghongRepairChallenge = async (
     bieyanghongRepairChallengeStore.setWaitingForCredentials(
       created.tokenSha256,
     )
-    const delivery = await deliverWeComRepairBotDirectMessage({
-      hotelId,
-      messageKey:
-        `${hotelId}:BIEYANGHONG_REPAIR_REQUIRED:${created.record.challengeId}`,
-      deliveryType: 'BIEYANGHONG_REPAIR_REQUIRED',
-      content: [
-        '### 001别样红简报需要管理员授权',
-        `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '请由本次处理管理员点击一次性链接，直接在美团官方页面完成登录：',
-        bieyanghongRepairLink(
-          bieyanghongRepairPublicBaseUrl,
-          created.token,
-        ),
-        '有效期10分钟，官方窗口最多启动2次；请勿转发或由多人同时操作。',
-      ].join('\n'),
-    })
-    if (delivery.deliveredPartCount < 1) {
-      throw new Error('BIEYANGHONG_REPAIR_NOTICE_NOT_DELIVERED')
+    if (notifyManager) {
+      const delivery = await deliverWeComRepairBotDirectMessage({
+        hotelId,
+        messageKey:
+          `${hotelId}:BIEYANGHONG_REPAIR_REQUIRED:${created.record.challengeId}`,
+        deliveryType: 'BIEYANGHONG_REPAIR_REQUIRED',
+        content: [
+          '### 001别样红简报需要管理员授权',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          '请由本次处理管理员点击一次性链接，直接在美团官方页面完成登录：',
+          bieyanghongRepairLink(
+            bieyanghongRepairPublicBaseUrl,
+            created.token,
+          ),
+          '有效期10分钟，官方窗口最多启动2次；请勿转发或由多人同时操作。',
+        ].join('\n'),
+      })
+      if (delivery.deliveredPartCount < 1) {
+        throw new Error('BIEYANGHONG_REPAIR_NOTICE_NOT_DELIVERED')
+      }
     }
     process.stdout.write(
       `${JSON.stringify({
@@ -4947,7 +4959,17 @@ const startBieyanghongRepairChallenge = async (
         expiresAt: created.record.expiresAt,
       })}\n`,
     )
-    return created.record
+    return {
+      ...created.record,
+      ...(includeWorkspaceUrl
+        ? {
+            workspaceUrl: bieyanghongRepairLink(
+              bieyanghongRepairPublicBaseUrl,
+              created.token,
+            ),
+          }
+        : {}),
+    }
   } catch (error) {
     const reasonCode = safeBieyanghongRepairReason(error)
     revokeBieyanghongVncSession(handle)
@@ -6596,6 +6618,9 @@ const server = createServer(async (request, response) => {
             },
           },
           webLinkReady: bieyanghongWebRepairReady,
+          adminWorkspaceReady: bieyanghongAssistedRepairReady(),
+          adminWorkspaceTtlMinutes:
+            BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
         },
       })
@@ -7161,6 +7186,53 @@ const server = createServer(async (request, response) => {
         || selected.tenantId !== requestTenantId
       ) {
         json(response, 404, { code: 'REVIEW_HOTEL_NOT_FOUND' })
+        return
+      }
+
+      if (
+        request.method === 'GET'
+        && suffix === '/bieyanghong-workspace'
+      ) {
+        const eligible =
+          selected.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+          && selected.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+        json(response, 200, {
+          data: {
+            eligible,
+            ready: eligible && bieyanghongAssistedRepairReady(),
+            hotelCode: selected.hotelCode,
+            hotelName: selected.hotelName,
+            reasonCode: eligible
+              ? bieyanghongRepairReasonCode()
+              : 'BIEYANGHONG_WORKSPACE_HOTEL_NOT_ELIGIBLE',
+            workspaceTtlMinutes:
+              BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
+          },
+        })
+        return
+      }
+
+      if (
+        request.method === 'POST'
+        && suffix === '/bieyanghong-workspace'
+      ) {
+        const workspace = await startBieyanghongRepairChallenge(
+          hotelId,
+          'ADMIN_FIXED_WORKSPACE',
+          true,
+          {
+            notifyManager: false,
+            challengeTtlMs: BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS,
+            includeWorkspaceUrl: true,
+          },
+        )
+        if (!workspace || typeof workspace.workspaceUrl !== 'string') {
+          throw new Error(
+            bieyanghongRepairReasonCode()
+            ?? 'BIEYANGHONG_WORKSPACE_NOT_STARTED',
+          )
+        }
+        json(response, 201, { data: workspace })
         return
       }
 

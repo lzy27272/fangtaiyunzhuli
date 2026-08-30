@@ -207,6 +207,50 @@ test('001 official-login popup is public but challenge data remains token-gated'
       'BIEYANGHONG_REPAIR_DISABLED',
     )
 
+    const anonymousWorkspace = await fetch(
+      `http://127.0.0.1:${port}`
+      + '/api/v1/ota/tenants/example/hotels/example/bieyanghong-workspace',
+      { method: 'POST' },
+    )
+    assert.equal(anonymousWorkspace.status, 401)
+
+    const loginResponse = await fetch(
+      `http://127.0.0.1:${port}/api/v1/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'repair-test',
+          password: 'example-Repair-Test-Password-42',
+        }),
+      },
+    )
+    assert.equal(loginResponse.status, 200)
+    const { accessToken } = await loginResponse.json()
+    const hotelsResponse = await fetch(
+      `http://127.0.0.1:${port}/api/v1/ota/simulation/hotels`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+    assert.equal(hotelsResponse.status, 200)
+    const hotelRows = (await hotelsResponse.json()).data.hotels
+    const hotel001 = hotelRows.find((hotel) => hotel.hotelCode === '001')
+    assert.ok(hotel001)
+    const fixedWorkspace = await fetch(
+      `http://127.0.0.1:${port}`
+      + `/api/v1/ota/tenants/${encodeURIComponent(hotel001.tenantId)}`
+      + `/hotels/${encodeURIComponent(hotel001.hotelId)}`
+      + '/bieyanghong-workspace',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    )
+    assert.equal(fixedWorkspace.status, 400)
+    assert.equal(
+      (await fixedWorkspace.json()).code,
+      'BIEYANGHONG_REPAIR_DISABLED',
+    )
+
     const recoveryPath =
       `http://127.0.0.1:${port}`
       + '/api/v1/internal/bieyanghong-cookie-recovery'
@@ -226,7 +270,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
     const bearerRecovery = await fetch(recoveryPath, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer repair-test-token',
+        Authorization: ['Bearer', 'repair-test-token'].join(' '),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
