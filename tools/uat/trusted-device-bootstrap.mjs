@@ -12,6 +12,14 @@ const BUNDLE_FILES = [
   ['tools/uat/trusted-device-intake.mjs', './trusted-device-intake.mjs'],
 ]
 
+const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf])
+
+const encodeBundleFile = (target, content) => {
+  if (!target.toLowerCase().endsWith('.ps1')) return content
+  if (content.subarray(0, UTF8_BOM.length).equals(UTF8_BOM)) return content
+  return Buffer.concat([UTF8_BOM, content])
+}
+
 const powerShellLiteral = (value) => `'${String(value).replaceAll("'", "''")}'`
 
 export const renderTrustedDeviceBootstrapPowerShell = ({
@@ -32,7 +40,10 @@ export const renderTrustedDeviceBootstrapPowerShell = ({
   }
 
   const fileCommands = BUNDLE_FILES.map(([target, source]) => {
-    const content = readFileSync(fileURLToPath(new URL(source, import.meta.url)))
+    const content = encodeBundleFile(
+      target,
+      readFileSync(fileURLToPath(new URL(source, import.meta.url))),
+    )
     return `Write-B64File ${powerShellLiteral(target)} ${powerShellLiteral(content.toString('base64'))}`
   }).join('\n')
 
