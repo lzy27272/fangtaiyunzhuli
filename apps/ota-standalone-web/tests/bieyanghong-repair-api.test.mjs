@@ -156,6 +156,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
       officialClientScript,
       /bieyanghong-repair\/novnc\/vnc_lite\.html\?scale=true/u,
     )
+    assert.doesNotMatch(officialClientScript, /view_only=/u)
     assert.match(officialClientScript, /topBar\.hidden = true/u)
     assert.match(
       officialClientScript,

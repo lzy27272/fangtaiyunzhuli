@@ -124,7 +124,9 @@ export const renderBieyanghongOfficialLoginClientScript = () => `(() => {
   const state = document.getElementById('state')
   const message = document.getElementById('message')
   const officialFrame = document.getElementById('official-frame')
-  const noVncUrl = '/api/v1/bieyanghong-repair/novnc/vnc_lite.html?scale=true&view_only=false&path=api%2Fv1%2Fbieyanghong-repair%2Fvnc'
+  // vnc_lite treats a query value of "false" as a truthy string. Omitting
+  // view_only preserves its real boolean false default and enables input.
+  const noVncUrl = '/api/v1/bieyanghong-repair/novnc/vnc_lite.html?scale=true&path=api%2Fv1%2Fbieyanghong-repair%2Fvnc'
   let finished = false
   let vncSessionActive = false
   const headers = () => ({ Authorization: 'Repair ' + repairToken })

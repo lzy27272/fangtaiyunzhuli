@@ -157,7 +157,7 @@ test('opens the official Meituan login without collecting credentials', async ()
 
   assert.deepEqual(calls, [{
     action: 'goto',
-    url: 'https://pms.meituan.com/',
+    url: 'https://pms.meituan.com/pms-web/account/login',
   }])
   assert.equal(prepared.interactiveVerificationRequired, true)
   assert.equal(
