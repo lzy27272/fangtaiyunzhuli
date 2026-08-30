@@ -2686,6 +2686,7 @@ const serveBieyanghongNoVncAsset = (response, requestPath) => {
     || !(
       relativePath === 'vnc.html'
       || relativePath === 'vnc_lite.html'
+      || relativePath === 'vnc_lite_bootstrap.js'
       || relativePath.startsWith('app/')
       || relativePath.startsWith('core/')
       || relativePath.startsWith('vendor/')
@@ -2693,7 +2694,10 @@ const serveBieyanghongNoVncAsset = (response, requestPath) => {
   ) return false
   try {
     const root = realpathSync(bieyanghongNoVncRoot)
-    const candidate = resolve(root, relativePath)
+    const sourcePath = relativePath === 'vnc_lite_bootstrap.js'
+      ? 'vnc_lite.html'
+      : relativePath
+    const candidate = resolve(root, sourcePath)
     if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
       return false
     }
@@ -2701,9 +2705,27 @@ const serveBieyanghongNoVncAsset = (response, requestPath) => {
     if (actual !== root && !actual.startsWith(`${root}${sep}`)) return false
     const stats = statSync(actual)
     if (!stats.isFile() || stats.size > 8 * 1024 * 1024) return false
-    const content = readFileSync(actual)
+    let content = readFileSync(actual)
+    const inlineModulePattern =
+      /<script\b((?![^>]*\bsrc\s*=)[^>]*\btype=["']module["'][^>]*)>([\s\S]*?)<\/script>/iu
+    if (relativePath === 'vnc_lite_bootstrap.js') {
+      const match = content.toString('utf8').match(inlineModulePattern)
+      if (!match || !match[2].trim()) return false
+      content = Buffer.from(match[2], 'utf8')
+    } else if (relativePath === 'vnc_lite.html') {
+      const html = content.toString('utf8')
+      const match = html.match(inlineModulePattern)
+      if (!match) return false
+      content = Buffer.from(
+        html.replace(
+          inlineModulePattern,
+          `<script${match[1]} src="./vnc_lite_bootstrap.js"></script>`,
+        ),
+        'utf8',
+      )
+    }
     const contentType =
-      BIEYANGHONG_NOVNC_CONTENT_TYPES[extname(actual).toLowerCase()]
+      BIEYANGHONG_NOVNC_CONTENT_TYPES[extname(relativePath).toLowerCase()]
       ?? 'application/octet-stream'
     const headers = {
       'content-type': contentType,
@@ -2714,20 +2736,11 @@ const serveBieyanghongNoVncAsset = (response, requestPath) => {
       'x-content-type-options': 'nosniff',
     }
     if (contentType.startsWith('text/html')) {
-      const inlineScriptHashes = relativePath === 'vnc_lite.html'
-        ? [...content.toString('utf8').matchAll(
-            /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/giu,
-          )].map((match) =>
-            `'sha256-${createHash('sha256')
-              .update(match[1], 'utf8')
-              .digest('base64')}'`)
-        : []
-      const scriptSources = ["'self'", ...inlineScriptHashes].join(' ')
       headers['content-security-policy'] =
         `default-src 'self'; base-uri 'none'; object-src 'none'; `
         + `frame-ancestors 'self'; connect-src 'self'; `
         + `img-src 'self' data:; style-src 'self' 'unsafe-inline'; `
-        + `script-src ${scriptSources}; font-src 'self'`
+        + `script-src 'self'; font-src 'self'`
     }
     response.writeHead(200, headers)
     response.end(content)
