@@ -42,6 +42,7 @@ const cookie = [
   'hotelpms_login_org_id=5621650',
   'hotelpms_tenant_id=13084645',
   'hotelpms_token=test-only-token-value',
+  '_lxsdk_cuid=test-client-id',
 ].join('; ')
 
 const cookiesBySourceId = Object.fromEntries(
@@ -144,6 +145,18 @@ const responseSet = (version) => ({
           estimatedRevpar: version === 1 ? 22 : 46,
         },
       ],
+    },
+  },
+  '/hotelpms/api/v1/report/home/workbench/businessOverview': {
+    code: 10000,
+    data: {
+      estimatedRoomNights: version === 1 ? 6 : 7,
+      estimatedRentRate: version === 1 ? 0.6 : 0.7,
+      estimatedRoomAmt: version === 1 ? 1000 : 1100,
+      estimatedAvgRoomPrice: version === 1 ? 166.67 : 157.14,
+      estimatedRevPAR: version === 1 ? 100 : 110,
+      saleNum: version === 1 ? 6 : 7,
+      stay: version === 1 ? 4 : 5,
     },
   },
   '/hotelpms/api/v1/report/lion/manager/workbench/room': {
@@ -276,6 +289,44 @@ test('collector creates a safe real baseline from all three PMS reports', async 
     endDate: '2026-10-24',
     dimension: 'Hotel',
   })
+})
+
+test('current Meituan business overview replaces the rejected legacy revenue report', async () => {
+  const requests = []
+  const currentSources = sources.map((source) =>
+    source.sourceId === 'overview-source'
+      ? {
+          ...source,
+          endpointUrl:
+            'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview',
+        }
+      : source)
+  const result = await collectLiveReports({
+    hotel,
+    sources: currentSources,
+    cookiesBySourceId,
+    previousSnapshots: [],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-07-26T10:00:00Z'),
+    fetchImpl: fetchFor(1, requests),
+  })
+
+  assert.equal(result.snapshot.completeness, 'COMPLETE')
+  assert.equal(result.snapshot.overview.roomFee, 1000)
+  assert.equal(result.snapshot.overview.roomNights, 6)
+  assert.equal(result.snapshot.overview.occupancyRate, 0.6)
+  assert.equal(result.snapshot.overview.adr, 166.67)
+  assert.equal(result.snapshot.overview.revPar, 100)
+  assert.equal(result.snapshot.overview.availableRooms, null)
+  assert.deepEqual(result.snapshot.futureDaily, [])
+  const overviewRequest = requests.find((request) =>
+    request.path.endsWith('/home/workbench/businessOverview'))
+  assert.equal(overviewRequest.body, true)
+  assert.equal(
+    overviewRequest.headers.get('m-appkey'),
+    'fe_com.sankuai.hotelpms.fe.web',
+  )
+  assert.equal(overviewRequest.headers.get('hotelpms-platform'), 'pc')
 })
 
 test('night audit business date replaces the stale configured report date', async () => {

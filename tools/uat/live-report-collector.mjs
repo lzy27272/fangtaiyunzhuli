@@ -23,6 +23,10 @@ const SUPPORTED_REPORT_PATHS = new Map([
   ['/hotelpms/api/v1/report/jd01', 'ORDER_DETAIL'],
   ['/hotelpms/api/v2/report/jy09', 'FUTURE_OVERVIEW'],
   [
+    '/hotelpms/api/v1/report/home/workbench/businessOverview',
+    'BUSINESS_OVERVIEW',
+  ],
+  [
     '/hotelpms/api/v1/report/lion/manager/workbench/room',
     'PHYSICAL_INVENTORY',
   ],
@@ -167,6 +171,26 @@ const requestContract = (source, cookie, reportDate) => {
         endDate: addDays(reportDate, 90),
         dimension: 'Hotel',
       },
+    }
+  }
+  if (contract === 'BUSINESS_OVERVIEW') {
+    return {
+      contract,
+      endpoint,
+      headers: {
+        ...commonHeaders,
+        'Content-Type': 'application/json;charset=UTF-8',
+        Origin: endpoint.origin,
+        Referer: `${endpoint.origin}/`,
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+          + 'AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36',
+        'hotelpms-client-id':
+          requiredCookieValue(cookie, '_lxsdk_cuid'),
+        'hotelpms-platform': 'pc',
+        'm-appkey': 'fe_com.sankuai.hotelpms.fe.web',
+      },
+      body: true,
     }
   }
   if (contract === 'ROOM_FORECAST') {
@@ -566,6 +590,36 @@ const overviewState = (root, reportDate) => {
   }
 }
 
+const businessOverviewState = (root, reportDate) => {
+  const data = root?.data
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('REPORT_DATA_INVALID')
+  }
+  const current = {
+    stayDate: reportDate,
+    roomCount: null,
+    availableRooms: null,
+    soldRooms: finiteNumber(data.saleNum),
+    orderRooms: null,
+    checkinRooms: finiteNumber(data.stay),
+    roomFee: finiteNumber(data.estimatedRoomAmt),
+    revenue: finiteNumber(data.estimatedRoomAmt),
+    roomNights: finiteNumber(data.estimatedRoomNights),
+    occupancyRate: finiteNumber(data.estimatedRentRate),
+    adr: finiteNumber(data.estimatedAvgRoomPrice),
+    revPar: finiteNumber(data.estimatedRevPAR),
+  }
+  if (
+    current.roomFee === null
+    && current.roomNights === null
+    && current.adr === null
+    && current.revPar === null
+  ) {
+    throw new Error('REPORT_DATA_INVALID')
+  }
+  return { current, futureDaily: [] }
+}
+
 const physicalInventoryState = (root, secretKey) => {
   const rows = Array.isArray(root?.data)
     ? root.data
@@ -659,7 +713,7 @@ const sourceCodeFor = (contract, sourceId) => {
   const prefix =
     contract === 'ORDER_DETAIL'
       ? 'REPORT_ORDER'
-      : contract === 'FUTURE_OVERVIEW'
+      : ['FUTURE_OVERVIEW', 'BUSINESS_OVERVIEW'].includes(contract)
         ? 'REPORT_REVENUE'
         : contract === 'ROOM_FORECAST'
           ? 'REPORT_ROOM_FORECAST'
@@ -1222,6 +1276,8 @@ export const collectLiveReports = async ({
             ? orderState(root, reportDate, secretKey)
             : contract === 'FUTURE_OVERVIEW'
               ? overviewState(root, reportDate)
+              : contract === 'BUSINESS_OVERVIEW'
+                ? businessOverviewState(root, reportDate)
               : contract === 'PHYSICAL_INVENTORY'
                 ? physicalInventoryState(root, secretKey)
                 : roomForecastState(root, reportDate, secretKey)
@@ -1256,7 +1312,8 @@ export const collectLiveReports = async ({
     (source) => source.contract === 'ORDER_DETAIL',
   )
   const overviewReport = successful.find(
-    (source) => source.contract === 'FUTURE_OVERVIEW',
+    (source) =>
+      ['FUTURE_OVERVIEW', 'BUSINESS_OVERVIEW'].includes(source.contract),
   )
   const physicalReport = successful.find(
     (source) => source.contract === 'PHYSICAL_INVENTORY',

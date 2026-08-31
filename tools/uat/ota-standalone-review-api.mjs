@@ -702,8 +702,9 @@ const defaultReportSources = () => [
   },
   {
     sourceId: '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0',
-    displayName: '房费收入/ADR报表 jy09',
-    endpointUrl: 'https://pms.meituan.com/hotelpms/api/v2/report/jy09',
+    displayName: '经营概览（房费/ADR/RevPAR）',
+    endpointUrl:
+      'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview',
     reportType: 'CUSTOM_REPORT',
     calculationRole: 'AUXILIARY_CALCULATION',
     pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
