@@ -649,42 +649,101 @@ const physicalInventoryState = (root, secretKey) => {
 const roomForecastState = (root, reportDate, secretKey) => {
   const rows = root?.data
   if (!Array.isArray(rows)) throw new Error('REPORT_DATA_INVALID')
-  return rows
-    .filter(
-      (row) =>
-        row
-        && typeof row === 'object'
-        && !Array.isArray(row)
-        && row.isAggregation !== true
-        && typeof row.roomTypeName === 'string'
-        && Array.isArray(row.details),
-    )
-    .map((row) => {
+  const current = []
+  const daily = new Map()
+  const addValue = (target, key, value) => {
+    const number = finiteNumber(value)
+    if (number === null) return
+    target[key] = (target[key] ?? 0) + number
+  }
+  for (const row of rows) {
+    if (
+      !row
+      || typeof row !== 'object'
+      || Array.isArray(row)
+      || row.isAggregation === true
+      || typeof row.roomTypeName !== 'string'
+      || !Array.isArray(row.details)
+    ) continue
       const displayName = row.roomTypeName.trim().slice(0, 80)
-      const detail = row.details.find(
-        (item) =>
-          typeof item?.date === 'string'
-          && item.date.startsWith(reportDate),
-      )
-      if (!detail) return null
       const code = hmac(secretKey, `room-type:${displayName}`, 16)
+      for (const detail of row.details) {
+        const rawDate = typeof detail?.date === 'string'
+          ? detail.date.trim()
+          : ''
+        const stayDate = canonicalBusinessDate(
+          /^\d{8}$/u.test(rawDate) ? rawDate : rawDate.slice(0, 10),
+        )
+        if (
+          !stayDate
+          || stayDate < reportDate
+          || stayDate > addDays(reportDate, 29)
+        ) continue
+        if (stayDate === reportDate) {
+          current.push({
+            inventoryPoolId: `PMS-${code}`,
+            physicalRoomTypeCode: `PMS-${code}`,
+            displayName,
+            physicalRoomCount: finiteNumber(row.totalCount),
+            primaryAvailableRooms: finiteNumber(detail.availableCount),
+            estimatedRoomNights: finiteNumber(detail.occupationCount),
+            estimatedRoomFee: finiteNumber(detail.roomRent),
+            estimatedAdr: finiteNumber(detail.adr),
+            forecastRevPar: finiteNumber(detail.revPar),
+            forecastOverbookingCount: finiteNumber(detail.overbookingCount),
+            forecastCheckinCount: finiteNumber(detail.checkinCount),
+            forecastOrderCount: finiteNumber(detail.orderCount),
+            forecastMaintainingCount: finiteNumber(detail.maintainingCount),
+          })
+        }
+        const aggregate = daily.get(stayDate) ?? {
+          stayDate,
+          availableRooms: null,
+          soldRooms: null,
+          orderRooms: null,
+          checkinRooms: null,
+          roomFee: null,
+          revenue: null,
+          roomNights: null,
+        }
+        addValue(aggregate, 'availableRooms', detail.availableCount)
+        addValue(aggregate, 'soldRooms', detail.occupationCount)
+        addValue(aggregate, 'orderRooms', detail.orderCount)
+        addValue(aggregate, 'checkinRooms', detail.checkinCount)
+        addValue(aggregate, 'roomFee', detail.roomRent)
+        addValue(aggregate, 'revenue', detail.roomRent)
+        addValue(aggregate, 'roomNights', detail.occupationCount)
+        daily.set(stayDate, aggregate)
+      }
+  }
+  const dailyRows = [...daily.values()]
+    .sort((left, right) => left.stayDate.localeCompare(right.stayDate))
+    .map((row) => {
+      const roomCount = row.soldRooms === null || row.availableRooms === null
+        ? null
+        : row.soldRooms + row.availableRooms
       return {
-        inventoryPoolId: `PMS-${code}`,
-        physicalRoomTypeCode: `PMS-${code}`,
-        displayName,
-        physicalRoomCount: finiteNumber(row.totalCount),
-        primaryAvailableRooms: finiteNumber(detail.availableCount),
-        estimatedRoomNights: finiteNumber(detail.occupationCount),
-        estimatedRoomFee: finiteNumber(detail.roomRent),
-        estimatedAdr: finiteNumber(detail.adr),
-        forecastRevPar: finiteNumber(detail.revPar),
-        forecastOverbookingCount: finiteNumber(detail.overbookingCount),
-        forecastCheckinCount: finiteNumber(detail.checkinCount),
-        forecastOrderCount: finiteNumber(detail.orderCount),
-        forecastMaintainingCount: finiteNumber(detail.maintainingCount),
+        ...row,
+        roomCount,
+        occupancyRate:
+          roomCount && row.soldRooms !== null
+            ? rounded(row.soldRooms / roomCount, 4)
+            : null,
+        adr:
+          row.soldRooms && row.roomFee !== null
+            ? rounded(row.roomFee / row.soldRooms, 2)
+            : null,
+        revPar:
+          roomCount && row.roomFee !== null
+            ? rounded(row.roomFee / roomCount, 2)
+            : null,
       }
     })
-    .filter(Boolean)
+  return {
+    current,
+    currentDaily: dailyRows.find((row) => row.stayDate === reportDate) ?? null,
+    futureDaily: dailyRows.filter((row) => row.stayDate > reportDate),
+  }
 }
 
 const mergePhysicalInventory = (physicalRows, forecastRows) => {
@@ -1323,6 +1382,24 @@ export const collectLiveReports = async ({
   )
   const hasCore =
     Boolean(orderReport) && Boolean(overviewReport) && Boolean(physicalReport)
+  const forecastCurrent = forecastReport?.parsed?.current ?? []
+  const forecastCurrentDaily = forecastReport?.parsed?.currentDaily ?? null
+  const overview = overviewReport?.parsed?.current
+    ? {
+        ...overviewReport.parsed.current,
+        availableRooms:
+          overviewReport.parsed.current.availableRooms
+          ?? forecastCurrentDaily?.availableRooms
+          ?? null,
+        roomCount:
+          overviewReport.parsed.current.roomCount
+          ?? forecastCurrentDaily?.roomCount
+          ?? null,
+      }
+    : null
+  const futureDaily = overviewReport?.parsed?.futureDaily?.length
+    ? overviewReport.parsed.futureDaily
+    : forecastReport?.parsed?.futureDaily ?? []
   const snapshot = {
     schemaVersion: 1,
     sourceSystem: 'MEITUAN_BIEYANGHONG',
@@ -1352,13 +1429,13 @@ export const collectLiveReports = async ({
       errorCode: source.errorCode,
     })),
     orders: orderReport?.parsed ?? [],
-    overview: overviewReport?.parsed?.current ?? null,
-    futureDaily: overviewReport?.parsed?.futureDaily ?? [],
+    overview,
+    futureDaily,
     physicalInventory: mergePhysicalInventory(
       physicalReport?.parsed ?? [],
-      forecastReport?.parsed ?? [],
+      forecastCurrent,
     ),
-    roomForecast: forecastReport?.parsed ?? [],
+    roomForecast: forecastCurrent,
   }
   snapshot.hourlyDelta = hourlyDeltaFor(
     snapshot,

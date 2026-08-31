@@ -692,7 +692,7 @@ test('configured hot-selling rooms alert only on a reliable zero', () => {
   assert.equal(unavailable.shouldNotify, false)
 })
 
-test('room forecast payload follows the PMS business day and fills room availability', async () => {
+test('room forecast fills current availability and future trend without replacing business overview revenue', async () => {
   const forecastSource = {
     sourceId: 'forecast-source',
     endpointUrl:
@@ -710,7 +710,15 @@ test('room forecast payload follows the PMS business day and fills room availabi
       endDate: '2000-01-30 00:00:00',
     }),
   }
-  const allSources = [...sources, forecastSource]
+  const currentSources = sources.map((source) =>
+    source.sourceId === 'overview-source'
+      ? {
+          ...source,
+          endpointUrl:
+            'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview',
+        }
+      : source)
+  const allSources = [...currentSources, forecastSource]
   const allCookies = {
     ...cookiesBySourceId,
     [forecastSource.sourceId]: `${cookie}; _lxsdk_cuid=test-client-id`,
@@ -752,6 +760,30 @@ test('room forecast payload follows the PMS business day and fills room availabi
                     orderCount: '0',
                     maintainingCount: '0',
                   },
+                  {
+                    date: '2026-07-26 00:00:00',
+                    occupationCount: '3',
+                    availableCount: '3',
+                    roomRent: 630,
+                    adr: 210,
+                    revPar: 105,
+                    overbookingCount: '0',
+                    checkinCount: '1',
+                    orderCount: '2',
+                    maintainingCount: '0',
+                  },
+                  {
+                    date: '2026-07-27 00:00:00',
+                    occupationCount: '2',
+                    availableCount: '4',
+                    roomRent: 440,
+                    adr: 220,
+                    revPar: 73.33,
+                    overbookingCount: '0',
+                    checkinCount: '1',
+                    orderCount: '1',
+                    maintainingCount: '0',
+                  },
                 ],
               },
               {
@@ -771,6 +803,30 @@ test('room forecast payload follows the PMS business day and fills room availabi
                     orderCount: '0',
                     maintainingCount: '0',
                   },
+                  {
+                    date: '2026-07-26 00:00:00',
+                    occupationCount: '1',
+                    availableCount: '3',
+                    roomRent: 180,
+                    adr: 180,
+                    revPar: 45,
+                    overbookingCount: '0',
+                    checkinCount: '1',
+                    orderCount: '1',
+                    maintainingCount: '0',
+                  },
+                  {
+                    date: '2026-07-27 00:00:00',
+                    occupationCount: '0',
+                    availableCount: '4',
+                    roomRent: 0,
+                    adr: 0,
+                    revPar: 0,
+                    overbookingCount: '0',
+                    checkinCount: '0',
+                    orderCount: '0',
+                    maintainingCount: '0',
+                  },
                 ],
               },
               {
@@ -781,25 +837,6 @@ test('room forecast payload follows the PMS business day and fills room availabi
               },
             ],
           }
-        : target.pathname.endsWith('/report/jy09')
-          ? {
-              code: 10000,
-              data: {
-                dataList: [
-                  {
-                    estimatedDate: '2026-07-25',
-                    roomCount: 10,
-                    availableRoom: 2,
-                    saleRoom: 8,
-                    estimatedRoomFee: 1500,
-                    estimatedRoomNights: 8,
-                    estimatedRentRate: 0.8,
-                    estimatedAvgRoomPrice: 187.5,
-                    estimatedRevpar: 150,
-                  },
-                ],
-              },
-            }
         : responseSet(1)[target.pathname]
     return new Response(JSON.stringify(body), {
       status: 200,
@@ -830,6 +867,42 @@ test('room forecast payload follows the PMS business day and fills room availabi
     request.path.endsWith('/batchSearchBaseRoomForcasting'))
 
   assert.equal(result.run.status, 'SUCCEEDED')
+  assert.equal(result.snapshot.overview.roomFee, 1000)
+  assert.equal(result.snapshot.overview.adr, 166.67)
+  assert.equal(result.snapshot.overview.revPar, 100)
+  assert.equal(result.snapshot.overview.availableRooms, 2)
+  assert.equal(result.snapshot.overview.roomCount, 10)
+  assert.equal(result.monitor.metrics.availableRooms.value, 2)
+  assert.equal(result.snapshot.futureDaily.length, 2)
+  assert.deepEqual(result.snapshot.futureDaily[0], {
+    stayDate: '2026-07-26',
+    availableRooms: 6,
+    soldRooms: 4,
+    orderRooms: 3,
+    checkinRooms: 2,
+    roomFee: 810,
+    revenue: 810,
+    roomNights: 4,
+    roomCount: 10,
+    occupancyRate: 0.4,
+    adr: 202.5,
+    revPar: 81,
+  })
+  assert.deepEqual(result.snapshot.futureDaily[1], {
+    stayDate: '2026-07-27',
+    availableRooms: 8,
+    soldRooms: 2,
+    orderRooms: 1,
+    checkinRooms: 1,
+    roomFee: 440,
+    revenue: 440,
+    roomNights: 2,
+    roomCount: 10,
+    occupancyRate: 0.2,
+    adr: 220,
+    revPar: 44,
+  })
+  assert.equal(result.snapshot.roomForecast.length, 2)
   assert.equal(king.primaryAvailableRooms, 0)
   assert.equal(monitor.hotSellingAlerts[0].state, 'SOLD_OUT')
   assert.equal(monitor.hotSellingAlerts[0].shouldNotify, true)
