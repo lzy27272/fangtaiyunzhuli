@@ -124,7 +124,7 @@ New-Item -Path $protocolCommand -Force | Out-Null
 Set-Item -Path $protocolRoot -Value 'URL:Sifangguan 001 Trusted Device'
 New-ItemProperty -Path $protocolRoot -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
 $loginScript = Join-Path $packageRoot 'Start-001Login.ps1'
-$openCommand = '"powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "' + $loginScript + '" -NodePath "' + $resolvedNodePath + '"'
+$openCommand = '"powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $loginScript + '" -NodePath "' + $resolvedNodePath + '" -Uri "%1"'
 Set-Item -Path $protocolCommand -Value $openCommand
 
 $stateRoot = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001'

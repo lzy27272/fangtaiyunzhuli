@@ -8,19 +8,24 @@ const readSource = (relativePath) => readFile(
 )
 
 test('001 configuration page uses trusted device mode and never requests credentials', async () => {
-  const [page, panel, client, agent, installer] = await Promise.all([
+  const [page, panel, client, agent, installer, launcher] = await Promise.all([
     readSource('../src/pages/ReportSourceConfigPage.tsx'),
     readSource('../src/pages/TrustedDevicePanel.tsx'),
     readSource('../src/api/trustedDevice.ts'),
     readSource('../../../tools/trusted-device/trusted-device-agent.mjs'),
     readSource('../../../tools/trusted-device/Install-001TrustedDevice.ps1'),
+    readSource('../../../tools/trusted-device/Start-001Login.ps1'),
   ])
   assert.match(page, /<TrustedDevicePanel/u)
   assert.doesNotMatch(page, /<BieyanghongCloudWorkspacePanel/u)
   assert.match(panel, /登录会话只留在门店电脑/u)
   assert.match(panel, /下载安装并进入登录/u)
-  assert.match(panel, /直接进入美团登录/u)
+  assert.match(panel, /一键检查并修复/u)
+  assert.match(panel, /仅打开美团登录/u)
   assert.match(panel, /sfgtrusted001:\/\/login/u)
+  assert.match(panel, /sfgtrusted001:\/\/repair/u)
+  assert.match(panel, /lastSnapshotAt/u)
+  assert.match(panel, /lastCompleteness === 'COMPLETE'/u)
   assert.match(panel, /Ed25519设备签名/u)
   assert.doesNotMatch(panel, /type=["']password["']|手机号|短信验证码/u)
   assert.match(client, /\/trusted-device\/enrollment/u)
@@ -32,6 +37,10 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.doesNotMatch(agent, /launchPersistentContext/u)
   assert.doesNotMatch(agent, /--enable-automation/u)
   assert.match(installer, /HKCU:\\Software\\Classes\\sfgtrusted001/u)
+  assert.match(installer, /-Uri "%1"/u)
+  assert.match(installer, /-WindowStyle Hidden/u)
+  assert.match(launcher, /sfgtrusted001:\/\/\(login\|repair\)/u)
+  assert.match(launcher, /@\(\$agentPath, \$command\)/u)
   assert.match(installer, /Node\.js LTS/u)
   assert.match(installer, /\$env:ProgramFiles/u)
   const resolver = installer.match(
@@ -55,6 +64,9 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(agent, /sources: collectionSources/u)
   assert.match(agent, /process\.exit\(0\)/u)
   assert.match(agent, /process\.exit\(1\)/u)
+  assert.match(agent, /else if \(command === 'repair'\) await repair\(\)/u)
+  assert.match(agent, /waitForOfficialLogin/u)
+  assert.doesNotMatch(agent, /slider|captcha.*solve|drag.*captcha/iu)
 })
 
 test('public proxy exposes only the three signed trusted-device intake paths', async () => {

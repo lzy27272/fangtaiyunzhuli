@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   createTrustedDeviceEnrollment,
   downloadTrustedDeviceBootstrap,
@@ -27,8 +27,19 @@ export function TrustedDevicePanel({
   const [enrollment, setEnrollment] =
     useState<TrustedDeviceEnrollment | null>(null)
   const [loading, setLoading] = useState(false)
+  const [repairing, setRepairing] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const repairPollRef = useRef<number | null>(null)
+  const repairPollInFlightRef = useRef(false)
+
+  const stopRepairPolling = () => {
+    if (repairPollRef.current !== null) {
+      window.clearInterval(repairPollRef.current)
+      repairPollRef.current = null
+    }
+    repairPollInFlightRef.current = false
+  }
 
   const refresh = async () => {
     const next = await loadTrustedDeviceStatus(context)
@@ -41,6 +52,8 @@ export function TrustedDevicePanel({
     setStatus(null)
     setEnrollment(null)
     setError('')
+    stopRepairPolling()
+    setRepairing(false)
     loadTrustedDeviceStatus(context)
       .then((next) => {
         if (!cancelled) setStatus(next)
@@ -50,7 +63,10 @@ export function TrustedDevicePanel({
           setError(cause instanceof Error ? cause.message : '读取可信设备状态失败')
         }
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      stopRepairPolling()
+    }
   }, [context.hotelId, context.tenantId])
 
   if (!status?.eligible) return null
@@ -108,6 +124,51 @@ export function TrustedDevicePanel({
     window.location.href = 'sfgtrusted001://login'
   }
 
+  const openInstalledRepair = () => {
+    if (repairing || !status.device) return
+    stopRepairPolling()
+    const baselineSnapshotAt = status.device.lastSnapshotAt
+    const deadline = Date.now() + 5 * 60_000
+    setRepairing(true)
+    setError('')
+    setNotice(
+      '正在唤起001本机一键修复助手；若美团要求验证，请在官方Chrome完成，之后会自动采集。',
+    )
+    window.location.href = 'sfgtrusted001://repair'
+    repairPollRef.current = window.setInterval(() => {
+      if (repairPollInFlightRef.current) return
+      if (Date.now() >= deadline) {
+        stopRepairPolling()
+        setRepairing(false)
+        setNotice('本机助手已唤起；如官网仍在等待验证，请完成后点击“刷新状态”。')
+        return
+      }
+      repairPollInFlightRef.current = true
+      loadTrustedDeviceStatus(context)
+        .then((next) => {
+          setStatus(next)
+          const latest = next.device?.lastSnapshotAt ?? null
+          if (!latest || latest === baselineSnapshotAt) return
+          stopRepairPolling()
+          setRepairing(false)
+          if (next.device?.lastCompleteness === 'COMPLETE') {
+            setError('')
+            setNotice('001一键修复完成：登录、采集与云端上报均正常。')
+            onStatusChanged()
+          } else {
+            setNotice('')
+            setError('本机已完成采集，但数据仍不完整，请查看完整性后再处理。')
+          }
+        })
+        .catch((cause) => {
+          setError(cause instanceof Error ? cause.message : '读取修复状态失败')
+        })
+        .finally(() => {
+          repairPollInFlightRef.current = false
+        })
+    }, 3_000)
+  }
+
   const revoke = async () => {
     if (!canConfigure || loading || !status.device) return
     setLoading(true)
@@ -154,8 +215,12 @@ export function TrustedDevicePanel({
         </div>
         <div className="trusted-device-actions">
           {status.device ? (
-            <button type="button" onClick={openInstalledLogin}>
-              直接进入美团登录
+            <button
+              disabled={repairing}
+              type="button"
+              onClick={openInstalledRepair}
+            >
+              {repairing ? '正在检查并修复…' : '一键检查并修复'}
             </button>
           ) : (
             <button
@@ -164,6 +229,14 @@ export function TrustedDevicePanel({
               onClick={() => void downloadAndInstall()}
             >{loading ? '正在生成安装文件…' : '下载安装并进入登录'}</button>
           )}
+          {status.device ? (
+            <button
+              className="secondary"
+              disabled={repairing}
+              type="button"
+              onClick={openInstalledLogin}
+            >仅打开美团登录</button>
+          ) : null}
           {status.device ? (
             <button
               className="secondary"
@@ -197,7 +270,7 @@ export function TrustedDevicePanel({
         </div>
       ) : null}
       <p className="trusted-device-install-note">
-        Windows不允许网页静默执行安装文件：首次下载后请打开一次；安装器会自动安装采集器并打开普通Chrome美团官网。已安装电脑不再下载。
+        已绑定的001门店电脑可直接一键检查；会话有效时自动恢复采集，失效时只需在美团官网完成人工验证。其他电脑首次使用仍需下载安装并绑定，系统不会绕过平台风控。
       </p>
       <div className="trusted-device-policy">
         <span>门店范围：仅001</span>

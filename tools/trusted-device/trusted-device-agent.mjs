@@ -232,21 +232,64 @@ const openOfficialBrowser = async (state) => {
   throw new Error('TRUSTED_DEVICE_CLOSE_OLD_CONTROLLED_CHROME_AND_RETRY')
 }
 
-const login = async () => {
-  const state = loadState()
-  const { context } = await openOfficialBrowser(state)
-  process.stdout.write('普通Chrome已打开；请在美团官网人工登录，完成后保留窗口运行（可以最小化）。\n')
+const pmsPageFor = (context) => context.pages().find((candidate) =>
+  candidate.url().startsWith('https://pms.meituan.com')) ?? null
+
+const usableOfficialSession = async (context) => {
+  const cookies = await context.cookies('https://pms.meituan.com')
+  const hasHotelSession = cookies.some((cookie) =>
+    cookie.name === 'hotelpms_login_hotel_id' && cookie.value)
+  if (!hasHotelSession) return false
+  const page = pmsPageFor(context)
+  if (!page) return false
+  const pathname = new URL(page.url()).pathname
+  return !/(?:^|\/)account\/login(?:\/|$)/u.test(pathname)
+}
+
+const officialBrowserFor = async (state) => {
+  try {
+    return await connectToOfficialBrowser(state)
+  } catch (error) {
+    if (error?.message !== 'TRUSTED_DEVICE_OFFICIAL_BROWSER_NOT_RUNNING') {
+      throw error
+    }
+    return openOfficialBrowser(state)
+  }
+}
+
+const waitForOfficialLogin = async (
+  state,
+  { forceReauthentication = false } = {},
+) => {
+  const { context } = await officialBrowserFor(state)
+  let page = pmsPageFor(context)
+  if (!page) page = await context.newPage()
+  await page.bringToFront()
+  if (forceReauthentication || !await usableOfficialSession(context)) {
+    await page.goto(
+      'https://pms.meituan.com/pms-web/account/login',
+      { waitUntil: 'domcontentloaded', timeout: 30_000 },
+    ).catch(() => {})
+  } else {
+    process.stdout.write('已检测到001本机有效登录会话。\n')
+    return
+  }
+  process.stdout.write(
+    '普通Chrome已打开；请在美团官网人工完成必要验证，成功后系统会自动继续采集。\n',
+  )
   const deadline = Date.now() + 30 * 60_000
   while (Date.now() < deadline) {
-    const cookies = await context.cookies('https://pms.meituan.com')
-    if (cookies.some((cookie) =>
-      cookie.name === 'hotelpms_login_hotel_id' && cookie.value)) {
+    if (await usableOfficialSession(context)) {
       process.stdout.write('已检测到001本机会话。未上传Cookie或账号信息。\n')
       return
     }
     await delay(2_000)
   }
   throw new Error('TRUSTED_DEVICE_LOGIN_TIMEOUT')
+}
+
+const login = async () => {
+  await waitForOfficialLogin(loadState())
 }
 
 const cookieHeaderFrom = (cookies) => cookies
@@ -329,6 +372,32 @@ const collectOnce = async () => {
   return result
 }
 
+const repair = async () => {
+  try {
+    const result = await collectOnce()
+    if (result.snapshot.completeness !== 'COMPLETE') {
+      throw new Error('TRUSTED_DEVICE_REPAIR_INCOMPLETE')
+    }
+    process.stdout.write('001一键修复完成；当前会话有效，采集与上报正常。\n')
+    return
+  } catch (error) {
+    const reauthenticationRequired = new Set([
+      'TRUSTED_DEVICE_OFFICIAL_BROWSER_NOT_RUNNING',
+      'TRUSTED_DEVICE_LOGIN_REQUIRED',
+      'PMS_SESSION_REAUTH_REQUIRED',
+    ])
+    if (!reauthenticationRequired.has(error?.message)) throw error
+    await waitForOfficialLogin(loadState(), {
+      forceReauthentication: error?.message === 'PMS_SESSION_REAUTH_REQUIRED',
+    })
+  }
+  const result = await collectOnce()
+  if (result.snapshot.completeness !== 'COMPLETE') {
+    throw new Error('TRUSTED_DEVICE_REPAIR_INCOMPLETE')
+  }
+  process.stdout.write('001一键修复完成；登录已确认，采集与上报正常。\n')
+}
+
 const collectIfDue = async () => {
   const state = loadState()
   const slot = collectionSlotFor()
@@ -354,6 +423,7 @@ const help = () => process.stdout.write([
   '001门店可信设备采集器',
   '  enroll --code 001-XXXX-XXXX-XXXX [--server https://www.sfgzt.cn]',
   '  login',
+  '  repair',
   '  collect-once',
   '  collect-if-due',
   '  status',
@@ -362,6 +432,7 @@ const help = () => process.stdout.write([
 try {
   if (command === 'enroll') await enroll()
   else if (command === 'login') await login()
+  else if (command === 'repair') await repair()
   else if (command === 'collect-once') await collectOnce()
   else if (command === 'collect-if-due') await collectIfDue()
   else if (command === 'status') await status()
