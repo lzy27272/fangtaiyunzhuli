@@ -79,17 +79,44 @@ try {
   & $resolvedNpmPath install --omit=dev --ignore-scripts --no-audit --no-fund
   if ($LASTEXITCODE -ne 0) { throw "依赖安装失败，退出码：$LASTEXITCODE" }
   Write-Host '[4/5] 正在注册001门店可信设备…'
-  & $resolvedNodePath '.\trusted-device-agent.mjs' enroll --code $EnrollmentCode --server $ServerOrigin
-  if ($LASTEXITCODE -ne 0) { throw "可信设备注册失败，退出码：$LASTEXITCODE" }
+  $deviceStatePath = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001\device-state.json'
+  $deviceReady = $false
+  if (Test-Path -LiteralPath $deviceStatePath -PathType Leaf) {
+    & $resolvedNodePath '.\trusted-device-agent.mjs' status
+    if ($LASTEXITCODE -eq 0) {
+      $deviceReady = $true
+      Write-Host '检测到本机已有有效可信设备，本次保留原设备密钥与登录会话。'
+    }
+  }
+  if (-not $deviceReady) {
+    & $resolvedNodePath '.\trusted-device-agent.mjs' enroll --code $EnrollmentCode --server $ServerOrigin
+    if ($LASTEXITCODE -ne 0) { throw "可信设备注册失败，退出码：$LASTEXITCODE" }
+  }
 } finally {
   Pop-Location
 }
 
 $taskName = 'Sifangguan-001-Trusted-Collector'
 $agentPath = Join-Path $packageRoot 'trusted-device-agent.mjs'
-$taskCommand = '"' + $resolvedNodePath + '" "' + $agentPath + '" collect-if-due'
-& schtasks.exe /Create /TN $taskName /SC MINUTE /MO 5 /TR $taskCommand /F | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "计划任务创建失败，退出码：$LASTEXITCODE" }
+$taskAction = New-ScheduledTaskAction `
+  -Execute $resolvedNodePath `
+  -Argument ('"' + $agentPath + '" collect-if-due') `
+  -WorkingDirectory $packageRoot
+$taskTrigger = New-ScheduledTaskTrigger `
+  -Once `
+  -At (Get-Date).AddMinutes(1) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+$taskSettings = New-ScheduledTaskSettingsSet `
+  -StartWhenAvailable `
+  -AllowStartIfOnBatteries `
+  -DontStopIfGoingOnBatteries
+Register-ScheduledTask `
+  -TaskName $taskName `
+  -Action $taskAction `
+  -Trigger $taskTrigger `
+  -Settings $taskSettings `
+  -Description '四方馆001门店可信设备采集器；每5分钟检查一次当前采集时段。' `
+  -Force | Out-Null
 
 $protocolRoot = 'HKCU:\Software\Classes\sfgtrusted001'
 $protocolCommand = Join-Path $protocolRoot 'shell\open\command'

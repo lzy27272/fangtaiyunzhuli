@@ -35,7 +35,13 @@ test('001 configuration page uses trusted device mode and never requests credent
   )?.[0] ?? ''
   assert.match(resolver, /Write-Host/u)
   assert.doesNotMatch(resolver, /Write-Output/u)
-  assert.match(installer, /\$taskCommand = .*collect-if-due/u)
+  assert.match(installer, /New-ScheduledTaskAction/u)
+  assert.match(installer, /-Execute \$resolvedNodePath/u)
+  assert.match(installer, /Register-ScheduledTask/u)
+  assert.match(installer, /collect-if-due/u)
+  assert.doesNotMatch(installer, /schtasks\.exe/u)
+  assert.match(installer, /trusted-device-agent\.mjs' status/u)
+  assert.match(installer, /本次保留原设备密钥与登录会话/u)
   assert.doesNotMatch(agent, /console\.log\(.*cookie|writeFileSync\(.*cookie/iu)
 })
 
