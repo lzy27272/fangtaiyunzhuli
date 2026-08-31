@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $resolvedRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 if (-not $resolvedRoot.StartsWith([System.IO.Path]::GetFullPath($env:LOCALAPPDATA), [System.StringComparison]::OrdinalIgnoreCase)) {
-  throw '安装目录必须位于当前用户LOCALAPPDATA中。'
+  throw 'InstallRoot must be inside the current user LOCALAPPDATA directory.'
 }
 New-Item -ItemType Directory -Path $resolvedRoot -Force | Out-Null
 
@@ -28,13 +28,13 @@ function Resolve-NodeRuntime([string]$RequestedNodePath) {
   }
   $winget = Get-Command 'winget.exe' -ErrorAction SilentlyContinue
   if (-not $winget) {
-    throw '未检测到Node.js，且系统没有winget。请先安装Node.js LTS后重试。'
+    throw 'Node.js and winget were not found. Install Node.js LTS and retry.'
   }
-  Write-Host '[1/5] 未检测到Node.js，正在通过Windows软件源安装Node.js LTS…'
+  Write-Host '[1/5] Node.js was not found. Installing Node.js LTS with winget...'
   & $winget.Source install --id OpenJS.NodeJS.LTS --exact --silent `
     --accept-package-agreements --accept-source-agreements
   if ($LASTEXITCODE -ne 0) {
-    throw "Node.js LTS安装失败，退出码：$LASTEXITCODE"
+    throw "Node.js LTS installation failed. Exit code: $LASTEXITCODE"
   }
   $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + `
     [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -45,18 +45,18 @@ function Resolve-NodeRuntime([string]$RequestedNodePath) {
       return $knownNodePath
     }
   }
-  throw 'Node.js安装完成，但当前会话尚未找到node.exe。请重新打开安装文件。'
+  throw 'Node.js was installed but node.exe is not available yet. Reopen the installer.'
 }
 
-Write-Host '[1/5] 正在检查Node.js运行环境…'
+Write-Host '[1/5] Checking the Node.js runtime...'
 $resolvedNodePath = Resolve-NodeRuntime $NodePath
 $resolvedNpmPath = Join-Path (Split-Path $resolvedNodePath) 'npm.cmd'
 if (-not (Test-Path -LiteralPath $resolvedNpmPath -PathType Leaf)) {
-  throw 'Node.js安装目录中未找到npm.cmd。'
+  throw 'npm.cmd was not found next to node.exe.'
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-Write-Host '[2/5] 正在安装001门店采集器文件…'
+Write-Host '[2/5] Installing the 001 trusted-device files...'
 $files = @(
   'tools\trusted-device\trusted-device-agent.mjs',
   'tools\trusted-device\package.json',
@@ -75,22 +75,22 @@ foreach ($relative in $files) {
 $packageRoot = Join-Path $resolvedRoot 'tools\trusted-device'
 Push-Location $packageRoot
 try {
-  Write-Host '[3/5] 正在安装本机采集依赖，首次可能需要1至2分钟…'
+  Write-Host '[3/5] Installing collector dependencies. The first run may take 1-2 minutes...'
   & $resolvedNpmPath install --omit=dev --ignore-scripts --no-audit --no-fund
-  if ($LASTEXITCODE -ne 0) { throw "依赖安装失败，退出码：$LASTEXITCODE" }
-  Write-Host '[4/5] 正在注册001门店可信设备…'
+  if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed. Exit code: $LASTEXITCODE" }
+  Write-Host '[4/5] Registering the 001 trusted device...'
   $deviceStatePath = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001\device-state.json'
   $deviceReady = $false
   if (Test-Path -LiteralPath $deviceStatePath -PathType Leaf) {
     & $resolvedNodePath '.\trusted-device-agent.mjs' status
     if ($LASTEXITCODE -eq 0) {
       $deviceReady = $true
-      Write-Host '检测到本机已有有效可信设备，本次保留原设备密钥与登录会话。'
+      Write-Host 'An existing trusted device is valid. Keeping its device key and browser session.'
     }
   }
   if (-not $deviceReady) {
     & $resolvedNodePath '.\trusted-device-agent.mjs' enroll --code $EnrollmentCode --server $ServerOrigin
-    if ($LASTEXITCODE -ne 0) { throw "可信设备注册失败，退出码：$LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "Trusted-device enrollment failed. Exit code: $LASTEXITCODE" }
   }
 } finally {
   Pop-Location
@@ -115,7 +115,7 @@ Register-ScheduledTask `
   -Action $taskAction `
   -Trigger $taskTrigger `
   -Settings $taskSettings `
-  -Description '四方馆001门店可信设备采集器；每5分钟检查一次当前采集时段。' `
+  -Description 'Sifangguan 001 trusted-device collector. Checks the active collection window every 5 minutes.' `
   -Force | Out-Null
 
 $protocolRoot = 'HKCU:\Software\Classes\sfgtrusted001'
@@ -129,8 +129,8 @@ Set-Item -Path $protocolCommand -Value $openCommand
 
 $stateRoot = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001'
 & icacls.exe $stateRoot /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "本机凭据目录权限收紧失败，退出码：$LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to secure the local credential directory. Exit code: $LASTEXITCODE" }
 
-Write-Host '[5/5] 安装完成，正在打开美团官方登录页面…'
+Write-Host '[5/5] Installation complete. Opening the official Meituan login page...'
 & $resolvedNodePath $agentPath login
-if ($LASTEXITCODE -ne 0) { throw "001可信设备登录未完成，退出码：$LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "001 trusted-device login was not completed. Exit code: $LASTEXITCODE" }

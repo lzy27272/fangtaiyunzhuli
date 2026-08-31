@@ -54,7 +54,7 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(installer, /collect-if-due/u)
   assert.doesNotMatch(installer, /schtasks\.exe/u)
   assert.match(installer, /trusted-device-agent\.mjs' status/u)
-  assert.match(installer, /本次保留原设备密钥与登录会话/u)
+  assert.match(installer, /Keeping its device key and browser session/u)
   assert.doesNotMatch(agent, /console\.log\(.*cookie|writeFileSync\(.*cookie/iu)
   assert.match(agent, /const cloudSnapshot = \{[\s\S]+?orders: \[\]/u)
   assert.match(agent, /snapshot: cloudSnapshot/u)
