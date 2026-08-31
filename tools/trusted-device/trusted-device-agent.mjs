@@ -31,6 +31,11 @@ const { chromium } = require('playwright-core')
 const HOTEL_CODE = '001'
 const DEFAULT_SERVER_ORIGIN = 'https://www.sfgzt.cn'
 const DEFAULT_CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+const LEGACY_REVENUE_SOURCE_ID = '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0'
+const LEGACY_REVENUE_ENDPOINT =
+  'https://pms.meituan.com/hotelpms/api/v2/report/jy09'
+const CURRENT_REVENUE_ENDPOINT =
+  'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview'
 const stateRoot = process.env.LOCALAPPDATA
   ? join(process.env.LOCALAPPDATA, 'Sifangguan', 'TrustedDevice001')
   : join(os.homedir(), '.sifangguan', 'trusted-device-001')
@@ -250,6 +255,16 @@ const cookieHeaderFrom = (cookies) => cookies
   .map((cookie) => `${cookie.name}=${cookie.value}`)
   .join('; ')
 
+const currentSourcesFor001 = (sources) => sources.map((source) =>
+  source.sourceId === LEGACY_REVENUE_SOURCE_ID
+  && source.endpointUrl === LEGACY_REVENUE_ENDPOINT
+    ? {
+        ...source,
+        displayName: '经营概览（房费/ADR/RevPAR）',
+        endpointUrl: CURRENT_REVENUE_ENDPOINT,
+      }
+    : source)
+
 const collectOnce = async () => {
   const state = loadState()
   const config = await signedPost(
@@ -271,9 +286,10 @@ const collectOnce = async () => {
     throw new Error('TRUSTED_DEVICE_LOGIN_REQUIRED')
   }
 
+  const collectionSources = currentSourcesFor001(config.sources)
   const previousStore = loadSnapshotStore(state.snapshotPath)
   const previousSnapshots = previousStore[config.hotel.hotelId] ?? []
-  const enabledSources = config.sources.filter((source) => source.enabled)
+  const enabledSources = collectionSources.filter((source) => source.enabled)
   const cookiesBySourceId = Object.fromEntries(
     enabledSources.map((source) => [source.sourceId, cookieHeader]),
   )
@@ -282,7 +298,7 @@ const collectOnce = async () => {
   try {
     result = await collectLiveReports({
       hotel: config.hotel,
-      sources: config.sources,
+      sources: collectionSources,
       cookiesBySourceId,
       previousSnapshots,
       secretKey: state.localHmacSecret,
