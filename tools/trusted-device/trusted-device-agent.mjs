@@ -295,10 +295,16 @@ const collectOnce = async () => {
     }
   }
   appendAndPersistSnapshot(previousStore, state.snapshotPath, result.snapshot)
+  const cloudSnapshot = {
+    ...result.snapshot,
+    // Line-level order hashes stay on the store computer. The cloud only
+    // needs the already-computed deltas, forecasts and inventory summaries.
+    orders: [],
+  }
   const receipt = await signedPost(
     state,
     '/api/v1/trusted-device/snapshots',
-    { hotelCode: HOTEL_CODE, snapshot: result.snapshot },
+    { hotelCode: HOTEL_CODE, snapshot: cloudSnapshot },
   )
   process.stdout.write(
     `001采集完成：${result.snapshot.businessDate}，${result.snapshot.completeness}`

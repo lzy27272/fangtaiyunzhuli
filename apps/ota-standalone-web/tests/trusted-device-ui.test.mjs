@@ -47,6 +47,8 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(installer, /trusted-device-agent\.mjs' status/u)
   assert.match(installer, /本次保留原设备密钥与登录会话/u)
   assert.doesNotMatch(agent, /console\.log\(.*cookie|writeFileSync\(.*cookie/iu)
+  assert.match(agent, /const cloudSnapshot = \{[\s\S]+?orders: \[\]/u)
+  assert.match(agent, /snapshot: cloudSnapshot/u)
 })
 
 test('public proxy exposes only the three signed trusted-device intake paths', async () => {
