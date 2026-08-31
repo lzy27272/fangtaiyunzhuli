@@ -1225,6 +1225,7 @@ details.history-card { display: block; }
   .workspace { padding: 1.25rem .8rem 3rem; }
   .workspace-header, .page-heading { align-items: flex-start; }
   .simulation-banner { align-items: flex-start; flex-direction: column; gap: .35rem; }
+  .simulation-banner strong { overflow-wrap: anywhere; white-space: normal; }
   .context-bar { grid-template-columns: 1fr; }
   .simulation-hotel-creator > div { grid-template-columns: 1fr; }
   .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row, .wecom-config-grid, .account-security-grid, .managed-account-fields, .managed-account-card .managed-account-fields { grid-template-columns: 1fr; }
