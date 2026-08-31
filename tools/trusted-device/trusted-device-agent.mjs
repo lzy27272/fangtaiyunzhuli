@@ -6,7 +6,7 @@ import {
   randomInt,
   sign,
 } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import {
   existsSync,
@@ -190,8 +190,51 @@ const browserDebuggingReady = async (origin) => {
   }
 }
 
+const discoverOfficialBrowserDebuggingPort = (state) => {
+  if (process.platform !== 'win32') return null
+  const script = [
+    '$profile = [Environment]::GetEnvironmentVariable("SFG_TRUSTED_PROFILE")',
+    `$processes = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue`,
+    'foreach ($process in $processes) {',
+    '  $line = [string]$process.CommandLine',
+    `  if ($line -and $line.IndexOf($profile, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $line -match '--remote-debugging-port=(\\d+)') {`,
+    '    [Console]::Out.Write($Matches[1])',
+    '    break',
+    '  }',
+    '}',
+  ].join('\n')
+  const result = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', script],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, SFG_TRUSTED_PROFILE: state.chromeProfilePath },
+      timeout: 5_000,
+      windowsHide: true,
+    },
+  )
+  if (result.status !== 0) return null
+  const discovered = Number.parseInt(result.stdout.trim(), 10)
+  return Number.isInteger(discovered)
+    && discovered >= 20_000
+    && discovered <= 49_999
+    ? discovered
+    : null
+}
+
 const connectToOfficialBrowser = async (state) => {
-  const origin = browserDebuggingOrigin(state)
+  let origin = browserDebuggingOrigin(state)
+  if (!await browserDebuggingReady(origin)) {
+    const discoveredPort = discoverOfficialBrowserDebuggingPort(state)
+    if (discoveredPort !== null) {
+      const discoveredOrigin = `http://127.0.0.1:${discoveredPort}`
+      if (await browserDebuggingReady(discoveredOrigin)) {
+        state.browserDebuggingPort = discoveredPort
+        atomicWrite(statePath, state)
+        origin = discoveredOrigin
+      }
+    }
+  }
   if (!await browserDebuggingReady(origin)) {
     throw new Error('TRUSTED_DEVICE_OFFICIAL_BROWSER_NOT_RUNNING')
   }

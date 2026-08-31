@@ -66,6 +66,10 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(agent, /process\.exit\(1\)/u)
   assert.match(agent, /else if \(command === 'repair'\) await repair\(\)/u)
   assert.match(agent, /waitForOfficialLogin/u)
+  assert.match(agent, /Get-CimInstance Win32_Process/u)
+  assert.match(agent, /SFG_TRUSTED_PROFILE/u)
+  assert.match(agent, /state\.browserDebuggingPort = discoveredPort/u)
+  assert.doesNotMatch(agent, /Stop-Process|taskkill/iu)
   assert.doesNotMatch(agent, /slider|captcha.*solve|drag.*captcha/iu)
 })
 
