@@ -75,7 +75,7 @@ foreach ($relative in $files) {
 $packageRoot = Join-Path $resolvedRoot 'tools\trusted-device'
 Push-Location $packageRoot
 try {
-  Write-Host '[3/5] 正在安装受控浏览器依赖，首次可能需要1至2分钟…'
+  Write-Host '[3/5] 正在安装本机采集依赖，首次可能需要1至2分钟…'
   & $resolvedNpmPath install --omit=dev --ignore-scripts --no-audit --no-fund
   if ($LASTEXITCODE -ne 0) { throw "依赖安装失败，退出码：$LASTEXITCODE" }
   Write-Host '[4/5] 正在注册001门店可信设备…'

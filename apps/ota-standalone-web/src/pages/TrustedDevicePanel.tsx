@@ -148,7 +148,8 @@ export function TrustedDevicePanel({
           <strong>登录会话只留在门店电脑，云端只接收签名业务数据</strong>
           <p>
             管理员直接在门店电脑的美团官方页面登录。Cookie、账号、密码、验证码和
-            设备私钥不上传；首次打开下载文件安装一次，以后直接从这里进入登录。
+            设备私钥不上传；登录使用普通Chrome，不由自动测试软件启动。登录后请
+            保留该窗口运行（可以最小化），采集器只连接这一本机会话。
           </p>
         </div>
         <div className="trusted-device-actions">
@@ -196,7 +197,7 @@ export function TrustedDevicePanel({
         </div>
       ) : null}
       <p className="trusted-device-install-note">
-        Windows不允许网页静默执行安装文件：首次下载后请打开一次；安装器会自动安装采集器并跳转到美团官网。已安装电脑不再下载。
+        Windows不允许网页静默执行安装文件：首次下载后请打开一次；安装器会自动安装采集器并打开普通Chrome美团官网。已安装电脑不再下载。
       </p>
       <div className="trusted-device-policy">
         <span>门店范围：仅001</span>

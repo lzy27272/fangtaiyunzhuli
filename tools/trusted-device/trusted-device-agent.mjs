@@ -3,8 +3,10 @@
 import {
   generateKeyPairSync,
   randomBytes,
+  randomInt,
   sign,
 } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import {
   existsSync,
@@ -153,43 +155,93 @@ const enroll = async () => {
   process.stdout.write('001可信设备注册成功。私钥与浏览器会话仅保存在本机。\n')
 }
 
-const launchContext = async (state, headless) => {
+const delay = (milliseconds) => new Promise((resolvePromise) =>
+  setTimeout(resolvePromise, milliseconds))
+
+const ensureBrowserDebuggingPort = (state) => {
+  if (
+    Number.isInteger(state.browserDebuggingPort)
+    && state.browserDebuggingPort >= 20_000
+    && state.browserDebuggingPort <= 49_999
+  ) return state.browserDebuggingPort
+  state.browserDebuggingPort = randomInt(20_000, 50_000)
+  atomicWrite(statePath, state)
+  return state.browserDebuggingPort
+}
+
+const browserDebuggingOrigin = (state) =>
+  `http://127.0.0.1:${ensureBrowserDebuggingPort(state)}`
+
+const browserDebuggingReady = async (origin) => {
+  try {
+    const response = await fetch(`${origin}/json/version`, {
+      signal: AbortSignal.timeout(1_000),
+    })
+    if (!response.ok) return false
+    const version = await response.json().catch(() => ({}))
+    return typeof version?.webSocketDebuggerUrl === 'string'
+  } catch {
+    return false
+  }
+}
+
+const connectToOfficialBrowser = async (state) => {
+  const origin = browserDebuggingOrigin(state)
+  if (!await browserDebuggingReady(origin)) {
+    throw new Error('TRUSTED_DEVICE_OFFICIAL_BROWSER_NOT_RUNNING')
+  }
+  const browser = await chromium.connectOverCDP(origin)
+  const context = browser.contexts()[0]
+  if (!context) throw new Error('TRUSTED_DEVICE_OFFICIAL_BROWSER_CONTEXT_MISSING')
+  return { browser, context }
+}
+
+const openOfficialBrowser = async (state) => {
   if (!existsSync(browserExecutable)) {
     throw new Error('TRUSTED_DEVICE_CHROME_NOT_FOUND')
   }
   mkdirSync(state.chromeProfilePath, { recursive: true })
-  return chromium.launchPersistentContext(state.chromeProfilePath, {
-    headless,
-    executablePath: browserExecutable,
-    viewport: null,
-    args: ['--start-maximized'],
+  const port = ensureBrowserDebuggingPort(state)
+  const browserProcess = spawn(browserExecutable, [
+    '--remote-debugging-address=127.0.0.1',
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${state.chromeProfilePath}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--start-maximized',
+    'https://pms.meituan.com',
+  ], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false,
   })
+  browserProcess.unref()
+  const origin = browserDebuggingOrigin(state)
+  const deadline = Date.now() + 20_000
+  while (Date.now() < deadline) {
+    if (await browserDebuggingReady(origin)) {
+      return connectToOfficialBrowser(state)
+    }
+    await delay(500)
+  }
+  throw new Error('TRUSTED_DEVICE_CLOSE_OLD_CONTROLLED_CHROME_AND_RETRY')
 }
 
 const login = async () => {
   const state = loadState()
-  const context = await launchContext(state, false)
-  try {
-    const page = context.pages()[0] ?? await context.newPage()
-    await page.goto('https://pms.meituan.com', {
-      waitUntil: 'domcontentloaded',
-      timeout: 60_000,
-    })
-    process.stdout.write('请在已打开的美团官方页面完成登录；检测成功后窗口会自动关闭。\n')
-    const deadline = Date.now() + 30 * 60_000
-    while (Date.now() < deadline) {
-      const cookies = await context.cookies('https://pms.meituan.com')
-      if (cookies.some((cookie) =>
-        cookie.name === 'hotelpms_login_hotel_id' && cookie.value)) {
-        process.stdout.write('已检测到001本机会话。未上传Cookie或账号信息。\n')
-        return
-      }
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_000))
+  const { context } = await openOfficialBrowser(state)
+  process.stdout.write('普通Chrome已打开；请在美团官网人工登录，完成后保留窗口运行（可以最小化）。\n')
+  const deadline = Date.now() + 30 * 60_000
+  while (Date.now() < deadline) {
+    const cookies = await context.cookies('https://pms.meituan.com')
+    if (cookies.some((cookie) =>
+      cookie.name === 'hotelpms_login_hotel_id' && cookie.value)) {
+      process.stdout.write('已检测到001本机会话。未上传Cookie或账号信息。\n')
+      return
     }
-    throw new Error('TRUSTED_DEVICE_LOGIN_TIMEOUT')
-  } finally {
-    await context.close()
+    await delay(2_000)
   }
+  throw new Error('TRUSTED_DEVICE_LOGIN_TIMEOUT')
 }
 
 const cookieHeaderFrom = (cookies) => cookies
@@ -211,15 +263,10 @@ const collectOnce = async () => {
     || !Array.isArray(config.sources)
   ) throw new Error('TRUSTED_DEVICE_COLLECTION_CONFIG_INVALID')
 
-  const context = await launchContext(state, true)
-  let cookieHeader
-  try {
-    cookieHeader = cookieHeaderFrom(
-      await context.cookies('https://pms.meituan.com'),
-    )
-  } finally {
-    await context.close()
-  }
+  const { context } = await connectToOfficialBrowser(state)
+  let cookieHeader = cookieHeaderFrom(
+    await context.cookies('https://pms.meituan.com'),
+  )
   if (!/(?:^|;\s*)hotelpms_login_hotel_id=/u.test(cookieHeader)) {
     throw new Error('TRUSTED_DEVICE_LOGIN_REQUIRED')
   }
