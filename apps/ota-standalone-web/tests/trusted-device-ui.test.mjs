@@ -53,6 +53,8 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(agent, /source\.endpointUrl === LEGACY_REVENUE_ENDPOINT/u)
   assert.match(agent, /home\/workbench\/businessOverview/u)
   assert.match(agent, /sources: collectionSources/u)
+  assert.match(agent, /process\.exit\(0\)/u)
+  assert.match(agent, /process\.exit\(1\)/u)
 })
 
 test('public proxy exposes only the three signed trusted-device intake paths', async () => {

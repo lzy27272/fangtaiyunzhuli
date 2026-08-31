@@ -366,10 +366,11 @@ try {
   else if (command === 'collect-if-due') await collectIfDue()
   else if (command === 'status') await status()
   else help()
+  await new Promise((resolvePromise) => process.stdout.write('', resolvePromise))
+  process.exit(0)
 } catch (error) {
   const code = error instanceof Error
     ? error.message.replace(/[^A-Z0-9_:-]/giu, '_').slice(0, 160)
     : 'TRUSTED_DEVICE_FAILED'
-  process.stderr.write(`${code}\n`)
-  process.exitCode = 1
+  process.stderr.write(`${code}\n`, () => process.exit(1))
 }
