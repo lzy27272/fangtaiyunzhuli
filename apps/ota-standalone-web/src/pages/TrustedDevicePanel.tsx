@@ -8,6 +8,7 @@ import {
   type TrustedDeviceStatus,
 } from '../api/trustedDevice'
 import type { HotelContext } from '../api/business'
+import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
@@ -60,7 +61,7 @@ export function TrustedDevicePanel({
       })
       .catch((cause) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : '读取可信设备状态失败')
+          setError(businessErrorMessage(cause, '读取可信设备状态失败'))
         }
       })
     return () => {
@@ -87,7 +88,7 @@ export function TrustedDevicePanel({
       setNotice(`安装码已生成。请仅在${hotelCode}门店指定电脑上使用，15分钟后自动失效。`)
       onStatusChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '生成安装码失败')
+      setError(businessErrorMessage(cause, '生成安装码失败'))
     } finally {
       setLoading(false)
     }
@@ -119,7 +120,7 @@ export function TrustedDevicePanel({
       )
       onStatusChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '下载安装文件生成失败')
+      setError(businessErrorMessage(cause, '下载安装文件生成失败'))
     } finally {
       setLoading(false)
     }
@@ -170,7 +171,7 @@ export function TrustedDevicePanel({
           }
         })
         .catch((cause) => {
-          setError(cause instanceof Error ? cause.message : '读取修复状态失败')
+          setError(businessErrorMessage(cause, '读取修复状态失败'))
         })
         .finally(() => {
           repairPollInFlightRef.current = false
@@ -190,7 +191,7 @@ export function TrustedDevicePanel({
       setNotice(result.revoked ? `${hotelCode}可信设备已撤销。` : '当前没有可撤销的设备。')
       onStatusChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '撤销设备失败')
+      setError(businessErrorMessage(cause, '撤销设备失败'))
     } finally {
       setLoading(false)
     }
@@ -206,7 +207,7 @@ export function TrustedDevicePanel({
     <article className="report-source-card trusted-device-card">
       <header>
         <div>
-          <span>{hotelCode} · STORE TRUSTED DEVICE</span>
+          <span>{hotelCode} · 门店可信设备</span>
           <strong>{hotelCode}门店可信设备采集</strong>
         </div>
         <span className="mode-chip">

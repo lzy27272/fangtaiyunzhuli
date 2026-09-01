@@ -15,6 +15,7 @@ import {
   type OtaSourceInput,
   type OtaSourceView,
 } from '../api/business'
+import { businessCodeLabel, businessErrorMessage } from '../ui/businessDisplay'
 import { otaSourceGuidance } from './otaSourceGuidance'
 
 interface Props {
@@ -152,9 +153,9 @@ const validateUrl = (value: string): string | null => {
   try {
     url = new URL(normalizeDataEndpointUrl(value))
   } catch {
-    return '必须填写完整HTTPS网址。'
+    return '必须填写完整的安全网址。'
   }
-  if (url.protocol !== 'https:') return '只允许HTTPS网址。'
+  if (url.protocol !== 'https:') return '只允许以 https 开头的安全网址。'
   if (url.username || url.password) return '网址中不能包含账号或密码。'
   if (url.hash) return '网址中不能包含片段标识。'
   if ([...url.searchParams.keys()].some((key) =>
@@ -163,7 +164,7 @@ const validateUrl = (value: string): string | null => {
       url.hostname.toLowerCase() === 'h5api.m.fliggy.com'
       && key.toLowerCase() === 'appkey'
     ))) {
-    return '网址查询参数中不能包含Token、Cookie、密码或签名。'
+    return '网址中不能包含访问令牌、登录凭据、密码或签名。'
   }
   return null
 }
@@ -291,7 +292,7 @@ export function OtaSourceConfigPanel({
       })
       .catch((cause) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : '读取OTA配置失败')
+          setError(businessErrorMessage(cause, '读取渠道配置失败'))
         }
       })
       .finally(() => {
@@ -397,7 +398,7 @@ export function OtaSourceConfigPanel({
         if (endpointError) return `${source.displayName || 'OTA来源'}数据接口：${endpointError}`
       }
       if (source.requestMethod === 'GET' && source.requestPayloadJson.trim()) {
-        return `${source.displayName}使用GET时不能填写POST请求载荷。`
+        return `${source.displayName}使用读取方式时不能填写提交内容。`
       }
       if (!OTA_POLL_INTERVAL_OPTIONS.some(
         (option) => option.minutes === source.pollIntervalMinutes,
@@ -412,10 +413,10 @@ export function OtaSourceConfigPanel({
             || typeof payload !== 'object'
             || Array.isArray(payload)
           ) {
-            return `${source.displayName}的POST请求载荷必须是JSON对象。`
+            return `${source.displayName}的提交内容格式不正确。`
           }
         } catch {
-          return `${source.displayName}的POST请求载荷不是有效JSON。`
+          return `${source.displayName}的提交内容格式不正确。`
         }
       }
       const cookie = cookieDrafts[source.sourceId] ?? ''
@@ -424,7 +425,7 @@ export function OtaSourceConfigPanel({
         || /^\s*cookie\s*:/i.test(cookie)
         || (cookie.length > 0 && !cookie.trim())
       ) {
-        return `${source.displayName}的Cookie格式无效。`
+        return `${source.displayName}的登录凭据格式无效。`
       }
       const account = (accountDrafts[source.sourceId] ?? '').trim()
       const password = passwordDrafts[source.sourceId] ?? ''
@@ -535,7 +536,7 @@ export function OtaSourceConfigPanel({
       void refreshAfterSave(refreshTargets)
       onStatusChanged?.()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存OTA配置失败')
+      setError(businessErrorMessage(cause, '保存渠道配置失败'))
     } finally {
       setSaving(false)
     }
@@ -590,7 +591,7 @@ export function OtaSourceConfigPanel({
       setNotice(`${refreshed.displayName}已完成只读刷新。`)
     } catch (cause) {
       await reload()
-      setError(cause instanceof Error ? cause.message : 'OTA刷新失败')
+      setError(businessErrorMessage(cause, '渠道数据刷新失败'))
     } finally {
       setRefreshingId(null)
       onStatusChanged?.()
@@ -637,11 +638,11 @@ export function OtaSourceConfigPanel({
       } else if (result.status === 'VERIFICATION_REQUIRED') {
         setNotice('飞猪要求一次性验证码；请在10分钟内完成，最多提交3次。')
       } else {
-        setNotice('飞猪要求滑块或扫码等外部验证；本次已安全停止，请改用Cookie方式。')
+        setNotice('飞猪要求滑块或扫码等外部验证；本次已安全停止，请改用官网登录修复。')
       }
     } catch (cause) {
       await reload().catch(() => undefined)
-      setError(cause instanceof Error ? cause.message : '飞猪受控登录失败')
+      setError(businessErrorMessage(cause, '飞猪登录失败'))
       setNotice('')
     } finally {
       setLoggingInPlatform(null)
@@ -674,7 +675,7 @@ export function OtaSourceConfigPanel({
       }
     } catch (cause) {
       await reload().catch(() => undefined)
-      setError(cause instanceof Error ? cause.message : '验证码提交失败')
+      setError(businessErrorMessage(cause, '验证码提交失败'))
       setNotice('')
     } finally {
       setLoggingInPlatform(null)
@@ -692,12 +693,12 @@ export function OtaSourceConfigPanel({
     >
       <div className="page-heading">
         <div>
-          <p className="eyebrow">OTA DATA SOURCES</p>
+          <p className="eyebrow">渠道数据来源</p>
           <h3>OTA后台与数据接口</h3>
           <p>
-            每个门店可配置多个OTA来源。Cookie和账号密码分别加密保存且不回显；
-            后台登录网址和JSON数据接口均为可选补充项。已保存来源默认折叠；
-            补充接口后可使用Cookie进行只读采集，不会自动调价或修改库存。
+            每个门店可配置多个渠道来源。登录凭据和账号密码分别加密保存且不回显；
+            后台登录网址和数据接口均为可选补充项。已保存来源默认收起；
+            补充接口后只进行只读采集，不会自动调价或修改库存。
           </p>
         </div>
         <span className="mode-chip">
@@ -707,9 +708,9 @@ export function OtaSourceConfigPanel({
 
       <div className="security-note report-source-note">
         飞猪账号密码仅在管理员主动点击“账号登录并刷新”后提交给飞猪官方登录页，
-        会话Cookie按数据接口域名隔离后加密保存且不回显；首次成功后才允许会话失效时
+        登录会话按数据接口域名隔离后加密保存且不回显；首次成功后才允许会话失效时
         自动续期。验证码最多3次、10分钟有效，滑块或扫码不会自动绕过。
-        其他OTA仍使用Cookie只读采集。
+        其他渠道仍使用加密登录凭据只读采集。
       </div>
 
       {loading ? <div className="state-panel">正在读取OTA配置…</div> : null}
@@ -760,7 +761,7 @@ export function OtaSourceConfigPanel({
                         <span>
                           {CONTROLLED_LOGIN_STATUS_LABELS[
                             controlledLogin.status
-                          ] ?? controlledLogin.status}
+                          ] ?? businessCodeLabel(controlledLogin.status)}
                         </span>
                         <small>
                           账号密码已配置 {controlledLogin.credentialSourceCount}
@@ -799,7 +800,7 @@ export function OtaSourceConfigPanel({
                                 ]}
                               </small>
                             ) : null}
-                            <code>{controlledLogin.lastErrorCode}</code>
+                            <details className="technical-details"><summary>查看错误编号</summary><code>{controlledLogin.lastErrorCode}</code></details>
                           </>
                         ) : null}
                       </div>
@@ -828,7 +829,7 @@ export function OtaSourceConfigPanel({
                     <div className="ota-controlled-verification" role="group">
                       <div>
                         <strong>完成一次性验证码</strong>
-                        <small>仅填写当前页面验证码，不要填写账号、密码或Cookie。</small>
+                        <small>仅填写当前页面验证码，不要填写账号、密码或其他登录凭据。</small>
                       </div>
                       {controlledLoginResult.captchaImageDataUrl ? (
                         <img
@@ -930,7 +931,7 @@ export function OtaSourceConfigPanel({
                   <span>
                     需核对：{guidance.fields.join('、')}。{guidance.action}
                   </span>
-                  <code>{source.lastErrorCode}</code>
+                  {source.lastErrorCode ? <details className="technical-details"><summary>查看错误编号</summary><code>{source.lastErrorCode}</code></details> : null}
                 </div>
               ) : null}
 
@@ -1002,7 +1003,7 @@ export function OtaSourceConfigPanel({
                   </label>
                 ) : null}
                 <label className="wide-field">
-                  OTA数据接口网址（返回JSON，可选）
+                  渠道数据接口地址（可选）
                   <input
                     disabled={!canConfigure}
                     placeholder="可补充填写：https://.../api/..."
@@ -1021,7 +1022,7 @@ export function OtaSourceConfigPanel({
                   {source.platformCode === 'FLIGGY' ? (
                     <small>
                       飞猪接口中的临时 t、sign、bx-ua 和 bx-umidtoken
-                      会在保存时自动移除，采集时使用已加密Cookie重新生成短效签名。
+                      会在保存时自动移除，采集时使用已加密登录凭据重新生成短效签名。
                     </small>
                   ) : null}
                 </label>
@@ -1040,8 +1041,8 @@ export function OtaSourceConfigPanel({
                             : source.requestPayloadJson,
                       })}
                   >
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
+                    <option value="GET">读取数据</option>
+                    <option value="POST">提交请求</option>
                   </select>
                 </label>
                 <label>
@@ -1066,7 +1067,7 @@ export function OtaSourceConfigPanel({
                 </label>
                 {source.requestMethod === 'POST' ? (
                   <label className="wide-field">
-                    POST请求载荷（JSON对象）
+                    提交内容
                     <textarea
                       disabled={!canConfigure}
                       maxLength={20_000}
@@ -1081,7 +1082,7 @@ export function OtaSourceConfigPanel({
                   </label>
                 ) : null}
                 <label className="wide-field cookie-field">
-                  OTA Cookie
+                  渠道登录凭据
                   <input
                     autoComplete="off"
                     disabled={!canConfigure || clearCookies[source.sourceId]}
@@ -1089,7 +1090,7 @@ export function OtaSourceConfigPanel({
                     placeholder={
                       source.cookieConfigured
                         ? '已加密配置；留空表示保持不变'
-                        : '粘贴Cookie值，不含“Cookie:”前缀'
+                        : '粘贴登录凭据原文，系统会加密保存'
                     }
                     type="password"
                     value={cookieDrafts[source.sourceId] ?? ''}
@@ -1107,7 +1108,7 @@ export function OtaSourceConfigPanel({
                     }}
                   />
                   <small>
-                    {source.cookieConfigured ? 'Cookie已加密保存且不会回显' : '立即刷新前必须配置'}
+                    {source.cookieConfigured ? '登录凭据已加密保存且不会回显' : '立即刷新前必须配置'}
                   </small>
                 </label>
                 <label>
@@ -1163,7 +1164,7 @@ export function OtaSourceConfigPanel({
                           [source.sourceId]: event.target.checked,
                         }))}
                     />
-                    保存时清除该OTA来源Cookie
+                    保存时清除该渠道登录凭据
                   </label>
                 ) : null}
                 {source.credentialsConfigured ? (
@@ -1189,7 +1190,7 @@ export function OtaSourceConfigPanel({
 
               <div className="ota-refresh-summary">
                 <strong>
-                  刷新状态｜{source.lastRefreshStatus}
+                  刷新状态｜{businessCodeLabel(source.lastRefreshStatus, '尚未刷新')}
                 </strong>
                 <span>
                   {source.lastRefreshAt
@@ -1202,7 +1203,7 @@ export function OtaSourceConfigPanel({
                     <span>
                       已识别维度｜
                       {source.lastSummary.detectedDimensions
-                        .map((code) => DIMENSION_LABELS[code] ?? code)
+                        .map((code) => DIMENSION_LABELS[code] ?? '其他指标')
                         .join('、') || '尚未识别'}
                     </span>
                   </>
@@ -1290,7 +1291,7 @@ export function OtaSourceConfigPanel({
       {sources.length === 0 && !loading ? (
         <div className="state-panel">
           尚未配置OTA来源。新增后先选择OTA平台并填写来源名称；
-          后台登录网址、JSON数据接口及Cookie均可按需补充。
+          后台登录网址、数据接口及登录凭据均可按需补充。
         </div>
       ) : null}
 

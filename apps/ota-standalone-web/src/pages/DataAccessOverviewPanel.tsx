@@ -9,11 +9,14 @@ import {
   type LuopanBrowserConfigView,
   type MonitorView,
   type OtaSourceView,
+  type PmsSystemCode,
   type ReportSourceView,
 } from '../api/business'
+import { businessCodeLabel, businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
+  pmsSystemCode: PmsSystemCode
   pmsLoginConfigured: boolean
   refreshVersion: number
   reportSources: ReportSourceView[]
@@ -21,7 +24,7 @@ interface Props {
 
 interface OverviewState {
   briefs: BriefView[]
-  luopan: LuopanBrowserConfigView
+  luopan: LuopanBrowserConfigView | null
   monitor: MonitorView
   otaSources: OtaSourceView[]
 }
@@ -58,6 +61,7 @@ const completenessText = (
 
 export function DataAccessOverviewPanel({
   context,
+  pmsSystemCode,
   pmsLoginConfigured,
   refreshVersion,
   reportSources,
@@ -72,21 +76,19 @@ export function DataAccessOverviewPanel({
     try {
       const [otaSources, luopan, monitor, briefs] = await Promise.all([
         loadOtaSources(context),
-        loadLuopanBrowserConfig(context),
+        pmsSystemCode === 'LUOPAN_CLOUD'
+          ? loadLuopanBrowserConfig(context)
+          : Promise.resolve(null),
         loadMonitor(context),
         loadBriefs(context),
       ])
       setState({ otaSources, luopan, monitor, briefs })
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : '读取门店数据接入状态失败',
-      )
+      setError(businessErrorMessage(cause, '读取门店数据接入状态失败'))
     } finally {
       setLoading(false)
     }
-  }, [context])
+  }, [context, pmsSystemCode])
 
   useEffect(() => {
     void reload()
@@ -128,15 +130,16 @@ export function DataAccessOverviewPanel({
   ).length ?? 0
   const sourceCount = monitor?.sources.length ?? 0
   const luopan = state?.luopan
+  const isLuopan = pmsSystemCode === 'LUOPAN_CLOUD'
 
   return (
     <section className="data-access-overview" id="data-access-overview">
       <div className="page-heading compact-heading">
         <div>
-          <p className="eyebrow">STORE DATA STATUS</p>
+          <p className="eyebrow">门店数据状态</p>
           <h3>当前门店数据接入总览</h3>
           <p>
-            集中查看报表接口、罗盘云和OTA配置，以及最近一次采集是否已经形成经营数据和简报。
+            集中查看酒店系统、渠道平台和报表配置，以及最近一次采集是否已经形成经营数据和简报。
           </p>
         </div>
         <button
@@ -160,7 +163,7 @@ export function DataAccessOverviewPanel({
               : '尚未启用'}
           </strong>
           <small>
-            Cookie {reportStatus.cookieCount}/{reportStatus.enabledCount}
+            登录凭据 {reportStatus.cookieCount}/{reportStatus.enabledCount}
             {' · '}
             格式有效 {reportStatus.validCount}/{reportStatus.enabledCount}
             {' · '}
@@ -169,21 +172,20 @@ export function DataAccessOverviewPanel({
         </article>
 
         <article className={luopan?.lastErrorCode ? 'status-warning' : ''}>
-          <span>罗盘云采集</span>
+          <span>{isLuopan ? '罗盘酒店系统采集' : '美团别样红采集'}</span>
           <strong>
-            {luopan?.enabled
-              ? '单店采集已启用'
-              : luopan?.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
-                ? '单店已验证，尚未启用'
-                : '尚未完成单店验证'}
+            {isLuopan
+              ? luopan?.enabled
+                ? '单店采集已启用'
+                : luopan?.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
+                  ? '单店已验证，尚未启用'
+                  : '尚未完成单店验证'
+              : pmsLoginConfigured ? '登录与采集已配置' : '请检查可信设备'}
           </strong>
           <small>
-            最近采集 {luopan?.lastCollectionStatus ?? 'NEVER'}
-            {' · '}
-            营业日 {luopan?.lastBusinessDate ?? '—'}
-            {luopan?.lastErrorCode
-              ? ` · ${luopan.lastErrorCode}`
-              : ''}
+            {isLuopan
+              ? <>最近采集 {businessCodeLabel(luopan?.lastCollectionStatus, '尚未采集')} · 营业日 {luopan?.lastBusinessDate ?? '—'}{luopan?.lastErrorCode ? ' · 需要检查' : ''}</>
+              : '通过门店可信设备安全采集，登录状态按门店隔离'}
           </small>
         </article>
 
@@ -216,7 +218,7 @@ export function DataAccessOverviewPanel({
             {latestBrief
               ? `${completenessText(latestBrief.completenessCode)} · `
                 + `${localTime(latestBrief.publishedAt)} · `
-                + `发送状态 ${latestBrief.deliveryStatus}`
+                + `发送状态 ${businessCodeLabel(latestBrief.deliveryStatus, '尚未发送')}`
               : '完成一次有效采集后自动生成，发送与生成状态分开显示'}
           </small>
         </article>

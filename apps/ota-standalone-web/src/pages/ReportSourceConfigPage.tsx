@@ -8,6 +8,7 @@ import {
   type CalculationRole,
   type HotelContext,
   type PmsLoginConfigView,
+  type PmsSystemCode,
   type ReportSourceInput,
   type ReportSourceView,
   type ReportType,
@@ -22,10 +23,12 @@ import {
 import { DataAccessOverviewPanel } from './DataAccessOverviewPanel'
 import { TrustedDevicePanel } from './TrustedDevicePanel'
 import { loadTrustedDeviceStatus } from '../api/trustedDevice'
+import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext | null
   canConfigure: boolean
+  pmsSystemCode: PmsSystemCode
   attentionItems: ReportSourceAttention[]
   otaAttentionSourceId: string | null
 }
@@ -57,19 +60,20 @@ const REQUIRED_COVERAGE: Array<{
 ]
 
 const SENSITIVE_QUERY_KEY = /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
+const REPORT_SOURCE_CHANGE_REASON = 'UPDATE_COLLECTION_CONFIGURATION'
 
 function validateEndpoint(value: string): string | null {
   let url: URL
   try {
     url = new URL(value)
   } catch {
-    return '必须填写完整HTTPS地址。'
+    return '必须填写完整的安全接口地址。'
   }
-  if (url.protocol !== 'https:') return '只允许HTTPS接口地址。'
-  if (url.username || url.password) return 'URL中不能包含账号或密码。'
-  if (url.hash) return 'URL中不能包含片段标识。'
+  if (url.protocol !== 'https:') return '只允许以 https 开头的安全接口地址。'
+  if (url.username || url.password) return '接口地址中不能包含账号或密码。'
+  if (url.hash) return '接口地址中不能包含页面片段。'
   if ([...url.searchParams.keys()].some((key) => SENSITIVE_QUERY_KEY.test(key))) {
-    return 'URL查询参数中不能包含Token、Cookie、密码或签名密钥。'
+    return '接口地址中不能包含访问令牌、登录凭据、密码或签名密钥。'
   }
   return null
 }
@@ -99,13 +103,15 @@ const sourceCardId = (sourceId: string) =>
 export function ReportSourceConfigPage({
   context,
   canConfigure,
+  pmsSystemCode,
   attentionItems,
   otaAttentionSourceId,
 }: Props) {
   const [sources, setSources] = useState<ReportSourceView[]>([])
   const [cookieDrafts, setCookieDrafts] = useState<Record<string, string>>({})
   const [cookieClears, setCookieClears] = useState<Record<string, boolean>>({})
-  const [reasonCode, setReasonCode] = useState('REPORT_SOURCE_CONFIG')
+  const [collectionSection, setCollectionSection] =
+    useState<'overview' | 'pms' | 'ota' | 'reports'>('overview')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -142,7 +148,7 @@ export function ReportSourceConfigPage({
       })
       .catch((cause) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : '读取报表URL失败')
+          setError(businessErrorMessage(cause, '读取报表接口失败'))
         }
       })
       .finally(() => {
@@ -179,7 +185,7 @@ export function ReportSourceConfigPage({
       .catch((cause) => {
         if (!cancelled) {
           setPmsLoginError(
-            cause instanceof Error ? cause.message : '读取PMS登录配置失败',
+            businessErrorMessage(cause, '读取酒店系统登录配置失败'),
           )
         }
       })
@@ -287,7 +293,7 @@ export function ReportSourceConfigPage({
         }
       })
     ) {
-      setError('请求载荷必须是有效的JSON对象。')
+      setError('请求内容格式不正确，请检查后再保存。')
       return
     }
     if (
@@ -299,17 +305,13 @@ export function ReportSourceConfigPage({
       setError('至少保留一个启用的主计算来源。')
       return
     }
-    if (!/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(reasonCode)) {
-      setError('变更原因码必须为2至64位大写字母、数字、下划线或连字符。')
-      return
-    }
     if (
       Object.values(cookieDrafts).some((value) =>
         /[\r\n\u0000]/.test(value)
         || /^\s*cookie\s*:/i.test(value)
         || (value.length > 0 && !value.trim()))
     ) {
-      setError('Cookie不能包含请求头前缀、换行符、空字符或仅空格内容。')
+      setError('登录凭据格式不正确，请重新填写。')
       return
     }
 
@@ -332,7 +334,7 @@ export function ReportSourceConfigPage({
     }))
     setSaving(true)
     try {
-      await saveReportSources(context, payload, reasonCode)
+      await saveReportSources(context, payload, REPORT_SOURCE_CHANGE_REASON)
       const savedSources = await loadReportSources(context)
       setSources(savedSources)
       setCookieDrafts({})
@@ -340,7 +342,7 @@ export function ReportSourceConfigPage({
       if (enabledToggleOnly) {
         setOverviewVersion((current) => current + 1)
         setNotice(
-          '罗盘PMS报表启用状态已保存；未启用的报表无需配置Cookie或POST载荷，也不会参与采集。',
+          '罗盘酒店系统的报表启用状态已保存；未启用的报表不会参与采集。',
         )
         return
       }
@@ -351,20 +353,20 @@ export function ReportSourceConfigPage({
           ` 已自动采集一次：${run.successfulSourceCount}/${run.sourceCount}`
           + ` 个来源可用，结果为${run.status === 'PARTIAL' ? '部分形成' : '完整'}。`
       } catch (cause) {
-        const code = cause instanceof Error ? cause.message : 'COLLECTION_FAILED'
+        const message = businessErrorMessage(cause, '采集未完成')
         collectionNotice =
-          ` 配置已保存，但自动采集未完成（${code}）；`
+          ` 配置已保存，但自动采集未完成（${message}）；`
           + '可修正配置后再次保存，或到监控页手动采集。'
       }
       setOverviewVersion((current) => current + 1)
       setNotice(
         (definitionsLocked
-          ? `当前门店Cookie及POST载荷已保存；其他接口定义继续由${definitionTemplateHotelCode}门店统一同步。`
-          : '报表URL及当前门店Cookie状态已保存；接口定义已同步到全部评审门店，Cookie不会被复制或覆盖。')
+          ? `当前门店登录凭据及请求内容已保存；其他接口设置继续由${definitionTemplateHotelCode}门店统一同步。`
+          : '报表接口及当前门店登录凭据已保存；接口设置已同步到全部门店，登录凭据不会被复制或覆盖。')
         + collectionNotice,
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存报表URL失败')
+      setError(businessErrorMessage(cause, '保存报表接口失败'))
     } finally {
       setSaving(false)
     }
@@ -402,12 +404,12 @@ export function ReportSourceConfigPage({
       setOverviewVersion((current) => current + 1)
       setPmsLoginNotice(
         saved.configured
-          ? 'PMS账号密码已加密保存，页面输入已清空且不会回显。'
-          : 'PMS账号密码配置已清除。',
+          ? '酒店系统账号密码已加密保存，页面输入已清空且不会回显。'
+          : '酒店系统账号密码配置已清除。',
       )
     } catch (cause) {
       setPmsLoginError(
-        cause instanceof Error ? cause.message : '保存PMS登录配置失败',
+        businessErrorMessage(cause, '保存酒店系统登录配置失败'),
       )
     } finally {
       setSavingPmsLogin(false)
@@ -418,95 +420,85 @@ export function ReportSourceConfigPage({
     <section className="page-card">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">01 · REPORT SOURCES</p>
-          <h2>多报表URL接入</h2>
-          <p>
-            PMS和OTA均不是必选系统。后台按报表用途组合多个JSON接口，
-            主来源参与确定性计算，OTA可作为辅助校验来源。
-          </p>
+          <p className="eyebrow">管理员专用</p>
+          <h2>数据采集设置</h2>
+          <p>按步骤检查酒店系统、渠道平台和数据报表。日常维护只需进入对应步骤，无需理解技术参数。</p>
         </div>
-        <span className="mode-chip">URL FUSION</span>
+        <span className="mode-chip">仅管理员可见</span>
       </div>
 
-      <div className="report-pipeline" role="status">
-        <strong>报表URL</strong>
-        <span>→</span>
-        <strong>字段映射</strong>
-        <span>→</span>
-        <strong>融合计算</strong>
-        <span>→</span>
-        <strong>两类简报 / 售罄预警 / P1</strong>
-        <span>→</span>
-        <strong>企微机器人</strong>
-      </div>
-
-      <div className="security-note report-source-note">
-        每个网址可以独立配置Cookie。Cookie不得写入URL，密码框内容写入后不回显；
-        后台按门店与网址隔离加密保存，正式抓取时仅向对应接口注入。
-      </div>
-
-      <div className="delivery-policy-grid" aria-label="企业微信推送规则">
-        <article>
-          <span>整点简报</span>
-          <strong>动态时段｜末班01:00</strong>
-          <small>7/8月、节假日及前一天08:00起每小时；其他日期09/11/13点及14:00后每小时。</small>
-        </article>
-        <article>
-          <span>热销房型售罄</span>
-          <strong>两类简报后1分钟独立推送</strong>
-          <small>仅可靠可售量为0或以下时触发；数据缺失不误报，同小时不重复。</small>
-        </article>
-        <article>
-          <span>P1房态风险</span>
-          <strong>播报时段内立即推送</strong>
-          <small>手动采集不等待整点；自动播报仍遵循动态时段。</small>
-        </article>
-        <article>
-          <span>推送对象</span>
-          <strong>同一运营群 · @所有人</strong>
-          <small>Webhook仅通过凭据别名绑定，不在页面显示明文。</small>
-        </article>
+      <div className="collection-step-nav" aria-label="采集设置步骤">
+        {([
+          ['overview', '状态总览', '先看是否正常'],
+          ['pms', '酒店系统', '登录与采集设备'],
+          ['ota', '渠道平台', '携程、美团等'],
+          ['reports', '高级报表', '接口与登录凭据'],
+        ] as const).map(([code, label, detail], index) => (
+          <button
+            className={collectionSection === code ? 'active' : ''}
+            key={code}
+            type="button"
+            onClick={() => setCollectionSection(code)}
+          >
+            <span>{index + 1}</span>
+            <strong>{label}</strong>
+            <small>{detail}</small>
+          </button>
+        ))}
       </div>
 
       {!context ? (
         <div className="state-panel">请先在顶部选择门店。</div>
       ) : (
         <StatePanel loading={loading} error={error}>
-          <DataAccessOverviewPanel
-            context={context}
-            pmsLoginConfigured={pmsLoginConfig?.configured ?? false}
-            refreshVersion={overviewVersion}
-            reportSources={sources}
-          />
+          {collectionSection === 'overview' ? <>
+            <DataAccessOverviewPanel
+              context={context}
+              pmsSystemCode={pmsSystemCode}
+              pmsLoginConfigured={pmsLoginConfig?.configured ?? false}
+              refreshVersion={overviewVersion}
+              reportSources={sources}
+            />
+            <div className="collection-next-actions">
+              <button type="button" onClick={() => setCollectionSection('pms')}>检查酒店系统</button>
+              <button className="secondary" type="button" onClick={() => setCollectionSection('ota')}>检查渠道平台</button>
+            </div>
+          </> : null}
 
-          <TrustedDevicePanel
-            canConfigure={canConfigure}
-            context={context}
-            onStatusChanged={() =>
-              setOverviewVersion((current) => current + 1)}
-          />
+          {collectionSection === 'pms' ? <>
+            {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
+              <TrustedDevicePanel
+                canConfigure={canConfigure}
+                context={context}
+                onStatusChanged={() =>
+                  setOverviewVersion((current) => current + 1)}
+              />
+            ) : (
+              <LuopanBrowserConfigPanel
+                canConfigure={canConfigure}
+                context={context}
+                onStatusChanged={() =>
+                  setOverviewVersion((current) => current + 1)}
+              />
+            )}
+          </> : null}
 
-          <OtaSourceConfigPanel
+          {collectionSection === 'ota' ? <OtaSourceConfigPanel
             attentionSourceId={otaAttentionSourceId}
             canConfigure={canConfigure}
             context={context}
             onStatusChanged={() =>
               setOverviewVersion((current) => current + 1)}
-          />
+          /> : null}
 
-          <LuopanBrowserConfigPanel
-            canConfigure={canConfigure}
-            context={context}
-            onStatusChanged={() =>
-              setOverviewVersion((current) => current + 1)}
-          />
-
-          {trustedDeviceEligible === false ? (
+          {collectionSection === 'pms'
+          && pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+          && trustedDeviceEligible === false ? (
           <article className="report-source-card pms-login-card">
             <header>
               <div>
-                <span>PMS LOGIN</span>
-                <strong>模拟登录账号配置</strong>
+                <span>酒店系统登录</span>
+                <strong>备用账号配置</strong>
               </div>
               <span className="mode-chip">
                 {pmsLoginConfig?.configured ? '已加密配置' : '未配置'}
@@ -514,7 +506,7 @@ export function ReportSourceConfigPage({
             </header>
             <p>
               账号密码仅按当前门店加密保存，提交后立即从页面清空且不回显。
-              当前仅提供配置接口，模拟登录执行保持关闭，不会自动访问PMS或处理验证码。
+              系统不会在此页面自动登录或处理验证码；需要验证时请使用“登录修复”。
             </p>
             <div className="report-source-form">
               <label>
@@ -613,17 +605,21 @@ export function ReportSourceConfigPage({
           </article>
           ) : null}
 
+          {collectionSection === 'reports' ? <>
+          <div className="security-note report-source-note">
+            高级报表只在新增或更换采集接口时使用。登录凭据会按门店加密保存，保存后不再显示原文。
+          </div>
           {definitionsLocked ? (
             <div className="security-note report-source-note" role="status">
               报表接口由
               {definitionTemplateHotelCode}
-              门店统一配置并自动同步；当前门店可单独填写Cookie和POST请求载荷，
-              HTTPS地址及其他接口定义无需重复填写。
+              门店统一配置并自动同步；当前门店只需单独填写登录凭据和请求内容，
+              接口地址及其他设置无需重复填写。
             </div>
           ) : (
             <div className="security-note report-source-note" role="status">
               当前门店是报表接口模板。保存接口定义后会自动同步到现有及后续新增的全部评审门店；
-              各门店Cookie始终独立，不会被同步或覆盖。
+              各门店登录凭据始终独立，不会被同步或覆盖。
             </div>
           )}
 
@@ -682,7 +678,7 @@ export function ReportSourceConfigPage({
           {enabledToggleOnly ? (
             <div className="state-panel">
               当前为罗盘PMS门店，无须配置美团报表接口。可取消报表右上角的“启用”并保存；
-              停用后不要求Cookie或POST载荷，也不会参与轮询采集。
+              停用后不要求登录凭据或请求内容，也不会参与定时采集。
             </div>
           ) : (
             <>
@@ -755,7 +751,7 @@ export function ReportSourceConfigPage({
                     <div className="report-source-card-attention" role="alert">
                       <strong>{attentionGuidance.reason}</strong>
                       <span>{attentionGuidance.action}</span>
-                      <code>{attention?.errorCode}</code>
+                      {attention?.errorCode ? <details className="technical-details"><summary>查看错误编号</summary><code>{attention.errorCode}</code></details> : null}
                     </div>
                   ) : null}
 
@@ -819,7 +815,7 @@ export function ReportSourceConfigPage({
                       </select>
                     </label>
                     <label className="wide-field">
-                      完整HTTPS接口地址
+                      数据接口地址
                       <input
                         disabled={!canConfigure || source.definitionLocked}
                         placeholder="https://example.com/report/api"
@@ -834,10 +830,10 @@ export function ReportSourceConfigPage({
                         : null}
                     </label>
                     <label>
-                      其他凭据别名（可空）
+                      授权名称（可选）
                       <input
                         disabled={!canConfigure || source.definitionLocked}
-                        placeholder="REPORT_READER_01"
+                        placeholder="例如：每日经营报表"
                         value={source.credentialAlias}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -846,11 +842,11 @@ export function ReportSourceConfigPage({
                       />
                     </label>
                     <label className="wide-field">
-                      POST请求载荷（JSON，可空）
+                      请求内容（可选）
                       <textarea
                         disabled={!canConfigure || source.enabledToggleOnly}
                         maxLength={20_000}
-                        placeholder='例如：{"roomTypes":[],"channelKey":"Hotel"}'
+                        placeholder="留空表示使用默认查询条件"
                         rows={6}
                         value={source.requestPayloadJson}
                         onChange={(event) =>
@@ -859,12 +855,12 @@ export function ReportSourceConfigPage({
                           })}
                       />
                       <small>
-                        每家门店可单独修改。不得填写Token、Cookie或密码；
+                        只有接口明确要求时才填写。每家门店可单独修改，不得填写访问令牌、登录凭据或密码；
                         房态预测接口的日期会按本次采集返回的PMS营业日自动更新。
                       </small>
                     </label>
                     <label className="wide-field cookie-field">
-                      该网址专用Cookie（可空）
+                      该接口专用登录凭据（可选）
                       <input
                         autoComplete="off"
                         disabled={!canConfigure || source.enabledToggleOnly}
@@ -872,7 +868,7 @@ export function ReportSourceConfigPage({
                         placeholder={
                           source.cookieConfigured
                             ? '已配置；留空表示保持不变'
-                            : '粘贴Cookie值，不含“Cookie:”前缀'
+                            : '粘贴登录凭据原文，系统会加密保存'
                         }
                         type="password"
                         value={cookieDrafts[source.sourceId] ?? ''}
@@ -915,7 +911,7 @@ export function ReportSourceConfigPage({
                               [source.sourceId]: event.target.checked,
                             }))}
                         />
-                        保存时清除该网址的Cookie
+                        保存时清除该接口的登录凭据
                       </label>
                     ) : null}
                   </div>
@@ -928,7 +924,7 @@ export function ReportSourceConfigPage({
                       {' · '}
                       {source.enabledToggleOnly && !source.enabled
                         ? '已停用，不参与采集'
-                        : source.cookieConfigured ? 'Cookie已配置' : 'Cookie未配置'}
+                        : source.cookieConfigured ? '登录凭据已配置' : '登录凭据未配置'}
                     </span>
                     {canConfigure && !source.definitionLocked ? (
                       <button
@@ -946,14 +942,13 @@ export function ReportSourceConfigPage({
           </div>
 
           {sources.length === 0
-            ? <div className="state-panel">尚未配置报表URL。</div>
+            ? <div className="state-panel">尚未配置报表接口。</div>
             : null}
 
           {canConfigure ? (
             <div className="report-source-actions">
               {!definitionsLocked ? (
-                <>
-                  <button
+                <button
                     className="secondary"
                     type="button"
                     onClick={() => setSources((current) => [
@@ -961,17 +956,8 @@ export function ReportSourceConfigPage({
                       createEmptySource(),
                     ])}
                   >
-                    新增报表URL
+                    新增报表接口
                   </button>
-                  <label>
-                    变更原因码
-                    <input
-                      value={reasonCode}
-                      onChange={(event) =>
-                        setReasonCode(event.target.value.toUpperCase())}
-                    />
-                  </label>
-                </>
               ) : null}
               <button disabled={saving} type="button" onClick={save}>
                 {saving
@@ -984,6 +970,7 @@ export function ReportSourceConfigPage({
               </button>
             </div>
           ) : null}
+          </> : null}
           {notice ? <p className="success-note">{notice}</p> : null}
         </StatePanel>
       )}

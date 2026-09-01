@@ -7,6 +7,7 @@ import {
   type HotelContext,
   type LuopanBrowserConfigView,
 } from '../api/business'
+import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
@@ -35,9 +36,7 @@ const guidanceFor = (code: string | null | undefined) => {
     case 'LUOPAN_SESSION_VALIDATION_REQUIRED':
       return '启用前必须先完成单门店会话验证。'
     default:
-      return code
-        ? `罗盘云采集失败：${code}。请核对会话并重新验证。`
-        : ''
+      return code ? '罗盘采集失败，请核对登录会话并重新验证。' : ''
   }
 }
 
@@ -71,11 +70,7 @@ export function LuopanBrowserConfigPanel({
       })
       .catch((cause) => {
         if (!cancelled) {
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : '读取罗盘云配置失败',
-          )
+          setError(businessErrorMessage(cause, '读取罗盘云配置失败'))
         }
       })
       .finally(() => {
@@ -143,9 +138,7 @@ export function LuopanBrowserConfigPanel({
         setError(guidanceFor(code))
       }
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : '保存罗盘云配置失败',
-      )
+      setError(businessErrorMessage(cause, '保存罗盘云配置失败'))
     } finally {
       setWorking(false)
       onStatusChanged?.()
@@ -224,7 +217,7 @@ export function LuopanBrowserConfigPanel({
     >
       <header>
         <div>
-          <span>LUOPAN CLOUD</span>
+          <span>罗盘酒店系统</span>
           <strong>罗盘云单门店受控采集</strong>
           <small>按旺季/节假日与普通日期的动态时段采集；末班01:00</small>
         </div>
@@ -294,10 +287,14 @@ export function LuopanBrowserConfigPanel({
           ? '已确认仅一个门店'
           : '尚未验证'}
         ；最后营业日：{config?.lastBusinessDate ?? '—'}
-        ；最后采集：{config?.lastCollectionStatus ?? 'NEVER'}
-        {config?.lastErrorCode
-          ? `（${config.lastErrorCode}）`
-          : ''}
+        ；最后采集：{config?.lastCollectionStatus === 'COMPLETE'
+          ? '成功'
+          : config?.lastCollectionStatus === 'PARTIAL'
+            ? '数据不完整'
+            : config?.lastCollectionStatus === 'FAILED'
+              ? '失败'
+              : '尚未采集'}
+        {config?.lastErrorCode ? `（${guidanceFor(config.lastErrorCode)}）` : ''}
         。订单渠道明细尚未接入，简报会明确标记为不可用。
       </div>
 

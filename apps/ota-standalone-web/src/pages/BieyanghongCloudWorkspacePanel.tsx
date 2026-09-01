@@ -104,7 +104,7 @@ export function BieyanghongCloudWorkspacePanel({
     <article className="report-source-card bieyanghong-workspace-card">
       <header>
         <div>
-          <span>001 · CLOUD LOGIN WORKSPACE</span>
+          <span>001 · 云端登录工作台</span>
           <strong>别样红云端登录工作台</strong>
         </div>
         <span className="mode-chip">固定入口</span>

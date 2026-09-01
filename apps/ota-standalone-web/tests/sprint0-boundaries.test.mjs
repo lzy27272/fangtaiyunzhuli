@@ -17,6 +17,7 @@ const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
 const otaSourceConfigSource = await readFile(new URL('../src/pages/OtaSourceConfigPanel.tsx', import.meta.url), 'utf8')
 const otaSourceGuidanceSource = await readFile(new URL('../src/pages/otaSourceGuidance.ts', import.meta.url), 'utf8')
+const businessDisplaySource = await readFile(new URL('../src/ui/businessDisplay.ts', import.meta.url), 'utf8')
 const otaSourceCollectorSource = await readFile(
   new URL('../../../tools/uat/ota-source-collector.mjs', import.meta.url),
   'utf8',
@@ -114,6 +115,20 @@ test('operations console exposes store, exception, people and scoped store-detai
   )
 })
 
+test('store workspaces present business Chinese and keep technical values secondary', () => {
+  assert.match(businessDisplaySource, /DAILY_MORNING_REPAIR_FAILED: '每日早间自动修复失败'/)
+  assert.match(businessDisplaySource, /COLLECTION_MISSING: '缺少采集数据'/)
+  assert.match(historySource, /businessCodeLabel\(message\.deliveryStatus/)
+  assert.match(historySource, /className="technical-details"/)
+  assert.match(reportSourceSource, /状态总览/)
+  assert.match(reportSourceSource, /酒店系统/)
+  assert.match(reportSourceSource, /渠道平台/)
+  assert.match(reportSourceSource, /高级报表/)
+  assert.doesNotMatch(reportSourceSource, />变更原因码</)
+  assert.match(storeConsoleSource, /className="room-type-picker"/)
+  assert.doesNotMatch(storeConsoleSource, /热销房型编码/)
+})
+
 test('cookie-authenticated logout forwards a double-submit CSRF token', () => {
   const logoutSource = authApiSource.slice(
     authApiSource.indexOf('export async function logout'),
@@ -203,9 +218,8 @@ test('report source administration and scoped revenue configuration stay separat
 
 test('simulation views fail closed and never sum shared OTA inventory', () => {
   assert.match(monitorSource, /无法判断/)
-  assert.match(mappingSource, /主库存报表 = 实体可售基准/)
-  assert.match(mappingSource, /OTA产品库存只参与差异校验/)
-  assert.match(mappingSource, /FULL_SYNC/)
+  assert.match(mappingSource, /以酒店实体可售房量为准/)
+  assert.match(mappingSource, /渠道库存只用于核对差异，不会覆盖酒店库存/)
   assert.match(businessApiSource, /'COMPLETE' \| 'PARTIAL' \| 'UNAVAILABLE'/)
   assert.match(businessApiSource, /'MATCHED' \| 'P1_RISK' \| 'UNAVAILABLE'/)
   assert.match(stylesSource, /\.source-complete/)
@@ -222,7 +236,7 @@ test('multiple report URLs are saved by hotel with HTTPS and secret boundaries',
   assert.match(reportSourceSource, /url\.protocol !== 'https:'/)
   assert.match(reportSourceSource, /PRIMARY_CALCULATION/)
   assert.match(reportSourceSource, /AUXILIARY_CALCULATION/)
-  assert.match(reportSourceSource, /saveReportSources\(context, payload, reasonCode\)/)
+  assert.match(reportSourceSource, /saveReportSources\(context, payload, REPORT_SOURCE_CHANGE_REASON\)/)
   assert.match(reportSourceSource, /type="password"/)
   assert.match(reportSourceSource, /cookieDrafts\[source\.sourceId\]/)
   assert.match(reportSourceSource, /action: 'REPLACE'/)
@@ -241,7 +255,7 @@ test('Luopan stores can disable legacy reports without editing interfaces or cre
   assert.match(businessApiSource, /enabledToggleOnly: boolean/)
   assert.match(reportSourceSource, /保存报表启用状态/)
   assert.match(reportSourceSource, /无须配置美团报表接口/)
-  assert.match(reportSourceSource, /未启用的报表无需配置Cookie或POST载荷/)
+  assert.match(reportSourceSource, /停用后不要求登录凭据或请求内容/)
   assert.match(reviewApiSource, /LUOPAN_REPORT_SOURCE_ENABLED_ONLY/)
   assert.match(reviewApiSource, /reportSourceEnabledToggleOnlyMatch/)
   assert.match(monitorSource, /enabledReportSourceIds\.has\(source\.sourceId\)/)
@@ -254,7 +268,7 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(otaSourceConfigSource, /仅用于后台快捷跳转，不参与数据采集/)
   assert.match(reviewApiSource, /normalizeOptionalOtaUrl/)
   assert.match(reviewApiSource, /portalUrl: normalizeOptionalOtaUrl/)
-  assert.match(otaSourceConfigSource, /OTA数据接口网址（返回JSON，可选）/)
+  assert.match(otaSourceConfigSource, /渠道数据接口地址（可选）/)
   assert.match(otaSourceConfigSource, /未填写时仅保存OTA渠道资料，不参与自动轮询/)
   assert.match(otaSourceConfigSource, /expandedSourceIds/)
   assert.match(otaSourceConfigSource, /\{expanded \? '收起' : '展开'\}/)
@@ -263,7 +277,7 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(otaSourceConfigSource, /新增OTA渠道/)
   assert.match(otaSourceConfigSource, /SOURCE_KIND_LABELS/)
   assert.match(reviewApiSource, /dataEndpointUrl: normalizeOptionalOtaUrl/)
-  assert.match(otaSourceConfigSource, /OTA Cookie/)
+  assert.match(otaSourceConfigSource, /渠道登录凭据/)
   assert.match(otaSourceConfigSource, /OTA账号/)
   assert.match(otaSourceConfigSource, /OTA密码/)
   assert.match(otaSourceConfigSource, /type="password"/)

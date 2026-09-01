@@ -6,6 +6,7 @@ import {
   type WeComRepairBotConfigView,
   type WeComRepairBotPairingView,
 } from '../api/business'
+import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   canConfigure: boolean
@@ -55,7 +56,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
       setError('')
     } catch (cause) {
       if (!quiet) {
-        setError(cause instanceof Error ? cause.message : '读取机器人配置失败')
+        setError(businessErrorMessage(cause, '读取机器人配置失败'))
       }
     } finally {
       if (!quiet) setLoading(false)
@@ -71,7 +72,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
   async function save() {
     const replacing = botId.trim().length > 0 || secret.length > 0
     if (replacing && (!botId.trim() || !secret)) {
-      setError('更换凭据时，Bot ID和Secret必须同时填写。')
+      setError('更换凭据时，机器人编号和通信密钥必须同时填写。')
       return
     }
     setSaving(true)
@@ -103,7 +104,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
           : '智能机器人修复通道当前未启用。',
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存机器人配置失败')
+      setError(businessErrorMessage(cause, '保存机器人配置失败'))
     } finally {
       setSaving(false)
     }
@@ -124,7 +125,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
         `${next.hotelCode} ${next.displayName} 的配对命令是“绑定 ${next.pairingCode}”；请在10分钟内发送给企业微信智能机器人。`,
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '生成配对码失败')
+      setError(businessErrorMessage(cause, '生成配对码失败'))
     } finally {
       setPairingLoading(false)
     }
@@ -138,7 +139,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
     <section className="wecom-automation-card">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">WECOM REPAIR BOT</p>
+          <p className="eyebrow">企业微信修复助手</p>
           <h3>罗盘简报验证码修复助手</h3>
           <p>
             服务器通过企业微信官方长连接接收消息，无需域名。
@@ -164,22 +165,22 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
           启用罗盘验证码企业微信修复通道
         </label>
         <label>
-          企业微信智能机器人 Bot ID
+          企业微信智能机器人编号
           <input
             autoComplete="off"
             disabled={!canConfigure || saving || clearCredentials}
-            placeholder={config?.credentialConfigured ? '已加密保存；留空表示不更换' : '请在此填写Bot ID'}
+            placeholder={config?.credentialConfigured ? '已加密保存；留空表示不更换' : '请填写机器人编号'}
             type="password"
             value={botId}
             onChange={(event) => setBotId(event.target.value)}
           />
         </label>
         <label>
-          企业微信智能机器人 Secret
+          企业微信智能机器人通信密钥
           <input
             autoComplete="new-password"
             disabled={!canConfigure || saving || clearCredentials}
-            placeholder={config?.credentialConfigured ? '已加密保存；留空表示不更换' : '请在此填写Secret'}
+            placeholder={config?.credentialConfigured ? '已加密保存；留空表示不更换' : '请填写通信密钥'}
             type="password"
             value={secret}
             onChange={(event) => setSecret(event.target.value)}
@@ -199,7 +200,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
               }
             }}
           />
-          清除已保存的Bot ID和Secret并关闭修复通道
+          清除已保存的机器人编号和通信密钥并关闭修复通道
         </label>
       </div>
 

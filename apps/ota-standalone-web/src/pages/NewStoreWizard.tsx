@@ -16,8 +16,9 @@ import {
 } from '../api/business'
 import type { AuthSession } from '../auth/session'
 import { Icon, Status } from '../components/ConsoleUi'
+import { businessErrorMessage } from '../ui/businessDisplay'
 
-const STEPS = ['门店信息', 'PMS 厂家', 'OTA 渠道', '管理人员', '校验启用'] as const
+const STEPS = ['门店信息', '酒店系统', '渠道平台', '管理人员', '校验启用'] as const
 const PMS_OPTIONS: Array<{ code: PmsSystemCode; name: string; detail: string }> = [
   { code: 'MEITUAN_BIEYANGHONG', name: '美团别样红 PMS', detail: '门店可信设备采集，登录会话只留在指定电脑' },
   { code: 'LUOPAN_CLOUD', name: '罗盘 PMS', detail: '现有浏览器登录配置与只读采集方式' },
@@ -169,14 +170,14 @@ export function NewStoreWizard({
       setProgress((current) => [...current, '权限已分配', '门店已进入待校验状态'])
       onCreated(created)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '新增门店失败')
+      setError(businessErrorMessage(cause, '新增门店失败'))
     } finally { setSubmitting(false) }
   }
 
   return (
     <section className="console-page wizard-page">
       <button className="back-link" type="button" onClick={onCancel}>‹ 返回门店总览</button>
-      <div className="page-title-row compact-title"><div><p className="section-kicker">NEW STORE</p><h1>新增门店</h1><p>按步骤创建档案并配置数据连接；播报在渠道校验通过前保持关闭。</p></div></div>
+      <div className="page-title-row compact-title"><div><p className="section-kicker">门店建档</p><h1>新增门店</h1><p>按步骤创建档案并配置数据连接；播报在渠道校验通过前保持关闭。</p></div></div>
 
       <ol className="wizard-steps">
         {STEPS.map((label, index) => <li key={label} className={index === step ? 'active' : index < step ? 'done' : ''}><span>{index < step ? <Icon name="check" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
@@ -191,14 +192,14 @@ export function NewStoreWizard({
               <label>门店编号<input maxLength={16} placeholder="018" value={draft.hotelCode} onChange={(event) => setDraft({ ...draft, hotelCode: event.target.value.toUpperCase() })} /></label>
               <label>门店名称<input placeholder="请输入门店全称" value={draft.hotelDisplayName} onChange={(event) => setDraft({ ...draft, hotelDisplayName: event.target.value })} /></label>
               <label>所属组织<input value={draft.tenantDisplayName} onChange={(event) => setDraft({ ...draft, tenantDisplayName: event.target.value })} /></label>
-              <label>时区<select value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}><option>Asia/Shanghai</option></select></label>
+              <label>时区<select value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}><option value="Asia/Shanghai">中国标准时间（上海）</option></select></label>
             </div>
           </>
         ) : null}
 
         {step === 1 ? (
           <>
-            <div className="section-heading"><div><h2>选择 PMS 厂家</h2><p>PMS 厂家与采集方式分离，后续可以继续增加适配厂家。</p></div></div>
+            <div className="section-heading"><div><h2>选择酒店系统厂家</h2><p>酒店系统厂家与采集方式分离，后续可以继续增加适配厂家。</p></div></div>
             <div className="choice-list">
               {PMS_OPTIONS.map((option) => <button type="button" className={draft.pmsSystemCode === option.code ? 'selected' : ''} key={option.code} onClick={() => setDraft({ ...draft, pmsSystemCode: option.code })}><span className="choice-radio" /><span><strong>{option.name}</strong><small>{option.detail}</small></span><Status tone={option.code === 'MEITUAN_BIEYANGHONG' ? 'ok' : 'info'}>{option.code === 'MEITUAN_BIEYANGHONG' ? '可信设备方式' : '已支持'}</Status></button>)}
               <div className="future-choice"><span className="choice-radio" /><span><strong>其他 PMS 厂家</strong><small>完成厂家适配和接口校验后可加入目录</small></span><Status tone="muted">暂未接入</Status></div>
@@ -214,7 +215,7 @@ export function NewStoreWizard({
               {OTA_OPTIONS.map((option) => <label key={option.code}><input checked={selectedOta.includes(option.code)} type="checkbox" onChange={() => toggleOta(option.code)} /><strong>{option.name}</strong><span>登录与数据接口待校验</span><Status tone={selectedOta.includes(option.code) ? 'warning' : 'muted'}>{selectedOta.includes(option.code) ? '待配置' : '未启用'}</Status></label>)}
               {customChannels.map((channel) => <label key={channel.id}><input checked readOnly type="checkbox" /><strong>{channel.name}</strong><span>{channel.portalUrl}</span><Status tone="warning">待配置</Status></label>)}
             </div>
-            {showCustom ? <div className="drawer-backdrop" onMouseDown={() => setShowCustom(false)}><aside className="side-drawer" onMouseDown={(event) => event.stopPropagation()}><header><div><p className="section-kicker">CUSTOM CHANNEL</p><h2>新增其他 OTA 渠道</h2></div><button className="icon-button" onClick={() => setShowCustom(false)} type="button">×</button></header><div className="drawer-body form-stack"><label>渠道名称<input value={customDraft.name} onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} /></label><label>官方入口<input type="url" placeholder="https://" value={customDraft.portalUrl} onChange={(event) => setCustomDraft({ ...customDraft, portalUrl: event.target.value })} /></label><label>数据接口地址（可稍后配置）<input type="url" placeholder="https://" value={customDraft.dataEndpointUrl} onChange={(event) => setCustomDraft({ ...customDraft, dataEndpointUrl: event.target.value })} /></label></div><footer><button className="quiet-button" type="button" onClick={() => setShowCustom(false)}>取消</button><button className="primary-button" type="button" onClick={addCustomChannel}>加入渠道</button></footer></aside></div> : null}
+            {showCustom ? <div className="drawer-backdrop" onMouseDown={() => setShowCustom(false)}><aside className="side-drawer" onMouseDown={(event) => event.stopPropagation()}><header><div><p className="section-kicker">其他渠道设置</p><h2>新增其他 OTA 渠道</h2></div><button className="icon-button" onClick={() => setShowCustom(false)} type="button">×</button></header><div className="drawer-body form-stack"><label>渠道名称<input value={customDraft.name} onChange={(event) => setCustomDraft({ ...customDraft, name: event.target.value })} /></label><label>官方入口<input type="url" placeholder="https://" value={customDraft.portalUrl} onChange={(event) => setCustomDraft({ ...customDraft, portalUrl: event.target.value })} /></label><label>数据接口地址（可稍后配置）<input type="url" placeholder="https://" value={customDraft.dataEndpointUrl} onChange={(event) => setCustomDraft({ ...customDraft, dataEndpointUrl: event.target.value })} /></label></div><footer><button className="quiet-button" type="button" onClick={() => setShowCustom(false)}>取消</button><button className="primary-button" type="button" onClick={addCustomChannel}>加入渠道</button></footer></aside></div> : null}
           </>
         ) : null}
 

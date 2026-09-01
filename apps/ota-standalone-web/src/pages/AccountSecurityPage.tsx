@@ -291,7 +291,7 @@ export function AccountSecurityPage({
     <section className="page-card account-security-page">
       <header className="page-heading">
         <div>
-          <p className="eyebrow">05 · ACCOUNT & HOTEL ACCESS</p>
+          <p className="eyebrow">05 · 账号与门店权限</p>
           <h2>账号与门店权限</h2>
           <p>新增管理人员并分配可访问门店；未授权门店在目录和接口层均不可读取。</p>
         </div>

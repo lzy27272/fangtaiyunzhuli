@@ -11,6 +11,7 @@ import {
 import { loadTrustedDeviceStatus } from '../api/trustedDevice'
 import { Icon, LoadingState, Status } from '../components/ConsoleUi'
 import { TrustedDevicePanel } from './TrustedDevicePanel'
+import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
@@ -93,7 +94,7 @@ export function StoreRepairPanel({
       setNotice('修复凭据已安全提交，输入内容已清空且不会回显。')
       onStatusChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '修复凭据提交失败')
+      setError(businessErrorMessage(cause, '修复凭据提交失败'))
     } finally {
       setSaving(false)
     }
@@ -109,7 +110,7 @@ export function StoreRepairPanel({
       setNotice(`登录验证通过，PMS营业日为${next.lastBusinessDate ?? '已确认'}。`)
       onStatusChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '登录验证失败')
+      setError(businessErrorMessage(cause, '登录验证失败'))
     } finally {
       setValidating(false)
     }
@@ -138,7 +139,7 @@ export function StoreRepairPanel({
         <section className="content-panel repair-credential-card">
           <div className="section-heading small">
             <div>
-              <h2>PMS账号修复</h2>
+              <h2>酒店系统账号修复</h2>
               <p>仅用于重新建立当前门店登录；账号和密码不会在页面回显。</p>
             </div>
             <Status tone={pmsConfigured ? 'ok' : 'warning'}>
@@ -146,8 +147,8 @@ export function StoreRepairPanel({
             </Status>
           </div>
           <div className="report-source-form">
-            <label>PMS账号<input autoComplete="off" maxLength={256} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入当前门店账号" /></label>
-            <label>PMS密码<input autoComplete="new-password" maxLength={4096} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入密码" /></label>
+            <label>酒店系统账号<input autoComplete="off" maxLength={256} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入当前门店账号" /></label>
+            <label>酒店系统密码<input autoComplete="new-password" maxLength={4096} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入密码" /></label>
           </div>
           <div className="button-row">
             <button disabled={saving || !username.trim() || !password} type="button" onClick={() => void saveRepairCredentials()}>{saving ? '正在安全提交…' : '提交修复凭据'}</button>

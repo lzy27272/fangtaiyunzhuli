@@ -28,6 +28,12 @@ import {
   type PlatformIconName,
   type Tone,
 } from '../components/ConsoleUi'
+import {
+  businessCodeLabel,
+  businessErrorMessage,
+  metricLabel,
+  unitLabel,
+} from '../ui/businessDisplay'
 import { HistoryPage } from './HistoryPage'
 import { MappingTargetPage } from './MappingTargetPage'
 import { ReportSourceConfigPage } from './ReportSourceConfigPage'
@@ -194,7 +200,7 @@ export function StoreOverviewPage({
     <section className="console-page store-overview-page">
       <div className="page-title-row">
         <div>
-          <p className="section-kicker">STORE OVERVIEW</p>
+          <p className="section-kicker">门店经营总览</p>
           <h1>门店总览</h1>
           <p>查看授权范围内门店的登录、采集和播报状态。</p>
         </div>
@@ -245,7 +251,7 @@ export function StoreOverviewPage({
             <article className={`store-row has-${rowTone}`} key={summary.hotel.hotelId}>
               <button className="store-main" type="button" onClick={() => onOpen(summary.hotel)}>
                 <span className="store-avatar">{storeMonogram(summary.hotel.hotelName)}</span>
-                <span><strong>{summary.hotel.hotelCode} · {summary.hotel.hotelName}</strong><small>{PMS_LABELS[summary.hotel.pmsSystemCode]} · {summary.hotel.lifecycleStatus}</small></span>
+                <span><strong>{summary.hotel.hotelCode} · {summary.hotel.hotelName}</strong><small>{PMS_LABELS[summary.hotel.pmsSystemCode]} · {businessCodeLabel(summary.hotel.lifecycleStatus, '状态待确认')}</small></span>
               </button>
               <div className="source-statuses">
                 <button aria-label={`打开 PMS 采集配置，当前${pms.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, 'collection')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
@@ -303,7 +309,7 @@ export function StoreDetailPage({
   const [error, setError] = useState('')
   const [collecting, setCollecting] = useState(false)
   const [notice, setNotice] = useState('')
-  const [hotSellingDraft, setHotSellingDraft] = useState('')
+  const [hotSellingDraft, setHotSellingDraft] = useState<string[]>([])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -323,7 +329,7 @@ export function StoreDetailPage({
       hotSelling: results[6].status === 'fulfilled' ? results[6].value.roomTypeCodes : [],
     })
     if (results.every((result) => result.status === 'rejected')) setError('门店数据暂时不可用，请检查连接状态。')
-    if (results[6].status === 'fulfilled') setHotSellingDraft(results[6].value.roomTypeCodes.join('、'))
+    if (results[6].status === 'fulfilled') setHotSellingDraft(results[6].value.roomTypeCodes)
     setLoading(false)
   }, [context])
 
@@ -336,21 +342,20 @@ export function StoreDetailPage({
     setCollecting(true); setNotice(''); setError('')
     try {
       const run = await triggerLiveCollection(context)
-      setNotice(run.status === 'SUCCEEDED' ? '采集已完成，数据预览已更新。' : `采集完成，状态：${run.status}`)
+      setNotice(run.status === 'SUCCEEDED' ? '采集已完成，数据预览已更新。' : `采集完成：${businessCodeLabel(run.status)}`)
       await refresh()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '采集触发失败')
+      setError(businessErrorMessage(cause, '采集触发失败'))
     } finally { setCollecting(false) }
   }
 
   const saveHotSelling = async () => {
-    const codes = hotSellingDraft.split(/[、,，\s]+/).map((item) => item.trim()).filter(Boolean)
     try {
-      const saved = await saveHotSellingRoomTypes(context, [...new Set(codes)])
+      const saved = await saveHotSellingRoomTypes(context, [...new Set(hotSellingDraft)])
       setData((current) => ({ ...current, hotSelling: saved.roomTypeCodes }))
-      setHotSellingDraft(saved.roomTypeCodes.join('、'))
+      setHotSellingDraft(saved.roomTypeCodes)
       setNotice('热销房型配置已保存。')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '热销房型保存失败') }
+    } catch (cause) { setError(businessErrorMessage(cause, '热销房型保存失败')) }
   }
 
   const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, incidents: data.incidents, unavailable: Boolean(error) }
@@ -362,7 +367,7 @@ export function StoreDetailPage({
     <section className="console-page store-detail-page">
       <button className="back-link" type="button" onClick={onBack}>‹ 返回门店总览</button>
       <div className="page-title-row compact-title">
-        <div><p className="section-kicker">{hotel.hotelCode} · STORE WORKSPACE</p><h1>{hotel.hotelName}</h1><p>{PMS_LABELS[hotel.pmsSystemCode]} · 账号仅可读取授权门店</p></div>
+        <div><p className="section-kicker">{hotel.hotelCode} · 门店工作台</p><h1>{hotel.hotelName}</h1><p>{PMS_LABELS[hotel.pmsSystemCode]} · 账号仅可读取授权门店</p></div>
         <div className="title-actions"><button className="quiet-button" type="button" onClick={() => void refresh()}><Icon name="refresh" />刷新状态</button><button className="quiet-button" type="button" onClick={() => setTab(connectionTab)}><Icon name={canConfigure ? 'settings' : 'shield'} />{canConfigure ? '门店设置' : '登录修复'}</button></div>
       </div>
 
@@ -395,7 +400,7 @@ export function StoreDetailPage({
           <div className="section-heading"><div><h2>总数据预览</h2><p>PMS 与 OTA 最近一次成功采集结果；不完整数据不会作为正式播报依据。</p></div><button className="primary-button" disabled={collecting} onClick={() => void collect()} type="button"><Icon name="refresh" />{collecting ? '正在采集…' : '立即采集'}</button></div>
           <div className="metric-table">
             {Object.entries(data.monitor?.metrics ?? {}).slice(0, 8).map(([code, metric]) => (
-              <div key={code}><span>{code.replaceAll('_', ' ')}</span><strong>{metric.state === 'AVAILABLE' ? `${metric.value ?? '—'}${metric.unit ? ` ${metric.unit}` : ''}` : '—'}</strong><small>{metric.state === 'AVAILABLE' ? '已采集' : metric.state}</small></div>
+              <div key={code}><span>{metricLabel(code)}</span><strong>{metric.state === 'AVAILABLE' ? `${metric.value ?? '—'}${unitLabel(metric.unit) ? ` ${unitLabel(metric.unit)}` : ''}` : '—'}</strong><small>{metric.state === 'AVAILABLE' ? '已采集' : businessCodeLabel(metric.state, '数据待确认')}</small></div>
             ))}
             {!Object.keys(data.monitor?.metrics ?? {}).length ? <EmptyState title="暂无可预览数据" detail="完成 PMS 登录并执行一次采集后显示。" /> : null}
           </div>
@@ -410,7 +415,7 @@ export function StoreDetailPage({
             </section>
             <section className="content-panel">
               <div className="section-heading small"><div><h2>播报状态</h2><p>企业微信最近一次投递</p></div><button className="text-link" onClick={() => setTab('broadcast')} type="button">查看记录</button></div>
-              <div className="broadcast-summary"><Status tone={broadcast.tone}>{broadcast.label}</Status><dl><div><dt>最近投递</dt><dd>{formatTime(data.wecom?.lastDelivery?.attemptedAt)}</dd></div><div><dt>结果</dt><dd>{data.wecom?.lastDelivery?.deliveryStatus ?? '尚未投递'}</dd></div><div><dt>已生成简报</dt><dd>{data.briefs.length} 条</dd></div></dl></div>
+              <div className="broadcast-summary"><Status tone={broadcast.tone}>{broadcast.label}</Status><dl><div><dt>最近投递</dt><dd>{formatTime(data.wecom?.lastDelivery?.attemptedAt)}</dd></div><div><dt>结果</dt><dd>{businessCodeLabel(data.wecom?.lastDelivery?.deliveryStatus, '尚未投递')}</dd></div><div><dt>已生成简报</dt><dd>{data.briefs.length} 条</dd></div></dl></div>
             </section>
           </div>
         </div>
@@ -418,13 +423,28 @@ export function StoreDetailPage({
 
       {!loading && tab === 'repair' ? <StoreRepairPanel context={context} pmsSystemCode={hotel.pmsSystemCode} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /> : null}
 
-      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure attentionItems={[]} otaAttentionSourceId={null} /></div> : null}
+      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure pmsSystemCode={hotel.pmsSystemCode} attentionItems={[]} otaAttentionSourceId={null} /></div> : null}
 
       {!loading && tab === 'operations' ? (
         <div className="operations-layout">
           <section className="content-panel operation-quick-config">
-            <div className="section-heading small"><div><h2>热销房型配置</h2><p>填写房型编码，用顿号或逗号分隔。</p></div></div>
-            <label>热销房型编码<input disabled={!canRevenueConfigure} value={hotSellingDraft} placeholder="KING、TWIN" onChange={(event) => setHotSellingDraft(event.target.value)} /></label>
+            <div className="section-heading small"><div><h2>热销房型</h2><p>直接勾选需要重点关注的房型，无需填写系统编码。</p></div></div>
+            <div className="room-type-picker">
+              {(data.monitor?.inventory ?? []).map((roomType) => (
+                <label key={roomType.physicalRoomTypeCode}>
+                  <input
+                    checked={hotSellingDraft.includes(roomType.physicalRoomTypeCode)}
+                    disabled={!canRevenueConfigure}
+                    type="checkbox"
+                    onChange={(event) => setHotSellingDraft((current) => event.target.checked
+                      ? [...current, roomType.physicalRoomTypeCode]
+                      : current.filter((code) => code !== roomType.physicalRoomTypeCode))}
+                  />
+                  <span>{roomType.displayName}</span>
+                </label>
+              ))}
+              {!data.monitor?.inventory?.length ? <EmptyState title="暂无可选房型" detail="完成一次酒店系统采集后即可直接勾选。" /> : null}
+            </div>
             <button className="primary-button" disabled={!canRevenueConfigure} type="button" onClick={() => void saveHotSelling()}>保存热销房型</button>
           </section>
           <div className="embedded-legacy-page"><MappingTargetPage context={context} canConfigure={canRevenueConfigure} /></div>

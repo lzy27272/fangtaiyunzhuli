@@ -13,6 +13,12 @@ import {
   type WeComConfigView,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
+import {
+  businessCodeLabel,
+  businessErrorMessage,
+  formatBusinessTime,
+  safeBusinessText,
+} from '../ui/businessDisplay'
 import { WeComRepairBotConfigPanel } from './WeComRepairBotConfigPanel'
 
 interface Props {
@@ -29,9 +35,13 @@ const TEMPLATE_LABELS: Record<string, string> = {
   FUTURE_14D_TEST: '当日+未来14天房态测试',
   P1_FUTURE_DEMAND: 'P1远期需求',
   P1_FUTURE_DEMAND_TEST: 'P1远期需求测试',
+  DAILY_MORNING_REPAIR_FAILED: '每日早间自动修复失败',
+  HOT_SELLING_SOLD_OUT: '热销房型售罄提醒',
+  HOT_SELLING_SOLD_OUT_V1: '热销房型售罄提醒',
 }
 
-const templateLabel = (code: string) => TEMPLATE_LABELS[code] ?? code
+const templateLabel = (code: string) =>
+  TEMPLATE_LABELS[code] ?? businessCodeLabel(code, '其他业务消息')
 
 export function HistoryPage({ context, canConfigure }: Props) {
   const [briefs, setBriefs] = useState<BriefView[]>([])
@@ -65,7 +75,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
       setWeComConfig(config)
       setWeComEnabled(config.enabled)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '读取历史失败')
+      setError(businessErrorMessage(cause, '读取历史失败'))
     } finally {
       setLoading(false)
     }
@@ -101,7 +111,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
           : '企微自动推送当前关闭；自动采集不受影响。',
       )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存企微配置失败')
+      setError(businessErrorMessage(cause, '保存企微配置失败'))
     } finally {
       setSavingWeCom(false)
     }
@@ -125,13 +135,13 @@ export function HistoryPage({ context, canConfigure }: Props) {
         .join('、')
       const failed = result.failedTemplates
         .map((item) =>
-          `${templateLabel(item.templateCode)}（${item.reasonCode}）`)
+          `${templateLabel(item.templateCode)}（${businessCodeLabel(item.reasonCode, '发送失败')}）`)
         .join('、')
       const rejected = result.deliveries
         .filter((delivery) => delivery.deliveryStatus !== 'DELIVERED')
         .map((delivery) =>
           `${templateLabel(delivery.deliveryType)}（`
-          + `${delivery.deliveryStatus}/${delivery.reasonCode}）`)
+          + `${businessCodeLabel(delivery.deliveryStatus)}/${businessCodeLabel(delivery.reasonCode, '原因待确认')}）`)
         .join('、')
       setNotice(
         `已重新采集 ${result.collectionRun.successfulSourceCount}/`
@@ -143,7 +153,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
       )
       await refresh()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '企微测试发送失败')
+      setError(businessErrorMessage(cause, '企微测试发送失败'))
     } finally {
       setSendingTest(false)
     }
@@ -153,12 +163,12 @@ export function HistoryPage({ context, canConfigure }: Props) {
     <section className="page-card">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">04 · EVIDENCE</p>
-          <h2>简报与告警历史</h2>
-          <p>简报、P1、任务和发送记录对应每次真实融合快照；企微Webhook只在本机加密保存。</p>
+          <p className="eyebrow">播报与记录</p>
+          <h2>简报与异常记录</h2>
+          <p>集中查看经营简报、异常任务和企业微信发送结果；机器人地址仅加密保存。</p>
         </div>
         <button className="secondary" disabled={!context || loading} type="button" onClick={refresh}>
-          刷新证据
+          刷新记录
         </button>
       </div>
 
@@ -171,7 +181,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
           <section className="wecom-automation-card">
             <div className="page-heading">
               <div>
-                <p className="eyebrow">WECOM AUTOMATION</p>
+                <p className="eyebrow">企业微信自动播报</p>
                 <h3>企业微信群机器人自动推送</h3>
                 <p>
                   旺季及节假日08:00起每小时采集，普通日期09/11/13点及14:00后每小时采集；采集后约06分推送今日经营、约08分推送远期房态，末班01:00；
@@ -199,22 +209,21 @@ export function HistoryPage({ context, canConfigure }: Props) {
                 启用企微自动推送
               </label>
               <label className="wide-field">
-                企业微信群机器人Webhook
+                企业微信群机器人地址
                 <input
                   autoComplete="off"
                   disabled={!canConfigure || savingWeCom || clearWebhook}
                   placeholder={
                     weComConfig?.webhookConfigured
                       ? '已加密保存；留空表示不更换'
-                      : '请粘贴完整官方Webhook地址'
+                      : '请粘贴完整的企业微信机器人地址'
                   }
                   type="password"
                   value={webhookDraft}
                   onChange={(event) => setWebhookDraft(event.target.value)}
                 />
                 <small>
-                  仅允许 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…
-                  ，保存后不回显。
+                  只允许企业微信官方机器人地址，保存后不再显示原文。
                 </small>
               </label>
               <label className="inline-toggle wide-field">
@@ -230,13 +239,13 @@ export function HistoryPage({ context, canConfigure }: Props) {
                     }
                   }}
                 />
-                清除已保存的Webhook并关闭推送
+                清除已保存的机器人地址并关闭推送
               </label>
             </div>
 
             <div className="wecom-status-row">
               <span>
-                Webhook｜{weComConfig?.webhookConfigured ? '已配置' : '未配置'}
+                机器人地址｜{weComConfig?.webhookConfigured ? '已配置' : '未配置'}
               </span>
               <span>发送时间｜今日06分 · 远期08分 · 售罄预警09分</span>
               <span>
@@ -247,7 +256,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
               </span>
               <span>
                 最近结果｜
-                {weComConfig?.lastDelivery?.deliveryStatus ?? '尚未发送'}
+                {businessCodeLabel(weComConfig?.lastDelivery?.deliveryStatus, '尚未发送')}
               </span>
             </div>
 
@@ -287,13 +296,13 @@ export function HistoryPage({ context, canConfigure }: Props) {
                   key={`${brief.briefId}:${brief.revisionNo}:${brief.simulationRunId}`}
                 >
                   <summary>
-                    <span>{brief.businessDate} · {brief.cutoffAt}</span>
-                    <b>{brief.deliveryStatus}</b>
+                    <span>{brief.businessDate} · 截止 {formatBusinessTime(brief.cutoffAt)}</span>
+                    <b>{businessCodeLabel(brief.deliveryStatus, '尚未发送')}</b>
                   </summary>
                   <pre>{brief.content}</pre>
                   <small>
-                    修订 {brief.revisionNo} · 完整度 {brief.completenessCode} ·
-                    {brief.simulationMode ? ' 模拟事实' : ' 非模拟'}
+                    第 {brief.revisionNo} 版 · {businessCodeLabel(brief.completenessCode, '完整度待确认')} ·
+                    {brief.simulationMode ? ' 测试数据' : ' 正式数据'}
                   </small>
                 </details>
               ))}
@@ -305,13 +314,13 @@ export function HistoryPage({ context, canConfigure }: Props) {
               {incidents.map((incident) => (
                 <article className="history-card" key={incident.incidentId}>
                   <header>
-                    <strong>{incident.type}</strong>
-                    <b>{incident.status}</b>
+                    <strong>{businessCodeLabel(incident.type, '其他异常')}</strong>
+                    <b>{businessCodeLabel(incident.status, '待处理')}</b>
                   </header>
-                  <p>{incident.sourceCode ?? '来源未标注'} · {incident.directionCode ?? '无方向'}</p>
-                  <small>首次 {incident.openedAt}</small>
-                  <small>最近 {incident.lastObservedAt}</small>
-                  {incident.taskId ? <code>任务 {incident.taskId}</code> : null}
+                  <p>{safeBusinessText(incident.sourceCode, '来源未标注')} · {safeBusinessText(incident.directionCode, '无方向')}</p>
+                  <small>首次发现：{formatBusinessTime(incident.openedAt)}</small>
+                  <small>最近发现：{formatBusinessTime(incident.lastObservedAt)}</small>
+                  {incident.taskId ? <details className="technical-details"><summary>查看任务编号</summary><code>{incident.taskId}</code></details> : null}
                 </article>
               ))}
               {incidents.length === 0 ? <div className="state-panel">当前没有P1记录。</div> : null}
@@ -320,7 +329,7 @@ export function HistoryPage({ context, canConfigure }: Props) {
 
           <section className="outbox-section">
             <h3>企业微信发送记录</h3>
-            <p>每个模板使用唯一消息键；结果不明确时不自动重试，避免群内重复消息。</p>
+            <p>系统会自动避免重复发送；结果待确认时不会自动重试。</p>
             {outbox.map((message) => (
               <article className="outbox-card" key={message.messageKey}>
                 <header>
@@ -330,17 +339,17 @@ export function HistoryPage({ context, canConfigure }: Props) {
                       ? 'source-complete'
                       : 'unsafe'
                   }>
-                    {message.deliveryStatus}
+                    {businessCodeLabel(message.deliveryStatus, '尚未发送')}
                   </b>
                 </header>
-                <code>{message.messageKey}</code>
-                <pre>{message.bodyPreview}</pre>
+                <pre>{safeBusinessText(message.bodyPreview, '暂无消息摘要')}</pre>
                 <small>
-                  {message.createdAt}
+                  {formatBusinessTime(message.createdAt)}
                   {message.messageType.endsWith('_TEST')
                     ? '｜全模板测试'
                     : ''}
                 </small>
+                <details className="technical-details"><summary>查看消息编号</summary><code>{message.messageKey}</code></details>
               </article>
             ))}
             {outbox.length === 0 ? <div className="state-panel">尚无待投递正文。</div> : null}

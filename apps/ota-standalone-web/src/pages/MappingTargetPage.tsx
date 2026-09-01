@@ -13,6 +13,7 @@ import {
   type SimulationConfiguration,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
+import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext | null
@@ -38,6 +39,7 @@ const EMPTY_MAPPING: MappingDraft = {
   productName: '',
   mealPlanCode: 'ROOM_ONLY',
 }
+const OPERATION_CONFIG_CHANGE_REASON = 'UPDATE_STORE_OPERATION_CONFIGURATION'
 
 function todayInShanghai(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -51,7 +53,6 @@ function todayInShanghai(): string {
 export function MappingTargetPage({ context, canConfigure }: Props) {
   const [configuration, setConfiguration] = useState<SimulationConfiguration | null>(null)
   const [draft, setDraft] = useState<MappingDraft>(EMPTY_MAPPING)
-  const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -70,7 +71,7 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
         if (!cancelled) setConfiguration(current)
       })
       .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : '读取配置失败')
+        if (!cancelled) setError(businessErrorMessage(cause, '读取配置失败'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -164,16 +165,12 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
   }
 
   async function save() {
-    if (!context || !configuration || !reason.trim()) return
-    if (!/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(reason.trim())) {
-      setError('变更原因码必须为2至64位大写字母、数字、下划线或连字符。')
-      return
-    }
+    if (!context || !configuration) return
     setSaving(true)
     setError('')
     setNotice('')
     try {
-      const reasonCode = reason.trim()
+      const reasonCode = OPERATION_CONFIG_CHANGE_REASON
       for (const pool of configuration.inventoryPools.filter((item) => item.rowVersion === 0)) {
         await upsertInventoryPool(context, pool, reasonCode)
       }
@@ -187,10 +184,9 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
         await upsertRevenueTarget(context, configuration.targets[0], reasonCode)
       }
       setConfiguration(await loadConfiguration(context))
-      setReason('')
-      setNotice('新增映射与目标已按资源row_version分步保存并重新载入。')
+      setNotice('房型对应关系与销售目标已保存。')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存失败')
+      setError(businessErrorMessage(cause, '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -200,11 +196,11 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
     <section className="page-card">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">03 · MAPPING & TARGETS</p>
-          <h2>指标、房型与计算规则</h2>
-          <p>主报表提供实体口径，多个套餐、含早和无早产品可映射到同一库存池；OTA映射为可选辅助。</p>
+          <p className="eyebrow">运营设置</p>
+          <h2>销售目标与房型对应</h2>
+          <p>设置每日销售目标，并把渠道售卖名称对应到酒店实体房型。</p>
         </div>
-        <span className="mode-chip">FULL_SYNC</span>
+        <span className="mode-chip">保存后自动同步</span>
       </div>
 
       {!context ? (
@@ -224,7 +220,7 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
                   />
                 </label>
                 <label>
-                  目标ADR
+                  目标平均房价
                   <input
                     disabled={!canConfigure}
                     inputMode="decimal"
@@ -233,41 +229,41 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
                   />
                 </label>
                 <div className="policy-card">
-                  <span>库存计算策略</span>
-                  <strong>主库存报表 = 实体可售基准</strong>
-                  <small>OTA产品库存只参与差异校验，不是必配数据源。</small>
+                  <span>库存计算方式</span>
+                  <strong>以酒店实体可售房量为准</strong>
+                  <small>渠道库存只用于核对差异，不会覆盖酒店库存。</small>
                 </div>
               </div>
 
-              <h3>产品映射</h3>
+              <h3>房型对应关系</h3>
               <div className="mapping-list">
                 {joinedMappings.map(({ mapping, product, pool }) => (
                   <article key={mapping.mappingVersionId}>
                     <div>
                       <strong>{pool?.displayName ?? '库存池不存在'}</strong>
-                      <small>库存池 {pool?.physicalRoomTypeCode ?? mapping.inventoryPoolId}</small>
+                      <small>酒店实体房型</small>
                     </div>
                     <span>{product?.sourceCode ?? '未知'} · {product?.displayName ?? '产品不存在'}</span>
-                    <code>{product?.externalProductCode ?? mapping.productId}</code>
-                    <b>{mapping.rowVersion === 0 ? '待保存' : `v${mapping.rowVersion}`}</b>
+                    <details className="technical-details"><summary>查看平台产品编号</summary><code>{product?.externalProductCode ?? mapping.productId}</code></details>
+                    <b>{mapping.rowVersion === 0 ? '待保存' : `第${mapping.rowVersion}版`}</b>
                   </article>
                 ))}
                 {joinedMappings.length === 0
-                  ? <div className="state-panel">尚未配置产品映射，库存对账将显示无法判断。</div>
+                  ? <div className="state-panel">尚未设置房型对应关系，渠道库存暂时无法自动核对。</div>
                   : null}
               </div>
 
               {canConfigure ? (
                 <div className="mapping-editor">
                   <label>
-                    库存池编码
+                    酒店房型编号
                     <input
                       value={draft.inventoryPoolCode}
                       onChange={(event) => setDraft({ ...draft, inventoryPoolCode: event.target.value.toUpperCase() })}
                     />
                   </label>
                   <label>
-                    实体房型（主报表口径）
+                    酒店房型名称
                     <input
                       value={draft.physicalRoomTypeName}
                       onChange={(event) => setDraft({ ...draft, physicalRoomTypeName: event.target.value })}
@@ -295,7 +291,7 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
                     </select>
                   </label>
                   <label>
-                    来源产品编码
+                    平台产品编号
                     <input
                       value={draft.productCode}
                       onChange={(event) => setDraft({ ...draft, productCode: event.target.value.toUpperCase() })}
@@ -321,11 +317,11 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
                       <option value="BREAKFAST_INCLUDED">含早</option>
                     </select>
                   </label>
-                  <button className="secondary" type="button" onClick={addMapping}>加入映射草稿</button>
+                  <button className="secondary" type="button" onClick={addMapping}>添加对应关系</button>
                 </div>
               ) : null}
 
-              <h3>旺季节奏版本</h3>
+              <h3>旺季销售进度参考</h3>
               <div className="pace-row">
                 {configuration.paceCurves.flatMap((curve) => curve.points.map((point) => (
                   <article key={`${curve.paceCurveVersionId}-${point.cutoffLocalTime}`}>
@@ -339,26 +335,16 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
                   : null}
               </div>
 
-              <div className="save-row">
-                <label>
-                  变更原因码
-                  <input
-                    disabled={!canConfigure}
-                    pattern="[A-Z0-9][A-Z0-9_-]{1,63}"
-                    placeholder="例如 SPRINT1_MAPPING_CONFIG"
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value.toUpperCase())}
-                  />
-                </label>
+              <div className="save-row simple-save-row">
                 <button
-                  disabled={!canConfigure || saving || !reason.trim()}
+                  disabled={!canConfigure || saving}
                   type="button"
                   onClick={save}
                 >
-                  {saving ? '正在分步保存…' : '分步保存版本'}
+                  {saving ? '正在保存…' : '保存运营设置'}
                 </button>
               </div>
-              <p className="muted">库存池、产品、映射和目标分别提交；任一步失败即停止并要求重新载入核对。</p>
+              <p className="muted">保存失败时不会继续后续步骤，请根据页面提示检查后重试。</p>
               {notice ? <p className="success-note">{notice}</p> : null}
             </>
           ) : null}

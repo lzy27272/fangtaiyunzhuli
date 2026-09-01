@@ -29,7 +29,7 @@ function LoginPanel({ expired, onAuthenticated }: { expired: boolean; onAuthenti
   return <main className="new-login-page">
     <header className="login-header"><Brand /><span>酒店经营自动化后台</span></header>
     <div className="login-content">
-      <section className="login-intro"><p className="section-kicker">SIFANGGUAN HOTEL OPERATIONS</p><h1>让每一家门店的<br />数据与播报<span>清晰可控</span></h1><p>统一管理 PMS、OTA 数据连接、采集状态和企业微信播报，账号只访问已授权门店。</p><ul><li><Icon name="shield" />门店级权限隔离</li><li><Icon name="radio" />采集与播报状态可追踪</li><li><Icon name="alert" />异常一键直达处理</li></ul></section>
+      <section className="login-intro"><p className="section-kicker">四方馆酒店经营中心</p><h1>让每一家门店的<br />数据与播报<span>清晰可控</span></h1><p>统一管理酒店系统、渠道数据连接、采集状态和企业微信播报，账号只访问已授权门店。</p><ul><li><Icon name="shield" />门店级权限隔离</li><li><Icon name="radio" />采集与播报状态可追踪</li><li><Icon name="alert" />异常一键直达处理</li></ul></section>
       <section className="new-login-panel"><form onSubmit={submit}>
         <div className="login-form-title"><span className="brand-mark"><Icon name="hotel" /></span><div><h2>登录经营中心</h2><p>使用平台管理账号登录</p></div></div>
         {expired ? <div className="session-expired"><Icon name="alert" /><span><strong>登录会话已过期</strong><small>请重新登录，未保存的账号密码不会被保留。</small></span></div> : null}
