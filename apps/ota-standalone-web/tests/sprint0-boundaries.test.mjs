@@ -196,6 +196,11 @@ test('phase-one public entry keeps the OTA runtime isolated behind an HTTPS subp
   assert.match(publishScriptSource, /configure-phase1-runtime\.sh/)
   assert.match(nativeDeploySource, /configure-phase1-runtime\.sh/)
   assert.match(nativeDeploySource, /configure-public-entry\.sh/)
+  assert.match(nativeDeploySource, /initialize_phase_one_refresh_state/)
+  assert.ok(
+    nativeDeploySource.indexOf('initialize_phase_one_refresh_state; then')
+      < nativeDeploySource.indexOf('before_fingerprint='),
+  )
   assert.ok(
     nativeDeploySource.indexOf('configure-phase1-runtime.sh')
       < nativeDeploySource.indexOf('configure-public-entry.sh'),

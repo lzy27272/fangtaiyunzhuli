@@ -194,6 +194,33 @@ rollback_release() {
   echo "PREVIOUS_RELEASE_AND_PROTECTED_STATE_RESTORED" >&2
 }
 
+initialize_phase_one_refresh_state() {
+  local state_path=/var/lib/sifangguan-ota/review-auth-sessions.json
+  local state_tmp="${state_path}.initialize-$$"
+  if [[ -L ${state_path} || ( -e ${state_path} && ! -f ${state_path} ) ]]; then
+    echo "REFRESH_STATE_PATH_UNSAFE" >&2
+    return 1
+  fi
+  if [[ -f ${state_path} ]]; then
+    return 0
+  fi
+  (
+    umask 077
+    printf '{\n  "version": 1,\n  "sessions": []\n}\n' > "${state_tmp}"
+  ) || return 1
+  if ! chown sifangguan-ota:sifangguan-ota "${state_tmp}" \
+    || ! chmod 0600 "${state_tmp}"; then
+    rm -f -- "${state_tmp}"
+    return 1
+  fi
+  mv -Tf "${state_tmp}" "${state_path}"
+}
+
+if ! initialize_phase_one_refresh_state; then
+  restore_protected_state
+  exit 1
+fi
+
 before_fingerprint="$(protected_fingerprint)"
 
 next_link="${current_link}.next"
