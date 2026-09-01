@@ -19,3 +19,22 @@ test('store overview renders only configured OTA sources with icons and direct a
   assert.match(storePage, /onOpen\(summary\.hotel, direct\?\.tab\)/u)
   assert.match(consoleUi, /export function PlatformIcon/u)
 })
+
+test('store overview and exception center expose one PMS repair state without heartbeat alerts', async () => {
+  const [storePage, exceptionPage, repairDomain] = await Promise.all([
+    readFile(storePageUrl, 'utf8'),
+    readFile(new URL('../src/pages/ExceptionCenterPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/domain/pmsRepair.ts', import.meta.url), 'utf8'),
+  ])
+
+  assert.match(storePage, /PMS · \{pms\.label\}/u)
+  assert.match(storePage, /label: '需要修复处理'/u)
+  assert.match(storePage, /tab: 'repair', label: 'PMS需要修复处理'/u)
+  assert.match(exceptionPage, /PMS需要修复处理/u)
+  assert.match(exceptionPage, /onOpenStore\(selected\.hotel, 'repair'\)/u)
+  assert.doesNotMatch(exceptionPage, /可信设备离线/u)
+  assert.doesNotMatch(repairDomain, /lastSeenAt/u)
+  assert.match(repairDomain, /90 \* 60 \* 1000/u)
+  assert.match(repairDomain, /reenrollRequired/u)
+  assert.match(repairDomain, /scopeApprovalStatus !== 'APPROVED'/u)
+})

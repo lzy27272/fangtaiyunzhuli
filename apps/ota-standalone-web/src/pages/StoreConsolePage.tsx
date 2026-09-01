@@ -29,6 +29,15 @@ import {
   type Tone,
 } from '../components/ConsoleUi'
 import {
+  evaluatePmsRepair,
+  PMS_REPAIR_REASON_LABEL,
+  type PmsRepairReason,
+} from '../domain/pmsRepair'
+import {
+  loadTrustedDeviceStatus,
+  type TrustedDeviceStatus,
+} from '../api/trustedDevice'
+import {
   businessCodeLabel,
   businessErrorMessage,
   metricLabel,
@@ -46,6 +55,7 @@ export interface HotelSummary {
   otaSources: OtaSourceView[]
   wecom: WeComConfigView | null
   incidents: IncidentView[]
+  trustedDeviceStatus: TrustedDeviceStatus | null
   unavailable: boolean
 }
 
@@ -93,13 +103,28 @@ function otaState(source: OtaSourceView | undefined): { tone: Tone; label: strin
   return { tone: 'warning', label: '待验证' }
 }
 
-function pmsState(summary: HotelSummary): { tone: Tone; label: string } {
-  if (summary.unavailable || summary.monitor?.completeness === 'UNAVAILABLE') {
-    return { tone: 'error', label: '连接异常' }
+function pmsRepairState(summary: HotelSummary) {
+  const evaluated = evaluatePmsRepair({
+    monitor: summary.monitor,
+    trustedDeviceStatus: summary.trustedDeviceStatus,
+  })
+  const incidentRequired = summary.incidents.some((item) =>
+    item.type === 'PMS_REPAIR_REQUIRED' && !/CLOSED|RESOLVED/i.test(item.status))
+  const incidentReasons = summary.incidents
+    .filter((item) => item.type === 'PMS_REPAIR_REQUIRED' && !/CLOSED|RESOLVED/i.test(item.status))
+    .flatMap((item) => (item.directionCode ?? '').split(','))
+    .filter((reason): reason is PmsRepairReason => reason in PMS_REPAIR_REASON_LABEL)
+  return {
+    required: summary.unavailable || evaluated.required || incidentRequired,
+    reasons: [...new Set([...evaluated.reasons, ...incidentReasons])],
   }
-  if (summary.monitor?.completeness === 'PARTIAL') return { tone: 'warning', label: '数据不完整' }
-  if (summary.monitor?.completeness === 'COMPLETE') return { tone: 'ok', label: '正常' }
-  return { tone: 'warning', label: '待采集' }
+}
+
+function pmsState(summary: HotelSummary): { tone: Tone; label: string } {
+  if (pmsRepairState(summary).required) {
+    return { tone: 'error', label: '需要修复处理' }
+  }
+  return { tone: 'ok', label: '正常' }
 }
 
 function broadcastState(summary: HotelSummary): { tone: Tone; label: string } {
@@ -114,8 +139,8 @@ function broadcastState(summary: HotelSummary): { tone: Tone; label: string } {
 
 function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } | null {
   const pms = pmsState(summary)
-  if (pms.tone === 'error' || pms.label === '数据不完整') {
-    return { tab: 'collection', label: '检查 PMS' }
+  if (pms.tone === 'error') {
+    return { tab: 'repair', label: 'PMS需要修复处理' }
   }
   const failedOta = configuredOtaSources(summary.otaSources)
     .find((source) => otaState(source).tone === 'error')
@@ -130,8 +155,9 @@ function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } |
 
 async function loadHotelSummary(hotel: SimulationHotelView): Promise<HotelSummary> {
   const context = { tenantId: hotel.tenantId, hotelId: hotel.hotelId }
-  const [monitor, otaSources, wecom, incidents] = await Promise.allSettled([
+  const [monitor, otaSources, wecom, incidents, trustedDeviceStatus] = await Promise.allSettled([
     loadMonitor(context), loadOtaSources(context), loadWeComConfig(context), loadIncidents(context),
+    loadTrustedDeviceStatus(context),
   ])
   return {
     hotel,
@@ -139,7 +165,8 @@ async function loadHotelSummary(hotel: SimulationHotelView): Promise<HotelSummar
     otaSources: otaSources.status === 'fulfilled' ? otaSources.value : [],
     wecom: wecom.status === 'fulfilled' ? wecom.value : null,
     incidents: incidents.status === 'fulfilled' ? incidents.value : [],
-    unavailable: [monitor, otaSources, wecom, incidents].every((item) => item.status === 'rejected'),
+    trustedDeviceStatus: trustedDeviceStatus.status === 'fulfilled' ? trustedDeviceStatus.value : null,
+    unavailable: [monitor, otaSources, wecom, incidents, trustedDeviceStatus].every((item) => item.status === 'rejected'),
   }
 }
 
@@ -255,7 +282,7 @@ export function StoreOverviewPage({
                 <span><strong>{summary.hotel.hotelCode} · {summary.hotel.hotelName}</strong><small>{PMS_LABELS[summary.hotel.pmsSystemCode]} · {businessCodeLabel(summary.hotel.lifecycleStatus, '状态待确认')}</small></span>
               </button>
               <div className="source-statuses">
-                <button aria-label={`打开 PMS 采集配置，当前${pms.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, 'collection')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
+                <button aria-label={`打开 PMS 处理页面，当前${pms.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, pmsRepairState(summary).required ? 'repair' : 'collection')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
                 {otaSources.map((source) => {
                   const state = otaState(source)
                   return <button aria-label={`打开${sourceDisplayName(source.platformCode)}配置，当前${state.label}`} className="channel-status-link" key={source.platformCode} onClick={() => onOpen(summary.hotel, 'collection')} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button>
@@ -280,11 +307,12 @@ interface DetailData {
   briefs: BriefView[]
   incidents: IncidentView[]
   roomTypes: RoomTypeConfigurationView | null
+  trustedDeviceStatus: TrustedDeviceStatus | null
 }
 
 const emptyDetail: DetailData = {
   configuration: null, monitor: null, otaSources: [], wecom: null,
-  briefs: [], incidents: [], roomTypes: null,
+  briefs: [], incidents: [], roomTypes: null, trustedDeviceStatus: null,
 }
 
 export function StoreDetailPage({
@@ -318,6 +346,7 @@ export function StoreDetailPage({
       loadConfiguration(context), loadMonitor(context), loadOtaSources(context),
       loadWeComConfig(context), loadBriefs(context), loadIncidents(context),
       loadRoomTypeConfiguration(context),
+      loadTrustedDeviceStatus(context),
     ])
     setData({
       configuration: results[0].status === 'fulfilled' ? results[0].value : null,
@@ -327,6 +356,7 @@ export function StoreDetailPage({
       briefs: results[4].status === 'fulfilled' ? results[4].value : [],
       incidents: results[5].status === 'fulfilled' ? results[5].value : [],
       roomTypes: results[6].status === 'fulfilled' ? results[6].value : null,
+      trustedDeviceStatus: results[7].status === 'fulfilled' ? results[7].value : null,
     })
     if (results.every((result) => result.status === 'rejected')) {
       setError('门店数据暂时不可用，请检查连接状态。')
@@ -350,8 +380,9 @@ export function StoreDetailPage({
     } finally { setCollecting(false) }
   }
 
-  const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, incidents: data.incidents, unavailable: Boolean(error) }
+  const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, incidents: data.incidents, trustedDeviceStatus: data.trustedDeviceStatus, unavailable: Boolean(error) }
   const pms = pmsState(summary)
+  const pmsRepair = pmsRepairState(summary)
   const broadcast = broadcastState(summary)
   const connectionTab: StoreTab = canConfigure ? 'collection' : 'repair'
 
@@ -364,7 +395,7 @@ export function StoreDetailPage({
       </div>
 
       <div className="store-health-bar">
-        <button className="channel-status-link" onClick={() => setTab(connectionTab)} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
+        <button className="channel-status-link" onClick={() => setTab(pmsRepair.required ? 'repair' : connectionTab)} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
         {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <button className="channel-status-link" key={source.platformCode} onClick={() => setTab(connectionTab)} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button> })}
         <button className="channel-status-link" onClick={() => setTab('broadcast')} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
       </div>
@@ -385,8 +416,9 @@ export function StoreDetailPage({
 
       {!loading && tab === 'overview' ? (
         <div className="detail-overview">
-          {data.incidents.some((item) => !/CLOSED|RESOLVED/i.test(item.status)) ? (
-            <button className="issue-banner" type="button" onClick={onOpenExceptions}><Icon name="alert" size={22} /><span><strong>{data.incidents.filter((item) => !/CLOSED|RESOLVED/i.test(item.status)).length}项问题需要处理</strong><small>查看异常原因及安全处理入口</small></span><span>进入异常处理<Icon name="chevron" /></span></button>
+          {pmsRepair.required ? <button className="issue-banner" type="button" onClick={() => setTab('repair')}><Icon name="alert" size={22} /><span><strong>PMS需要修复处理</strong><small>{pmsRepair.reasons.map((reason) => PMS_REPAIR_REASON_LABEL[reason]).join('；') || 'PMS状态暂时不可用'}</small></span><span>一键直达<Icon name="chevron" /></span></button> : null}
+          {data.incidents.some((item) => item.type !== 'PMS_REPAIR_REQUIRED' && !/CLOSED|RESOLVED/i.test(item.status)) ? (
+            <button className="issue-banner" type="button" onClick={onOpenExceptions}><Icon name="alert" size={22} /><span><strong>{data.incidents.filter((item) => item.type !== 'PMS_REPAIR_REQUIRED' && !/CLOSED|RESOLVED/i.test(item.status)).length}项其他问题需要处理</strong><small>查看异常原因及安全处理入口</small></span><span>进入异常处理<Icon name="chevron" /></span></button>
           ) : null}
 
           <div className="section-heading"><div><h2>总数据预览</h2><p>PMS 与 OTA 最近一次成功采集结果；不完整数据不会作为正式播报依据。</p></div><button className="primary-button" disabled={collecting} onClick={() => void collect()} type="button"><Icon name="refresh" />{collecting ? '正在采集…' : '立即采集'}</button></div>

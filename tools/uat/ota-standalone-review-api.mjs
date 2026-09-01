@@ -101,6 +101,10 @@ import {
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
 import {
+  pmsRepairIncidentFor,
+  pmsRepairNoticeContent,
+} from './pms-repair-alert.mjs'
+import {
   createTrustedDeviceIntakeStore,
   stableJson,
   TRUSTED_DEVICE_PILOT_HOTEL_CODE,
@@ -6709,6 +6713,57 @@ const deliverMorningRepairNotice = async ({
   throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
 }
 
+const pmsRepairNoticeAvailableFor = (hotel) => {
+  const config = weComConfigFor(hotel.hotelId)
+  if (config.enabled && config.webhookConfigured) return true
+  return weComRepairBotReady()
+    && weComRepairBotRecipientsForHotel(
+      weComRepairBotCredentials ?? {},
+      hotel.hotelId,
+    ).length > 0
+}
+
+const scheduledPmsRepairAlertTick = async (now = new Date()) => {
+  const attempts = hotels.map(async (hotel) => {
+    if (!pmsRepairNoticeAvailableFor(hotel)) return null
+    const trustedDeviceStatus = trustedDeviceEligible(hotel)
+      ? trustedDeviceStoreFor(hotel).status(now)
+      : trustedDeviceNotApplicableStatus(hotel)
+    const incident = pmsRepairIncidentFor({
+      hotel,
+      monitor: liveMonitorFor(hotel.hotelId),
+      trustedDeviceStatus,
+      now,
+    })
+    if (!incident) return null
+    const messageKey =
+      `${hotel.hotelId}:PMS_REPAIR_REQUIRED:${incident.incidentId}`
+    if (weComDeliveriesByKey.has(messageKey)) return null
+    try {
+      return await deliverMorningRepairNotice({
+        hotel,
+        auditRecord: {
+          auditKey: incident.incidentId,
+          status: 'PMS_REPAIR_REQUIRED',
+        },
+        deliveryType: 'PMS_REPAIR_REQUIRED',
+        content: pmsRepairNoticeContent({ hotel, incident }),
+      })
+    } catch (error) {
+      process.stderr.write(`${JSON.stringify({
+        event: 'PMS_REPAIR_NOTICE_SKIPPED',
+        hotelId: hotel.hotelId,
+        reasonCode:
+          typeof error?.message === 'string'
+            ? safeLuopanRepairReason(error.message)
+            : 'PMS_REPAIR_NOTICE_FAILED_CLOSED',
+      })}\n`)
+      return null
+    }
+  })
+  return Promise.allSettled(attempts)
+}
+
 const repairNightlyBriefingHealthAudit = async ({
   hotel,
   auditRecord,
@@ -9864,7 +9919,16 @@ const server = createServer(async (request, response) => {
         return
       }
       if (request.method === 'GET' && suffix === '/incidents') {
-        json(response, 200, { data: [] })
+        const monitor = liveMonitorFor(hotelId)
+        const trustedDeviceStatus = trustedDeviceEligible(selected)
+          ? trustedDeviceStoreFor(selected).status()
+          : trustedDeviceNotApplicableStatus(selected)
+        const pmsIncident = pmsRepairIncidentFor({
+          hotel: selected,
+          monitor,
+          trustedDeviceStatus,
+        })
+        json(response, 200, { data: pmsIncident ? [pmsIncident] : [] })
         return
       }
       if (request.method === 'GET' && suffix === '/outbox-preview') {
@@ -10181,6 +10245,7 @@ server.listen(port, host, () => {
     void scheduledFutureBookingDeliveryTick()
     void scheduledHotSellingSoldOutDeliveryTick()
     void scheduledBriefingAuditTick()
+    void scheduledPmsRepairAlertTick()
   }, 30_000)
   scheduler.unref()
   const initialScheduler = setTimeout(() => {
@@ -10190,6 +10255,7 @@ server.listen(port, host, () => {
     void scheduledFutureBookingDeliveryTick()
     void scheduledHotSellingSoldOutDeliveryTick()
     void scheduledBriefingAuditTick()
+    void scheduledPmsRepairAlertTick()
   }, 2_000)
   initialScheduler.unref()
 })
