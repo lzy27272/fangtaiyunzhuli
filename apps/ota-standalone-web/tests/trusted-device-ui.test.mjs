@@ -44,7 +44,7 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(installer, /Node\.js LTS/u)
   assert.match(installer, /\$env:ProgramFiles/u)
   const resolver = installer.match(
-    /function Resolve-NodeRuntime[\s\S]+?\n\}\n\nWrite-Host/u,
+    /function Resolve-NodeRuntime[\s\S]+?\r?\n\}\r?\n\r?\nWrite-Host/u,
   )?.[0] ?? ''
   assert.match(resolver, /Write-Host/u)
   assert.doesNotMatch(resolver, /Write-Output/u)
