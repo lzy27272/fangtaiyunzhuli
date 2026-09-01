@@ -61,6 +61,10 @@ const nativeDeploySource = await readFile(
   new URL('../../../infra/ota-standalone-server/scripts/deploy-native.sh', import.meta.url),
   'utf8',
 )
+const publicEntryScriptSource = await readFile(
+  new URL('../../../infra/ota-standalone-server/scripts/configure-public-entry.sh', import.meta.url),
+  'utf8',
+)
 const luopanCollectorSource = await readFile(
   new URL(
     '../../../tools/uat/luopan-controlled-browser-collector.mjs',
@@ -206,6 +210,14 @@ test('phase-one public entry keeps the OTA runtime isolated behind an HTTPS subp
       < nativeDeploySource.indexOf('configure-public-entry.sh'),
   )
   assert.match(nativeDeploySource, /rollback_release \|\| true/)
+  assert.doesNotMatch(
+    publicEntryScriptSource,
+    /systemctl reload sifangguan-ota-web\.service/,
+  )
+  assert.match(
+    publicEntryScriptSource,
+    /systemctl restart sifangguan-ota-web\.service/,
+  )
 })
 
 test('failed refresh removes unusable in-memory authentication state', () => {

@@ -49,8 +49,8 @@ rollback() {
   fi
   /usr/bin/caddy validate --config "${main_config}" --adapter caddyfile >/dev/null
   /usr/bin/caddy validate --config "${loopback_target}" --adapter caddyfile >/dev/null
-  systemctl reload caddy.service
-  systemctl reload sifangguan-ota-web.service
+  systemctl restart caddy.service
+  systemctl restart sifangguan-ota-web.service
 }
 trap rollback ERR
 
@@ -79,7 +79,9 @@ fi
 /usr/bin/caddy validate --config "${main_config}" --adapter caddyfile >/dev/null
 /usr/bin/caddy validate --config "${loopback_target}" --adapter caddyfile >/dev/null
 systemctl reload caddy.service
-systemctl reload sifangguan-ota-web.service
+# The loopback unit disables Caddy's admin endpoint. Its ExecReload command
+# would otherwise target the separate public Caddy process on localhost:2019.
+systemctl restart sifangguan-ota-web.service
 
 web_code="$(curl --silent --show-error --output /dev/null \
   --write-out '%{http_code}' \
