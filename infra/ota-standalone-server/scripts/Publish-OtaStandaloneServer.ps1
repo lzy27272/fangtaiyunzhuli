@@ -337,6 +337,12 @@ function Ensure-ServerUiTunnel([int]$Port) {
 }
 
 $gitPath = Resolve-RequiredCommand 'git.exe'
+$gitCommonArguments = @(
+    '-c',
+    "safe.directory=$($repoRoot.Replace('\\', '/'))",
+    '-C',
+    $repoRoot
+)
 $nodePath = Resolve-NodeRuntime
 $bundledNodeModules = Resolve-BundledNodeModules
 $tarPath = Resolve-RequiredCommand 'tar.exe'
@@ -353,13 +359,13 @@ if (
     throw 'LOCAL_LOCKED_WEB_TOOLCHAIN_NOT_FOUND'
 }
 
-$commit = (& $gitPath -C $repoRoot rev-parse HEAD).Trim()
+$commit = (& $gitPath @gitCommonArguments rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') {
     throw 'GIT_COMMIT_INVALID'
 }
-$branch = (& $gitPath -C $repoRoot branch --show-current).Trim()
+$branch = (& $gitPath @gitCommonArguments branch --show-current).Trim()
 $dirtyTracked = @(
-    & $gitPath -C $repoRoot status --porcelain --untracked-files=no
+    & $gitPath @gitCommonArguments status --porcelain --untracked-files=no
 )
 if (
     $dirtyTracked.Count -gt 0 -and
@@ -369,7 +375,7 @@ if (
 }
 
 $configuredRemoteUrl = (
-    & $gitPath -C $repoRoot remote get-url $GitRemote
+    & $gitPath @gitCommonArguments remote get-url $GitRemote
 ).Trim()
 if ($LASTEXITCODE -ne 0) {
     throw 'GIT_REMOTE_NOT_FOUND'
@@ -381,7 +387,7 @@ if ($normalizedConfiguredRemote -ne $normalizedExpectedRemote) {
 }
 
 foreach ($path in $runtimeSourcePaths) {
-    & $gitPath -C $repoRoot cat-file -e "${commit}:$path"
+    & $gitPath @gitCommonArguments cat-file -e "${commit}:$path"
     if ($LASTEXITCODE -ne 0) {
         throw "RUNTIME_SOURCE_NOT_COMMITTED:$path"
     }
@@ -497,7 +503,7 @@ $sourceArchive = Join-Path $workRoot 'source.tar'
 $releaseArchive = Join-Path $workRoot "sifangguan-ota-${commit}.tar.gz"
 New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
 
-$archiveArguments = @(
+$archiveArguments = $gitCommonArguments + @(
     'archive',
     '--format=tar',
     "--output=$sourceArchive",
@@ -592,23 +598,23 @@ if (-not (Test-Path -LiteralPath $IdentityFile -PathType Leaf)) {
 if (-not $SkipGitPush) {
     Invoke-CheckedCommand `
         -FilePath $gitPath `
-        -Arguments @(
+        -Arguments ($gitCommonArguments + @(
             'fetch',
             '--no-tags',
             $GitRemote,
             "refs/heads/${GitBranch}:refs/remotes/${GitRemote}/${GitBranch}"
-        )
+        ))
     $remoteCommit = (
-        & $gitPath -C $repoRoot rev-parse `
+        & $gitPath @gitCommonArguments rev-parse `
             "refs/remotes/${GitRemote}/${GitBranch}"
     ).Trim()
-    & $gitPath -C $repoRoot merge-base --is-ancestor $remoteCommit $commit
+    & $gitPath @gitCommonArguments merge-base --is-ancestor $remoteCommit $commit
     if ($LASTEXITCODE -ne 0) {
         throw 'GIT_REMOTE_NON_FAST_FORWARD'
     }
     if ($remoteCommit -ne $commit) {
         $changedRelativePaths = @(
-            & $gitPath -C $repoRoot diff `
+            & $gitPath @gitCommonArguments diff `
                 --name-only `
                 --diff-filter=ACMR `
                 "${remoteCommit}..${commit}" `
@@ -626,11 +632,11 @@ if (-not $SkipGitPush) {
         }
         Invoke-CheckedCommand `
             -FilePath $gitPath `
-            -Arguments @(
+            -Arguments ($gitCommonArguments + @(
                 'push',
                 $GitRemote,
                 "${commit}:refs/heads/${GitBranch}"
-            )
+            ))
     }
 }
 
