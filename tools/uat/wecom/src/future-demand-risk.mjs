@@ -178,8 +178,7 @@ export const createFutureDemandP1WeComPayloads = (
     candidates.flatMap((candidate) => candidate.reasons),
   )]
   const contentFor = (limit) => [
-    '【UAT测试｜非经营指令】',
-    '🚨P1远期需求异动｜@所有人',
+    '🚨P1远期需求异动',
     `${hotel.hotelName.trim().slice(0, 40)}｜触发${candidates.length}个入住日`,
     `⏰发现时间｜${cutoff(snapshot.observedAt)}`,
     `触发｜${reasonText(reasons)}`,
@@ -191,8 +190,6 @@ export const createFutureDemandP1WeComPayloads = (
     '',
     '判断｜可能存在活动、团体需求或渠道曝光上涨，须人工核查，不能仅凭本告警直接调价。',
     '建议｜立即检查活动日历、竞对价格、渠道流量和剩余库存；核实后再决定提价、限量或关闭低价产品。',
-    '',
-    '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
   ].filter((line) => line !== null).join('\n')
   let content = null
   for (
@@ -213,7 +210,7 @@ export const createFutureDemandP1WeComPayloads = (
     msgtype: 'text',
     text: {
       content,
-      mentioned_list: ['@all'],
+      mentioned_list: [],
     },
   }]
 }

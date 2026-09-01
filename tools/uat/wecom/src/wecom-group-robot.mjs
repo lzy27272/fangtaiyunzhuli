@@ -4,9 +4,6 @@ const OFFICIAL_HOST = 'qyapi.weixin.qq.com'
 const WEBHOOK_PATH = '/cgi-bin/webhook/send'
 const MAX_REQUEST_TEXT_BYTES = 1900
 const MAX_RESPONSE_BYTES = 4096
-const LEGACY_UAT_BANNER = '【UAT测试｜非经营指令】\n'
-const LEGACY_PRIVACY_NOTICE =
-  '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接'
 
 const isApprovedOperationalTemplate = (content) =>
   /^[^\n]{1,40}｜今日收益分析(?:｜[^\n]{1,16})?\n/u.test(content)
@@ -95,15 +92,20 @@ const validatePayload = (payload) => {
     Buffer.byteLength(payload.text.content, 'utf8') >
       MAX_REQUEST_TEXT_BYTES ||
     !Array.isArray(payload.text.mentioned_list) ||
-    payload.text.mentioned_list.length !== 1 ||
-    payload.text.mentioned_list[0] !== '@all'
+    payload.text.mentioned_list.length !== 0
   ) {
     fail('WECOM_PAYLOAD_INVALID')
   }
-  const legacyUatTemplate =
-    payload.text.content.startsWith(LEGACY_UAT_BANNER)
-    && payload.text.content.includes(LEGACY_PRIVACY_NOTICE)
-  if (!legacyUatTemplate && !isApprovedOperationalTemplate(payload.text.content)) {
+  if (
+    [
+      '【UAT测试｜非经营指令】',
+      '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
+      '@所有人',
+    ].some((removed) => payload.text.content.includes(removed))
+  ) {
+    fail('WECOM_REMOVED_DECORATION_PRESENT')
+  }
+  if (!isApprovedOperationalTemplate(payload.text.content)) {
     fail('WECOM_TEMPLATE_POLICY_REQUIRED')
   }
 }

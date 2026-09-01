@@ -187,7 +187,7 @@ const main = async () => {
           recordCount: summary.recordCount,
           roomCountTotal: summary.roomCountTotal,
           preview: payload.text.content,
-          mentionedList: ['@all'],
+          mentionedList: payload.text.mentioned_list,
         },
         null,
         2,

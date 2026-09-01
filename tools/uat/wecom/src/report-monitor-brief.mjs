@@ -298,7 +298,7 @@ const buildPayload = (lines) => {
     msgtype: 'text',
     text: {
       content,
-      mentioned_list: ['@all'],
+      mentioned_list: [],
     },
   }
 }

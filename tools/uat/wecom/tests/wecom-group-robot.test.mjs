@@ -11,11 +11,8 @@ const webhook =
 const payload = {
   msgtype: 'text',
   text: {
-    content: [
-      '【UAT测试｜非经营指令】',
-      '隐私处理｜已过滤姓名、订单号、电话、备注、操作员及内部链接',
-    ].join('\n'),
-    mentioned_list: ['@all'],
+    content: '测试酒店｜今日收益分析\n简报内容',
+    mentioned_list: [],
   },
 }
 const endpointSha256 = fingerprintWeComWebhook(webhook)
@@ -23,7 +20,7 @@ const operationalPayload = {
   msgtype: 'text',
   text: {
     content: '测试酒店｜今日收益分析\n经营数据',
-    mentioned_list: ['@all'],
+    mentioned_list: [],
   },
 }
 
@@ -58,7 +55,7 @@ test('rejects non-official hosts and extra query parameters', () => {
   )
 })
 
-test('sends exact text payload with at-all through injected fetch', async () => {
+test('sends exact text payload without removed decorations through injected fetch', async () => {
   let captured
   const result = await sendWeComGroupRobotMessage({
     rawWebhook: webhook,
@@ -97,7 +94,7 @@ test('combined operations brief is an approved operational template', async () =
     msgtype: 'text',
     text: {
       content: '毕节慧博酒店｜经营综合简报｜合并版预览\n📌今日｜售/余 10/20',
-      mentioned_list: ['@all'],
+      mentioned_list: [],
     },
   }
   let captured
@@ -212,14 +209,43 @@ test('network failures are ambiguous and are not retried', async () => {
   assert.equal(JSON.stringify(result).includes('00000000-'), false)
 })
 
-test('rejects a payload without mandatory at-all before HTTP', async () => {
+test('rejects a payload that reintroduces removed decorations before HTTP', async () => {
   let attempts = 0
   await assert.rejects(
     sendWeComGroupRobotMessage({
       rawWebhook: webhook,
       payload: {
         msgtype: 'text',
-        text: { content: 'message', mentioned_list: [] },
+        text: {
+          content: '【UAT测试｜非经营指令】\nmessage',
+          mentioned_list: [],
+        },
+      },
+      expectedEndpointSha256: endpointSha256,
+      networkAuthorized: true,
+      fetchImpl: async () => {
+        attempts += 1
+        return response({ errcode: 0 })
+      },
+    }),
+    (error) =>
+      error instanceof SafeWeComError &&
+      error.reasonCode === 'WECOM_REMOVED_DECORATION_PRESENT',
+  )
+  assert.equal(attempts, 0)
+})
+
+test('rejects at-all mentions before HTTP', async () => {
+  let attempts = 0
+  await assert.rejects(
+    sendWeComGroupRobotMessage({
+      rawWebhook: webhook,
+      payload: {
+        msgtype: 'text',
+        text: {
+          content: '门店｜测试酒店\n简报内容',
+          mentioned_list: ['@all'],
+        },
       },
       expectedEndpointSha256: endpointSha256,
       networkAuthorized: true,

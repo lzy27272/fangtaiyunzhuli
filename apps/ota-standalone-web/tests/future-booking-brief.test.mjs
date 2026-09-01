@@ -53,10 +53,13 @@ const snapshot = {
   },
 }
 
-test('future booking brief is one @all message with today plus 14 future stay dates', () => {
+test('future booking brief omits decorations and keeps 14 stay dates under 1900 bytes', () => {
   const payloads = createFutureBookingWeComPayloads(hotel, snapshot)
   assert.equal(payloads.length, 1)
-  assert.deepEqual(payloads[0].text.mentioned_list, ['@all'])
+  assert.deepEqual(payloads[0].text.mentioned_list, [])
+  assert.doesNotMatch(payloads[0].text.content, /【UAT测试｜非经营指令】/)
+  assert.doesNotMatch(payloads[0].text.content, /隐私处理｜已过滤姓名/)
+  assert.doesNotMatch(payloads[0].text.content, /@所有人/)
   assert.match(payloads[0].text.content, /喷水池态六酒店｜远期房态/)
   assert.match(payloads[0].text.content, /07-26｜/)
   assert.match(payloads[0].text.content, /07-26｜30\/20｜60%/)
@@ -145,8 +148,11 @@ test('D+15 to D+90 first crosses 20 percent and builds a safe P1 payload', () =>
     day20,
   )
   assert.equal(payloads.length, 1)
-  assert.deepEqual(payloads[0].text.mentioned_list, ['@all'])
+  assert.deepEqual(payloads[0].text.mentioned_list, [])
   assert.match(payloads[0].text.content, /🚨P1远期需求异动/)
+  assert.doesNotMatch(payloads[0].text.content, /【UAT测试｜非经营指令】/)
+  assert.doesNotMatch(payloads[0].text.content, /隐私处理｜已过滤姓名/)
+  assert.doesNotMatch(payloads[0].text.content, /@所有人/)
   assert.match(payloads[0].text.content, /不能仅凭本告警直接调价/)
   assert.doesNotMatch(payloads[0].text.content, /^用途｜/m)
   assert.ok(

@@ -468,6 +468,7 @@ $forbiddenNames = @(
     'pms-login-secrets.json',
     'luopan-session-secrets.json',
     'ota-source-secrets.json',
+    'luopan-session-secrets.json',
     'wecom-webhook-secrets.json',
     'wecom-repair-bot-secrets.json',
     'trusted-device-registry.json',

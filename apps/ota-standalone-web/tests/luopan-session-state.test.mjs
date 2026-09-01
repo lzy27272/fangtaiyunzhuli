@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 
 import {
   applyLuopanSessionState,
@@ -24,6 +24,29 @@ const validState = () => ({
       origin: 'http://bj.chinapms.com:8880',
       localStorage: [
         { name: 'language', value: 'zh-CN' },
+      ],
+    },
+  ],
+})
+
+const syntheticState = () => ({
+  cookies: [
+    {
+      name: 'JSESSIONID',
+      value: 'synthetic-session-cookie',
+      domain: 'bj.chinapms.com',
+      path: '/pms-web',
+      expires: -1,
+      httpOnly: true,
+      secure: false,
+      sameSite: 'Lax',
+    },
+  ],
+  origins: [
+    {
+      origin: 'http://bj.chinapms.com:8880',
+      localStorage: [
+        { name: 'synthetic-key', value: 'synthetic-value' },
       ],
     },
   ],
@@ -71,6 +94,12 @@ test('rejects session data outside the Luopan allowlist', () => {
     () => normalizeLuopanSessionState(wrongOrigin),
     /LUOPAN_SESSION_STATE_INVALID/,
   )
+})
+
+test('accepts a bounded approved PMS session shape', () => {
+  const normalized = normalizeLuopanSessionState(syntheticState())
+  assert.equal(normalized.cookies.length, 1)
+  assert.equal(normalized.origins.length, 1)
 })
 
 test('applies cookies and scoped localStorage initialization', async () => {

@@ -24,6 +24,7 @@ protected_paths=(
   /var/lib/sifangguan-ota/pms-login-secrets.json
   /var/lib/sifangguan-ota/ota-source-configs.json
   /var/lib/sifangguan-ota/ota-source-secrets.json
+  /var/lib/sifangguan-ota/luopan-session-secrets.json
   /var/lib/sifangguan-ota/hot-selling-room-types.json
   /var/lib/sifangguan-ota/business-day-controls.json
   /var/lib/sifangguan-ota/luopan-browser-configs.json

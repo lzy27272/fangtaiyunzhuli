@@ -148,16 +148,18 @@ test('summary emits only safe aggregates and buckets unknown channels', () => {
   assert.equal(JSON.stringify(summary).includes('sensitive'), false)
 })
 
-test('WeCom text payload forces at-all and excludes sensitive row values', () => {
+test('WeCom text payload omits decorations and excludes sensitive row values', () => {
   const summary = summarizePmsDocument(document)
   const payload = createWeComTextPayload(summary, {
     hotelName: '喷水池态六酒店',
   })
-  assert.deepEqual(payload.text.mentioned_list, ['@all'])
+  assert.deepEqual(payload.text.mentioned_list, [])
   assert.equal(
-    payload.text.content.startsWith('【UAT测试｜非经营指令】\n'),
-    true,
+    payload.text.content.includes('【UAT测试｜非经营指令】'),
+    false,
   )
+  assert.equal(payload.text.content.includes('隐私处理｜已过滤姓名'), false)
+  assert.equal(payload.text.content.includes('@所有人'), false)
   assert.equal(payload.text.content.includes('喷水池态六酒店'), true)
   assert.doesNotMatch(payload.text.content, /^用途｜/m)
   assert.equal(payload.text.content.includes('sensitive'), false)

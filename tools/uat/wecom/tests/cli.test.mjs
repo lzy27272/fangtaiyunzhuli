@@ -111,7 +111,7 @@ test('CLI defaults to dry-run and performs no network call', () => {
   assert.equal(output.status, 'DRY_RUN_OK')
   assert.equal(output.networkCalled, false)
   assert.match(output.inputSha256, /^[a-f0-9]{64}$/)
-  assert.deepEqual(output.mentionedList, ['@all'])
+  assert.deepEqual(output.mentionedList, [])
 })
 
 test('CLI refuses real send when the independent gate is disabled', () => {
