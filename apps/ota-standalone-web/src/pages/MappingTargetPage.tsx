@@ -205,7 +205,7 @@ export function MappingTargetPage({
           <h2>{showProductMappings ? '销售目标与房型对应' : '销售目标与计算规则'}</h2>
           <p>{showProductMappings
             ? '设置每日销售目标，并把渠道售卖名称对应到酒店实体房型。'
-            : '设置每日房费目标、目标 ADR 与旺季节奏；PMS 房型和 OTA 对应关系在上方维护。'}</p>
+            : '设置每日房费目标、目标平均房价与旺季节奏；PMS 房型和 OTA 对应关系在上方维护。'}</p>
         </div>
         <span className="mode-chip">保存后自动同步</span>
       </div>

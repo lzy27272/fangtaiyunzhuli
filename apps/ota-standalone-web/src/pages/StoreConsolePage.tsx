@@ -330,8 +330,6 @@ export function StoreDetailPage({
     })
     if (results.every((result) => result.status === 'rejected')) {
       setError('门店数据暂时不可用，请检查连接状态。')
-    } else if (results[6].status === 'rejected') {
-      setError('房型配置服务读取失败，请刷新后重试；PMS 采集数据未被修改。')
     }
     setLoading(false)
   }, [context])
