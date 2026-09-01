@@ -83,6 +83,7 @@ const scalarText = (value) => {
   const cleaned = String(value)
     .normalize('NFKC')
     .replace(/[\u0000-\u001f\u007f]/gu, '')
+    .replace(/\p{Cf}/gu, '')
     .trim()
     .slice(0, 120)
   return cleaned || null

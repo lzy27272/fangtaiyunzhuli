@@ -8,6 +8,7 @@ import {
 } from '../../../tools/uat/ota-source-collector.mjs'
 import {
   fliggyBuiltInFallbackSource,
+  fliggyCollectorLimits,
   sanitizeFliggyEndpointUrl,
 } from '../../../tools/uat/fliggy-source-collector.mjs'
 
@@ -361,6 +362,188 @@ test('Fliggy order source is signed, paged and projected into an order dashboard
   })
   assert.equal(JSON.stringify(result).includes('raw-order'), false)
   assert.equal(JSON.stringify(result).includes('not-retained'), false)
+})
+
+test('Fliggy order deduplication prefers order IDs over a shared rate ID', async () => {
+  let observedRoomTypes = []
+  const result = await collectOtaSource({
+    source: {
+      displayName: '飞猪订单',
+      platformCode: 'FLIGGY',
+      requestMethod: 'GET',
+      dataEndpointUrl: fliggyEndpoint({
+        api: 'mtop.taobao.hotel.ebooking.order.list.get',
+        data: { pageIndex: 1, pageSize: 10 },
+      }),
+      requestPayloadJson: '',
+    },
+    cookie: '_m_h5_tk=synthetic_1780000000000',
+    businessDate: '2026-08-14',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async () => new Response(JSON.stringify({
+      ret: ['SUCCESS::调用成功'],
+      data: {
+        totalCount: 2,
+        hasMore: false,
+        orders: [
+          {
+            rateId: 'shared-rate',
+            orderId: 'synthetic-order-1',
+            createTime: '2026-08-02',
+            productId: 'product-1',
+            productName: '豪华大床房',
+          },
+          {
+            rateId: 'shared-rate',
+            orderId: 'synthetic-order-2',
+            createTime: '2026-08-03',
+            productId: 'product-2',
+            productName: '雅致双床房',
+          },
+        ],
+      },
+    }), { status: 200 }),
+    now: () => new Date('2026-08-14T02:00:00.000Z'),
+    onRoomTypeCatalog: (roomTypes) => {
+      observedRoomTypes = roomTypes
+    },
+  })
+
+  assert.equal(result.providerDataset.returnedCount, 2)
+  assert.equal(result.providerDataset.duplicateCount, 0)
+  assert.equal(result.providerDataset.paginationComplete, true)
+  assert.deepEqual(
+    observedRoomTypes.map((item) => item.displayName).sort(),
+    ['豪华大床房', '雅致双床房'].sort(),
+  )
+})
+
+test('Fliggy direct order with an incomplete page does not publish a catalog', async () => {
+  let catalogPublicationCount = 0
+  const result = await collectOtaSource({
+    source: {
+      displayName: '飞猪订单',
+      platformCode: 'FLIGGY',
+      requestMethod: 'GET',
+      dataEndpointUrl: 'https://hotel.fliggy.com/api/orders',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-direct-fliggy-cookie',
+    businessDate: '2026-08-14',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async () => new Response(JSON.stringify({
+      success: true,
+      data: {
+        totalCount: 2,
+        hasMore: false,
+        orders: [{
+          orderId: 'synthetic-order-1',
+          createTime: '2026-08-02',
+          productId: 'product-1',
+          productName: '豪华大床房',
+        }],
+      },
+    }), { status: 200 }),
+    now: () => new Date('2026-08-14T02:00:00.000Z'),
+    onRoomTypeCatalog: () => {
+      catalogPublicationCount += 1
+    },
+  })
+
+  assert.equal(result.providerDataset.paginationComplete, false)
+  assert.equal(result.providerDataset.hasMore, true)
+  assert.equal(catalogPublicationCount, 0)
+})
+
+test('Fliggy MTOP does not trust a reached total while has-more stays true', async () => {
+  let requestCount = 0
+  let catalogPublicationCount = 0
+  await assert.rejects(collectOtaSource({
+    source: {
+      displayName: '飞猪订单',
+      platformCode: 'FLIGGY',
+      requestMethod: 'GET',
+      dataEndpointUrl: fliggyEndpoint({
+        api: 'mtop.taobao.hotel.ebooking.order.list.get',
+        data: { pageIndex: 1, pageSize: 50 },
+      }),
+      requestPayloadJson: '',
+    },
+    cookie: '_m_h5_tk=synthetic_1780000000000',
+    businessDate: '2026-08-14',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async () => {
+      requestCount += 1
+      return new Response(JSON.stringify({
+        ret: ['SUCCESS::调用成功'],
+        data: {
+          totalCount: 1,
+          hasMore: true,
+          orders: requestCount === 1
+            ? [{
+                orderId: 'synthetic-order-1',
+                createTime: '2026-08-02',
+                productId: 'product-1',
+                productName: '豪华大床房',
+              }]
+            : [],
+        },
+      }), { status: 200 })
+    },
+    now: () => new Date('2026-08-14T02:00:00.000Z'),
+    onRoomTypeCatalog: () => {
+      catalogPublicationCount += 1
+    },
+  }), /OTA_FLIGGY_PAGINATION_STALLED/u)
+
+  assert.equal(requestCount, 2)
+  assert.equal(catalogPublicationCount, 0)
+})
+
+test('Fliggy MTOP page cap does not publish a partial order catalog', async () => {
+  let requestCount = 0
+  let catalogPublicationCount = 0
+  const result = await collectOtaSource({
+    source: {
+      displayName: '飞猪订单',
+      platformCode: 'FLIGGY',
+      requestMethod: 'GET',
+      dataEndpointUrl: fliggyEndpoint({
+        api: 'mtop.taobao.hotel.ebooking.order.list.get',
+        data: { pageIndex: 1, pageSize: 50 },
+      }),
+      requestPayloadJson: '',
+    },
+    cookie: '_m_h5_tk=synthetic_1780000000000',
+    businessDate: '2026-08-14',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async (url) => {
+      requestCount += 1
+      const pageIndex = JSON.parse(new URL(url).searchParams.get('data')).pageIndex
+      return new Response(JSON.stringify({
+        ret: ['SUCCESS::调用成功'],
+        data: {
+          totalCount: fliggyCollectorLimits.maxPages * 50 + 1,
+          hasMore: true,
+          orders: Array.from({ length: 50 }, (_, rowIndex) => ({
+            orderId: `synthetic-order-${pageIndex}-${rowIndex}`,
+            createTime: '2026-08-02',
+            productId: `product-${pageIndex}-${rowIndex}`,
+            productName: `合成房型${pageIndex}-${rowIndex}`,
+          })),
+        },
+      }), { status: 200 })
+    },
+    now: () => new Date('2026-08-14T02:00:00.000Z'),
+    onRoomTypeCatalog: () => {
+      catalogPublicationCount += 1
+    },
+  })
+
+  assert.equal(requestCount, fliggyCollectorLimits.maxPages)
+  assert.equal(result.providerDataset.paginationComplete, false)
+  assert.equal(result.providerDataset.hasMore, true)
+  assert.equal(catalogPublicationCount, 0)
 })
 
 test('Fliggy order can use the built-in read-only endpoint when URL is omitted', async () => {
@@ -875,6 +1058,7 @@ test('Douyin order projection decodes JSON-string rows without retaining order d
 
 test('Meituan order projection uses POST month range and a separate canceled query', async () => {
   const requests = []
+  let catalogPublicationCount = 0
   const result = await collectOtaSource({
     source: {
       platformCode: 'MEITUAN',
@@ -899,6 +1083,9 @@ test('Meituan order projection uses POST month range and a separate canceled que
         },
       }), { status: 200 })
     },
+    onRoomTypeCatalog: () => {
+      catalogPublicationCount += 1
+    },
   })
 
   assert.equal(requests.length, 2)
@@ -916,7 +1103,50 @@ test('Meituan order projection uses POST month range and a separate canceled que
     canceledCount: 92,
     nonCanceledCount: 309,
   })
+  assert.equal(catalogPublicationCount, 0)
   assert.equal(JSON.stringify(result).includes('must-not-be-retained'), false)
+})
+
+test('Meituan publishes a room catalog only when the returned page is complete', async () => {
+  let observedRoomTypes = []
+  const result = await collectOtaSource({
+    source: {
+      platformCode: 'MEITUAN',
+      requestMethod: 'GET',
+      dataEndpointUrl: 'https://eb.meituan.com/api/v1/ebooking/orders/list',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-meituan-cookie',
+    businessDate: '2026-08-12',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async (_url, options) => {
+      const payload = JSON.parse(options.body)
+      return new Response(JSON.stringify({
+        status: 0,
+        data: payload.orderStatus === 'CANCELED'
+          ? { total: 0, results: [] }
+          : {
+              total: 1,
+              results: [{
+                orderId: 'synthetic-order-1',
+                roomTypeId: 'room-1',
+                roomTypeName: '豪华大床房',
+              }],
+            },
+      }), { status: 200 })
+    },
+    onRoomTypeCatalog: (roomTypes) => {
+      observedRoomTypes = roomTypes
+    },
+  })
+
+  assert.equal(
+    result.providerDataset.returnedCount,
+    result.providerDataset.totalCount,
+  )
+  assert.deepEqual(observedRoomTypes.map((item) => item.displayName), [
+    '豪华大床房',
+  ])
 })
 
 test('provider business errors fail refresh despite HTTP 200', async () => {

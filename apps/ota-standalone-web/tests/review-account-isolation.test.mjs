@@ -47,6 +47,7 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
       OTA_REVIEW_DATA_PATH: join(runtimePath, 'report-sources.json'),
       OTA_REVIEW_COOKIE_SECRETS_PATH: join(runtimePath, 'cookies.json'),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 21).toString('base64url'),
+      OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 22).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
     },
     stdio: ['ignore', 'ignore', 'pipe'],

@@ -41,6 +41,7 @@ test('repair page is no-store and assisted repair stays disabled by default', as
         'report-source-cookie-secrets.json',
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 13).toString('base64url'),
+      OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 14).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
     },
     stdio: ['ignore', 'ignore', 'pipe'],

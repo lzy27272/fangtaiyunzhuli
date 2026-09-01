@@ -26,6 +26,7 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(panel, /`sfgtrusted\$\{protocolCode\}:\/\/repair`/u)
   assert.match(panel, /lastSnapshotAt/u)
   assert.match(panel, /lastCompleteness === 'COMPLETE'/u)
+  assert.match(panel, /next\.device\.cutoverReady/u)
   assert.match(panel, /Ed25519设备签名/u)
   assert.doesNotMatch(panel, /type=["']password["']|手机号|短信验证码/u)
   assert.match(client, /\/trusted-device\/enrollment/u)
@@ -33,6 +34,13 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(agent, /https:\/\/pms\.meituan\.com/u)
   assert.match(agent, /spawn\(browserExecutable/u)
   assert.match(agent, /connectOverCDP/u)
+  assert.match(agent, /trustedDeviceScopeProof/u)
+  assert.match(agent, /pmsLoginHotelIdFromCookies/u)
+  assert.match(agent, /scopeReceipt/u)
+  assert.match(panel, /已核对，批准本门店/u)
+  assert.match(panel, /scopeApprovalStatus/u)
+  assert.match(client, /\/trusted-device\/scope-approval/u)
+  assert.match(client, /APPROVE_TRUSTED_DEVICE_STORE_SCOPE/u)
   assert.match(agent, /--remote-debugging-address=127\.0\.0\.1/u)
   assert.doesNotMatch(agent, /launchPersistentContext/u)
   assert.doesNotMatch(agent, /--enable-automation/u)
@@ -68,9 +76,18 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(agent, /waitForOfficialLogin/u)
   assert.match(agent, /Get-CimInstance Win32_Process/u)
   assert.match(agent, /SFG_TRUSTED_PROFILE/u)
-  assert.match(agent, /state\.browserDebuggingPort = discoveredPort/u)
+  assert.match(
+    agent,
+    /mergeCurrentDeviceState\(state, \{\s*browserDebuggingPort: discoveredPort,/u,
+  )
   assert.doesNotMatch(agent, /Stop-Process|taskkill/iu)
   assert.doesNotMatch(agent, /slider|captcha.*solve|drag.*captcha/iu)
+  const scopeCheckAt = agent.indexOf('const config = await scopedCollectionConfig')
+  const providerFetchAt = agent.indexOf('result = await collectLiveReports')
+  const localSnapshotAt = agent.indexOf('appendAndPersistSnapshot(')
+  assert.ok(scopeCheckAt >= 0)
+  assert.ok(providerFetchAt > scopeCheckAt)
+  assert.ok(localSnapshotAt > scopeCheckAt)
 })
 
 test('public proxy exposes only the three signed trusted-device intake paths', async () => {

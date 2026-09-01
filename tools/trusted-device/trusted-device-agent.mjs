@@ -11,9 +11,6 @@ import { createRequire } from 'node:module'
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
 } from 'node:fs'
 import os from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -23,7 +20,13 @@ import {
   loadSnapshotStore,
 } from '../uat/live-report-collector.mjs'
 import { collectionSlotFor } from '../uat/report-schedule.mjs'
-import { trustedDeviceCanonicalMessage } from '../uat/trusted-device-intake.mjs'
+import {
+  trustedDeviceCanonicalMessage,
+  trustedDeviceScopeProof,
+} from '../uat/trusted-device-intake.mjs'
+import {
+  createTrustedDeviceLocalStateStore,
+} from './trusted-device-local-state.mjs'
 
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright-core')
@@ -67,34 +70,60 @@ const stateRoot = process.env.LOCALAPPDATA
 const defaultStatePath = join(stateRoot, 'device-state.json')
 
 const statePath = resolve(option('state', defaultStatePath))
+const localStateStore = createTrustedDeviceLocalStateStore({
+  path: statePath,
+  hotelCode: HOTEL_CODE,
+})
 const browserExecutable = option(
   'chrome',
   process.env.SFG_TRUSTED_DEVICE_CHROME ?? DEFAULT_CHROME,
 )
 
-const atomicWrite = (path, value) => {
-  mkdirSync(dirname(path), { recursive: true })
-  const temporaryPath = `${path}.${process.pid}.tmp`
-  writeFileSync(
-    temporaryPath,
-    `${JSON.stringify(value, null, 2)}\n`,
-    { encoding: 'utf8', mode: 0o600 },
-  )
-  renameSync(temporaryPath, path)
-}
-
 const loadState = () => {
-  if (!existsSync(statePath)) throw new Error('TRUSTED_DEVICE_NOT_ENROLLED')
-  const state = JSON.parse(readFileSync(statePath, 'utf8'))
+  const state = localStateStore.read()
+  if (!state) throw new Error('TRUSTED_DEVICE_NOT_ENROLLED')
+  if (
+    state?.schemaVersion === 1
+    && state.hotelCode === HOTEL_CODE
+    && (
+      typeof state.scopeProofKey !== 'string'
+      || Buffer.from(state.scopeProofKey, 'base64url').length !== 32
+    )
+  ) throw new Error('TRUSTED_DEVICE_REENROLL_REQUIRED')
   if (
     state?.schemaVersion !== 1
     || state.hotelCode !== HOTEL_CODE
     || typeof state.deviceId !== 'string'
     || typeof state.privateKeyPem !== 'string'
+    || typeof state.scopeProofKey !== 'string'
+    || Buffer.from(state.scopeProofKey, 'base64url').length !== 32
     || typeof state.serverOrigin !== 'string'
     || !state.serverOrigin.startsWith('https://')
   ) throw new Error('TRUSTED_DEVICE_LOCAL_STATE_INVALID')
   return state
+}
+
+const mergeCurrentDeviceState = (state, patch, { abandonOnChange = false } = {}) => {
+  const allowedKeys = new Set([
+    'browserDebuggingPort',
+    'lastCollectionSlot',
+    'pseudonymKey',
+  ])
+  if (Object.keys(patch).some((key) => !allowedKeys.has(key))) {
+    throw new Error('TRUSTED_DEVICE_LOCAL_STATE_PATCH_INVALID')
+  }
+  const merged = localStateStore.mergeForDevice({
+    deviceId: state.deviceId,
+    expectedStateVersion:
+      Number.isInteger(state.stateVersion) ? state.stateVersion : 0,
+    patch,
+  })
+  if (!merged.updated) {
+    if (abandonOnChange) return null
+    throw new Error('TRUSTED_DEVICE_LOCAL_STATE_STALE')
+  }
+  Object.assign(state, merged.state)
+  return merged.state
 }
 
 const postJson = async (url, body, headers = {}) => {
@@ -163,6 +192,10 @@ const enroll = async () => {
     label,
     publicKeyPem,
   })
+  if (
+    typeof device.scopeProofKey !== 'string'
+    || Buffer.from(device.scopeProofKey, 'base64url').length !== 32
+  ) throw new Error('TRUSTED_DEVICE_SCOPE_PROOF_KEY_INVALID')
   const next = {
     schemaVersion: 1,
     hotelCode: HOTEL_CODE,
@@ -170,13 +203,17 @@ const enroll = async () => {
     deviceId: device.deviceId,
     label: device.label,
     privateKeyPem,
+    scopeProofKey: device.scopeProofKey,
     localHmacSecret: randomBytes(32).toString('base64url'),
     chromeProfilePath: join(dirname(statePath), 'chrome-profile'),
     snapshotPath: join(dirname(statePath), 'local-snapshots.json'),
     lastCollectionSlot: null,
     enrolledAt: device.enrolledAt,
   }
-  atomicWrite(statePath, next)
+  const installed = localStateStore.installEnrollment(next)
+  if (!installed.updated) {
+    throw new Error('TRUSTED_DEVICE_LOCAL_STATE_STALE')
+  }
   process.stdout.write(`${HOTEL_CODE}可信设备注册成功。私钥与浏览器会话仅保存在本机。\n`)
 }
 
@@ -189,9 +226,10 @@ const ensureBrowserDebuggingPort = (state) => {
     && state.browserDebuggingPort >= 20_000
     && state.browserDebuggingPort <= 49_999
   ) return state.browserDebuggingPort
-  state.browserDebuggingPort = randomInt(20_000, 50_000)
-  atomicWrite(statePath, state)
-  return state.browserDebuggingPort
+  const updated = mergeCurrentDeviceState(state, {
+    browserDebuggingPort: randomInt(20_000, 50_000),
+  })
+  return updated.browserDebuggingPort
 }
 
 const browserDebuggingOrigin = (state) =>
@@ -249,8 +287,9 @@ const connectToOfficialBrowser = async (state) => {
     if (discoveredPort !== null) {
       const discoveredOrigin = `http://127.0.0.1:${discoveredPort}`
       if (await browserDebuggingReady(discoveredOrigin)) {
-        state.browserDebuggingPort = discoveredPort
-        atomicWrite(statePath, state)
+        mergeCurrentDeviceState(state, {
+          browserDebuggingPort: discoveredPort,
+        })
         origin = discoveredOrigin
       }
     }
@@ -298,11 +337,45 @@ const openOfficialBrowser = async (state) => {
 const pmsPageFor = (context) => context.pages().find((candidate) =>
   candidate.url().startsWith('https://pms.meituan.com')) ?? null
 
+const pmsLoginHotelIdFromCookies = (cookies) => {
+  const candidates = cookies.filter((cookie) =>
+    cookie.name === 'hotelpms_login_hotel_id'
+    && (cookie.domain === 'pms.meituan.com'
+      || cookie.domain === '.pms.meituan.com'
+      || cookie.domain === '.meituan.com'))
+  if (candidates.length === 0) return null
+  if (candidates.some((cookie) =>
+    typeof cookie.value !== 'string'
+    || !/^(?:0|[1-9][0-9]{0,63})$/u.test(cookie.value))) {
+    throw new Error('TRUSTED_DEVICE_STORE_SCOPE_INVALID')
+  }
+  const distinct = new Set(candidates.map((cookie) => cookie.value))
+  if (distinct.size !== 1) {
+    throw new Error('TRUSTED_DEVICE_STORE_SCOPE_INVALID')
+  }
+  return [...distinct][0]
+}
+
+const clearOfficialHotelScopeCookies = async (context) => {
+  const cookies = await context.cookies('https://pms.meituan.com')
+  for (const cookie of cookies.filter((item) =>
+    item.name === 'hotelpms_login_hotel_id'
+    && (item.domain === 'pms.meituan.com'
+      || item.domain === '.pms.meituan.com'
+      || item.domain === '.meituan.com'))) {
+    await context.addCookies([{
+      name: cookie.name,
+      value: '',
+      domain: cookie.domain,
+      path: cookie.path || '/',
+      expires: 1,
+    }])
+  }
+}
+
 const usableOfficialSession = async (context) => {
   const cookies = await context.cookies('https://pms.meituan.com')
-  const hasHotelSession = cookies.some((cookie) =>
-    cookie.name === 'hotelpms_login_hotel_id' && cookie.value)
-  if (!hasHotelSession) return false
+  if (!pmsLoginHotelIdFromCookies(cookies)) return false
   const page = pmsPageFor(context)
   if (!page) return false
   const pathname = new URL(page.url()).pathname
@@ -322,9 +395,10 @@ const officialBrowserFor = async (state) => {
 
 const waitForOfficialLogin = async (
   state,
-  { forceReauthentication = false } = {},
+  { forceReauthentication = false, clearStoreScope = false } = {},
 ) => {
   const { context } = await officialBrowserFor(state)
+  if (clearStoreScope) await clearOfficialHotelScopeCookies(context)
   let page = pmsPageFor(context)
   if (!page) page = await context.newPage()
   await page.bringToFront()
@@ -371,26 +445,60 @@ const currentSourcesForTrustedDevice = (sources) => sources.map((source) =>
       }
     : source)
 
-const collectOnce = async () => {
-  const state = loadState()
-  const config = await signedPost(
+const scopedCollectionConfig = async (state, cookies) => {
+  const challenge = await signedPost(
     state,
     '/api/v1/trusted-device/config',
     { hotelCode: HOTEL_CODE },
   )
   if (
-    config?.schemaVersion !== 1
+    challenge?.schemaVersion !== 2
+    || challenge?.phase !== 'SCOPE_CHALLENGE'
+    || typeof challenge?.scopeChallenge?.challengeId !== 'string'
+    || typeof challenge?.scopeChallenge?.value !== 'string'
+  ) throw new Error('TRUSTED_DEVICE_COLLECTION_CONFIG_INVALID')
+  const pmsLoginHotelId = pmsLoginHotelIdFromCookies(cookies)
+  if (!pmsLoginHotelId) throw new Error('TRUSTED_DEVICE_LOGIN_REQUIRED')
+  const scopeProof = trustedDeviceScopeProof({
+    hotelCode: HOTEL_CODE,
+    deviceId: state.deviceId,
+    challenge: challenge.scopeChallenge.value,
+    pmsLoginHotelId,
+    scopeProofKey: state.scopeProofKey,
+  })
+  const config = await signedPost(
+    state,
+    '/api/v1/trusted-device/config',
+    {
+      hotelCode: HOTEL_CODE,
+      scopeChallengeId: challenge.scopeChallenge.challengeId,
+      scopeProof,
+    },
+  )
+  if (
+    config?.schemaVersion !== 2
+    || config?.phase !== 'COLLECTION_CONFIG'
     || config?.hotel?.hotelCode !== HOTEL_CODE
     || !Array.isArray(config.sources)
+    || typeof config.scopeReceipt !== 'string'
+    || typeof config.pseudonymKey !== 'string'
+    || Buffer.from(config.pseudonymKey, 'base64url').length !== 32
   ) throw new Error('TRUSTED_DEVICE_COLLECTION_CONFIG_INVALID')
-
-  const { context } = await connectToOfficialBrowser(state)
-  let cookieHeader = cookieHeaderFrom(
-    await context.cookies('https://pms.meituan.com'),
-  )
-  if (!/(?:^|;\s*)hotelpms_login_hotel_id=/u.test(cookieHeader)) {
-    throw new Error('TRUSTED_DEVICE_LOGIN_REQUIRED')
+  if (state.pseudonymKey !== config.pseudonymKey) {
+    mergeCurrentDeviceState(state, {
+      pseudonymKey: config.pseudonymKey,
+    })
   }
+  return config
+}
+
+const collectOnce = async () => {
+  const state = loadState()
+  const { context } = await connectToOfficialBrowser(state)
+  const cookies = await context.cookies('https://pms.meituan.com')
+  const config = await scopedCollectionConfig(state, cookies)
+  let scopeReceipt = config.scopeReceipt
+  let cookieHeader = cookieHeaderFrom(cookies)
 
   const collectionSources = currentSourcesForTrustedDevice(config.sources)
   const previousStore = loadSnapshotStore(state.snapshotPath)
@@ -407,7 +515,8 @@ const collectOnce = async () => {
       sources: collectionSources,
       cookiesBySourceId,
       previousSnapshots,
-      secretKey: state.localHmacSecret,
+      secretKey: config.pseudonymKey,
+      legacySecretKey: state.localHmacSecret,
       target: null,
       hotSellingRoomTypeCodes: config.hotSellingRoomTypeCodes ?? [],
     })
@@ -422,17 +531,30 @@ const collectOnce = async () => {
     // Line-level order hashes stay on the store computer. The cloud only
     // needs the already-computed deltas, forecasts and inventory summaries.
     orders: [],
+    physicalInventory: result.snapshot.physicalInventory.map(({
+      legacyPhysicalRoomTypeCode: _legacyCode,
+      ...room
+    }) => room),
+    roomForecast: result.snapshot.roomForecast.map(({
+      legacyPhysicalRoomTypeCode: _legacyCode,
+      ...room
+    }) => room),
   }
-  const receipt = await signedPost(
-    state,
-    '/api/v1/trusted-device/snapshots',
-    { hotelCode: HOTEL_CODE, snapshot: cloudSnapshot },
-  )
+  let receipt
+  try {
+    receipt = await signedPost(
+      state,
+      '/api/v1/trusted-device/snapshots',
+      { hotelCode: HOTEL_CODE, scopeReceipt, snapshot: cloudSnapshot },
+    )
+  } finally {
+    scopeReceipt = null
+  }
   process.stdout.write(
     `${HOTEL_CODE}采集完成：${result.snapshot.businessDate}，${result.snapshot.completeness}`
     + `${receipt.replayed ? '（云端已存在）' : '（已签名上报）'}。\n`,
   )
-  return result
+  return { ...result, trustedDeviceId: state.deviceId }
 }
 
 const repair = async () => {
@@ -447,11 +569,16 @@ const repair = async () => {
     const reauthenticationRequired = new Set([
       'TRUSTED_DEVICE_OFFICIAL_BROWSER_NOT_RUNNING',
       'TRUSTED_DEVICE_LOGIN_REQUIRED',
+      'TRUSTED_DEVICE_STORE_SCOPE_INVALID',
       'PMS_SESSION_REAUTH_REQUIRED',
     ])
     if (!reauthenticationRequired.has(error?.message)) throw error
     await waitForOfficialLogin(loadState(), {
-      forceReauthentication: error?.message === 'PMS_SESSION_REAUTH_REQUIRED',
+      forceReauthentication:
+        error?.message === 'PMS_SESSION_REAUTH_REQUIRED'
+        || error?.message === 'TRUSTED_DEVICE_STORE_SCOPE_INVALID',
+      clearStoreScope:
+        error?.message === 'TRUSTED_DEVICE_STORE_SCOPE_INVALID',
     })
   }
   const result = await collectOnce()
@@ -465,17 +592,20 @@ const collectIfDue = async () => {
   const state = loadState()
   const slot = collectionSlotFor()
   if (!slot || state.lastCollectionSlot === slot.slotKey) return
-  await collectOnce()
-  state.lastCollectionSlot = slot.slotKey
-  atomicWrite(statePath, state)
+  const result = await collectOnce()
+  mergeCurrentDeviceState(
+    { ...state, deviceId: result.trustedDeviceId },
+    { lastCollectionSlot: slot.slotKey },
+    { abandonOnChange: true },
+  )
 }
 
 const status = async () => {
   const state = loadState()
-  const remote = await signedPost(
+  const { context } = await connectToOfficialBrowser(state)
+  const remote = await scopedCollectionConfig(
     state,
-    '/api/v1/trusted-device/config',
-    { hotelCode: HOTEL_CODE },
+    await context.cookies('https://pms.meituan.com'),
   )
   process.stdout.write(
     `${HOTEL_CODE}可信设备正常；云端配置${remote.sources.length}个报表数据源。\n`,

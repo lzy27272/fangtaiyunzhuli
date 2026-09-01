@@ -51,6 +51,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
         'report-source-cookie-secrets.json',
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 13).toString('base64url'),
+      OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 14).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
       BIEYANGHONG_NOVNC_ROOT: noVncRoot,
     },

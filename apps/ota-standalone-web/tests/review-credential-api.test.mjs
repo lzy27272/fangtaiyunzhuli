@@ -37,6 +37,7 @@ async function startReviewApi(runtimePath) {
         'report-source-cookie-secrets.json',
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 9).toString('base64url'),
+      OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 10).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
     },
   })

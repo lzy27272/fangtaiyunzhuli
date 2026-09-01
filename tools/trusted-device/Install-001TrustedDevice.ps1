@@ -22,8 +22,19 @@ $stateDirectoryName = if ($HotelCode -eq '001') { 'TrustedDevice001' } else { "T
 if (-not $InstallRoot) {
   $InstallRoot = Join-Path $env:LOCALAPPDATA "Sifangguan\$stateDirectoryName\app"
 }
-$resolvedRoot = [System.IO.Path]::GetFullPath($InstallRoot)
-if (-not $resolvedRoot.StartsWith([System.IO.Path]::GetFullPath($env:LOCALAPPDATA), [System.StringComparison]::OrdinalIgnoreCase)) {
+$resolvedRoot = [System.IO.Path]::GetFullPath($InstallRoot).TrimEnd('\', '/')
+$localAppDataRoot = [System.IO.Path]::GetFullPath(
+  $env:LOCALAPPDATA
+).TrimEnd('\', '/')
+$localAppDataPrefix = $localAppDataRoot + [System.IO.Path]::DirectorySeparatorChar
+$installRootInLocalAppData = $resolvedRoot.Equals(
+  $localAppDataRoot,
+  [System.StringComparison]::OrdinalIgnoreCase
+) -or $resolvedRoot.StartsWith(
+  $localAppDataPrefix,
+  [System.StringComparison]::OrdinalIgnoreCase
+)
+if (-not $installRootInLocalAppData) {
   throw 'InstallRoot must be inside the current user LOCALAPPDATA directory.'
 }
 New-Item -ItemType Directory -Path $resolvedRoot -Force | Out-Null
@@ -73,8 +84,10 @@ $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 Write-Host "[2/5] Installing the $HotelCode trusted-device files..."
 $files = @(
   'tools\trusted-device\trusted-device-agent.mjs',
+  'tools\trusted-device\trusted-device-local-state.mjs',
   'tools\trusted-device\package.json',
   'tools\trusted-device\Start-001Login.ps1',
+  'tools\trusted-device\Uninstall-001TrustedDevice.ps1',
   'tools\uat\live-report-collector.mjs',
   'tools\uat\report-schedule.mjs',
   'tools\uat\trusted-device-intake.mjs'

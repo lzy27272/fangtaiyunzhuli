@@ -12,6 +12,7 @@ const accountSecuritySource = await readFile(new URL('../src/pages/AccountSecuri
 const personalSecuritySource = await readFile(new URL('../src/pages/PersonalSecurityPage.tsx', import.meta.url), 'utf8')
 const peoplePermissionsSource = await readFile(new URL('../src/pages/PeoplePermissionsPage.tsx', import.meta.url), 'utf8')
 const storeConsoleSource = await readFile(new URL('../src/pages/StoreConsolePage.tsx', import.meta.url), 'utf8')
+const hotSellingRoomSource = await readFile(new URL('../src/pages/HotSellingRoomConfigPanel.tsx', import.meta.url), 'utf8')
 const newStoreWizardSource = await readFile(new URL('../src/pages/NewStoreWizard.tsx', import.meta.url), 'utf8')
 const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx', import.meta.url), 'utf8')
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
@@ -125,8 +126,10 @@ test('store workspaces present business Chinese and keep technical values second
   assert.match(reportSourceSource, /渠道平台/)
   assert.match(reportSourceSource, /高级报表/)
   assert.doesNotMatch(reportSourceSource, />变更原因码</)
-  assert.match(storeConsoleSource, /className="room-type-picker"/)
-  assert.doesNotMatch(storeConsoleSource, /热销房型编码/)
+  assert.match(storeConsoleSource, /HotSellingRoomConfigPanel/)
+  assert.match(hotSellingRoomSource, /热销房型与渠道对应/)
+  assert.match(hotSellingRoomSource, /PMS 房型为唯一库存基准/)
+  assert.doesNotMatch(hotSellingRoomSource, /热销房型编码/)
 })
 
 test('cookie-authenticated logout forwards a double-submit CSRF token', () => {

@@ -5,7 +5,9 @@ const ENROLLMENT_PATTERN = /^([A-Z0-9][A-Z0-9_-]{0,15})-[A-Z0-9]{4}-[A-Z0-9]{4}-
 const BUNDLE_FILES = [
   ['tools/trusted-device/Install-001TrustedDevice.ps1', '../trusted-device/Install-001TrustedDevice.ps1'],
   ['tools/trusted-device/Start-001Login.ps1', '../trusted-device/Start-001Login.ps1'],
+  ['tools/trusted-device/Uninstall-001TrustedDevice.ps1', '../trusted-device/Uninstall-001TrustedDevice.ps1'],
   ['tools/trusted-device/trusted-device-agent.mjs', '../trusted-device/trusted-device-agent.mjs'],
+  ['tools/trusted-device/trusted-device-local-state.mjs', '../trusted-device/trusted-device-local-state.mjs'],
   ['tools/trusted-device/package.json', '../trusted-device/package.json'],
   ['tools/uat/live-report-collector.mjs', './live-report-collector.mjs'],
   ['tools/uat/report-schedule.mjs', './report-schedule.mjs'],

@@ -15,6 +15,12 @@ export interface TrustedDeviceView {
   lastSnapshotAt: string | null
   lastBusinessDate: string | null
   lastCompleteness: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE' | null
+  cutoverAt: string | null
+  cutoverReady: boolean
+  cutoverPending: boolean
+  reenrollRequired: boolean
+  scopeApprovalStatus: 'UNBOUND' | 'PENDING' | 'APPROVED'
+  scopeApprovedAt: string | null
 }
 
 export interface TrustedDeviceStatus {
@@ -169,5 +175,22 @@ export const revokeTrustedDevice = (
   {
     method: 'DELETE',
     headers: { 'Idempotency-Key': requestId() },
+  },
+)
+
+export const approveTrustedDeviceScope = (
+  context: HotelContext,
+): Promise<TrustedDeviceView> => request(
+  context,
+  '/trusted-device/scope-approval',
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': requestId(),
+    },
+    body: JSON.stringify({
+      reasonCode: 'APPROVE_TRUSTED_DEVICE_STORE_SCOPE',
+    }),
   },
 )

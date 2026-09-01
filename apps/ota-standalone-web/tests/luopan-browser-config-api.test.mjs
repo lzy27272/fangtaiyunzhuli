@@ -45,6 +45,7 @@ const startApi = async (runtimePath) => {
         'report-source-cookie-secrets.json',
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 11).toString('base64url'),
+      OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 12).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -91,7 +92,10 @@ test('Luopan browser config persists only an opaque profile reference and requir
       { headers: { Authorization: `Bearer ${token}` } },
     )
     const directory = await directoryResponse.json()
-    const hotel = directory.data.hotels[0]
+    const hotel = directory.data.hotels.find(
+      (candidate) => candidate.pmsSystemCode === 'LUOPAN_CLOUD',
+    )
+    assert.ok(hotel, 'synthetic directory must contain a Luopan hotel')
     const base =
       `http://127.0.0.1:${started.port}/api/v1/ota/tenants/`
       + `${hotel.tenantId}/hotels/${hotel.hotelId}`

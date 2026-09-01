@@ -4,6 +4,7 @@ import {
   extractRoomTypeCatalog,
   mergeRoomTypeCatalogs,
   mergeRoomTypeCatalogsPreserving,
+  roomTypeCatalogLimits,
   validateRoomTypeMappings,
 } from '../../../tools/uat/room-type-catalog.mjs'
 
@@ -52,20 +53,40 @@ test('blank preferred identifiers do not hide a later stable room code', () => {
     roomTypeCode: 'stable-room-code',
     roomTypeName: '雅致大床房',
   }, { platformCode: 'MEITUAN' })
+  const visuallyBlank = extractRoomTypeCatalog({
+    roomTypeId: '\u200B',
+    roomTypeCode: 'stable-room-code',
+    roomTypeName: '精选大床房',
+  }, { platformCode: 'MEITUAN' })
 
   assert.equal(before[0].roomTypeCode, after[0].roomTypeCode)
+  assert.equal(before[0].roomTypeCode, visuallyBlank[0].roomTypeCode)
 })
 
 test('catalog extraction is bounded before later array items are visited', () => {
-  const catalog = extractRoomTypeCatalog(
-    Array.from({ length: 350 }, (_, index) => ({
+  const rows = Array.from(
+    { length: roomTypeCatalogLimits.maxCatalogItems },
+    (_, index) => ({
       roomTypeId: `room-${index}`,
       roomTypeName: `房型${index}`,
-    })),
+    }),
+  )
+  rows.push(Object.defineProperty({}, 'roomTypeName', {
+    enumerable: true,
+    get() {
+      throw new Error('CATALOG_LIMIT_WALKED_TOO_FAR')
+    },
+  }))
+  const catalog = extractRoomTypeCatalog(
+    rows,
     { platformCode: 'CTRIP' },
   )
 
-  assert.equal(catalog.length, 200)
+  assert.equal(catalog.length, roomTypeCatalogLimits.maxCatalogItems)
+  assert.ok(
+    roomTypeCatalogLimits.maxCatalogItems
+      >= roomTypeCatalogLimits.maxMappingItems,
+  )
 })
 
 test('production-style HMAC identifiers are isolated by hotel and source', () => {

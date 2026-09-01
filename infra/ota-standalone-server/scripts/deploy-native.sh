@@ -12,6 +12,7 @@ expected_sha="${SFG_OTA_RELEASE_SHA256:-}"
 release_root=/opt/sifangguan-ota/releases
 current_link=/opt/sifangguan-ota/current
 backup_root=/var/backups/sifangguan-ota/code-releases
+runtime_env=/etc/sifangguan-ota/runtime.env
 incoming_dir=""
 listing_file=""
 
@@ -136,6 +137,43 @@ for index in "${!protected_paths[@]}"; do
   fi
   chmod 0600 "${backup_dir}/${index}.state"
 done
+
+ensure_pseudonym_secret_key() {
+  if [[ ! -f ${runtime_env} ]]; then
+    echo "RUNTIME_ENV_NOT_FOUND" >&2
+    return 1
+  fi
+  key_count="$(grep -Ec '^OTA_REVIEW_PSEUDONYM_SECRET_KEY=' "${runtime_env}" || true)"
+  if [[ ${key_count} -gt 1 ]]; then
+    echo "PSEUDONYM_SECRET_KEY_DUPLICATE" >&2
+    return 1
+  fi
+  if [[ ${key_count} -eq 1 ]]; then
+    configured_key="$(sed -n 's/^OTA_REVIEW_PSEUDONYM_SECRET_KEY=//p' "${runtime_env}")"
+    if [[ ! ${configured_key} =~ ^[A-Za-z0-9_-]{43}$ ]]; then
+      unset configured_key
+      echo "PSEUDONYM_SECRET_KEY_INVALID" >&2
+      return 1
+    fi
+    unset configured_key
+    return 0
+  fi
+
+  generated_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+  if [[ ! ${generated_key} =~ ^[A-Za-z0-9_-]{43}$ ]]; then
+    unset generated_key
+    echo "PSEUDONYM_SECRET_KEY_GENERATION_FAILED" >&2
+    return 1
+  fi
+  runtime_env_tmp="${runtime_env}.pseudonym-$$"
+  cp --preserve=mode,ownership,timestamps "${runtime_env}" "${runtime_env_tmp}"
+  printf 'OTA_REVIEW_PSEUDONYM_SECRET_KEY=%s\n' "${generated_key}" \
+    >> "${runtime_env_tmp}"
+  mv -Tf "${runtime_env_tmp}" "${runtime_env}"
+  unset generated_key runtime_env_tmp
+}
+
+ensure_pseudonym_secret_key
 
 protected_fingerprint() {
   for protected_path in "${protected_paths[@]}"; do

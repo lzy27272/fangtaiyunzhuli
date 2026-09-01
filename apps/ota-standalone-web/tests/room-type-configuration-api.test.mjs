@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,6 +44,7 @@ async function startApi(runtimePath) {
         'report-source-cookie-secrets.json',
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 11).toString('base64url'),
+      OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 12).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
     },
   })
@@ -312,6 +313,55 @@ test('room type configuration saves atomically, conflicts safely and survives re
   } finally {
     if (first) await stopApi(first.child)
     if (second) await stopApi(second.child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
+test('room type configuration fails closed and rolls back when the legacy mirror cannot be written', { timeout: 20_000 }, async () => {
+  const runtimePath = await mkdtemp(join(tmpdir(), 'sfg-room-types-mirror-'))
+  let api = null
+  const pmsRoomCode = 'PMS-ROOM-MIRROR-001'
+  try {
+    await writeFile(join(runtimePath, 'live-report-snapshots.json'), JSON.stringify({
+      [hotelId]: [{
+        hotelId,
+        observedAt: '2026-09-01T08:00:00.000Z',
+        businessDate: '2026-09-01',
+        physicalInventory: [{
+          physicalRoomTypeCode: pmsRoomCode,
+          displayName: '镜像故障测试房型',
+          primaryAvailableRooms: 2,
+        }],
+      }],
+    }))
+    await mkdir(join(runtimePath, 'hot-selling-room-types.json'))
+
+    api = await startApi(runtimePath)
+    const failedSave = await apiRequest(api.port, '/hot-selling-room-types', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'room-type-mirror-failure-1' },
+      body: JSON.stringify({
+        expectedRowVersion: 0,
+        roomTypeCodes: [pmsRoomCode],
+        reasonCode: 'UPDATE_HOT_SELLING_ROOM_TYPES',
+      }),
+    })
+    const failedSaveBody = await failedSave.json()
+    assert.equal(failedSave.status, 500, JSON.stringify(failedSaveBody))
+
+    const current = await apiRequest(api.port, '/room-type-configuration')
+    const currentBody = await current.json()
+    assert.equal(current.status, 200)
+    assert.equal(currentBody.data.rowVersion, 0)
+    assert.deepEqual(currentBody.data.hotSellingRoomTypeCodes, [])
+
+    const canonical = JSON.parse(await readFile(
+      join(runtimePath, 'room-type-mappings.json'),
+      'utf8',
+    ))
+    assert.deepEqual(canonical, {})
+  } finally {
+    if (api) await stopApi(api.child)
     await rm(runtimePath, { recursive: true, force: true })
   }
 })

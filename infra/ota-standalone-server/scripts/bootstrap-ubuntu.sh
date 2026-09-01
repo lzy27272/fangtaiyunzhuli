@@ -63,6 +63,7 @@ if [[ ! -e ${runtime_env} ]]; then
   review_password="$(openssl rand -base64 36 | tr -d '\n=/+')"
   access_token="$(openssl rand -hex 32)"
   secret_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+  pseudonym_secret_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
   cat > "${runtime_env}" <<EOF
 OTA_REVIEW_API_PORT=8091
 OTA_REVIEW_USERNAME=review-admin
@@ -72,10 +73,11 @@ OTA_REVIEW_AUTH_STATE_PATH=/data/review-auth-state.json
 OTA_REVIEW_DATA_PATH=/data/report-sources.json
 OTA_REVIEW_COOKIE_SECRETS_PATH=/data/report-source-cookie-secrets.json
 OTA_REVIEW_SECRET_KEY=${secret_key}
+OTA_REVIEW_PSEUDONYM_SECRET_KEY=${pseudonym_secret_key}
 OTA_REVIEW_AUTO_COLLECTION_ENABLED=true
 OTA_REVIEW_RUNTIME_MODE=LOCAL_LIVE_LONG_RUNNING
 EOF
-  unset review_password access_token secret_key
+  unset review_password access_token secret_key pseudonym_secret_key
 fi
 
 chown root:root "${runtime_env}"

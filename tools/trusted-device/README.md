@@ -30,6 +30,41 @@
 门店电脑须在计划采集时间保持开机联网；Cookie 失效时重新打开登录入口即可，
 不需要重新注册设备。
 
+## 单店本机停用和卸载
+
+回滚某一家门店时，必须显式传入该门店号；卸载脚本没有默认门店。
+先用不修改本机的预览模式核对精确目标：
+
+```powershell
+& "$env:LOCALAPPDATA\Sifangguan\TrustedDevice-003\app\tools\trusted-device\Uninstall-001TrustedDevice.ps1" --hotel 003 --dry-run
+```
+
+确认任务名、协议名和目录均是 `003` 后，关闭该门店的美团专用 Chrome
+窗口，再执行：
+
+```powershell
+& "$env:LOCALAPPDATA\Sifangguan\TrustedDevice-003\app\tools\trusted-device\Uninstall-001TrustedDevice.ps1" --hotel 003
+```
+
+`001` 保留历史目录名，命令为：
+
+```powershell
+& "$env:LOCALAPPDATA\Sifangguan\TrustedDevice001\app\tools\trusted-device\Uninstall-001TrustedDevice.ps1" --hotel 001
+```
+
+脚本只停用并注销根路径下精确名为
+`Sifangguan-门店号-Trusted-Collector` 的任务，删除精确的
+`sfgtrusted门店号` 协议，以及该门店自己的 `app`、`chrome-profile`
+和状态目录。删除协议前会校验其注册命令确实属于目标门店；归属不明时
+直接拒绝，不继续删除。脚本不按前缀扫描，不终止其他 Node.js/Chrome
+进程，不删除 Node.js，不修改其他门店或云端设备登记。
+
+卸载会删除该店本机设备私钥、本地快照和专用 Chrome 会话，不可本机
+恢复。如专用 Chrome 仍在使用对应 profile，目录删除将失败；关闭该窗口后
+重试同一条命令。任务和协议已不存在时会按幂等方式继续清理目录。
+若安装时人工指定了非默认 `-InstallRoot`，为避免误删无法自动归属的目录，
+本脚本只清理上述标准门店目录；自定义应用目录需在人工核对后单独处理。
+
 ## 安全边界
 
 - 安装码 15 分钟、单次使用；重新注册只会撤销同一家门店的旧设备。

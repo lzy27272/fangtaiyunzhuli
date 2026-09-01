@@ -28,6 +28,7 @@ test('bootstrap adds a UTF-8 BOM to PowerShell payloads for Windows PowerShell 5
     [
       'tools/trusted-device/Install-001TrustedDevice.ps1',
       'tools/trusted-device/Start-001Login.ps1',
+      'tools/trusted-device/Uninstall-001TrustedDevice.ps1',
     ],
   )
   for (const { content } of powershellFiles) {
@@ -44,4 +45,16 @@ test('bootstrap binds installer and temporary files to the enrollment hotel', ()
   assert.match(script, /-HotelCode \$hotelCode/u)
   assert.match(script, /Sifangguan-' \+ \$hotelCode/u)
   assert.doesNotMatch(script, /-HotelCode '001'/u)
+})
+
+test('bootstrap includes the local state concurrency guard used by the agent', () => {
+  const script = renderTrustedDeviceBootstrapPowerShell({
+    enrollmentCode: '003-ABCD-EFGH-IJKL',
+    serverOrigin: 'https://www.sfgzt.cn',
+  })
+  const files = bundledFiles(script)
+
+  assert.ok(files.some(
+    ({ target }) => target === 'tools/trusted-device/trusted-device-local-state.mjs',
+  ))
 })

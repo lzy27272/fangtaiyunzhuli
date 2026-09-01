@@ -45,6 +45,7 @@ const startApi = async (runtimePath) => {
         'report-source-cookie-secrets.json',
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 13).toString('base64url'),
+      OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 14).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
       OTA_REVIEW_LUOPAN_ASSISTED_REAUTH_ENABLED: 'false',
     },

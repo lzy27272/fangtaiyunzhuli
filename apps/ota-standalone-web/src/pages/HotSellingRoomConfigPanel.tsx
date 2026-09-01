@@ -14,6 +14,7 @@ import {
 } from '../components/ConsoleUi'
 import {
   configurationDraft,
+  observedOtaSources,
   otaRoomTypeAvailable,
   sameRoomTypeConfiguration,
 } from './hotSellingRoomModel'
@@ -100,6 +101,10 @@ export function HotSellingRoomConfigPanel({
   }), [configuration.mappings, configuration.hotSellingRoomTypeCodes])
   const changed = !sameRoomTypeConfiguration(draft, savedDraft)
   const editingDisabled = !canConfigure || saving
+  const availableOtaSources = useMemo(
+    () => observedOtaSources(configuration.otaSources),
+    [configuration.otaSources],
+  )
   const pmsRoomTypeCodes = useMemo(
     () => new Set(configuration.pmsRoomTypes.map(
       (room) => room.physicalRoomTypeCode,
@@ -267,13 +272,14 @@ export function HotSellingRoomConfigPanel({
 
       <div className="room-source-summary">
         <span><PlatformIcon name="PMS" size={22} /><strong>PMS</strong><small>{formatObservedAt(configuration.pmsObservedAt)}</small></span>
-        {configuration.otaSources.map((source) => (
+        {availableOtaSources.map((source) => (
           <span key={source.sourceId}>
             <PlatformIcon name={source.platformCode as PlatformIconName} size={22} />
             <strong>{platformLabels[source.platformCode] ?? source.displayName}</strong>
-            <small>{source.roomTypes.length ? `最近发现${source.roomTypes.length}个房型 · ${formatObservedAt(source.observedAt)}` : '尚未抓取到房型'}</small>
+            <small>最近发现{source.roomTypes.length}个房型 · {formatObservedAt(source.observedAt)}</small>
           </span>
         ))}
+        {availableOtaSources.length === 0 ? <span className="room-source-empty"><strong>暂无已抓取 OTA 渠道</strong><small>未配置或尚无房型目录的渠道不会显示</small></span> : null}
       </div>
 
       {error ? <div className="inline-message error" role="alert">{error}</div> : null}
@@ -342,8 +348,8 @@ export function HotSellingRoomConfigPanel({
                       <label>
                         <span>选择渠道</span>
                         <select disabled={editingDisabled} value={currentDraft.sourceId} onChange={(event) => updateMappingDraft(pmsRoom.physicalRoomTypeCode, { sourceId: event.target.value, otaRoomTypeCode: '' })}>
-                          <option value="">请选择已配置渠道</option>
-                          {configuration.otaSources.map((source) => <option disabled={source.roomTypes.length === 0} key={source.sourceId} value={source.sourceId}>{sourceOptionLabel(source)}</option>)}
+                          <option value="">请选择已抓取渠道</option>
+                          {availableOtaSources.map((source) => <option key={source.sourceId} value={source.sourceId}>{sourceOptionLabel(source)}</option>)}
                         </select>
                       </label>
                       <label>

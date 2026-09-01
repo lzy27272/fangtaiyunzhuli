@@ -494,7 +494,7 @@ const detectChannel = (row) => {
   return 'UNKNOWN'
 }
 
-const orderState = (root, reportDate, secretKey) => {
+const orderState = (root, reportDate, secretKey, legacySecretKey = null) => {
   const rows = root?.data?.dataList
   if (!Array.isArray(rows)) throw new Error('REPORT_DATA_INVALID')
   const grouped = new Map()
@@ -516,8 +516,12 @@ const orderState = (root, reportDate, secretKey) => {
             row.orderSource ?? '',
           ])
     const key = hmac(secretKey, rawOrderKey)
+    const legacyKey = legacySecretKey
+      ? hmac(legacySecretKey, rawOrderKey)
+      : null
     const current = grouped.get(key) ?? {
       key,
+      ...(legacyKey && legacyKey !== key ? { legacyKey } : {}),
       channel: detectChannel(row),
       status: 'ACTIVE',
       roomNights: 0,
@@ -620,7 +624,7 @@ const businessOverviewState = (root, reportDate) => {
   return { current, futureDaily: [] }
 }
 
-const physicalInventoryState = (root, secretKey) => {
+const physicalInventoryState = (root, secretKey, legacySecretKey = null) => {
   const rows = Array.isArray(root?.data)
     ? root.data
     : root?.data?.dataList
@@ -633,9 +637,15 @@ const physicalInventoryState = (root, secretKey) => {
           ? row.roomName.trim().slice(0, 80)
           : '未命名实体房型'
       const code = hmac(secretKey, `room-type:${displayName}`, 16)
+      const legacyCode = legacySecretKey
+        ? hmac(legacySecretKey, `room-type:${displayName}`, 16)
+        : null
       return {
         inventoryPoolId: `PMS-${code}`,
         physicalRoomTypeCode: `PMS-${code}`,
+        ...(legacyCode && legacyCode !== code
+          ? { legacyPhysicalRoomTypeCode: `PMS-${legacyCode}` }
+          : {}),
         displayName,
         physicalRoomCount: finiteNumber(row.roomNum),
         primaryAvailableRooms: finiteNumber(row.availableRoomNum),
@@ -646,7 +656,12 @@ const physicalInventoryState = (root, secretKey) => {
     })
 }
 
-const roomForecastState = (root, reportDate, secretKey) => {
+const roomForecastState = (
+  root,
+  reportDate,
+  secretKey,
+  legacySecretKey = null,
+) => {
   const rows = root?.data
   if (!Array.isArray(rows)) throw new Error('REPORT_DATA_INVALID')
   const current = []
@@ -667,6 +682,9 @@ const roomForecastState = (root, reportDate, secretKey) => {
     ) continue
       const displayName = row.roomTypeName.trim().slice(0, 80)
       const code = hmac(secretKey, `room-type:${displayName}`, 16)
+      const legacyCode = legacySecretKey
+        ? hmac(legacySecretKey, `room-type:${displayName}`, 16)
+        : null
       for (const detail of row.details) {
         const rawDate = typeof detail?.date === 'string'
           ? detail.date.trim()
@@ -683,6 +701,9 @@ const roomForecastState = (root, reportDate, secretKey) => {
           current.push({
             inventoryPoolId: `PMS-${code}`,
             physicalRoomTypeCode: `PMS-${code}`,
+            ...(legacyCode && legacyCode !== code
+              ? { legacyPhysicalRoomTypeCode: `PMS-${legacyCode}` }
+              : {}),
             displayName,
             physicalRoomCount: finiteNumber(row.totalCount),
             primaryAvailableRooms: finiteNumber(detail.availableCount),
@@ -876,6 +897,7 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
   )
   for (const order of snapshot.orders) {
     const old = previousOrders.get(order.key)
+      ?? (order.legacyKey ? previousOrders.get(order.legacyKey) : null)
     if (order.status === 'CANCELLED') {
       if (old?.status === 'ACTIVE') {
         byChannel[order.channel].canceledRoomNights += old.roomNights
@@ -1280,6 +1302,7 @@ export const collectLiveReports = async ({
   cookiesBySourceId,
   previousSnapshots = [],
   secretKey,
+  legacySecretKey = null,
   target = null,
   hotSellingRoomTypeCodes = [],
   reportDate: configuredReportDate = null,
@@ -1332,14 +1355,19 @@ export const collectLiveReports = async ({
         )
         const parsed =
           contract === 'ORDER_DETAIL'
-            ? orderState(root, reportDate, secretKey)
+            ? orderState(root, reportDate, secretKey, legacySecretKey)
             : contract === 'FUTURE_OVERVIEW'
               ? overviewState(root, reportDate)
               : contract === 'BUSINESS_OVERVIEW'
                 ? businessOverviewState(root, reportDate)
               : contract === 'PHYSICAL_INVENTORY'
-                ? physicalInventoryState(root, secretKey)
-                : roomForecastState(root, reportDate, secretKey)
+                ? physicalInventoryState(root, secretKey, legacySecretKey)
+                : roomForecastState(
+                    root,
+                    reportDate,
+                    secretKey,
+                    legacySecretKey,
+                  )
         return {
           source,
           sourceCode: sourceCodeFor(contract, source.sourceId),
@@ -1506,17 +1534,24 @@ export const loadSnapshotStore = (path) => {
 }
 
 export const appendAndPersistSnapshot = (store, path, snapshot) => {
+  const hadHotel = Object.hasOwn(store, snapshot.hotelId)
   const current = Array.isArray(store[snapshot.hotelId])
     ? store[snapshot.hotelId]
     : []
   store[snapshot.hotelId] = [...current, snapshot].slice(-SNAPSHOT_RETENTION)
   if (!path) return
-  mkdirSync(dirname(path), { recursive: true })
-  const temporaryPath = `${path}.${process.pid}.tmp`
-  writeFileSync(
-    temporaryPath,
-    `${JSON.stringify(store, null, 2)}\n`,
-    { encoding: 'utf8', mode: 0o600 },
-  )
-  renameSync(temporaryPath, path)
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    const temporaryPath = `${path}.${process.pid}.tmp`
+    writeFileSync(
+      temporaryPath,
+      `${JSON.stringify(store, null, 2)}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    renameSync(temporaryPath, path)
+  } catch (error) {
+    if (hadHotel) store[snapshot.hotelId] = current
+    else delete store[snapshot.hotelId]
+    throw error
+  }
 }

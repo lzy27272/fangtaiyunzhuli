@@ -1530,24 +1530,30 @@ const collectMeituanOrderSummary = async ({
     headers,
     fetchImpl,
   })
-  onRoomTypeCatalog(extractRoomTypeCatalog(
-    allResponse.root,
-    {
-      platformCode: 'MEITUAN',
-      allowProductNames: true,
-      scope: roomTypeCatalogScope,
-      hmacKey: roomTypeCatalogHmacKey,
-    },
-  ))
+  const summary = summarizeMeituanOrderJson({
+    allRoot: allResponse.root,
+    canceledRoot: canceledResponse.root,
+    rangeStart,
+    rangeEnd,
+  })
+  if (
+    summary.providerDataset.returnedCount
+      === summary.providerDataset.totalCount
+  ) {
+    onRoomTypeCatalog(extractRoomTypeCatalog(
+      allResponse.root,
+      {
+        platformCode: 'MEITUAN',
+        allowProductNames: true,
+        scope: roomTypeCatalogScope,
+        hmacKey: roomTypeCatalogHmacKey,
+      },
+    ))
+  }
   return {
     observedAt: now().toISOString(),
     httpStatus: allResponse.httpStatus,
-    ...summarizeMeituanOrderJson({
-      allRoot: allResponse.root,
-      canceledRoot: canceledResponse.root,
-      rangeStart,
-      rangeEnd,
-    }),
+    ...summary,
   }
 }
 

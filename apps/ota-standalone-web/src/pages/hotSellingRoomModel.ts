@@ -1,7 +1,14 @@
 import type {
+  RoomTypeCatalogSourceView,
   RoomTypeConfigurationView,
   RoomTypeMappingView,
 } from '../api/business'
+
+export function observedOtaSources(
+  sources: RoomTypeCatalogSourceView[],
+): RoomTypeCatalogSourceView[] {
+  return sources.filter((source) => source.roomTypes.length > 0)
+}
 
 export function normalizeRoomName(value: string): string {
   return value

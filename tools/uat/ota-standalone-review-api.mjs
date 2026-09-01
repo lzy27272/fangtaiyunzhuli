@@ -3,6 +3,7 @@
 import { createServer } from 'node:http'
 import {
   createHash,
+  createHmac,
   randomBytes,
   randomUUID,
   timingSafeEqual,
@@ -100,7 +101,9 @@ import {
 } from './live-report-collector.mjs'
 import {
   createTrustedDeviceIntakeStore,
+  stableJson,
   TRUSTED_DEVICE_PILOT_HOTEL_CODE,
+  validateTrustedDeviceSnapshot,
 } from './trusted-device-intake.mjs'
 import { renderTrustedDeviceBootstrapCommand } from './trusted-device-bootstrap.mjs'
 import {
@@ -167,6 +170,8 @@ const dataPath = process.env.OTA_REVIEW_DATA_PATH?.trim()
 const cookieSecretsPath =
   process.env.OTA_REVIEW_COOKIE_SECRETS_PATH?.trim()
 const cookieSecretKey = process.env.OTA_REVIEW_SECRET_KEY?.trim()
+const pseudonymSecretKey =
+  process.env.OTA_REVIEW_PSEUDONYM_SECRET_KEY?.trim()
 const automaticHourlyCollectionEnabled =
   process.env.OTA_REVIEW_AUTO_COLLECTION_ENABLED === 'true'
 const runtimeMode =
@@ -225,6 +230,13 @@ const bieyanghongWebRepairReady =
 const trustedDeviceEnabled =
   process.env.OTA_REVIEW_TRUSTED_DEVICE_ENABLED !== 'false'
   && process.env.OTA_REVIEW_TRUSTED_DEVICE_001_ENABLED !== 'false'
+const trustedDeviceFixedHotelCodes = new Set(['001', '003', '013'])
+const trustedDeviceAllowedHotelCodes = new Set(
+  String(
+    process.env.OTA_REVIEW_TRUSTED_DEVICE_HOTEL_CODES ?? '001,003,013',
+  ).split(',').map((value) => value.trim().toUpperCase()).filter((value) =>
+    trustedDeviceFixedHotelCodes.has(value)),
+)
 const liveSnapshotPath = dataPath
   ? join(dirname(dataPath), 'live-report-snapshots.json')
   : null
@@ -345,6 +357,7 @@ if (
   || !authStatePath
   || !cookieSecretsPath
   || !cookieSecretKey
+  || Buffer.from(pseudonymSecretKey ?? '', 'base64url').length !== 32
 ) {
   process.stderr.write('REVIEW_API_CONFIGURATION_INVALID\n')
   process.exit(2)
@@ -673,6 +686,10 @@ if (simulationHotelPath && existsSync(simulationHotelPath)) {
 const trustedDeviceEligible = (hotel) =>
   trustedDeviceEnabled
   && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+  && trustedDeviceAllowedHotelCodes.has(hotel.hotelCode)
+  && hotels.filter((candidate) =>
+    candidate.hotelCode === hotel.hotelCode
+    && candidate.pmsSystemCode === 'MEITUAN_BIEYANGHONG').length === 1
 const trustedDeviceIntakeStores = new Map()
 const trustedDeviceStatePathFor = (hotel) => {
   if (!trustedDeviceStateDirectory) return null
@@ -683,6 +700,10 @@ const trustedDeviceStatePathFor = (hotel) => {
         `trusted-device-registry-${hotel.hotelCode.toLowerCase()}.json`,
       )
 }
+const trustedDeviceStoreScopeSecretScope = (hotel) =>
+  `trusted-device-store-scope:${hotel.tenantId}:${hotel.hotelId}`
+const trustedDeviceProofKeySecretScope = (hotel, deviceId) =>
+  `trusted-device-proof-key:${hotel.tenantId}:${hotel.hotelId}:${deviceId}`
 const trustedDeviceStoreFor = (hotel) => {
   if (!trustedDeviceEligible(hotel)) return null
   const existing = trustedDeviceIntakeStores.get(hotel.hotelId)
@@ -690,12 +711,44 @@ const trustedDeviceStoreFor = (hotel) => {
   const created = createTrustedDeviceIntakeStore({
     path: trustedDeviceStatePathFor(hotel),
     hotel,
+    sealStoreScope: (value) => encryptCookie(
+      value,
+      cookieSecretKey,
+      trustedDeviceStoreScopeSecretScope(hotel),
+    ),
+    openStoreScope: (record) => decryptCookie(
+      record,
+      cookieSecretKey,
+      trustedDeviceStoreScopeSecretScope(hotel),
+    ),
+    sealDeviceScopeProofKey: (value, deviceId) => encryptCookie(
+      value,
+      cookieSecretKey,
+      trustedDeviceProofKeySecretScope(hotel, deviceId),
+    ),
+    openDeviceScopeProofKey: (record, deviceId) => decryptCookie(
+      record,
+      cookieSecretKey,
+      trustedDeviceProofKeySecretScope(hotel, deviceId),
+    ),
   })
   trustedDeviceIntakeStores.set(hotel.hotelId, created)
   return created
 }
-const trustedDeviceActive = (hotel) =>
-  Boolean(trustedDeviceStoreFor(hotel)?.status().device)
+const trustedDeviceCutoverReady = (hotel) =>
+  Boolean(trustedDeviceStoreFor(hotel)?.status().device?.cutoverReady)
+const trustedDeviceLegacyCollectionBlocked = (hotel) =>
+  Boolean(trustedDeviceStoreFor(hotel)?.legacyCollectionBlocked())
+const trustedDeviceHotelCodeFromBody = (body) => {
+  if (
+    !body
+    || typeof body !== 'object'
+    || Array.isArray(body)
+    || typeof body.hotelCode !== 'string'
+    || !/^[A-Z0-9][A-Z0-9_-]{0,15}$/u.test(body.hotelCode)
+  ) throw new Error('TRUSTED_DEVICE_HOTEL_SCOPE_INVALID')
+  return body.hotelCode
+}
 const trustedDeviceHotelForCode = (hotelCode) => {
   const matches = hotels.filter((hotel) =>
     trustedDeviceEligible(hotel) && hotel.hotelCode === hotelCode)
@@ -2363,18 +2416,120 @@ const persistRoomTypeMappings = (
 }
 
 const commitHotSellingRoomTypes = (hotelId, config) => {
+  const previousConfigs = new Map(hotSellingRoomTypesByHotel)
   const nextConfigs = new Map(hotSellingRoomTypesByHotel)
   nextConfigs.set(hotelId, config)
   // Canonical state is one atomic file; the legacy file is a rollback mirror.
-  persistRoomTypeMappings(nextConfigs)
-  replaceMapContents(hotSellingRoomTypesByHotel, nextConfigs)
+  try {
+    persistRoomTypeMappings(nextConfigs)
+  } catch (error) {
+    process.stderr.write(
+      `REVIEW_HOT_ROOM_CANONICAL_WRITE_FAILED:${hotelId}\n`,
+    )
+    throw new Error('HOT_SELLING_ROOM_TYPES_PERSIST_FAILED', {
+      cause: error,
+    })
+  }
   try {
     persistHotSellingRoomTypes(nextConfigs)
-  } catch {
+  } catch (error) {
     process.stderr.write(
       `REVIEW_HOT_ROOM_LEGACY_MIRROR_FAILED:${hotelId}\n`,
     )
+    try {
+      persistRoomTypeMappings(previousConfigs)
+    } catch {
+      process.stderr.write(
+        `REVIEW_HOT_ROOM_CANONICAL_ROLLBACK_FAILED:${hotelId}\n`,
+      )
+    }
+    throw new Error('HOT_SELLING_ROOM_TYPES_PERSIST_FAILED', {
+      cause: error,
+    })
   }
+  replaceMapContents(hotSellingRoomTypesByHotel, nextConfigs)
+}
+
+const stripTrustedPseudonymAliases = (snapshot) => {
+  snapshot.orders = snapshot.orders.map(({ legacyKey: _legacyKey, ...order }) =>
+    order)
+  snapshot.physicalInventory = snapshot.physicalInventory.map(({
+    legacyPhysicalRoomTypeCode: _legacyCode,
+    ...room
+  }) => room)
+  snapshot.roomForecast = snapshot.roomForecast.map(({
+    legacyPhysicalRoomTypeCode: _legacyCode,
+    ...room
+  }) => room)
+  return snapshot
+}
+
+const migrateTrustedPseudonymAliases = (hotel, snapshot) => {
+  const aliases = []
+  for (const room of [
+    ...snapshot.physicalInventory,
+    ...snapshot.roomForecast,
+  ]) {
+    if (
+      typeof room.legacyPhysicalRoomTypeCode === 'string'
+      && room.legacyPhysicalRoomTypeCode !== room.physicalRoomTypeCode
+    ) aliases.push([
+      room.legacyPhysicalRoomTypeCode,
+      room.physicalRoomTypeCode,
+    ])
+  }
+  const previous = (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
+  if (previous) {
+    const oldByName = new Map()
+    for (const room of previous.physicalInventory ?? []) {
+      const values = oldByName.get(room.displayName) ?? new Set()
+      values.add(room.physicalRoomTypeCode)
+      oldByName.set(room.displayName, values)
+    }
+    const newByName = new Map()
+    for (const room of snapshot.physicalInventory ?? []) {
+      const values = newByName.get(room.displayName) ?? new Set()
+      values.add(room.physicalRoomTypeCode)
+      newByName.set(room.displayName, values)
+    }
+    for (const [displayName, oldCodes] of oldByName) {
+      const newCodes = newByName.get(displayName)
+      if (oldCodes.size === 1 && newCodes?.size === 1) {
+        const oldCode = [...oldCodes][0]
+        const newCode = [...newCodes][0]
+        if (oldCode !== newCode) aliases.push([oldCode, newCode])
+      }
+    }
+  }
+  const aliasMap = new Map()
+  for (const [oldCode, newCode] of aliases) {
+    if (aliasMap.has(oldCode) && aliasMap.get(oldCode) !== newCode) {
+      throw new Error('TRUSTED_DEVICE_PSEUDONYM_MIGRATION_AMBIGUOUS')
+    }
+    aliasMap.set(oldCode, newCode)
+  }
+  const current = hotSellingRoomTypesFor(hotel.hotelId)
+  const roomTypeCodes = current.roomTypeCodes.map((code) =>
+    aliasMap.get(code) ?? code)
+  const mappings = current.mappings.map((mapping) => ({
+    ...mapping,
+    physicalRoomTypeCode:
+      aliasMap.get(mapping.physicalRoomTypeCode)
+      ?? mapping.physicalRoomTypeCode,
+  }))
+  if (
+    stableJson(roomTypeCodes) !== stableJson(current.roomTypeCodes)
+    || stableJson(mappings) !== stableJson(current.mappings)
+  ) {
+    commitHotSellingRoomTypes(hotel.hotelId, {
+      ...current,
+      roomTypeCodes: [...new Set(roomTypeCodes)],
+      mappings,
+      rowVersion: current.rowVersion + 1,
+      updatedAt: new Date().toISOString(),
+    })
+  }
+  return stripTrustedPseudonymAliases(snapshot)
 }
 
 const latestPhysicalInventorySnapshotFor = (hotelId) => {
@@ -4344,17 +4499,17 @@ const collectLiveFor = async (
   if (running) return running
 
   const operation = (async () => {
+    const hotel = selectedHotel(hotelId)
+    if (trustedDeviceLegacyCollectionBlocked(hotel)) {
+      throw new Error('TRUSTED_DEVICE_COLLECTION_REQUIRED')
+    }
     const luopanConfig = luopanBrowserConfigRecordFor(hotelId)
-    if (luopanConfig.enabled) {
+    if (hotel.pmsSystemCode === 'LUOPAN_CLOUD' && luopanConfig.enabled) {
       return collectLuopanLiveFor(
         hotelId,
         luopanConfig,
         { otaRefreshDueOnly },
       )
-    }
-    const hotel = selectedHotel(hotelId)
-    if (trustedDeviceActive(hotel)) {
-      throw new Error('TRUSTED_DEVICE_COLLECTION_REQUIRED')
     }
     const businessDayControl = businessDayControlFor(hotelId)
     if (!reportSourcesByHotel.has(hotelId)) {
@@ -4387,12 +4542,29 @@ const collectLiveFor = async (
       sources,
       cookiesBySourceId,
       previousSnapshots: liveSnapshotStore[hotelId] ?? [],
-      secretKey: cookieSecretKey,
+      secretKey: trustedDeviceEligible(hotel)
+        ? trustedDevicePseudonymKeyFor(hotel)
+        : cookieSecretKey,
+      legacySecretKey: trustedDeviceEligible(hotel)
+        ? cookieSecretKey
+        : null,
       target: null,
       hotSellingRoomTypeCodes:
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
       reportDate: businessDayControl.businessDate,
     })
+    if (trustedDeviceEligible(hotel)) {
+      migrateTrustedPseudonymAliases(hotel, result.snapshot)
+      result.monitor = monitorFromSnapshot(
+        result.snapshot,
+        hotel,
+        null,
+        hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+      )
+    }
+    if (trustedDeviceLegacyCollectionBlocked(hotel)) {
+      throw new Error('TRUSTED_DEVICE_COLLECTION_REQUIRED')
+    }
     if (
       businessDayControl.businessDate !== result.snapshot.businessDate
       || businessDayControl.mode !== 'PMS_CONFIRMED'
@@ -4458,7 +4630,7 @@ const scheduledCollectionTick = async () => {
   const slot = collectionSlotFor()
   if (!slot) return
   for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
-    if (trustedDeviceActive(hotel)) {
+    if (trustedDeviceCutoverReady(hotel)) {
       continue
     }
     const luopanConfig = luopanBrowserConfigRecordFor(hotel.hotelId)
@@ -5376,16 +5548,23 @@ const safeBieyanghongRepairReason = (error) => {
 }
 
 const pmsCookieValue = (cookieHeader, name) => {
+  const values = []
   for (const part of String(cookieHeader ?? '').split(';')) {
     const [candidate, ...value] = part.trim().split('=')
-    if (candidate === name) return value.join('=').trim() || null
+    if (candidate === name) values.push(value.join('=').trim())
   }
-  return null
+  if (values.length === 0) return null
+  if (
+    values.some((value) => !/^(?:0|[1-9][0-9]{0,63})$/u.test(value))
+    || new Set(values).size !== 1
+  ) throw new Error('BIEYANGHONG_STORE_SCOPE_INVALID')
+  return values[0]
 }
 
 const expectedBieyanghongHotelScope = (hotelId) => {
   const sources = reportSourcesByHotel.get(hotelId) ?? []
   const encryptedSecrets = secretsForHotel(hotelId)
+  const expectedHotelIds = new Set()
   for (const source of sources) {
     const record = encryptedSecrets[source.sourceId]
     if (!record) continue
@@ -5398,9 +5577,12 @@ const expectedBieyanghongHotelScope = (hotelId) => {
       existingCookie,
       'hotelpms_login_hotel_id',
     )
-    if (expectedHotelId) return expectedHotelId
+    if (expectedHotelId) expectedHotelIds.add(expectedHotelId)
   }
-  throw new Error('BIEYANGHONG_EXPECTED_STORE_SCOPE_UNAVAILABLE')
+  if (expectedHotelIds.size !== 1) {
+    throw new Error('BIEYANGHONG_EXPECTED_STORE_SCOPE_UNAVAILABLE')
+  }
+  return [...expectedHotelIds][0]
 }
 
 const replaceBieyanghongReportCookies = (hotelId, cookieHeader) => {
@@ -7258,15 +7440,82 @@ const briefFor = (hotelId) => {
   }
 }
 
-const trustedDeviceCollectionConfig = (hotel) => {
+const trustedDeviceReportContractByPath = new Map([
+  ['/hotelpms/api/v1/report/jd01', 'ORDER_DETAIL'],
+  ['/hotelpms/api/v2/report/jy09', 'FUTURE_OVERVIEW'],
+  [
+    '/hotelpms/api/v1/report/home/workbench/businessOverview',
+    'BUSINESS_OVERVIEW',
+  ],
+  [
+    '/hotelpms/api/v1/report/lion/manager/workbench/room',
+    'PHYSICAL_INVENTORY',
+  ],
+  [
+    '/hotelpms/api/v2/report/roomState/batchSearchBaseRoomForcasting',
+    'ROOM_FORECAST',
+  ],
+])
+
+const trustedDeviceSourceCodeFor = (source) => {
+  let contract = null
+  try {
+    contract = trustedDeviceReportContractByPath.get(
+      new URL(source.endpointUrl).pathname,
+    ) ?? null
+  } catch {
+    contract = null
+  }
+  const prefix =
+    contract === 'ORDER_DETAIL'
+      ? 'REPORT_ORDER'
+      : ['FUTURE_OVERVIEW', 'BUSINESS_OVERVIEW'].includes(contract)
+        ? 'REPORT_REVENUE'
+        : contract === 'ROOM_FORECAST'
+          ? 'REPORT_ROOM_FORECAST'
+          : contract === 'PHYSICAL_INVENTORY'
+            ? 'REPORT_INVENTORY'
+            : 'REPORT_UNKNOWN'
+  return `${prefix}_${String(source.sourceId).slice(0, 8)}`
+}
+
+const trustedDevicePseudonymKeyFor = (hotel) => createHmac(
+  'sha256',
+  Buffer.from(pseudonymSecretKey, 'base64url'),
+).update([
+  'SFG_TRUSTED_DEVICE_PSEUDONYM_V1',
+  hotel.tenantId,
+  hotel.hotelId,
+].join('\n')).digest('base64url')
+
+const trustedDeviceConfigMaterial = (hotel) => {
   if (!trustedDeviceEligible(hotel)) {
     throw new Error('TRUSTED_DEVICE_DISABLED')
   }
   if (!reportSourcesByHotel.has(hotel.hotelId)) {
     synchronizeReportSourcesFromPrimary()
   }
-  return {
-    schemaVersion: 1,
+  const sources = (reportSourcesByHotel.get(hotel.hotelId) ?? []).map((source) => ({
+    sourceId: source.sourceId,
+    displayName: source.displayName,
+    endpointUrl: source.endpointUrl,
+    reportType: source.reportType,
+    calculationRole: source.calculationRole,
+    pollIntervalMinutes: source.pollIntervalMinutes,
+    requestPayloadJson: source.requestPayloadJson,
+    enabled: source.enabled,
+  }))
+  const requiredSourceContracts = sources
+    .filter((source) => source.enabled)
+    .map((source) => ({
+      sourceId: source.sourceId,
+      sourceCode: trustedDeviceSourceCodeFor(source),
+      reportType: source.reportType,
+    }))
+    .sort((left, right) => left.sourceId.localeCompare(right.sourceId))
+  const config = {
+    schemaVersion: 2,
+    phase: 'COLLECTION_CONFIG',
     hotel: {
       tenantId: hotel.tenantId,
       hotelId: hotel.hotelId,
@@ -7274,37 +7523,121 @@ const trustedDeviceCollectionConfig = (hotel) => {
       hotelName: hotel.hotelName,
       timezone: hotel.timezone,
     },
-    sources: (reportSourcesByHotel.get(hotel.hotelId) ?? []).map((source) => ({
-      sourceId: source.sourceId,
-      displayName: source.displayName,
-      endpointUrl: source.endpointUrl,
-      reportType: source.reportType,
-      calculationRole: source.calculationRole,
-      pollIntervalMinutes: source.pollIntervalMinutes,
-      requestPayloadJson: source.requestPayloadJson,
-      enabled: source.enabled,
-    })),
+    sources,
+    requiredSourceContracts,
+    pseudonymKey: trustedDevicePseudonymKeyFor(hotel),
     hotSellingRoomTypeCodes:
       hotSellingRoomTypesFor(hotel.hotelId).roomTypeCodes,
     schedule: 'DYNAMIC_SHANGHAI_V1',
   }
+  const encryptedSecrets = secretsForHotel(hotel.hotelId)
+  const credentialEpochs = sources.map((source) => ({
+    sourceId: source.sourceId,
+    updatedAt: encryptedSecrets[source.sourceId]?.updatedAt ?? null,
+  }))
+  return {
+    config,
+    requiredSourceContracts,
+    configDigest: createHash('sha256')
+      .update(stableJson({ config, credentialEpochs }))
+      .digest('hex'),
+  }
 }
 
-const acceptTrustedDeviceSnapshot = ({ hotel, deviceId, snapshot }) => {
+const trustedDeviceCollectionConfig = (hotel, scopeReceipt, material = null) => {
+  const resolved = material ?? trustedDeviceConfigMaterial(hotel)
+  return {
+    ...resolved.config,
+    scopeReceipt,
+  }
+}
+
+const trustedDeviceSnapshotHash = (snapshot) => createHash('sha256')
+  .update(stableJson(snapshot))
+  .digest('hex')
+
+const acceptTrustedDeviceSnapshot = ({
+  hotel,
+  deviceId,
+  snapshot,
+  requiredSourceContracts,
+}) => {
   if (!trustedDeviceEligible(hotel)) {
     throw new Error('TRUSTED_DEVICE_DISABLED')
   }
-  trustedDeviceStoreFor(hotel).acceptSnapshot({ deviceId, snapshot })
+  validateTrustedDeviceSnapshot({
+    snapshot,
+    hotel,
+    requiredSourceContracts,
+    requiredPseudonymKey: trustedDevicePseudonymKeyFor(hotel),
+  })
+  const intakeStore = trustedDeviceStoreFor(hotel)
+  const snapshotHash = trustedDeviceSnapshotHash(snapshot)
   const prior = liveSnapshotStore[hotel.hotelId] ?? []
-  const duplicate = prior.some((candidate) =>
+  const pending = intakeStore.pendingCutover()
+  const persistedPending = pending
+    ? prior.find((candidate) =>
+        candidate?.collectionRunId === pending.collectionRunId)
+    : null
+  if (persistedPending) {
+    if (trustedDeviceSnapshotHash(persistedPending) !== pending.snapshotHash) {
+      throw new Error('TRUSTED_DEVICE_CUTOVER_COMMIT_INVALID')
+    }
+    intakeStore.completeCutover({
+      deviceId: pending.deviceId,
+      collectionRunId: pending.collectionRunId,
+      snapshotHash: pending.snapshotHash,
+    })
+  }
+  const existing = prior.find((candidate) =>
     candidate?.collectionRunId === snapshot.collectionRunId)
-  if (!duplicate) {
+  if (
+    existing
+    && trustedDeviceSnapshotHash(existing) !== snapshotHash
+  ) throw new Error('TRUSTED_DEVICE_SNAPSHOT_ID_CONFLICT')
+  const statusBefore = intakeStore.status().device
+  const cutoverWasReady = Boolean(statusBefore?.cutoverReady)
+  const beginsCutover =
+    !cutoverWasReady && snapshot.completeness === 'COMPLETE'
+  if (!cutoverWasReady && !beginsCutover) {
+    if (existing) return { duplicate: true, authoritative: false }
+    intakeStore.acceptSnapshot({ deviceId, snapshot })
+    process.stdout.write(`${JSON.stringify({
+      event: 'TRUSTED_DEVICE_SHADOW_SNAPSHOT_ACCEPTED',
+      hotelId: hotel.hotelId,
+      deviceId,
+      collectionRunId: snapshot.collectionRunId,
+      completeness: snapshot.completeness,
+    })}\n`)
+    return { duplicate: false, authoritative: false }
+  }
+  if (existing && !statusBefore?.cutoverPending) {
+    return { duplicate: true, authoritative: true }
+  }
+  if (!existing) {
+    migrateTrustedPseudonymAliases(hotel, snapshot)
+  }
+  if (beginsCutover) {
+    intakeStore.beginCutover({
+      deviceId,
+      snapshot,
+      snapshotHash,
+      allowPendingReplacement: Boolean(pending && !persistedPending),
+    })
+  }
+  if (!existing) {
     appendAndPersistSnapshot(
       liveSnapshotStore,
       liveSnapshotPath,
       snapshot,
     )
   }
+  intakeStore.acceptSnapshot({ deviceId, snapshot })
+  if (beginsCutover) intakeStore.completeCutover({
+    deviceId,
+    collectionRunId: snapshot.collectionRunId,
+    snapshotHash,
+  })
   const currentControl = businessDayControlFor(hotel.hotelId)
   if (
     currentControl.businessDate !== snapshot.businessDate
@@ -7321,7 +7654,7 @@ const acceptTrustedDeviceSnapshot = ({ hotel, deviceId, snapshot }) => {
     persistBusinessDayControls()
   }
   process.stdout.write(`${JSON.stringify({
-    event: duplicate
+    event: existing
       ? 'TRUSTED_DEVICE_SNAPSHOT_REPLAYED'
       : 'TRUSTED_DEVICE_SNAPSHOT_ACCEPTED',
     hotelId: hotel.hotelId,
@@ -7329,7 +7662,7 @@ const acceptTrustedDeviceSnapshot = ({ hotel, deviceId, snapshot }) => {
     collectionRunId: snapshot.collectionRunId,
     completeness: snapshot.completeness,
   })}\n`)
-  return { duplicate }
+  return { duplicate: Boolean(existing), authoritative: true }
 }
 
 const bearerTokenFor = (request) => {
@@ -7457,11 +7790,14 @@ const server = createServer(async (request, response) => {
       request.method === 'POST'
       && path === '/api/v1/trusted-device/enroll'
     ) {
+      if (url.search) throw new Error('TRUSTED_DEVICE_REQUEST_QUERY_INVALID')
       if (!trustedDeviceEnabled) {
         throw new Error('TRUSTED_DEVICE_PILOT_DISABLED')
       }
       const body = await readBody(request)
-      const hotel = trustedDeviceHotelForCode(String(body.hotelCode ?? ''))
+      const hotel = trustedDeviceHotelForCode(
+        trustedDeviceHotelCodeFromBody(body),
+      )
       const intakeStore = trustedDeviceStoreFor(hotel)
       const device = intakeStore.enroll({
         hotelCode: body.hotelCode,
@@ -7482,25 +7818,11 @@ const server = createServer(async (request, response) => {
       request.method === 'POST'
       && path === '/api/v1/trusted-device/config'
     ) {
+      if (url.search) throw new Error('TRUSTED_DEVICE_REQUEST_QUERY_INVALID')
       const body = await readBody(request)
-      const hotel = trustedDeviceHotelForCode(String(body.hotelCode ?? ''))
-      const intakeStore = trustedDeviceStoreFor(hotel)
-      intakeStore.verifyRequest({
-        method: request.method,
-        path,
-        body,
-        headers: request.headers,
-      })
-      json(response, 200, { data: trustedDeviceCollectionConfig(hotel) })
-      return
-    }
-
-    if (
-      request.method === 'POST'
-      && path === '/api/v1/trusted-device/snapshots'
-    ) {
-      const body = await readBody(request)
-      const hotel = trustedDeviceHotelForCode(String(body.hotelCode ?? ''))
+      const hotel = trustedDeviceHotelForCode(
+        trustedDeviceHotelCodeFromBody(body),
+      )
       const intakeStore = trustedDeviceStoreFor(hotel)
       const device = intakeStore.verifyRequest({
         method: request.method,
@@ -7508,14 +7830,87 @@ const server = createServer(async (request, response) => {
         body,
         headers: request.headers,
       })
+      const keys = Object.keys(body).sort()
+      if (keys.length === 1 && keys[0] === 'hotelCode') {
+        const challenge = intakeStore.issueScopeChallenge({
+          deviceId: device.deviceId,
+        })
+        json(response, 200, {
+          data: {
+            schemaVersion: 2,
+            phase: 'SCOPE_CHALLENGE',
+            hotelCode: hotel.hotelCode,
+            scopeChallenge: challenge,
+          },
+        })
+        return
+      }
+      if (
+        keys.join(',') !== 'hotelCode,scopeChallengeId,scopeProof'
+        || typeof body.scopeChallengeId !== 'string'
+        || typeof body.scopeProof !== 'string'
+      ) throw new Error('TRUSTED_DEVICE_COLLECTION_CONFIG_INVALID')
+      const configMaterial = trustedDeviceConfigMaterial(hotel)
+      const verifiedScope = intakeStore.verifyScopeProof({
+        deviceId: device.deviceId,
+        challengeId: body.scopeChallengeId,
+        proof: body.scopeProof,
+        expectedPmsLoginHotelId:
+          intakeStore.hasBoundStoreScope({ deviceId: device.deviceId })
+            ? null
+            : expectedBieyanghongHotelScope(hotel.hotelId),
+        configDigest: configMaterial.configDigest,
+      })
+      json(response, 200, {
+        data: trustedDeviceCollectionConfig(
+          hotel,
+          verifiedScope.scopeReceipt,
+          configMaterial,
+        ),
+      })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/trusted-device/snapshots'
+    ) {
+      if (url.search) throw new Error('TRUSTED_DEVICE_REQUEST_QUERY_INVALID')
+      const body = await readBody(request)
+      const hotel = trustedDeviceHotelForCode(
+        trustedDeviceHotelCodeFromBody(body),
+      )
+      if (
+        Object.keys(body).sort().join(',') !== 'hotelCode,scopeReceipt,snapshot'
+        || typeof body.scopeReceipt !== 'string'
+      ) throw new Error('TRUSTED_DEVICE_SNAPSHOT_REQUEST_INVALID')
+      const intakeStore = trustedDeviceStoreFor(hotel)
+      const device = intakeStore.verifyRequest({
+        method: request.method,
+        path,
+        body,
+        headers: request.headers,
+      })
+      const inFlightLegacyCollection = liveCollectionLocks.get(hotel.hotelId)
+      if (inFlightLegacyCollection) {
+        await inFlightLegacyCollection.catch(() => {})
+      }
+      const configMaterial = trustedDeviceConfigMaterial(hotel)
+      intakeStore.consumeScopeReceipt({
+        deviceId: device.deviceId,
+        scopeReceipt: body.scopeReceipt,
+        configDigest: configMaterial.configDigest,
+      })
       const result = acceptTrustedDeviceSnapshot({
         hotel,
         deviceId: device.deviceId,
         snapshot: body.snapshot,
+        requiredSourceContracts: configMaterial.requiredSourceContracts,
       })
       json(response, result.duplicate ? 200 : 202, {
         data: {
           accepted: true,
+          authoritative: result.authoritative,
           replayed: result.duplicate,
           collectionRunId: body.snapshot.collectionRunId,
           device: intakeStore.status().device,
@@ -8210,6 +8605,28 @@ const server = createServer(async (request, response) => {
 
       if (
         request.method === 'POST'
+        && suffix === '/trusted-device/scope-approval'
+      ) {
+        if (!trustedDeviceEligible(selected)) {
+          throw new Error('TRUSTED_DEVICE_SCOPE_INVALID')
+        }
+        const body = await readBody(request)
+        if (
+          Object.keys(body).sort().join(',') !== 'reasonCode'
+          || body.reasonCode !== 'APPROVE_TRUSTED_DEVICE_STORE_SCOPE'
+        ) throw new Error('TRUSTED_DEVICE_SCOPE_APPROVAL_INVALID')
+        const device = trustedDeviceStoreFor(selected).approveStoreScope()
+        process.stdout.write(`${JSON.stringify({
+          event: 'TRUSTED_DEVICE_STORE_SCOPE_APPROVED',
+          hotelId: selected.hotelId,
+          deviceId: device.deviceId,
+        })}\n`)
+        json(response, 200, { data: { device } })
+        return
+      }
+
+      if (
+        request.method === 'POST'
         && suffix === '/trusted-device/bootstrap'
       ) {
         if (
@@ -8587,6 +9004,9 @@ const server = createServer(async (request, response) => {
         request.method === 'POST'
         && suffix === '/luopan-browser-config'
       ) {
+        if (selected.pmsSystemCode !== 'LUOPAN_CLOUD') {
+          throw new Error('LUOPAN_PMS_SCOPE_INVALID')
+        }
         const body = await readBody(request)
         const existing = luopanBrowserConfigRecordFor(hotelId)
         const profileRef =
@@ -8646,6 +9066,9 @@ const server = createServer(async (request, response) => {
         request.method === 'POST'
         && suffix === '/luopan-browser-session-validations'
       ) {
+        if (selected.pmsSystemCode !== 'LUOPAN_CLOUD') {
+          throw new Error('LUOPAN_PMS_SCOPE_INVALID')
+        }
         const body = await readBody(request)
         const existing = luopanBrowserConfigRecordFor(hotelId)
         if (
@@ -9213,6 +9636,8 @@ const server = createServer(async (request, response) => {
               ? 'BUSINESS_DAY_CONTROL_INVALID'
            : error?.message === 'HOT_SELLING_ROOM_TYPES_INVALID'
                  ? 'HOT_SELLING_ROOM_TYPES_INVALID'
+             : error?.message === 'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED'
+               ? 'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED'
                 : typeof error?.message === 'string'
                   && (
                     error.message.startsWith('SIMULATION_')
@@ -9237,7 +9662,11 @@ const server = createServer(async (request, response) => {
         'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
         'OTA_SOURCE_VERSION_CONFLICT',
         'OTA_SOURCE_CHANGED_DURING_REFRESH',
-      ].includes(code) ? 409 : 400,
+      ].includes(code)
+        ? 409
+        : code === 'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED'
+          ? 500
+          : 400,
       { code },
     )
   }

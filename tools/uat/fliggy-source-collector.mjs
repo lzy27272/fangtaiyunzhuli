@@ -392,12 +392,20 @@ const signedUrl = ({ endpoint, cookie, data, now }) => {
   return url
 }
 
-const identityFor = (row) => {
-  const leaf = scalarLeaves(row).find((candidate) => {
-    const field = candidate.path.split('.').at(-1) ?? ''
-    return /(?:^id$|(?:order|review|comment|rate)[_-]?id$)/i.test(field)
-      && !/(?:user|guest|member|account|hotel|merchant|poi)/i.test(candidate.path)
+const identityFor = (row, kind) => {
+  const leaves = scalarLeaves(row).filter((candidate) => {
+    return String(candidate.value).trim() !== ''
+      && !/(?:user|guest|member|account|hotel|merchant|poi)/i
+        .test(candidate.path)
   })
+  const matcher = kind === 'ORDER'
+    ? /(?:order|booking|book|reservation)(?:id|no|number)$/i
+    : kind === 'REVIEW'
+      ? /(?:review|comment|rate)id$/i
+      : /(?:order|booking|book|reservation|review|comment|rate)id$/i
+  const leaf = leaves.find((candidate) => matcher.test(
+    candidate.path.replace(/[\s_.:/\\-]+/gu, ''),
+  )) ?? leaves.find((candidate) => candidate.path === 'id')
   return leaf
     ? createHash('sha256').update(String(leaf.value)).digest('hex')
     : null
@@ -499,7 +507,8 @@ const collectPages = async ({
     if (pageTotal !== null) totalCount = pageTotal
     let newRecordCount = 0
     selected.rows.forEach((row, rowIndex) => {
-      const identity = identityFor(row) ?? `page:${pageIndex}:row:${rowIndex}`
+      const identity = identityFor(row, kind)
+        ?? `page:${pageIndex}:row:${rowIndex}`
       if (identities.has(identity)) {
         duplicateCount += 1
         return
@@ -509,16 +518,26 @@ const collectPages = async ({
       records.push(row)
     })
     const hasMore = hasMoreFor(response.root)
+    const reachedReportedTotal = totalCount !== null
+      && identities.size >= totalCount
     if (
-      selected.rows.length === 0
-      || hasMore === false
-      || (totalCount !== null && identities.size >= totalCount)
-      || (hasMore === null && selected.rows.length < FLIGGY_PAGE_SIZE)
+      hasMore !== true
+      && (
+        reachedReportedTotal
+        || (
+          totalCount === null
+          && (
+            hasMore === false
+            || selected.rows.length < FLIGGY_PAGE_SIZE
+          )
+        )
+      )
     ) {
       paginationComplete = true
       break
     }
-    if (newRecordCount === 0) {
+    if (hasMore === false) break
+    if (selected.rows.length === 0 || newRecordCount === 0) {
       throw new Error('OTA_FLIGGY_PAGINATION_STALLED')
     }
   }
@@ -808,7 +827,8 @@ const collectDirectLegacyReviewPages = async ({
     if (pageTotal !== null) totalCount = pageTotal
     let newRecordCount = 0
     selected.rows.forEach((row, rowIndex) => {
-      const identity = identityFor(row) ?? `page:${pageNo}:row:${rowIndex}`
+      const identity = identityFor(row, 'REVIEW')
+        ?? `page:${pageNo}:row:${rowIndex}`
       if (identities.has(identity)) {
         duplicateCount += 1
         return
@@ -818,15 +838,25 @@ const collectDirectLegacyReviewPages = async ({
       records.push(row)
     })
     const hasMore = hasMoreFor(response.root)
+    const reachedReportedTotal = totalCount !== null
+      && identities.size >= totalCount
     if (
-      selected.rows.length === 0
-      || hasMore === false
-      || (totalCount !== null && identities.size >= totalCount)
+      hasMore !== true
+      && (
+        reachedReportedTotal
+        || (totalCount === null && hasMore === false)
+        || (
+          totalCount === null
+          && hasMore === null
+          && selected.rows.length === 0
+        )
+      )
     ) {
       paginationComplete = true
       break
     }
-    if (newRecordCount === 0) {
+    if (hasMore === false) break
+    if (selected.rows.length === 0 || newRecordCount === 0) {
       throw new Error('OTA_FLIGGY_PAGINATION_STALLED')
     }
   }
@@ -911,8 +941,11 @@ const collectDirectFliggySummary = async ({
   const selected = selectRows(response.root, kind)
   const totalCount = totalCountFor(response.root)
   const hasMore = hasMoreFor(response.root)
-  const paginationComplete = hasMore === false
-    || (totalCount !== null && selected.rows.length >= totalCount)
+  const paginationComplete = hasMore !== true
+    && (
+      (totalCount !== null && selected.rows.length >= totalCount)
+      || (totalCount === null && hasMore === false)
+    )
   const pages = {
     records: selected.rows,
     recordPath: selected.path,
@@ -923,7 +956,7 @@ const collectDirectFliggySummary = async ({
     httpStatus: response.httpStatus,
     detectedFields: fieldNames(selected.rows),
   }
-  if (kind === 'ORDER') {
+  if (kind === 'ORDER' && paginationComplete) {
     onRoomTypeCatalog(extractRoomTypeCatalog(
       selected.rows,
       {
@@ -1020,7 +1053,7 @@ export const collectFliggySourceSummary = async ({
     requestJson,
     now,
   })
-  if (kind === 'ORDER') {
+  if (kind === 'ORDER' && pages.paginationComplete) {
     onRoomTypeCatalog(extractRoomTypeCatalog(
       pages.records,
       {
