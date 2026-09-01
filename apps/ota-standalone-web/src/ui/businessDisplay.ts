@@ -52,6 +52,7 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   PMS_SESSION_REAUTH_REQUIRED: '酒店系统需要重新登录',
   PMS_BUSINESS_DATE_UNAVAILABLE: '无法读取酒店营业日',
   PMS_BUSINESS_DATE_INVALID: '酒店营业日异常',
+  LUOPAN_ORDER_DETAIL_NOT_CONFIGURED: '罗盘订单明细尚未配置',
   VERIFICATION_REQUIRED: '需要验证码',
   EXTERNAL_VERIFICATION_REQUIRED: '需要在官网完成验证',
   RATE_LIMITED: '操作过于频繁，请稍后重试',
