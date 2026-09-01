@@ -45,6 +45,61 @@ test('review auth state hashes passwords and rotates the bootstrap token on logi
   assert.equal(fixture.store.authenticate(session.accessToken), true)
 })
 
+test('refresh sessions survive restart, rotate once and never persist raw tokens', async (t) => {
+  const fixture = await createFixture()
+  t.after(() => rm(fixture.directory, { recursive: true, force: true }))
+
+  const loginBundle = fixture.store.loginWithRefresh(
+    'review-admin',
+    'example-Initial-Password-42',
+  )
+  assert.ok(loginBundle)
+  assert.equal(loginBundle.expiresInSeconds, 600)
+  assert.equal(loginBundle.refreshExpiresInSeconds, 30 * 24 * 60 * 60)
+
+  const refreshStatePath = `${fixture.statePath}.sessions`
+  const persisted = await readFile(refreshStatePath, 'utf8')
+  assert.doesNotMatch(persisted, new RegExp(loginBundle.refreshToken, 'u'))
+  assert.doesNotMatch(persisted, new RegExp(loginBundle.csrfToken, 'u'))
+
+  const restored = createReviewAuthStore({
+    statePath: fixture.statePath,
+    bootstrapUsername: 'ignored-admin',
+    bootstrapPassword: 'example-Ignored-Password-42',
+    bootstrapAccessToken: 'example-ignored-access-token',
+  })
+  const rotated = restored.refreshSession({
+    refreshToken: loginBundle.refreshToken,
+    csrfToken: loginBundle.csrfToken,
+  })
+  assert.ok(rotated)
+  assert.equal(
+    restored.refreshSession({
+      refreshToken: loginBundle.refreshToken,
+      csrfToken: loginBundle.csrfToken,
+    }),
+    null,
+  )
+  assert.ok(restored.logoutRefresh({
+    refreshToken: rotated.refreshToken,
+    csrfToken: rotated.csrfToken,
+  }))
+
+  const restartedAfterLogout = createReviewAuthStore({
+    statePath: fixture.statePath,
+    bootstrapUsername: 'ignored-admin',
+    bootstrapPassword: 'example-Ignored-Password-42',
+    bootstrapAccessToken: 'example-ignored-access-token-2',
+  })
+  assert.equal(
+    restartedAfterLogout.refreshSession({
+      refreshToken: rotated.refreshToken,
+      csrfToken: rotated.csrfToken,
+    }),
+    null,
+  )
+})
+
 test('credential changes persist without plaintext and invalidate the old session', async (t) => {
   const fixture = await createFixture()
   t.after(() => rm(fixture.directory, { recursive: true, force: true }))

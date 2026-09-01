@@ -1,0 +1,32 @@
+# Import this snippet inside the existing www.sfgzt.cn site block before the
+# generic /api handler. The OTA runtime remains loopback-only.
+
+@ota_console_exact path /ota-console
+redir @ota_console_exact /ota-console/ 308
+
+@ota_console_assets path /ota-console/assets/*
+header @ota_console_assets Cache-Control "public, max-age=31536000, immutable"
+
+handle_path /ota-console/* {
+	root * /opt/sifangguan-ota/current/apps/ota-standalone-web/dist
+	try_files {path} /index.html
+	file_server
+}
+
+@ota_console_health path /api/v1/ota-console/health
+handle @ota_console_health {
+	rewrite * /health
+	reverse_proxy 127.0.0.1:8091
+}
+
+handle_path /api/v1/ota-console/* {
+	rewrite * /api/v1{path}
+	reverse_proxy 127.0.0.1:8091
+}
+
+# Luopan one-time repair links are token-gated by the OTA service. Keep this
+# matcher before the main platform's generic /api handler.
+@luopan_repair path /api/v1/luopan-repair /api/v1/luopan-repair/*
+handle @luopan_repair {
+	reverse_proxy 127.0.0.1:8091
+}

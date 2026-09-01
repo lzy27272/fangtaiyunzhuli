@@ -17,9 +17,29 @@ http://127.0.0.1:5180 {
 		X-Frame-Options "DENY"
 	}
 
+	@ota_console_exact path /ota-console
+	redir @ota_console_exact /ota-console/ 308
+
+	@ota_console_health path /api/v1/ota-console/health
+	handle @ota_console_health {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8091
+	}
+
+	handle_path /api/v1/ota-console/* {
+		rewrite * /api/v1{path}
+		reverse_proxy 127.0.0.1:8091
+	}
+
 	@api path /api /api/*
 	handle @api {
 		reverse_proxy 127.0.0.1:8091
+	}
+
+	handle_path /ota-console/* {
+		root * /opt/sifangguan-ota/current/apps/ota-standalone-web/dist
+		try_files {path} /index.html
+		file_server
 	}
 
 	handle {

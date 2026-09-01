@@ -1,4 +1,5 @@
 import {
+  createHash,
   randomBytes,
   randomUUID,
   scryptSync,
@@ -19,7 +20,9 @@ const SCRYPT_COST = 16_384
 const SCRYPT_BLOCK_SIZE = 8
 const SCRYPT_PARALLELIZATION = 1
 const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024
-const SESSION_TTL_SECONDS = 14_400
+const SESSION_TTL_SECONDS = 600
+const REFRESH_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+const REFRESH_STATE_VERSION = 1
 const USERNAME_PATTERN =
   /^[\p{L}\p{N}][\p{L}\p{N}._@-]{2,63}$/u
 const UUID_PATTERN =
@@ -108,6 +111,42 @@ const verifyPassword = (password, digest) => {
   if (typeof password !== 'string' || !validPasswordDigest(digest)) return false
   const actual = passwordDigest(password, Buffer.from(digest.salt, 'hex'))
   return safeEqual(actual.hash, digest.hash)
+}
+
+const tokenHash = (value) => createHash('sha256')
+  .update(String(value ?? ''), 'utf8')
+  .digest('hex')
+
+const validRefreshSession = (candidate) =>
+  candidate
+  && typeof candidate.sessionId === 'string'
+  && UUID_PATTERN.test(candidate.sessionId)
+  && typeof candidate.accountId === 'string'
+  && UUID_PATTERN.test(candidate.accountId)
+  && typeof candidate.refreshTokenHash === 'string'
+  && /^[0-9a-f]{64}$/u.test(candidate.refreshTokenHash)
+  && typeof candidate.csrfTokenHash === 'string'
+  && /^[0-9a-f]{64}$/u.test(candidate.csrfTokenHash)
+  && typeof candidate.issuedAt === 'string'
+  && Number.isFinite(Date.parse(candidate.issuedAt))
+  && typeof candidate.expiresAt === 'string'
+  && Number.isFinite(Date.parse(candidate.expiresAt))
+
+const normalizeRefreshState = (candidate, accounts) => {
+  if (
+    !candidate
+    || candidate.version !== REFRESH_STATE_VERSION
+    || !Array.isArray(candidate.sessions)
+    || candidate.sessions.some((session) => !validRefreshSession(session))
+  ) throw new Error('REVIEW_AUTH_REFRESH_STATE_INVALID')
+  const accountIds = new Set(accounts.map((account) => account.accountId))
+  const now = Date.now()
+  return {
+    version: REFRESH_STATE_VERSION,
+    sessions: candidate.sessions.filter((session) =>
+      accountIds.has(session.accountId)
+      && Date.parse(session.expiresAt) > now),
+  }
 }
 
 const normalizeRoles = (value) => {
@@ -213,6 +252,17 @@ const persistState = (statePath, state) => {
   renameSync(temporaryPath, statePath)
 }
 
+const persistRefreshState = (refreshStatePath, refreshState) => {
+  mkdirSync(dirname(refreshStatePath), { recursive: true })
+  const temporaryPath = `${refreshStatePath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(refreshState, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, refreshStatePath)
+}
+
 const publicAccount = (account) => ({
   id: account.accountId,
   username: account.username,
@@ -228,6 +278,7 @@ const publicAccount = (account) => ({
 
 export const createReviewAuthStore = ({
   statePath,
+  refreshStatePath = `${statePath}.sessions`,
   bootstrapUsername,
   bootstrapPassword,
   bootstrapAccessToken,
@@ -239,6 +290,8 @@ export const createReviewAuthStore = ({
     || bootstrapPassword === ''
     || typeof bootstrapAccessToken !== 'string'
     || bootstrapAccessToken === ''
+    || typeof refreshStatePath !== 'string'
+    || refreshStatePath.trim() === ''
   ) throw new Error('REVIEW_AUTH_CONFIGURATION_INVALID')
 
   let state
@@ -273,6 +326,14 @@ export const createReviewAuthStore = ({
     persistState(statePath, state)
   }
 
+  let refreshState = existsSync(refreshStatePath)
+    ? normalizeRefreshState(
+      JSON.parse(readFileSync(refreshStatePath, 'utf8')),
+      state.accounts,
+    )
+    : { version: REFRESH_STATE_VERSION, sessions: [] }
+  persistRefreshState(refreshStatePath, refreshState)
+
   const sessions = new Map()
   const initialAdmin = state.accounts.find((account) =>
     account.enabled && account.roles.includes('PLATFORM_ADMIN'))
@@ -292,9 +353,20 @@ export const createReviewAuthStore = ({
       account.accountId === session.accountId && account.enabled) ?? null
   }
 
+  const persistRefresh = () => persistRefreshState(
+    refreshStatePath,
+    refreshState,
+  )
+
   const invalidateAccountSessions = (accountId) => {
     for (const [token, session] of sessions.entries()) {
       if (session.accountId === accountId) sessions.delete(token)
+    }
+    const retained = refreshState.sessions.filter((session) =>
+      session.accountId !== accountId)
+    if (retained.length !== refreshState.sessions.length) {
+      refreshState = { ...refreshState, sessions: retained }
+      persistRefresh()
     }
   }
 
@@ -315,6 +387,59 @@ export const createReviewAuthStore = ({
         hotelIds: view.hotelIds,
       },
     }
+  }
+
+  const refreshFor = (account) => {
+    const refreshToken = randomBytes(32).toString('base64url')
+    const csrfToken = randomBytes(32).toString('base64url')
+    const issuedAt = new Date()
+    const expiresAt = new Date(
+      issuedAt.getTime() + REFRESH_SESSION_TTL_SECONDS * 1_000,
+    )
+    refreshState.sessions.push({
+      sessionId: randomUUID(),
+      accountId: account.accountId,
+      refreshTokenHash: tokenHash(refreshToken),
+      csrfTokenHash: tokenHash(csrfToken),
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    })
+    persistRefresh()
+    return {
+      refreshToken,
+      csrfToken,
+      refreshExpiresInSeconds: REFRESH_SESSION_TTL_SECONDS,
+    }
+  }
+
+  const bundleFor = (account, accessSession = sessionFor(account)) => ({
+    ...accessSession,
+    ...refreshFor(account),
+  })
+
+  const accountForRefresh = (refreshToken, csrfToken) => {
+    if (
+      typeof refreshToken !== 'string'
+      || refreshToken.length < 40
+      || typeof csrfToken !== 'string'
+      || csrfToken.length < 40
+    ) return null
+    const refreshTokenHash = tokenHash(refreshToken)
+    const csrfTokenHash = tokenHash(csrfToken)
+    const index = refreshState.sessions.findIndex((session) =>
+      safeEqual(session.refreshTokenHash, refreshTokenHash))
+    if (index < 0) return null
+    const session = refreshState.sessions[index]
+    if (
+      Date.parse(session.expiresAt) <= Date.now()
+      || !safeEqual(session.csrfTokenHash, csrfTokenHash)
+    ) return null
+    const account = state.accounts.find((candidate) =>
+      candidate.accountId === session.accountId && candidate.enabled) ?? null
+    if (!account) return null
+    refreshState.sessions.splice(index, 1)
+    persistRefresh()
+    return account
   }
 
   const persist = () => persistState(statePath, state)
@@ -346,8 +471,43 @@ export const createReviewAuthStore = ({
       return sessionFor(account)
     },
 
+    loginWithRefresh(username, password) {
+      const normalized = typeof username === 'string' ? username.trim() : ''
+      const account = state.accounts.find((candidate) =>
+        candidate.enabled
+        && safeEqual(
+          candidate.username.toLocaleLowerCase(),
+          normalized.toLocaleLowerCase(),
+        ))
+      if (!account || !verifyPassword(password, account.passwordDigest)) {
+        return null
+      }
+      invalidateAccountSessions(account.accountId)
+      return bundleFor(account)
+    },
+
+    refreshSession({ refreshToken, csrfToken }) {
+      const account = accountForRefresh(refreshToken, csrfToken)
+      if (!account) return null
+      persistRefresh()
+      return bundleFor(account)
+    },
+
+    attachRefresh(accessToken) {
+      const account = accountByToken(accessToken)
+      if (!account) throw new Error('REVIEW_AUTH_SESSION_REQUIRED')
+      return refreshFor(account)
+    },
+
     logout(accessToken) {
       sessions.delete(typeof accessToken === 'string' ? accessToken : '')
+    },
+
+    logoutRefresh({ refreshToken, csrfToken }) {
+      const account = accountForRefresh(refreshToken, csrfToken)
+      if (!account) return false
+      invalidateAccountSessions(account.accountId)
+      return publicAccount(account)
     },
 
     changeCredentials({

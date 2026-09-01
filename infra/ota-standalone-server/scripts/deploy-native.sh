@@ -18,6 +18,8 @@ listing_file=""
 protected_paths=(
   /etc/sifangguan-ota/runtime.env
   /var/lib/sifangguan-ota/review-auth-state.json
+  /var/lib/sifangguan-ota/review-auth-sessions.json
+  /var/lib/sifangguan-ota/security-audit.jsonl
   /var/lib/sifangguan-ota/simulation-hotels.json
   /var/lib/sifangguan-ota/report-sources.json
   /var/lib/sifangguan-ota/report-source-cookie-secrets.json
@@ -80,7 +82,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "${listing_file}"; then
   exit 2
 fi
 if grep -Eiq \
-  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry(-[^/]+)?\.json|runtime\.env)$' \
+  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|review-auth-sessions\.json|security-audit\.jsonl|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry(-[^/]+)?\.json|runtime\.env)$' \
   "${listing_file}"; then
   echo "RELEASE_ARCHIVE_FORBIDDEN_CONTENT" >&2
   exit 2
@@ -217,6 +219,20 @@ fi
 
 if [[ "$(readlink -f "${current_link}")" != "${release_dir}" ]]; then
   echo "CURRENT_RELEASE_POINTER_MISMATCH" >&2
+  rollback_release || true
+  exit 1
+fi
+
+if ! bash \
+  "${release_dir}/infra/ota-standalone-server/scripts/configure-phase1-runtime.sh"; then
+  echo "PHASE1_RUNTIME_CONFIGURATION_FAILED" >&2
+  rollback_release || true
+  exit 1
+fi
+
+if ! bash \
+  "${release_dir}/infra/ota-standalone-server/scripts/configure-public-entry.sh"; then
+  echo "PUBLIC_ENTRY_CONFIGURATION_FAILED" >&2
   rollback_release || true
   exit 1
 fi
