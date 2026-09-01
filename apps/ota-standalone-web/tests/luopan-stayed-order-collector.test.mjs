@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  collectLuopanStayedOrderSummary,
+  luopanStayedOrderCollectorLimits,
   summarizeLuopanStayedOrderPages,
 } from '../../../tools/uat/luopan-stayed-order-collector.mjs'
+import {
+  resolveLuopanStayedOrderCollectionState,
+} from '../../../tools/uat/luopan-controlled-browser-collector.mjs'
 
 const base = {
   hotelId: 'hotel-009',
@@ -54,5 +59,102 @@ test('Luopan stayed-order summary refuses unexpected status values', () => {
       }]],
     }),
     /LUOPAN_STAYED_ORDER_STATUS_UNRECOGNIZED/,
+  )
+})
+
+const pageFor = (totalPages) => {
+  const requestedBatches = []
+  return {
+    requestedBatches,
+    goto: async () => undefined,
+    url: () => 'http://bj.chinapms.com:8880/pms-web/room_register/room_register_search.do',
+    waitForNavigation: async () => undefined,
+    evaluate: async (_callback, input) => {
+      if (input?.start) return undefined
+      if (Array.isArray(input?.targets)) {
+        requestedBatches.push([...input.targets])
+        return input.targets.map((pageNo) => [{
+          recordKey: `registration-${pageNo}`,
+          status: '已退房',
+          checkoutDate: '2026-08-11',
+        }])
+      }
+      return {
+        rows: [{
+          recordKey: 'registration-1',
+          status: '已退房',
+          checkoutDate: '2026-08-11',
+        }],
+        totalPages,
+      }
+    },
+  }
+}
+
+test('Luopan stayed-order collector accepts the observed 161-page month within a hard bound', async () => {
+  const page = pageFor(161)
+  const summary = await collectLuopanStayedOrderSummary({
+    ...base,
+    page,
+  })
+
+  assert.equal(luopanStayedOrderCollectorLimits.maxPages, 200)
+  assert.equal(luopanStayedOrderCollectorLimits.fetchConcurrency, 4)
+  assert.equal(summary.pageCount, 161)
+  assert.equal(summary.fetchedRowCount, 161)
+  assert.equal(summary.validStayedOrderCount, 161)
+  assert.deepEqual(
+    page.requestedBatches.flat(),
+    Array.from({ length: 160 }, (_, index) => index + 2),
+  )
+  assert.equal(
+    page.requestedBatches.every(
+      (batch) => batch.length <= luopanStayedOrderCollectorLimits.fetchConcurrency,
+    ),
+    true,
+  )
+  assert.equal(summary.storesGuestData, false)
+  assert.equal(summary.storesRawRegisterNumbers, false)
+  assert.equal(Object.hasOwn(summary, 'records'), false)
+  assert.equal(Object.hasOwn(summary, 'identifiers'), false)
+})
+
+test('Luopan stayed-order collector fails closed above the new pagination bound', async () => {
+  await assert.rejects(
+    collectLuopanStayedOrderSummary({
+      ...base,
+      page: pageFor(luopanStayedOrderCollectorLimits.maxPages + 1),
+    }),
+    /LUOPAN_STAYED_ORDER_PAGE_LIMIT_EXCEEDED/,
+  )
+})
+
+test('Luopan snapshot completeness only requires order aggregation when configured', () => {
+  assert.deepEqual(
+    resolveLuopanStayedOrderCollectionState({ required: false, summary: null }),
+    {
+      snapshotCompleteness: 'COMPLETE',
+      runStatus: 'SUCCEEDED',
+      sourceCount: 3,
+      successfulSourceCount: 3,
+    },
+  )
+  assert.deepEqual(
+    resolveLuopanStayedOrderCollectionState({ required: true, summary: null }),
+    {
+      snapshotCompleteness: 'PARTIAL',
+      runStatus: 'PARTIAL',
+      sourceCount: 4,
+      successfulSourceCount: 3,
+    },
+  )
+  assert.deepEqual(
+    resolveLuopanStayedOrderCollectionState({ required: true, summary: {} }),
+    {
+      snapshotCompleteness: 'COMPLETE',
+      runStatus: 'SUCCEEDED',
+      sourceCount: 4,
+      successfulSourceCount: 4,
+    },
   )
 })

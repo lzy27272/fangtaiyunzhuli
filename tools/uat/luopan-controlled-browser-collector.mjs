@@ -544,6 +544,19 @@ export const validateLuopanBrowserSession = async ({
   }
 }
 
+export const resolveLuopanStayedOrderCollectionState = ({
+  required,
+  summary,
+}) => {
+  const snapshotCompleteness = required && !summary ? 'PARTIAL' : 'COMPLETE'
+  return {
+    snapshotCompleteness,
+    runStatus: snapshotCompleteness === 'COMPLETE' ? 'SUCCEEDED' : 'PARTIAL',
+    sourceCount: required ? 4 : 3,
+    successfulSourceCount: required && summary ? 4 : 3,
+  }
+}
+
 export const collectLuopanControlledBrowser = async ({
   hotel,
   profileRef,
@@ -612,7 +625,7 @@ export const collectLuopanControlledBrowser = async ({
     let validStayedOrderSummary = null
     let stayedOrderErrorCode = collectValidStayedOrders
       ? 'LUOPAN_STAYED_ORDER_COLLECTION_FAILED'
-      : 'LUOPAN_ORDER_DETAIL_NOT_CONFIGURED'
+      : null
     if (collectValidStayedOrders) {
       try {
         validStayedOrderSummary = await collectLuopanStayedOrderSummary({
@@ -629,9 +642,11 @@ export const collectLuopanControlledBrowser = async ({
           : 'LUOPAN_STAYED_ORDER_COLLECTION_FAILED'
       }
     }
-    const snapshotCompleteness = validStayedOrderSummary
-      ? 'COMPLETE'
-      : 'PARTIAL'
+    const stayedOrderState = resolveLuopanStayedOrderCollectionState({
+      required: collectValidStayedOrders,
+      summary: validStayedOrderSummary,
+    })
+    const snapshotCompleteness = stayedOrderState.snapshotCompleteness
     const snapshot = {
       schemaVersion: 1,
       sourceSystem: 'LUOPAN_CLOUD',
@@ -675,19 +690,21 @@ export const collectLuopanControlledBrowser = async ({
           ingestedAt,
           errorCode: null,
         },
-        {
-          sourceId: 'LUOPAN_ORDER_DETAIL',
-          sourceCode: 'LUOPAN_ORDER_DETAIL',
-          reportType: validStayedOrderSummary
-            ? 'STAYED_ORDER_AGGREGATE'
-            : 'ORDER_DETAIL',
-          completeness: validStayedOrderSummary
-            ? 'COMPLETE'
-            : 'UNAVAILABLE',
-          observedAt,
-          ingestedAt,
-          errorCode: stayedOrderErrorCode,
-        },
+        ...(collectValidStayedOrders
+          ? [{
+              sourceId: 'LUOPAN_ORDER_DETAIL',
+              sourceCode: 'LUOPAN_ORDER_DETAIL',
+              reportType: validStayedOrderSummary
+                ? 'STAYED_ORDER_AGGREGATE'
+                : 'ORDER_DETAIL',
+              completeness: validStayedOrderSummary
+                ? 'COMPLETE'
+                : 'UNAVAILABLE',
+              observedAt,
+              ingestedAt,
+              errorCode: stayedOrderErrorCode,
+            }]
+          : []),
       ],
       orders: null,
       validStayedOrderSummary,
@@ -709,7 +726,7 @@ export const collectLuopanControlledBrowser = async ({
     return {
       run: {
         runId: collectionRunId,
-        status: snapshotCompleteness,
+        status: stayedOrderState.runStatus,
         requestedAt: observedAt,
         completedAt: localIso(new Date()),
         businessDate: parsed.businessDate,
@@ -717,8 +734,8 @@ export const collectLuopanControlledBrowser = async ({
         businessDateChanged: false,
         businessDateSource: 'LUOPAN_CLOUD',
         businessDateStartedAt: null,
-        sourceCount: 4,
-        successfulSourceCount: validStayedOrderSummary ? 4 : 3,
+        sourceCount: stayedOrderState.sourceCount,
+        successfulSourceCount: stayedOrderState.successfulSourceCount,
         outboundDeliveryAttempted: false,
       },
       snapshot,
