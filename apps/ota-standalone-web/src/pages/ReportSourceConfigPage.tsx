@@ -473,13 +473,21 @@ export function ReportSourceConfigPage({
                 onStatusChanged={() =>
                   setOverviewVersion((current) => current + 1)}
               />
-            ) : (
+            ) : pmsSystemCode === 'LUOPAN_CLOUD' ? (
               <LuopanBrowserConfigPanel
                 canConfigure={canConfigure}
                 context={context}
                 onStatusChanged={() =>
                   setOverviewVersion((current) => current + 1)}
               />
+            ) : (
+              <article className="report-source-card">
+                <header>
+                  <div><span>酒店系统厂家</span><strong>其他 PMS 接入配置</strong></div>
+                  <span className="mode-chip">待适配</span>
+                </header>
+                <p>厂家名称已保存到门店档案。请先完成该厂家的只读数据接口适配、字段映射和单店校验；通过前不会启用采集或播报。</p>
+              </article>
             )}
           </> : null}
 

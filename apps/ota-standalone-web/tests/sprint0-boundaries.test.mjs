@@ -262,6 +262,29 @@ test('new hotels use an explicit PMS template without copying store secrets or O
   assert.match(reviewApiSource, /pmsLoginScope\(created\.hotelId\)/)
 })
 
+test('store creation and selection expose only the store number', () => {
+  assert.match(newStoreWizardSource, />门店编号</)
+  assert.doesNotMatch(newStoreWizardSource, /租户编号|租户编码|tenantCode|tenantDisplayName/)
+  assert.match(hotelContextSource, />门店编号</)
+  assert.doesNotMatch(hotelContextSource, /租户编号|租户编码|tenantReference|tenantDisplayCode/)
+  const initializeInput = businessApiSource.slice(
+    businessApiSource.indexOf('export function initializeSimulationHotel'),
+    businessApiSource.indexOf('export function loadMonitor'),
+  )
+  assert.doesNotMatch(initializeInput, /tenantCode|tenantDisplayName/)
+})
+
+test('new stores can register another PMS vendor without enabling an unsupported collector', () => {
+  assert.match(newStoreWizardSource, /code: 'OTHER'/)
+  assert.match(newStoreWizardSource, /PMS 厂家名称/)
+  assert.match(newStoreWizardSource, /可登记 · 待适配/)
+  assert.match(newStoreWizardSource, /pmsSystemName: draft\.pmsSystemName\.trim\(\)/)
+  assert.match(reviewApiSource, /'OTHER'/)
+  assert.match(reviewApiSource, /pmsSystemName: input\.pmsSystemName/)
+  assert.match(reviewApiSource, /input\.pmsSystemCode === 'MEITUAN_BIEYANGHONG'/)
+  assert.match(reportSourceSource, /其他 PMS 接入配置/)
+})
+
 test('report source administration and scoped revenue configuration stay separate', () => {
   assert.match(appSource, /const platformAdmin = session\.account\.roles\.includes\('PLATFORM_ADMIN'\)/)
   assert.match(appSource, /const canConfigure = platformAdmin/)

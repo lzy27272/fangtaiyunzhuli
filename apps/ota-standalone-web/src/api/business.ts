@@ -890,6 +890,7 @@ export interface SimulationHotelView {
   hotelCode: string
   hotelName: string
   pmsSystemCode: PmsSystemCode
+  pmsSystemName: string
   timezone: string
   lifecycleStatus: string
   collectionEnabled: boolean
@@ -902,6 +903,7 @@ export interface SimulationHotelView {
 export type PmsSystemCode =
   | 'MEITUAN_BIEYANGHONG'
   | 'LUOPAN_CLOUD'
+  | 'OTHER'
 
 export interface SimulationHotelDirectory {
   coverage: string
@@ -1455,11 +1457,10 @@ export function listSimulationHotels(): Promise<SimulationHotelDirectory> {
 }
 
 export function initializeSimulationHotel(input: {
-  tenantCode: string
-  tenantDisplayName: string
   hotelCode: string
   hotelDisplayName: string
   pmsSystemCode: PmsSystemCode
+  pmsSystemName?: string
   pmsUsername?: string
   pmsPassword?: string
   timezone: string

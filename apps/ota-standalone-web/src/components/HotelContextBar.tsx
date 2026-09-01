@@ -13,79 +13,48 @@ interface Props {
   onApply: (context: HotelContext) => void
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const pmsSystemLabel = (code: PmsSystemCode) =>
-  code === 'LUOPAN_CLOUD' ? '罗盘PMS' : '美团别样红'
-
-function tenantDisplayCode(
-  hotels: SimulationHotelView[],
-  target: SimulationHotelView,
-): string {
-  if (/^\d{3}$/.test(target.tenantCode)) return target.tenantCode
-  const tenantIds = [...new Set(hotels.map((hotel) => hotel.tenantId))]
-  return String(tenantIds.indexOf(target.tenantId) + 1).padStart(3, '0')
-}
+const pmsSystemLabel = (code: PmsSystemCode, name: string) =>
+  code === 'OTHER' ? name : code === 'LUOPAN_CLOUD' ? '罗盘PMS' : '美团别样红'
 
 function hotelDisplayCode(
   hotels: SimulationHotelView[],
   target: SimulationHotelView,
 ): string {
   if (/^\d{3}$/.test(target.hotelCode)) return target.hotelCode
-  const tenantHotels = hotels.filter(
-    (hotel) => hotel.tenantId === target.tenantId,
-  )
-  return String(tenantHotels.indexOf(target) + 1).padStart(3, '0')
+  return String(hotels.indexOf(target) + 1).padStart(3, '0')
 }
 
 function resolveHotelContext(
   hotels: SimulationHotelView[],
-  tenantReference: string,
   hotelReference: string,
 ): HotelContext | null {
-  const normalizedTenant = tenantReference.trim().toUpperCase()
   const normalizedHotel = hotelReference.trim().toUpperCase()
-  const selected = hotels.find(
+  const matches = hotels.filter(
     (hotel) =>
-      (
-        hotel.tenantCode.toUpperCase() === normalizedTenant
-        && hotel.hotelCode.toUpperCase() === normalizedHotel
-      )
-      || (
-        tenantDisplayCode(hotels, hotel) === normalizedTenant
-        && hotelDisplayCode(hotels, hotel) === normalizedHotel
-      ),
+      hotel.hotelCode.toUpperCase() === normalizedHotel
+      || hotelDisplayCode(hotels, hotel) === normalizedHotel,
   )
-  if (selected) {
+  if (matches.length === 1) {
+    const [selected] = matches
     return {
       tenantId: selected.tenantId,
       hotelId: selected.hotelId,
-    }
-  }
-  if (
-    UUID_PATTERN.test(tenantReference.trim())
-    && UUID_PATTERN.test(hotelReference.trim())
-  ) {
-    return {
-      tenantId: tenantReference.trim(),
-      hotelId: hotelReference.trim(),
     }
   }
   return null
 }
 
 export function HotelContextBar({ context, canCreate, onApply }: Props) {
-  const [tenantReference, setTenantReference] = useState('')
   const [hotelReference, setHotelReference] = useState('')
   const [hotels, setHotels] = useState<SimulationHotelView[]>([])
   const [directoryState, setDirectoryState] = useState('尚未载入目录')
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState({
-    tenantCode: '',
-    tenantDisplayName: '',
     hotelCode: '',
     hotelDisplayName: '',
     pmsSystemCode: 'MEITUAN_BIEYANGHONG' as PmsSystemCode,
+    pmsSystemName: '',
     pmsUsername: '',
     pmsPassword: '',
     timezone: 'Asia/Shanghai',
@@ -113,7 +82,6 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
 
   useEffect(() => {
     if (!context) {
-      setTenantReference('')
       setHotelReference('')
       return
     }
@@ -123,7 +91,6 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
         && hotel.hotelId === context.hotelId,
     )
     if (selected) {
-      setTenantReference(tenantDisplayCode(hotels, selected))
       setHotelReference(hotelDisplayCode(hotels, selected))
     }
   }, [context, hotels])
@@ -132,11 +99,10 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
     event.preventDefault()
     const resolved = resolveHotelContext(
       hotels,
-      tenantReference,
       hotelReference,
     )
     if (!resolved) {
-      setError('请输入门店目录中的租户编号和门店编号，例如 001 / 002。')
+      setError('请输入门店目录中的门店编号，例如 001。')
       return
     }
     setError('')
@@ -146,7 +112,6 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
   function selectHotel(value: string) {
     const selected = hotels.find((hotel) => `${hotel.tenantId}|${hotel.hotelId}` === value)
     if (!selected) return
-    setTenantReference(tenantDisplayCode(hotels, selected))
     setHotelReference(hotelDisplayCode(hotels, selected))
     onApply({ tenantId: selected.tenantId, hotelId: selected.hotelId })
   }
@@ -154,15 +119,14 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
   async function createHotel() {
     if (!canCreate) return
     const requiredFields = [
-      draft.tenantCode,
-      draft.tenantDisplayName,
       draft.hotelCode,
       draft.hotelDisplayName,
       draft.timezone,
       draft.reasonCode,
+      ...(draft.pmsSystemCode === 'OTHER' ? [draft.pmsSystemName] : []),
     ]
     if (requiredFields.some((value) => !value.trim())) {
-      setError('请完整填写租户、门店和时区信息。')
+      setError('请完整填写门店和时区信息。')
       return
     }
     if (
@@ -176,11 +140,12 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
     setError('')
     try {
       const receipt = await initializeSimulationHotel({
-        tenantCode: draft.tenantCode,
-        tenantDisplayName: draft.tenantDisplayName,
         hotelCode: draft.hotelCode,
         hotelDisplayName: draft.hotelDisplayName,
         pmsSystemCode: draft.pmsSystemCode,
+        ...(draft.pmsSystemCode === 'OTHER'
+          ? { pmsSystemName: draft.pmsSystemName }
+          : {}),
         timezone: draft.timezone,
         reasonCode: draft.reasonCode,
         ...(draft.pmsSystemCode === 'LUOPAN_CLOUD'
@@ -194,7 +159,6 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
       setHotels(directory.hotels)
       const created = directory.hotels.find((hotel) => hotel.hotelId === receipt.resourceId)
       if (created) {
-        setTenantReference(tenantDisplayCode(directory.hotels, created))
         setHotelReference(hotelDisplayCode(directory.hotels, created))
         onApply({ tenantId: created.tenantId, hotelId: created.hotelId })
       }
@@ -226,21 +190,10 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
             <option value="">{directoryState}</option>
             {hotels.map((hotel) => (
               <option key={`${hotel.tenantId}-${hotel.hotelId}`} value={`${hotel.tenantId}|${hotel.hotelId}`}>
-                {tenantDisplayCode(hotels, hotel)}/{hotelDisplayCode(hotels, hotel)} · {hotel.tenantName} / {hotel.hotelName}（{pmsSystemLabel(hotel.pmsSystemCode)}）
+                {hotelDisplayCode(hotels, hotel)} · {hotel.hotelName}（{pmsSystemLabel(hotel.pmsSystemCode, hotel.pmsSystemName)}）
               </option>
             ))}
           </select>
-        </div>
-        <div>
-          <label htmlFor="tenant-context">租户编号</label>
-          <input
-            id="tenant-context"
-            maxLength={16}
-            placeholder="001"
-            value={tenantReference}
-            onChange={(event) =>
-              setTenantReference(event.target.value.toUpperCase())}
-          />
         </div>
         <div>
           <label htmlFor="hotel-context">门店编号</label>
@@ -263,21 +216,7 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
           <summary>新增评审门店（无需修改代码或重启）</summary>
           <div>
             <label>
-              租户编码
-              <input
-                value={draft.tenantCode}
-                onChange={(event) => setDraft({ ...draft, tenantCode: event.target.value.toUpperCase() })}
-              />
-            </label>
-            <label>
-              租户名称
-              <input
-                value={draft.tenantDisplayName}
-                onChange={(event) => setDraft({ ...draft, tenantDisplayName: event.target.value })}
-              />
-            </label>
-            <label>
-              门店编码
+              门店编号
               <input
                 value={draft.hotelCode}
                 onChange={(event) => setDraft({ ...draft, hotelCode: event.target.value.toUpperCase() })}
@@ -303,8 +242,18 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
               >
                 <option value="MEITUAN_BIEYANGHONG">美团别样红</option>
                 <option value="LUOPAN_CLOUD">罗盘PMS</option>
+                <option value="OTHER">其他 PMS 厂家</option>
               </select>
             </label>
+            {draft.pmsSystemCode === 'OTHER' ? (
+              <label>
+                PMS 厂家名称
+                <input
+                  value={draft.pmsSystemName}
+                  onChange={(event) => setDraft({ ...draft, pmsSystemName: event.target.value })}
+                />
+              </label>
+            ) : null}
             {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? (
               <>
                 <label>
@@ -346,7 +295,9 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
             <p className="hotel-copy-note">
               {draft.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
                 ? '美团别样红：按01/03门店的4个报表模板自动生成接口地址；Cookie与POST请求载荷保持为空，建店后逐项填写。'
-                : '罗盘PMS：初始化与02门店相同的罗盘入口和采集路径，账号密码按新门店加密保存；首次采集前仍需验证一次该门店的受控浏览器会话。'}
+                : draft.pmsSystemCode === 'LUOPAN_CLOUD'
+                  ? '罗盘PMS：初始化与02门店相同的罗盘入口和采集路径，账号密码按新门店加密保存；首次采集前仍需验证一次该门店的受控浏览器会话。'
+                  : '其他PMS：先保存厂家名称和门店档案；完成厂家适配及接口校验前，采集和播报保持关闭。'}
               {' '}两种PMS均不复制OTA配置，建店后请单独配置该门店的OTA平台。
             </p>
           </div>

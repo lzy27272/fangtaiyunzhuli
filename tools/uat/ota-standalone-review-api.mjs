@@ -408,6 +408,7 @@ const hotels = [
     hotelCode: '001',
     hotelName: '喷水池态六酒店',
     pmsSystemCode: 'MEITUAN_BIEYANGHONG',
+    pmsSystemName: '美团别样红 PMS',
     timezone: 'Asia/Shanghai',
     lifecycleStatus: 'PILOT',
     collectionEnabled: true,
@@ -424,6 +425,7 @@ const hotels = [
     hotelCode: '002',
     hotelName: '解放路MOOODSHIFT酒店',
     pmsSystemCode: 'LUOPAN_CLOUD',
+    pmsSystemName: '罗盘 PMS',
     timezone: 'Asia/Shanghai',
     lifecycleStatus: 'PILOT',
     collectionEnabled: true,
@@ -551,7 +553,12 @@ const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-
 const PMS_SYSTEM_CODES = new Set([
   'MEITUAN_BIEYANGHONG',
   'LUOPAN_CLOUD',
+  'OTHER',
 ])
+const PMS_SYSTEM_NAMES = Object.freeze({
+  MEITUAN_BIEYANGHONG: '美团别样红 PMS',
+  LUOPAN_CLOUD: '罗盘 PMS',
+})
 
 const inferredPmsSystemCode = ({ tenantCode, hotelCode }) =>
   tenantCode === '001' && hotelCode === '002'
@@ -578,6 +585,10 @@ const normalizeSimulationHotel = (candidate) => {
   const pmsSystemCode = PMS_SYSTEM_CODES.has(candidate.pmsSystemCode)
     ? candidate.pmsSystemCode
     : inferredPmsSystemCode({ tenantCode, hotelCode })
+  const pmsSystemName = typeof candidate.pmsSystemName === 'string'
+    && candidate.pmsSystemName.trim()
+    ? candidate.pmsSystemName.trim()
+    : PMS_SYSTEM_NAMES[pmsSystemCode]
   if (
     !SIMULATION_HOTEL_ID.test(candidate.tenantId)
     || !SIMULATION_HOTEL_ID.test(candidate.hotelId)
@@ -587,6 +598,9 @@ const normalizeSimulationHotel = (candidate) => {
     || tenantName.length > 80
     || hotelName.length < 1
     || hotelName.length > 80
+    || typeof pmsSystemName !== 'string'
+    || pmsSystemName.length < 1
+    || pmsSystemName.length > 80
     || !timezone
   ) {
     return null
@@ -604,6 +618,7 @@ const normalizeSimulationHotel = (candidate) => {
     hotelCode,
     hotelName,
     pmsSystemCode,
+    pmsSystemName,
     timezone,
     lifecycleStatus:
       typeof candidate.lifecycleStatus === 'string'
@@ -626,13 +641,13 @@ const normalizeSimulationHotelInput = (body) => {
   if (!body || typeof body !== 'object') return null
   const tenantCode = typeof body.tenantCode === 'string'
     ? body.tenantCode.trim().toUpperCase()
-    : ''
+    : null
   const hotelCode = typeof body.hotelCode === 'string'
     ? body.hotelCode.trim().toUpperCase()
     : ''
   const tenantName = typeof body.tenantDisplayName === 'string'
     ? body.tenantDisplayName.trim()
-    : ''
+    : null
   const hotelName = typeof body.hotelDisplayName === 'string'
     ? body.hotelDisplayName.trim()
     : ''
@@ -642,16 +657,25 @@ const normalizeSimulationHotelInput = (body) => {
   const pmsSystemCode = PMS_SYSTEM_CODES.has(body.pmsSystemCode)
     ? body.pmsSystemCode
     : null
+  const suppliedPmsSystemName = typeof body.pmsSystemName === 'string'
+    ? body.pmsSystemName.trim()
+    : ''
+  const pmsSystemName = pmsSystemCode === 'OTHER'
+    ? suppliedPmsSystemName
+    : PMS_SYSTEM_NAMES[pmsSystemCode]
   if (
-    !SIMULATION_HOTEL_CODE.test(tenantCode)
+    (tenantCode !== null && !SIMULATION_HOTEL_CODE.test(tenantCode))
+    || (tenantName !== null && (tenantName.length < 1 || tenantName.length > 80))
+    || ((tenantCode === null) !== (tenantName === null))
     || !SIMULATION_HOTEL_CODE.test(hotelCode)
-    || tenantName.length < 1
-    || tenantName.length > 80
     || hotelName.length < 1
     || hotelName.length > 80
     || typeof body.reasonCode !== 'string'
     || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
     || !pmsSystemCode
+    || typeof pmsSystemName !== 'string'
+    || pmsSystemName.length < 1
+    || pmsSystemName.length > 80
   ) {
     return null
   }
@@ -677,6 +701,7 @@ const normalizeSimulationHotelInput = (body) => {
     hotelCode,
     hotelName,
     pmsSystemCode,
+    pmsSystemName,
     pmsCredentials,
     timezone,
   }
@@ -8823,22 +8848,30 @@ const server = createServer(async (request, response) => {
       }
       const input = normalizeSimulationHotelInput(await readBody(request))
       if (!input) throw new Error('SIMULATION_HOTEL_INVALID')
-      const tenant = hotels.find(
-        (hotel) => hotel.tenantCode === input.tenantCode,
-      )
-      if (tenant && tenant.tenantName !== input.tenantName) {
+      const requestedTenant = input.tenantCode === null
+        ? null
+        : hotels.find((hotel) => hotel.tenantCode === input.tenantCode)
+      const tenant = input.tenantCode === null
+        ? hotels[0] ?? null
+        : requestedTenant ?? null
+      if (
+        input.tenantCode !== null
+        && requestedTenant
+        && requestedTenant.tenantName !== input.tenantName
+      ) {
         throw new Error('SIMULATION_TENANT_NAME_CONFLICT')
       }
       const existing = hotels.find(
         (hotel) =>
-          hotel.tenantCode === input.tenantCode
-          && hotel.hotelCode === input.hotelCode,
+          hotel.hotelCode === input.hotelCode
+          && (input.tenantCode === null || hotel.tenantCode === input.tenantCode),
       )
       if (existing) {
         if (
           existing.hotelName !== input.hotelName
           || existing.timezone !== input.timezone
           || existing.pmsSystemCode !== input.pmsSystemCode
+          || existing.pmsSystemName !== input.pmsSystemName
         ) {
           throw new Error('SIMULATION_HOTEL_CODE_CONFLICT')
         }
@@ -8858,16 +8891,17 @@ const server = createServer(async (request, response) => {
       const created = {
         tenantId: tenant?.tenantId ?? randomUUID(),
         hotelId: randomUUID(),
-        tenantCode: input.tenantCode,
-        tenantName: input.tenantName,
+        tenantCode: input.tenantCode ?? tenant?.tenantCode ?? 'INTERNAL',
+        tenantName: input.tenantName ?? tenant?.tenantName ?? '四方馆酒店经营中心',
         hotelCode: input.hotelCode,
         hotelName: input.hotelName,
         pmsSystemCode: input.pmsSystemCode,
+        pmsSystemName: input.pmsSystemName,
         timezone: input.timezone,
         lifecycleStatus: 'PILOT',
-        collectionEnabled: true,
+        collectionEnabled: input.pmsSystemCode !== 'OTHER',
         messageEnabled: false,
-        configuredMockConnectors: 2,
+        configuredMockConnectors: input.pmsSystemCode === 'OTHER' ? 0 : 2,
         simulationOnly: true,
         rowVersion: 1,
       }

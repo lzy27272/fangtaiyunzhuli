@@ -43,6 +43,13 @@ export function StoreRepairPanel({
   const refresh = useCallback(async () => {
     setLoading(true)
     setError('')
+    if (pmsSystemCode === 'OTHER') {
+      setTrustedDeviceEligible(false)
+      setPmsConfigured(false)
+      setLuopan(null)
+      setLoading(false)
+      return
+    }
     const [trustedResult, pmsResult, luopanResult] = await Promise.allSettled([
       loadTrustedDeviceStatus(context),
       loadPmsLoginConfig(context),
@@ -117,6 +124,19 @@ export function StoreRepairPanel({
   }
 
   if (loading) return <LoadingState label="正在读取登录修复状态…" />
+
+  if (pmsSystemCode === 'OTHER') {
+    return (
+      <section className="content-panel repair-access-intro">
+        <span className="role-icon"><Icon name="settings" /></span>
+        <div>
+          <h2>PMS 厂家待接入</h2>
+          <p>该门店已登记其他 PMS 厂家。完成厂家适配、接口校验和单店数据验证后，系统才会开放登录修复与采集。</p>
+        </div>
+        <Status tone="warning">待适配</Status>
+      </section>
+    )
+  }
 
   return (
     <div className="repair-access-layout">

@@ -108,8 +108,6 @@ test('created review hotels are returned by the directory and survive restart', 
           'Idempotency-Key': 'review-managed-template-hotel-001',
         },
         body: JSON.stringify({
-          tenantCode: '001',
-          tenantDisplayName: templateHotel.tenantName,
           hotelCode: '090',
           hotelDisplayName: 'Managed Template Test Hotel',
           pmsSystemCode: 'MEITUAN_BIEYANGHONG',
@@ -124,6 +122,17 @@ test('created review hotels are returned by the directory and survive restart', 
       tenantId: templateHotel.tenantId,
       hotelId: managedReceipt.data.resourceId,
     }
+    const directoryAfterManagedCreate = await fetch(
+      `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    const managedDirectoryBody = await directoryAfterManagedCreate.json()
+    const managedHotel = managedDirectoryBody.data.hotels.find(
+      (hotel) => hotel.hotelId === managedReceipt.data.resourceId,
+    )
+    assert.equal(managedHotel.hotelCode, '090')
+    assert.equal(managedHotel.tenantId, templateHotel.tenantId)
+    assert.equal(managedHotel.tenantCode, templateHotel.tenantCode)
     const templatePath =
       `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
       + `${templateHotel.tenantId}/hotels/${templateHotel.hotelId}`
@@ -367,6 +376,28 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.equal(createSecondHotel.status, 201)
     const secondReceipt = await createSecondHotel.json()
 
+    const createOtherPmsHotel = await fetch(
+      `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'review-hotel-directory-create-other-pms-001',
+        },
+        body: JSON.stringify({
+          hotelCode: '005',
+          hotelDisplayName: 'Other PMS Test Hotel',
+          pmsSystemCode: 'OTHER',
+          pmsSystemName: '测试云 PMS',
+          timezone: 'Asia/Shanghai',
+          reasonCode: 'CREATE_SPRINT1_SIMULATION_HOTEL',
+        }),
+      },
+    )
+    assert.equal(createOtherPmsHotel.status, 201)
+    const otherPmsReceipt = await createOtherPmsHotel.json()
+
     const firstDirectory = await fetch(
       `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
       { headers: { Authorization: `Bearer ${token}` } },
@@ -383,6 +414,7 @@ test('created review hotels are returned by the directory and survive restart', 
       hotelCode: '003',
       hotelName: 'Directory Test Hotel',
       pmsSystemCode: 'MEITUAN_BIEYANGHONG',
+      pmsSystemName: '美团别样红 PMS',
       timezone: 'Asia/Shanghai',
       lifecycleStatus: 'PILOT',
       collectionEnabled: true,
@@ -395,6 +427,15 @@ test('created review hotels are returned by the directory and survive restart', 
       (hotel) => hotel.hotelId === secondReceipt.data.resourceId,
     )
     assert.equal(createdLuopan.pmsSystemCode, 'LUOPAN_CLOUD')
+    assert.equal(createdLuopan.pmsSystemName, '罗盘 PMS')
+    const createdOtherPms = firstBody.data.hotels.find(
+      (hotel) => hotel.hotelId === otherPmsReceipt.data.resourceId,
+    )
+    assert.equal(createdOtherPms.pmsSystemCode, 'OTHER')
+    assert.equal(createdOtherPms.pmsSystemName, '测试云 PMS')
+    assert.equal(createdOtherPms.tenantId, templateHotel.tenantId)
+    assert.equal(createdOtherPms.collectionEnabled, false)
+    assert.equal(createdOtherPms.configuredMockConnectors, 0)
     const createdLuopanPath =
       `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
       + `${createdLuopan.tenantId}/hotels/${createdLuopan.hotelId}`
@@ -639,6 +680,15 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.equal(
       restartedBody.data.hotels.some(
         (hotel) => hotel.hotelId === secondReceipt.data.resourceId,
+      ),
+      true,
+    )
+    assert.equal(
+      restartedBody.data.hotels.some(
+        (hotel) =>
+          hotel.hotelId === otherPmsReceipt.data.resourceId
+          && hotel.pmsSystemCode === 'OTHER'
+          && hotel.pmsSystemName === '测试云 PMS',
       ),
       true,
     )

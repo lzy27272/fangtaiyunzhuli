@@ -22,6 +22,7 @@ const STEPS = ['门店信息', '酒店系统', '渠道平台', '管理人员', '
 const PMS_OPTIONS: Array<{ code: PmsSystemCode; name: string; detail: string }> = [
   { code: 'MEITUAN_BIEYANGHONG', name: '美团别样红 PMS', detail: '门店可信设备采集，登录会话只留在指定电脑' },
   { code: 'LUOPAN_CLOUD', name: '罗盘 PMS', detail: '现有浏览器登录配置与只读采集方式' },
+  { code: 'OTHER', name: '其他 PMS 厂家', detail: '先登记厂家，完成适配和接口校验后再启用采集' },
 ]
 const OTA_OPTIONS: Array<{ code: OtaPlatformCode; name: string }> = [
   { code: 'CTRIP', name: '携程' }, { code: 'MEITUAN', name: '美团' },
@@ -53,9 +54,9 @@ export function NewStoreWizard({
   const [showCustom, setShowCustom] = useState(false)
   const [customDraft, setCustomDraft] = useState({ name: '', portalUrl: '', dataEndpointUrl: '' })
   const [draft, setDraft] = useState({
-    tenantCode: '', tenantDisplayName: '四方馆酒店经营中心', hotelCode: '', hotelDisplayName: '',
+    hotelCode: '', hotelDisplayName: '',
     timezone: 'Asia/Shanghai', pmsSystemCode: 'MEITUAN_BIEYANGHONG' as PmsSystemCode,
-    pmsUsername: '', pmsPassword: '',
+    pmsSystemName: '', pmsUsername: '', pmsPassword: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -66,8 +67,9 @@ export function NewStoreWizard({
   }, [session])
 
   const canNext = useMemo(() => {
-    if (step === 0) return Boolean(draft.tenantCode.trim() && draft.hotelCode.trim() && draft.hotelDisplayName.trim())
+    if (step === 0) return Boolean(draft.hotelCode.trim() && draft.hotelDisplayName.trim())
     if (step === 1 && draft.pmsSystemCode === 'LUOPAN_CLOUD') return Boolean(draft.pmsUsername.trim() && draft.pmsPassword)
+    if (step === 1 && draft.pmsSystemCode === 'OTHER') return Boolean(draft.pmsSystemName.trim())
     return true
   }, [draft, step])
 
@@ -97,11 +99,12 @@ export function NewStoreWizard({
     setSubmitting(true); setError(''); setProgress(['正在创建门店基础档案…'])
     try {
       const receipt = await initializeSimulationHotel({
-        tenantCode: draft.tenantCode.trim(),
-        tenantDisplayName: draft.tenantDisplayName.trim(),
         hotelCode: draft.hotelCode.trim(),
         hotelDisplayName: draft.hotelDisplayName.trim(),
         pmsSystemCode: draft.pmsSystemCode,
+        ...(draft.pmsSystemCode === 'OTHER'
+          ? { pmsSystemName: draft.pmsSystemName.trim() }
+          : {}),
         timezone: draft.timezone,
         reasonCode: 'CREATE_STORE_FROM_CONSOLE_WIZARD',
         ...(draft.pmsSystemCode === 'LUOPAN_CLOUD'
@@ -191,10 +194,8 @@ export function NewStoreWizard({
           <>
             <div className="section-heading"><div><h2>门店基本信息</h2><p>编号用于门店目录和权限范围，请使用现有三位编号规范。</p></div></div>
             <div className="form-grid two">
-              <label>租户编号<input maxLength={16} placeholder="001" value={draft.tenantCode} onChange={(event) => setDraft({ ...draft, tenantCode: event.target.value.toUpperCase() })} /></label>
               <label>门店编号<input maxLength={16} placeholder="018" value={draft.hotelCode} onChange={(event) => setDraft({ ...draft, hotelCode: event.target.value.toUpperCase() })} /></label>
               <label>门店名称<input placeholder="请输入门店全称" value={draft.hotelDisplayName} onChange={(event) => setDraft({ ...draft, hotelDisplayName: event.target.value })} /></label>
-              <label>所属组织<input value={draft.tenantDisplayName} onChange={(event) => setDraft({ ...draft, tenantDisplayName: event.target.value })} /></label>
               <label>时区<select value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}><option value="Asia/Shanghai">中国标准时间（上海）</option></select></label>
             </div>
           </>
@@ -204,10 +205,9 @@ export function NewStoreWizard({
           <>
             <div className="section-heading"><div><h2>选择酒店系统厂家</h2><p>酒店系统厂家与采集方式分离，后续可以继续增加适配厂家。</p></div></div>
             <div className="choice-list">
-              {PMS_OPTIONS.map((option) => <button type="button" className={draft.pmsSystemCode === option.code ? 'selected' : ''} key={option.code} onClick={() => setDraft({ ...draft, pmsSystemCode: option.code })}><span className="choice-radio" /><span><strong>{option.name}</strong><small>{option.detail}</small></span><Status tone={option.code === 'MEITUAN_BIEYANGHONG' ? 'ok' : 'info'}>{option.code === 'MEITUAN_BIEYANGHONG' ? '可信设备方式' : '已支持'}</Status></button>)}
-              <div className="future-choice"><span className="choice-radio" /><span><strong>其他 PMS 厂家</strong><small>完成厂家适配和接口校验后可加入目录</small></span><Status tone="muted">暂未接入</Status></div>
+              {PMS_OPTIONS.map((option) => <button type="button" className={draft.pmsSystemCode === option.code ? 'selected' : ''} key={option.code} onClick={() => setDraft({ ...draft, pmsSystemCode: option.code, pmsUsername: '', pmsPassword: '' })}><span className="choice-radio" /><span><strong>{option.name}</strong><small>{option.detail}</small></span><Status tone={option.code === 'MEITUAN_BIEYANGHONG' ? 'ok' : option.code === 'OTHER' ? 'warning' : 'info'}>{option.code === 'MEITUAN_BIEYANGHONG' ? '可信设备方式' : option.code === 'OTHER' ? '可登记 · 待适配' : '已支持'}</Status></button>)}
             </div>
-            {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? <div className="form-grid two compact-form"><label>罗盘登录账号<input autoComplete="off" value={draft.pmsUsername} onChange={(event) => setDraft({ ...draft, pmsUsername: event.target.value })} /></label><label>罗盘登录密码<input autoComplete="new-password" type="password" value={draft.pmsPassword} onChange={(event) => setDraft({ ...draft, pmsPassword: event.target.value })} /></label><p className="form-note">登录资料仅提交至受控服务端配置，不在页面回显。</p></div> : <div className="privacy-note"><Icon name="shield" /><span><strong>别样红采用门店可信设备登录</strong><small>账号、密码、验证码和浏览器会话不上传云端。</small></span></div>}
+            {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? <div className="form-grid two compact-form"><label>罗盘登录账号<input autoComplete="off" value={draft.pmsUsername} onChange={(event) => setDraft({ ...draft, pmsUsername: event.target.value })} /></label><label>罗盘登录密码<input autoComplete="new-password" type="password" value={draft.pmsPassword} onChange={(event) => setDraft({ ...draft, pmsPassword: event.target.value })} /></label><p className="form-note">登录资料仅提交至受控服务端配置，不在页面回显。</p></div> : draft.pmsSystemCode === 'OTHER' ? <div className="form-grid two compact-form"><label>PMS 厂家名称<input maxLength={80} placeholder="请输入酒店正在使用的 PMS 厂家" value={draft.pmsSystemName} onChange={(event) => setDraft({ ...draft, pmsSystemName: event.target.value })} /></label><p className="form-note">厂家会保存到门店档案；完成适配前采集保持关闭，不会生成虚假经营数据。</p></div> : <div className="privacy-note"><Icon name="shield" /><span><strong>别样红采用门店可信设备登录</strong><small>账号、密码、验证码和浏览器会话不上传云端。</small></span></div>}
           </>
         ) : null}
 
@@ -237,7 +237,7 @@ export function NewStoreWizard({
             <div className="section-heading"><div><h2>校验并启用</h2><p>确认配置后创建门店。采集和播报仍需真实登录与数据校验，不会自动绕过平台风控。</p></div></div>
             <dl className="review-list">
               <div><dt>门店</dt><dd>{draft.hotelCode} · {draft.hotelDisplayName}</dd></div>
-              <div><dt>PMS</dt><dd>{PMS_OPTIONS.find((item) => item.code === draft.pmsSystemCode)?.name}</dd></div>
+              <div><dt>PMS</dt><dd>{draft.pmsSystemCode === 'OTHER' ? draft.pmsSystemName : PMS_OPTIONS.find((item) => item.code === draft.pmsSystemCode)?.name}</dd></div>
               <div><dt>OTA 渠道</dt><dd>{[...selectedOta.map((code) => OTA_OPTIONS.find((item) => item.code === code)?.name), ...customChannels.map((item) => item.name)].filter(Boolean).join('、') || '暂不启用'}</dd></div>
               <div><dt>管理人员</dt><dd>{accounts.filter((account) => account.roles.includes('PLATFORM_ADMIN') || selectedAccounts.includes(account.id)).map((item) => item.displayName).join('、') || '仅平台管理员'}</dd></div>
               <div><dt>初始状态</dt><dd><Status tone="warning">待登录与数据校验</Status></dd></div>

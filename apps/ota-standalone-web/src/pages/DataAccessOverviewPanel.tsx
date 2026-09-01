@@ -131,6 +131,7 @@ export function DataAccessOverviewPanel({
   const sourceCount = monitor?.sources.length ?? 0
   const luopan = state?.luopan
   const isLuopan = pmsSystemCode === 'LUOPAN_CLOUD'
+  const isOtherPms = pmsSystemCode === 'OTHER'
 
   return (
     <section className="data-access-overview" id="data-access-overview">
@@ -172,9 +173,11 @@ export function DataAccessOverviewPanel({
         </article>
 
         <article className={luopan?.lastErrorCode ? 'status-warning' : ''}>
-          <span>{isLuopan ? '罗盘酒店系统采集' : '美团别样红采集'}</span>
+          <span>{isOtherPms ? '其他 PMS 厂家接入' : isLuopan ? '罗盘酒店系统采集' : '美团别样红采集'}</span>
           <strong>
-            {isLuopan
+            {isOtherPms
+              ? '厂家已登记，等待适配'
+              : isLuopan
               ? luopan?.enabled
                 ? '单店采集已启用'
                 : luopan?.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
@@ -183,7 +186,9 @@ export function DataAccessOverviewPanel({
               : pmsLoginConfigured ? '登录与采集已配置' : '请检查可信设备'}
           </strong>
           <small>
-            {isLuopan
+            {isOtherPms
+              ? '完成接口适配和单店数据校验前，采集与播报保持关闭'
+              : isLuopan
               ? <>最近采集 {businessCodeLabel(luopan?.lastCollectionStatus, '尚未采集')} · 营业日 {luopan?.lastBusinessDate ?? '—'}{luopan?.lastErrorCode ? ' · 需要检查' : ''}</>
               : '通过门店可信设备安全采集，登录状态按门店隔离'}
           </small>

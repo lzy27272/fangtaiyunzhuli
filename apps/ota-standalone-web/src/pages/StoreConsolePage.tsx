@@ -64,7 +64,13 @@ type StoreTab = 'overview' | 'repair' | 'collection' | 'operations' | 'broadcast
 const PMS_LABELS = {
   MEITUAN_BIEYANGHONG: '美团别样红 PMS',
   LUOPAN_CLOUD: '罗盘 PMS',
+  OTHER: '其他 PMS',
 } as const
+
+const pmsDisplayName = (hotel: SimulationHotelView) =>
+  hotel.pmsSystemCode === 'OTHER'
+    ? hotel.pmsSystemName
+    : PMS_LABELS[hotel.pmsSystemCode]
 
 const formatTime = (value?: string | null) => {
   if (!value) return '尚未上报'
@@ -104,6 +110,9 @@ function otaState(source: OtaSourceView | undefined): { tone: Tone; label: strin
 }
 
 function pmsRepairState(summary: HotelSummary) {
+  if (summary.hotel.pmsSystemCode === 'OTHER') {
+    return { required: false, reasons: [] as PmsRepairReason[] }
+  }
   const evaluated = evaluatePmsRepair({
     monitor: summary.monitor,
     trustedDeviceStatus: summary.trustedDeviceStatus,
@@ -121,6 +130,9 @@ function pmsRepairState(summary: HotelSummary) {
 }
 
 function pmsState(summary: HotelSummary): { tone: Tone; label: string } {
+  if (summary.hotel.pmsSystemCode === 'OTHER') {
+    return { tone: 'warning', label: '待接入' }
+  }
   if (pmsRepairState(summary).required) {
     return { tone: 'error', label: '需要修复处理' }
   }
@@ -138,6 +150,9 @@ function broadcastState(summary: HotelSummary): { tone: Tone; label: string } {
 }
 
 function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } | null {
+  if (summary.hotel.pmsSystemCode === 'OTHER') {
+    return { tab: 'collection', label: '完善PMS接入' }
+  }
   const pms = pmsState(summary)
   if (pms.tone === 'error') {
     return { tab: 'repair', label: 'PMS需要修复处理' }
@@ -212,7 +227,7 @@ export function StoreOverviewPage({
     const matchesSearch = !query
       || summary.hotel.hotelName.toLowerCase().includes(query)
       || summary.hotel.hotelCode.toLowerCase().includes(query)
-      || PMS_LABELS[summary.hotel.pmsSystemCode].toLowerCase().includes(query)
+      || pmsDisplayName(summary.hotel).toLowerCase().includes(query)
     const needsAttention = Boolean(directTarget(summary))
     return matchesSearch && (filter === 'ALL' || (filter === 'ATTENTION' ? needsAttention : !needsAttention))
   }), [filter, search, summaries])
@@ -279,7 +294,7 @@ export function StoreOverviewPage({
             <article className={`store-row has-${rowTone}`} key={summary.hotel.hotelId}>
               <button className="store-main" type="button" onClick={() => onOpen(summary.hotel)}>
                 <span className="store-avatar">{storeMonogram(summary.hotel.hotelName)}</span>
-                <span><strong>{summary.hotel.hotelCode} · {summary.hotel.hotelName}</strong><small>{PMS_LABELS[summary.hotel.pmsSystemCode]} · {businessCodeLabel(summary.hotel.lifecycleStatus, '状态待确认')}</small></span>
+                <span><strong>{summary.hotel.hotelCode} · {summary.hotel.hotelName}</strong><small>{pmsDisplayName(summary.hotel)} · {businessCodeLabel(summary.hotel.lifecycleStatus, '状态待确认')}</small></span>
               </button>
               <div className="source-statuses">
                 <button aria-label={`打开 PMS 处理页面，当前${pms.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, pmsRepairState(summary).required ? 'repair' : 'collection')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
@@ -390,7 +405,7 @@ export function StoreDetailPage({
     <section className="console-page store-detail-page">
       <button className="back-link" type="button" onClick={onBack}>‹ 返回门店总览</button>
       <div className="page-title-row compact-title">
-        <div><p className="section-kicker">{hotel.hotelCode} · 门店工作台</p><h1>{hotel.hotelName}</h1><p>{PMS_LABELS[hotel.pmsSystemCode]} · 账号仅可读取授权门店</p></div>
+        <div><p className="section-kicker">{hotel.hotelCode} · 门店工作台</p><h1>{hotel.hotelName}</h1><p>{pmsDisplayName(hotel)} · 账号仅可读取授权门店</p></div>
         <div className="title-actions"><button className="quiet-button" type="button" onClick={() => void refresh()}><Icon name="refresh" />刷新状态</button><button className="quiet-button" type="button" onClick={() => setTab(connectionTab)}><Icon name={canConfigure ? 'settings' : 'shield'} />{canConfigure ? '门店设置' : '登录修复'}</button></div>
       </div>
 
@@ -433,7 +448,7 @@ export function StoreDetailPage({
             <section className="content-panel">
               <div className="section-heading small"><div><h2>数据连接</h2><p>连接状态与最近同步时间</p></div><button className="text-link" onClick={() => setTab(connectionTab)} type="button">{canConfigure ? '查看配置' : '登录修复'}</button></div>
               <div className="connection-table">
-                <div><strong className="connection-name"><PlatformIcon name="PMS" />{PMS_LABELS[hotel.pmsSystemCode]}</strong><Status tone={pms.tone}>{pms.label}</Status><span>{formatTime(data.monitor?.cutoffAt)}</span></div>
+                <div><strong className="connection-name"><PlatformIcon name="PMS" />{pmsDisplayName(hotel)}</strong><Status tone={pms.tone}>{pms.label}</Status><span>{formatTime(data.monitor?.cutoffAt)}</span></div>
                 {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <div key={source.platformCode}><strong className="connection-name"><PlatformIcon name={source.platformCode as PlatformIconName} />{sourceDisplayName(source.platformCode)}</strong><Status tone={state.tone}>{state.label}</Status><span>{formatTime(source.lastRefreshAt)}</span></div> })}
               </div>
             </section>
