@@ -46,6 +46,26 @@ const reviewApiSource = await readFile(
   new URL('../../../tools/uat/ota-standalone-review-api.mjs', import.meta.url),
   'utf8',
 )
+const publicCaddySource = await readFile(
+  new URL('../../../infra/ota-standalone-server/caddy/ota-console-public.caddy', import.meta.url),
+  'utf8',
+)
+const nativeCaddySource = await readFile(
+  new URL('../../../infra/ota-standalone-server/Caddyfile.native', import.meta.url),
+  'utf8',
+)
+const publishScriptSource = await readFile(
+  new URL('../../../infra/ota-standalone-server/scripts/Publish-OtaStandaloneServer.ps1', import.meta.url),
+  'utf8',
+)
+const nativeDeploySource = await readFile(
+  new URL('../../../infra/ota-standalone-server/scripts/deploy-native.sh', import.meta.url),
+  'utf8',
+)
+const publicEntryScriptSource = await readFile(
+  new URL('../../../infra/ota-standalone-server/scripts/configure-public-entry.sh', import.meta.url),
+  'utf8',
+)
 const luopanCollectorSource = await readFile(
   new URL(
     '../../../tools/uat/luopan-controlled-browser-collector.mjs',
@@ -169,6 +189,38 @@ test('page startup and token expiry use one cookie-authenticated refresh flight'
   assert.match(appSource, /hasRefreshContext\(\)/)
   assert.match(appSource, /refreshSession\(\)/)
   assert.match(appSource, /session\.expiresInSeconds - 60/)
+})
+
+test('phase-one public entry keeps the OTA runtime isolated behind an HTTPS subpath', () => {
+  assert.match(publicCaddySource, /handle_path \/ota-console\/\*/)
+  assert.match(publicCaddySource, /handle_path \/api\/v1\/ota-console\/\*/)
+  assert.match(publicCaddySource, /reverse_proxy 127\.0\.0\.1:8091/)
+  assert.match(nativeCaddySource, /handle_path \/ota-console\/\*/)
+  assert.match(nativeCaddySource, /handle_path \/api\/v1\/ota-console\/\*/)
+  assert.match(publishScriptSource, /\$webBasePath = '\/ota-console\/'/)
+  assert.match(publishScriptSource, /\$publicApiBaseUrl = '\/api\/v1\/ota-console'/)
+  assert.match(publishScriptSource, /configure-public-entry\.sh/)
+  assert.match(publishScriptSource, /configure-phase1-runtime\.sh/)
+  assert.match(nativeDeploySource, /configure-phase1-runtime\.sh/)
+  assert.match(nativeDeploySource, /configure-public-entry\.sh/)
+  assert.match(nativeDeploySource, /initialize_phase_one_refresh_state/)
+  assert.ok(
+    nativeDeploySource.indexOf('initialize_phase_one_refresh_state; then')
+      < nativeDeploySource.indexOf('before_fingerprint='),
+  )
+  assert.ok(
+    nativeDeploySource.indexOf('configure-phase1-runtime.sh')
+      < nativeDeploySource.indexOf('configure-public-entry.sh'),
+  )
+  assert.match(nativeDeploySource, /rollback_release \|\| true/)
+  assert.doesNotMatch(
+    publicEntryScriptSource,
+    /systemctl reload sifangguan-ota-web\.service/,
+  )
+  assert.match(
+    publicEntryScriptSource,
+    /systemctl restart sifangguan-ota-web\.service/,
+  )
 })
 
 test('failed refresh removes unusable in-memory authentication state', () => {

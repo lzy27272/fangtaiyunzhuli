@@ -9,6 +9,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -346,6 +347,24 @@ const authStatePath =
       )
       : null
   )
+const authRefreshStatePath =
+  process.env.OTA_REVIEW_AUTH_REFRESH_STATE_PATH?.trim()
+  || (authStatePath ? join(dirname(authStatePath), 'review-auth-sessions.json') : null)
+const securityAuditPath =
+  process.env.OTA_REVIEW_SECURITY_AUDIT_PATH?.trim()
+  || (dataPath ? join(dirname(dataPath), 'security-audit.jsonl') : null)
+const authCookiePath =
+  process.env.OTA_REVIEW_AUTH_COOKIE_PATH?.trim()
+  || '/api/v1/auth'
+const authCookieSecure =
+  process.env.OTA_REVIEW_AUTH_COOKIE_SECURE !== 'false'
+const allowedBrowserOrigins = new Set(
+  (process.env.OTA_REVIEW_ALLOWED_ORIGINS
+    ?? 'https://www.sfgzt.cn,http://127.0.0.1:15180')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+)
 
 if (
   !Number.isInteger(port)
@@ -355,6 +374,10 @@ if (
   || !bootstrapPassword
   || !bootstrapAccessToken
   || !authStatePath
+  || !authRefreshStatePath
+  || !securityAuditPath
+  || !authCookiePath.startsWith('/')
+  || authCookiePath.includes('..')
   || !cookieSecretsPath
   || !cookieSecretKey
   || Buffer.from(pseudonymSecretKey ?? '', 'base64url').length !== 32
@@ -365,6 +388,7 @@ if (
 
 const authStore = createReviewAuthStore({
   statePath: authStatePath,
+  refreshStatePath: authRefreshStatePath,
   bootstrapUsername,
   bootstrapPassword,
   bootstrapAccessToken,
@@ -7672,6 +7696,177 @@ const bearerTokenFor = (request) => {
     : ''
 }
 
+const parseCookies = (request) => Object.fromEntries(
+  String(request.headers.cookie ?? '')
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const separator = part.indexOf('=')
+      if (separator <= 0) return ['', '']
+      const name = part.slice(0, separator)
+      const rawValue = part.slice(separator + 1)
+      try {
+        return [name, decodeURIComponent(rawValue)]
+      } catch {
+        return [name, '']
+      }
+    })
+    .filter(([name]) => name),
+)
+
+const browserOriginAllowed = (request) => {
+  const origin = String(request.headers.origin ?? '').trim()
+  return !origin || allowedBrowserOrigins.has(origin)
+}
+
+const clientAddressFor = (request) => {
+  const remoteAddress = String(request.socket?.remoteAddress ?? '')
+  const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
+    .includes(remoteAddress)
+  const forwarded = loopback
+    ? String(request.headers['x-forwarded-for'] ?? '')
+      .split(',')[0]
+      .trim()
+    : ''
+  const candidate = forwarded || remoteAddress || 'unknown'
+  return candidate.slice(0, 96)
+}
+
+const auditSecurityEvent = ({
+  action,
+  outcome,
+  request,
+  principal = null,
+  hotelId = null,
+  targetAccountId = null,
+  reasonCode = null,
+  username = null,
+}) => {
+  mkdirSync(dirname(securityAuditPath), { recursive: true })
+  const sourceFingerprint = createHash('sha256')
+    .update(clientAddressFor(request), 'utf8')
+    .digest('hex')
+    .slice(0, 24)
+  const usernameFingerprint = username
+    ? createHash('sha256')
+      .update(String(username).trim().toLocaleLowerCase(), 'utf8')
+      .digest('hex')
+      .slice(0, 24)
+    : null
+  appendFileSync(
+    securityAuditPath,
+    `${JSON.stringify({
+      occurredAt: new Date().toISOString(),
+      action: String(action).slice(0, 96),
+      outcome: String(outcome).slice(0, 32),
+      actorAccountId: principal?.id ?? null,
+      targetAccountId,
+      hotelId,
+      reasonCode,
+      usernameFingerprint,
+      sourceFingerprint,
+    })}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+}
+
+const secureCookieAttribute = authCookieSecure ? '; Secure' : ''
+const authCookieHeaders = (bundle) => ({
+  'set-cookie': [
+    `ota_refresh=${encodeURIComponent(bundle.refreshToken)}; `
+      + `Path=${authCookiePath}; `
+      + `Max-Age=${bundle.refreshExpiresInSeconds}; HttpOnly; `
+      + `SameSite=Strict${secureCookieAttribute}`,
+    `ota_csrf=${encodeURIComponent(bundle.csrfToken)}; `
+      + `Path=/; Max-Age=${bundle.refreshExpiresInSeconds}; `
+      + `SameSite=Strict${secureCookieAttribute}`,
+  ],
+})
+
+const expiredAuthCookieHeaders = () => ({
+  'set-cookie': [
+    `ota_refresh=; Path=${authCookiePath}; Max-Age=0; HttpOnly; `
+      + `SameSite=Strict${secureCookieAttribute}`,
+    `ota_csrf=; Path=/; Max-Age=0; SameSite=Strict${secureCookieAttribute}`,
+  ],
+})
+
+const publicAuthSession = (bundle) => {
+  const {
+    refreshToken: _refreshToken,
+    csrfToken: _csrfToken,
+    refreshExpiresInSeconds: _refreshExpiresInSeconds,
+    ...session
+  } = bundle
+  return session
+}
+
+const refreshInputFor = (request) => {
+  const cookies = parseCookies(request)
+  const csrfHeader = String(request.headers['x-csrf-token'] ?? '')
+  const csrfCookie = String(cookies.ota_csrf ?? '')
+  const csrfMatches = csrfHeader.length > 0
+    && csrfHeader.length === csrfCookie.length
+    && timingSafeEqual(
+      Buffer.from(csrfHeader, 'utf8'),
+      Buffer.from(csrfCookie, 'utf8'),
+    )
+  return {
+    refreshToken: cookies.ota_refresh ?? '',
+    csrfToken: csrfMatches ? csrfHeader : '',
+  }
+}
+
+const LOGIN_RATE_WINDOW_MS = 15 * 60_000
+const LOGIN_RATE_BLOCK_MS = 15 * 60_000
+const LOGIN_RATE_ACCOUNT_MAX_FAILURES = 5
+const LOGIN_RATE_SOURCE_MAX_FAILURES = 25
+const loginRateState = new Map()
+
+const loginRateKeysFor = (request, username) => {
+  const source = clientAddressFor(request)
+  const normalizedUsername = String(username).trim().toLocaleLowerCase()
+  const keyFor = (scope) => createHash('sha256')
+    .update(scope, 'utf8')
+    .digest('hex')
+  return [
+    {
+      key: keyFor(`ACCOUNT:${source}:${normalizedUsername}`),
+      maxFailures: LOGIN_RATE_ACCOUNT_MAX_FAILURES,
+    },
+    {
+      key: keyFor(`SOURCE:${source}`),
+      maxFailures: LOGIN_RATE_SOURCE_MAX_FAILURES,
+    },
+  ]
+}
+
+const loginRateLimited = ({ key, maxFailures }) => {
+  const current = loginRateState.get(key)
+  if (!current) return false
+  const now = Date.now()
+  if (current.blockedUntil > now) return true
+  if (current.windowStartedAt + LOGIN_RATE_WINDOW_MS <= now) {
+    loginRateState.delete(key)
+    return false
+  }
+  return current.failures >= maxFailures
+}
+
+const recordLoginFailure = ({ key, maxFailures }) => {
+  const now = Date.now()
+  const current = loginRateState.get(key)
+  const active = current && current.windowStartedAt + LOGIN_RATE_WINDOW_MS > now
+    ? current
+    : { failures: 0, windowStartedAt: now, blockedUntil: 0 }
+  active.failures += 1
+  if (active.failures >= maxFailures) {
+    active.blockedUntil = now + LOGIN_RATE_BLOCK_MS
+  }
+  loginRateState.set(key, active)
+}
+
 const requireAuth = (request, response) => {
   const principal = authStore.principal(bearerTokenFor(request))
   if (!principal) {
@@ -8228,16 +8423,97 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && path === '/api/v1/auth/login') {
+      if (!browserOriginAllowed(request)) {
+        auditSecurityEvent({
+          action: 'AUTH_LOGIN',
+          outcome: 'DENIED',
+          request,
+          reasonCode: 'REVIEW_AUTH_ORIGIN_FORBIDDEN',
+        })
+        json(response, 403, { code: 'REVIEW_AUTH_ORIGIN_FORBIDDEN' })
+        return
+      }
       const body = await readBody(request)
-      const authSession = authStore.login(
-        String(body.username ?? ''),
+      const username = String(body.username ?? '')
+      const rateKeys = loginRateKeysFor(request, username)
+      if (rateKeys.some(loginRateLimited)) {
+        auditSecurityEvent({
+          action: 'AUTH_LOGIN',
+          outcome: 'RATE_LIMITED',
+          request,
+          reasonCode: 'REVIEW_AUTH_LOGIN_RATE_LIMITED',
+          username,
+        })
+        json(response, 429, { code: 'REVIEW_AUTH_LOGIN_RATE_LIMITED' })
+        return
+      }
+      const authSession = authStore.loginWithRefresh(
+        username,
         String(body.password ?? ''),
       )
       if (!authSession) {
+        rateKeys.forEach(recordLoginFailure)
+        auditSecurityEvent({
+          action: 'AUTH_LOGIN',
+          outcome: 'DENIED',
+          request,
+          reasonCode: 'REVIEW_LOGIN_FAILED',
+          username,
+        })
         json(response, 401, { code: 'REVIEW_LOGIN_FAILED' })
         return
       }
-      json(response, 200, authSession)
+      loginRateState.delete(rateKeys[0].key)
+      const principal = authStore.principal(authSession.accessToken)
+      auditSecurityEvent({
+        action: 'AUTH_LOGIN',
+        outcome: 'SUCCEEDED',
+        request,
+        principal,
+      })
+      json(
+        response,
+        200,
+        publicAuthSession(authSession),
+        authCookieHeaders(authSession),
+      )
+      return
+    }
+
+    if (request.method === 'POST' && path === '/api/v1/auth/refresh') {
+      if (!browserOriginAllowed(request)) {
+        json(response, 403, { code: 'REVIEW_AUTH_ORIGIN_FORBIDDEN' })
+        return
+      }
+      const refreshed = authStore.refreshSession(refreshInputFor(request))
+      if (!refreshed) {
+        auditSecurityEvent({
+          action: 'AUTH_REFRESH',
+          outcome: 'DENIED',
+          request,
+          reasonCode: 'REVIEW_AUTH_REFRESH_INVALID',
+        })
+        json(
+          response,
+          401,
+          { code: 'REVIEW_AUTH_REFRESH_INVALID' },
+          expiredAuthCookieHeaders(),
+        )
+        return
+      }
+      const principal = authStore.principal(refreshed.accessToken)
+      auditSecurityEvent({
+        action: 'AUTH_REFRESH',
+        outcome: 'SUCCEEDED',
+        request,
+        principal,
+      })
+      json(
+        response,
+        200,
+        publicAuthSession(refreshed),
+        authCookieHeaders(refreshed),
+      )
       return
     }
 
@@ -8255,7 +8531,20 @@ const server = createServer(async (request, response) => {
           newUsername: String(body.newUsername ?? ''),
           newPassword: String(body.newPassword ?? ''),
         })
-        json(response, 200, authSession)
+        const refreshSession = authStore.attachRefresh(authSession.accessToken)
+        const bundle = { ...authSession, ...refreshSession }
+        auditSecurityEvent({
+          action: 'AUTH_CREDENTIALS_CHANGE',
+          outcome: 'SUCCEEDED',
+          request,
+          principal: authStore.principal(authSession.accessToken),
+        })
+        json(
+          response,
+          200,
+          publicAuthSession(bundle),
+          authCookieHeaders(bundle),
+        )
       } catch (reason) {
         const code = reason instanceof Error ? reason.message : ''
         if (code === 'REVIEW_AUTH_CURRENT_PASSWORD_INVALID') {
@@ -8314,6 +8603,13 @@ const server = createServer(async (request, response) => {
         roles,
         hotelIds,
       })
+      auditSecurityEvent({
+        action: 'AUTH_ACCOUNT_CREATE',
+        outcome: 'SUCCEEDED',
+        request,
+        principal,
+        targetAccountId: account.id,
+      })
       json(response, 201, { data: account })
       return
     }
@@ -8347,13 +8643,34 @@ const server = createServer(async (request, response) => {
         enabled: body.enabled,
         newPassword: body.newPassword,
       })
+      auditSecurityEvent({
+        action: 'AUTH_ACCOUNT_UPDATE',
+        outcome: 'SUCCEEDED',
+        request,
+        principal,
+        targetAccountId: account.id,
+      })
       json(response, 200, { data: account })
       return
     }
 
     if (request.method === 'POST' && path === '/api/v1/auth/logout') {
-      authStore.logout(bearerTokenFor(request))
-      empty(response)
+      if (!browserOriginAllowed(request)) {
+        json(response, 403, { code: 'REVIEW_AUTH_ORIGIN_FORBIDDEN' })
+        return
+      }
+      const loggedOut = authStore.logoutRefresh(refreshInputFor(request))
+      if (!loggedOut) {
+        json(response, 403, { code: 'REVIEW_AUTH_CSRF_INVALID' })
+        return
+      }
+      auditSecurityEvent({
+        action: 'AUTH_LOGOUT',
+        outcome: 'SUCCEEDED',
+        request,
+        principal: loggedOut,
+      })
+      empty(response, 204, expiredAuthCookieHeaders())
       return
     }
 
@@ -8557,6 +8874,14 @@ const server = createServer(async (request, response) => {
         || selected.tenantId !== requestTenantId
         || !canAccessHotel(requestPrincipal, selected.hotelId)
       ) {
+        auditSecurityEvent({
+          action: 'HOTEL_SCOPE_ACCESS',
+          outcome: 'DENIED',
+          request,
+          principal: requestPrincipal,
+          hotelId,
+          reasonCode: 'REVIEW_HOTEL_NOT_FOUND',
+        })
         json(response, 404, { code: 'REVIEW_HOTEL_NOT_FOUND' })
         return
       }
@@ -8566,8 +8891,26 @@ const server = createServer(async (request, response) => {
         && !canConfigureHotels(requestPrincipal)
         && !REPAIR_WRITE_SUFFIXES.has(suffix)
       ) {
+        auditSecurityEvent({
+          action: 'HOTEL_WRITE',
+          outcome: 'DENIED',
+          request,
+          principal: requestPrincipal,
+          hotelId,
+          reasonCode: 'REVIEW_ACCOUNT_SCOPE_FORBIDDEN',
+        })
         rejectForbidden(response)
         return
+      }
+
+      if (!['GET', 'HEAD'].includes(request.method ?? '')) {
+        auditSecurityEvent({
+          action: 'HOTEL_WRITE',
+          outcome: 'REQUESTED',
+          request,
+          principal: requestPrincipal,
+          hotelId,
+        })
       }
 
       if (

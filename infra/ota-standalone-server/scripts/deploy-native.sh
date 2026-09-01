@@ -19,6 +19,8 @@ listing_file=""
 protected_paths=(
   /etc/sifangguan-ota/runtime.env
   /var/lib/sifangguan-ota/review-auth-state.json
+  /var/lib/sifangguan-ota/review-auth-sessions.json
+  /var/lib/sifangguan-ota/security-audit.jsonl
   /var/lib/sifangguan-ota/simulation-hotels.json
   /var/lib/sifangguan-ota/report-sources.json
   /var/lib/sifangguan-ota/report-source-cookie-secrets.json
@@ -83,7 +85,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "${listing_file}"; then
   exit 2
 fi
 if grep -Eiq \
-  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|hot-selling-room-types\.json|room-type-mappings\.json|ota-room-type-catalogs\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry(-[^/]+)?\.json|runtime\.env)$' \
+  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|review-auth-sessions\.json|security-audit\.jsonl|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|hot-selling-room-types\.json|room-type-mappings\.json|ota-room-type-catalogs\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry(-[^/]+)?\.json|runtime\.env)$' \
   "${listing_file}"; then
   echo "RELEASE_ARCHIVE_FORBIDDEN_CONTENT" >&2
   exit 2
@@ -232,6 +234,33 @@ rollback_release() {
   echo "PREVIOUS_RELEASE_AND_PROTECTED_STATE_RESTORED" >&2
 }
 
+initialize_phase_one_refresh_state() {
+  local state_path=/var/lib/sifangguan-ota/review-auth-sessions.json
+  local state_tmp="${state_path}.initialize-$$"
+  if [[ -L ${state_path} || ( -e ${state_path} && ! -f ${state_path} ) ]]; then
+    echo "REFRESH_STATE_PATH_UNSAFE" >&2
+    return 1
+  fi
+  if [[ -f ${state_path} ]]; then
+    return 0
+  fi
+  (
+    umask 077
+    printf '{\n  "version": 1,\n  "sessions": []\n}\n' > "${state_tmp}"
+  ) || return 1
+  if ! chown sifangguan-ota:sifangguan-ota "${state_tmp}" \
+    || ! chmod 0600 "${state_tmp}"; then
+    rm -f -- "${state_tmp}"
+    return 1
+  fi
+  mv -Tf "${state_tmp}" "${state_path}"
+}
+
+if ! initialize_phase_one_refresh_state; then
+  restore_protected_state
+  exit 1
+fi
+
 before_fingerprint="$(protected_fingerprint)"
 
 next_link="${current_link}.next"
@@ -257,6 +286,20 @@ fi
 
 if [[ "$(readlink -f "${current_link}")" != "${release_dir}" ]]; then
   echo "CURRENT_RELEASE_POINTER_MISMATCH" >&2
+  rollback_release || true
+  exit 1
+fi
+
+if ! bash \
+  "${release_dir}/infra/ota-standalone-server/scripts/configure-phase1-runtime.sh"; then
+  echo "PHASE1_RUNTIME_CONFIGURATION_FAILED" >&2
+  rollback_release || true
+  exit 1
+fi
+
+if ! bash \
+  "${release_dir}/infra/ota-standalone-server/scripts/configure-public-entry.sh"; then
+  echo "PUBLIC_ENTRY_CONFIGURATION_FAILED" >&2
   rollback_release || true
   exit 1
 fi

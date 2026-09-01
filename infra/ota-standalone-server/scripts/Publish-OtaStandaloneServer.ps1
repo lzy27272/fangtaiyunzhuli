@@ -45,11 +45,17 @@ $scannerPath = Join-Path `
     $repoRoot `
     'tools\release\Test-ReleaseSensitiveInformation.ps1'
 $releaseRoot = Join-Path $repoRoot 'tmp\release\ota-standalone'
+$webBasePath = '/ota-console/'
+$publicApiBaseUrl = '/api/v1/ota-console'
 $deployScriptRelative = (
     'infra/ota-standalone-server/scripts/deploy-native.sh'
 )
 $runtimeSourcePaths = @(
     $deployScriptRelative,
+    'infra/ota-standalone-server/Caddyfile.native',
+    'infra/ota-standalone-server/caddy/ota-console-public.caddy',
+    'infra/ota-standalone-server/scripts/configure-public-entry.sh',
+    'infra/ota-standalone-server/scripts/configure-phase1-runtime.sh',
     'infra/ota-standalone-server/scripts/status-native.sh',
     'infra/ota-standalone-server/scripts/configure-ai-runtime.sh',
     'tools/uat/ota-standalone-review-api.mjs',
@@ -130,6 +136,17 @@ function Resolve-NodeRuntime {
         return $command.Source
     }
     throw 'REQUIRED_NODE_RUNTIME_NOT_FOUND'
+}
+
+function Resolve-BundledNodeModules {
+    $bundledModules = Join-Path $env:USERPROFILE (
+        '.cache\codex-runtimes\codex-primary-runtime\' +
+        'dependencies\node\node_modules'
+    )
+    if (Test-Path -LiteralPath $bundledModules -PathType Container) {
+        return $bundledModules
+    }
+    return $null
 }
 
 function Invoke-CheckedCommand {
@@ -321,6 +338,7 @@ function Ensure-ServerUiTunnel([int]$Port) {
 
 $gitPath = Resolve-RequiredCommand 'git.exe'
 $nodePath = Resolve-NodeRuntime
+$bundledNodeModules = Resolve-BundledNodeModules
 $tarPath = Resolve-RequiredCommand 'tar.exe'
 $script:sshPath = Resolve-RequiredCommand 'ssh.exe'
 $scpPath = Resolve-RequiredCommand 'scp.exe'
@@ -380,6 +398,8 @@ $plan = [ordered]@{
     trackedWorktreeClean = ($dirtyTracked.Count -eq 0)
     runtimeSourceFileCount = $runtimeSourcePaths.Count
     persistentRuntimeExcluded = $true
+    webBasePath = $webBasePath
+    publicApiBaseUrl = $publicApiBaseUrl
 }
 if ($Mode -eq 'Plan') {
     $plan | ConvertTo-Json
@@ -438,10 +458,30 @@ Invoke-CheckedCommand `
     -FilePath $nodePath `
     -Arguments @($tscPath, '-b') `
     -WorkingDirectory $webRoot
-Invoke-CheckedCommand `
-    -FilePath $nodePath `
-    -Arguments @($vitePath, 'build', '--configLoader', 'runner') `
-    -WorkingDirectory $webRoot
+$previousWebBasePath = $env:OTA_WEB_BASE_PATH
+$previousPublicApiBaseUrl = $env:VITE_OTA_API_BASE_URL
+try {
+    $env:OTA_WEB_BASE_PATH = $webBasePath
+    $env:VITE_OTA_API_BASE_URL = $publicApiBaseUrl
+    Invoke-CheckedCommand `
+        -FilePath $nodePath `
+        -Arguments @($vitePath, 'build', '--configLoader', 'runner') `
+        -WorkingDirectory $webRoot
+}
+finally {
+    if ($null -eq $previousWebBasePath) {
+        Remove-Item Env:OTA_WEB_BASE_PATH -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:OTA_WEB_BASE_PATH = $previousWebBasePath
+    }
+    if ($null -eq $previousPublicApiBaseUrl) {
+        Remove-Item Env:VITE_OTA_API_BASE_URL -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:VITE_OTA_API_BASE_URL = $previousPublicApiBaseUrl
+    }
+}
 if (
     -not (Test-Path `
         -LiteralPath (Join-Path $distRoot 'index.html') `
@@ -485,6 +525,8 @@ $manifest = [ordered]@{
     builtAt = [DateTimeOffset]::Now.ToString('o')
     payload = 'OTA_STANDALONE_MINIMAL_RUNTIME'
     persistentRuntimeIncluded = $false
+    webBasePath = $webBasePath
+    publicApiBaseUrl = $publicApiBaseUrl
 }
 [IO.File]::WriteAllText(
     (Join-Path $stageRoot '.release-manifest.json'),
@@ -496,6 +538,8 @@ $forbiddenNames = @(
     '.uat-runtime',
     'credentials.json',
     'secret-key.dpapi',
+    'review-auth-sessions.json',
+    'security-audit.jsonl',
     'report-source-cookie-secrets.json',
     'pms-login-secrets.json',
     'luopan-session-secrets.json',
