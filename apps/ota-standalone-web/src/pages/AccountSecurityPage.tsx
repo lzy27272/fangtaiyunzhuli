@@ -18,11 +18,12 @@ import {
 } from '../auth/session'
 
 const ROLE_OPTIONS: Array<{ value: OtaRole; label: string }> = [
-  { value: 'OTA_OPERATION_MANAGER', label: 'OTA运营经理' },
+  { value: 'PLATFORM_ADMIN', label: '管理员' },
+  { value: 'GENERAL_MANAGER', label: '店长' },
+  { value: 'OTA_OPERATION_MANAGER', label: '运营总监' },
   { value: 'OTA_OPERATION_ASSISTANT', label: 'OTA运营助理' },
-  { value: 'REVENUE_MANAGER', label: '收益经理' },
+  { value: 'CEO', label: '总经理' },
   { value: 'REGIONAL_MANAGER', label: '区域经理' },
-  { value: 'HOTEL_P1_HANDLER', label: 'P1处理人' },
 ]
 
 const toggleValue = <T extends string>(values: T[], value: T): T[] =>

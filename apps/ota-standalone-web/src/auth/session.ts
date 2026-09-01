@@ -4,6 +4,7 @@ export type OtaRole =
   | 'OTA_OPERATION_MANAGER'
   | 'CEO'
   | 'REGIONAL_MANAGER'
+  | 'GENERAL_MANAGER'
   | 'REVENUE_MANAGER'
   | 'HOTEL_P1_HANDLER'
 

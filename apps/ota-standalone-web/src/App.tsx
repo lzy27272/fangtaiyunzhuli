@@ -56,8 +56,8 @@ function ConsoleShell({ session, onSessionChange, onSignedOut }: { session: Auth
   const [mobileMenu, setMobileMenu] = useState(false)
 
   const platformAdmin = session.account.roles.includes('PLATFORM_ADMIN')
-  const canConfigure = platformAdmin || session.account.roles.includes('OTA_OPERATION_MANAGER')
-  const canRevenueConfigure = canConfigure || session.account.roles.includes('REVENUE_MANAGER')
+  const canConfigure = platformAdmin
+  const canRevenueConfigure = platformAdmin || session.account.roles.includes('OTA_OPERATION_MANAGER')
 
   const refreshHotels = useCallback(async () => {
     setLoadingDirectory(true); setDirectoryError('')
@@ -96,7 +96,7 @@ function ConsoleShell({ session, onSessionChange, onSignedOut }: { session: Auth
       </nav>
       <div className="header-actions">
         <span className="scope-badge">{session.account.hotelIds === null ? `全部门店 · ${hotels.length}家` : storeLabel}</span>
-        <div className="account-menu-wrap"><button className="account-trigger" type="button" onClick={() => setAccountMenu((value) => !value)}><span>{session.account.displayName.slice(0, 1)}</span><b>{session.account.displayName}<small>{platformAdmin ? '平台管理员' : '门店管理账号'}</small></b><span className="caret">⌄</span></button>{accountMenu ? <div className="account-popover"><button type="button" onClick={() => navigate('security')}><Icon name="shield" />账号安全</button><button disabled={working} type="button" onClick={() => void signOut()}><Icon name="logout" />{working ? '正在退出…' : '退出登录'}</button></div> : null}</div>
+        <div className="account-menu-wrap"><button className="account-trigger" type="button" onClick={() => setAccountMenu((value) => !value)}><span>{session.account.displayName.slice(0, 1)}</span><b>{session.account.displayName}<small>{platformAdmin ? '管理员' : '门店管理账号'}</small></b><span className="caret">⌄</span></button>{accountMenu ? <div className="account-popover"><button type="button" onClick={() => navigate('security')}><Icon name="shield" />账号安全</button><button disabled={working} type="button" onClick={() => void signOut()}><Icon name="logout" />{working ? '正在退出…' : '退出登录'}</button></div> : null}</div>
       </div>
     </header>
     <main className="console-main">

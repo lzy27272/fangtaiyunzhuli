@@ -170,6 +170,32 @@ test('managed accounts keep independent sessions and hotel scopes', async (t) =>
   assert.match(persisted, /"version": 2/u)
 })
 
+test('store manager and administrator roles keep distinct hotel scopes', async (t) => {
+  const fixture = await createFixture()
+  t.after(() => rm(fixture.directory, { recursive: true, force: true }))
+  const hotel001 = '20000000-0000-4000-8000-000000000001'
+
+  const storeManager = fixture.store.createAccount({
+    username: 'store-manager',
+    displayName: '001门店店长',
+    password: 'example-Store-Manager-Password-42',
+    roles: ['GENERAL_MANAGER'],
+    hotelIds: [hotel001],
+  })
+  assert.deepEqual(storeManager.roles, ['GENERAL_MANAGER'])
+  assert.deepEqual(storeManager.hotelIds, [hotel001])
+
+  const administrator = fixture.store.createAccount({
+    username: 'second-admin',
+    displayName: '第二管理员',
+    password: 'example-Second-Admin-Password-42',
+    roles: ['PLATFORM_ADMIN'],
+    hotelIds: [],
+  })
+  assert.deepEqual(administrator.roles, ['PLATFORM_ADMIN'])
+  assert.equal(administrator.hotelIds, null)
+})
+
 test('version one administrator state migrates without changing the login password', async (t) => {
   const fixture = await createFixture()
   t.after(() => rm(fixture.directory, { recursive: true, force: true }))

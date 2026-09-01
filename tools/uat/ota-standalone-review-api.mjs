@@ -1261,6 +1261,22 @@ const luopanBrowserConfigFor = (hotelId) => {
   }
 }
 
+const luopanBrowserRepairFor = (hotelId) => {
+  const config = luopanBrowserConfigRecordFor(hotelId)
+  return {
+    providerCode: config.providerCode,
+    portalUrl: config.portalUrl,
+    enabled: config.enabled,
+    profileConfigured: Boolean(config.profileRef),
+    scopeStatus: config.scopeStatus,
+    lastValidatedAt: config.lastValidatedAt,
+    lastBusinessDate: config.lastBusinessDate,
+    lastCollectionStatus: config.lastCollectionStatus,
+    lastCollectionAt: config.lastCollectionAt,
+    lastErrorCode: config.lastErrorCode,
+  }
+}
+
 const persistLuopanBrowserConfigs = () => {
   if (!luopanBrowserConfigPath) return
   mkdirSync(dirname(luopanBrowserConfigPath), { recursive: true })
@@ -6791,13 +6807,28 @@ const requireAuth = (request, response) => {
 const isPlatformAdmin = (principal) =>
   Boolean(principal?.roles?.includes('PLATFORM_ADMIN'))
 
-const canConfigureHotels = (principal) => Boolean(
-  principal?.roles?.some((role) => [
-    'PLATFORM_ADMIN',
-    'OTA_OPERATION_MANAGER',
-    'REVENUE_MANAGER',
-  ].includes(role)),
-)
+const canConfigureHotels = (principal) => isPlatformAdmin(principal)
+
+const ASSIGNABLE_REVIEW_ROLES = new Set([
+  'PLATFORM_ADMIN',
+  'GENERAL_MANAGER',
+  'OTA_OPERATION_MANAGER',
+  'OTA_OPERATION_ASSISTANT',
+  'CEO',
+  'REGIONAL_MANAGER',
+])
+
+const REPAIR_WRITE_SUFFIXES = new Set([
+  '/bieyanghong-workspace',
+  '/bieyanghong-repair',
+  '/ota-controlled-logins',
+  '/ota-controlled-login-verifications',
+  '/luopan-browser-session-validations',
+  '/pms-login-config',
+])
+
+const assignableReviewRoles = (roles) =>
+  roles.length > 0 && roles.every((role) => ASSIGNABLE_REVIEW_ROLES.has(role))
 
 const canAccessHotel = (principal, hotelId) =>
   isPlatformAdmin(principal)
@@ -7333,7 +7364,7 @@ const server = createServer(async (request, response) => {
       const roles = Array.isArray(body.roles) ? body.roles : []
       const hotelIds = Array.isArray(body.hotelIds) ? body.hotelIds : []
       if (
-        roles.includes('PLATFORM_ADMIN')
+        !assignableReviewRoles(roles)
         || hotelIds.some((hotelId) =>
           !hotels.some((hotel) => hotel.hotelId === hotelId))
       ) throw new Error('REVIEW_AUTH_HOTEL_SCOPE_INVALID')
@@ -7365,7 +7396,7 @@ const server = createServer(async (request, response) => {
         account.id === managedAccountMatch[1])
       if (!existing) throw new Error('REVIEW_AUTH_ACCOUNT_NOT_FOUND')
       if (
-        (!existing.roles.includes('PLATFORM_ADMIN') && roles.includes('PLATFORM_ADMIN'))
+        !assignableReviewRoles(roles)
         || hotelIds.some((hotelId) =>
           !hotels.some((hotel) => hotel.hotelId === hotelId))
       ) throw new Error('REVIEW_AUTH_HOTEL_SCOPE_INVALID')
@@ -7594,6 +7625,7 @@ const server = createServer(async (request, response) => {
       if (
         !['GET', 'HEAD'].includes(request.method ?? '')
         && !canConfigureHotels(requestPrincipal)
+        && !REPAIR_WRITE_SUFFIXES.has(suffix)
       ) {
         rejectForbidden(response)
         return
@@ -7755,10 +7787,18 @@ const server = createServer(async (request, response) => {
       }
 
       if (request.method === 'GET' && suffix === '/configuration') {
+        if (!canConfigureHotels(requestPrincipal)) {
+          rejectForbidden(response)
+          return
+        }
         json(response, 200, { data: configurationFor(hotelId) })
         return
       }
       if (request.method === 'GET' && suffix === '/report-sources') {
+        if (!canConfigureHotels(requestPrincipal)) {
+          rejectForbidden(response)
+          return
+        }
         if (!reportSourcesByHotel.has(hotelId)) {
           if (selected.pmsSystemCode === 'LUOPAN_CLOUD') {
             reportSourcesByHotel.set(hotelId, [])
@@ -7845,11 +7885,24 @@ const server = createServer(async (request, response) => {
         return
       }
       if (request.method === 'GET' && suffix === '/ota-sources') {
+        const decorated = decorateOtaSources(
+          hotelId,
+          otaSourcesByHotel.get(hotelId) ?? [],
+        )
         json(response, 200, {
-          data: decorateOtaSources(
-            hotelId,
-            otaSourcesByHotel.get(hotelId) ?? [],
-          ),
+          data: canConfigureHotels(requestPrincipal)
+            ? decorated
+            : decorated.map((source) => ({
+                ...source,
+                portalUrl: '',
+                dataEndpointUrl: '',
+                requestPayloadJson: '',
+                pollIntervalMinutes: 0,
+                cookieConfigured: false,
+                cookieUpdatedAt: null,
+                credentialsConfigured: false,
+                credentialsUpdatedAt: null,
+              })),
         })
         return
       }
@@ -7962,8 +8015,21 @@ const server = createServer(async (request, response) => {
         request.method === 'GET'
         && suffix === '/luopan-browser-config'
       ) {
+        if (!canConfigureHotels(requestPrincipal)) {
+          rejectForbidden(response)
+          return
+        }
         json(response, 200, {
           data: luopanBrowserConfigFor(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'GET'
+        && suffix === '/luopan-browser-repair'
+      ) {
+        json(response, 200, {
+          data: luopanBrowserRepairFor(hotelId),
         })
         return
       }
@@ -8058,7 +8124,9 @@ const server = createServer(async (request, response) => {
           })
           persistLuopanBrowserConfigs()
           json(response, 200, {
-            data: luopanBrowserConfigFor(hotelId),
+            data: canConfigureHotels(requestPrincipal)
+              ? luopanBrowserConfigFor(hotelId)
+              : luopanBrowserRepairFor(hotelId),
           })
           return
         } catch (error) {
@@ -8093,6 +8161,16 @@ const server = createServer(async (request, response) => {
           || !['KEEP', 'REPLACE', 'CLEAR'].includes(credentialUpdate.action)
         ) {
           throw new Error('PMS_LOGIN_CONFIG_INVALID')
+        }
+        if (
+          !canConfigureHotels(requestPrincipal)
+          && (
+            body.reasonCode !== 'UPDATE_PMS_LOGIN_CREDENTIALS'
+            || credentialUpdate.action !== 'REPLACE'
+          )
+        ) {
+          rejectForbidden(response)
+          return
         }
         if (
           trustedDeviceEligible(selected)

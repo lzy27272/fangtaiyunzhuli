@@ -92,7 +92,7 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
           username: 'scoped-operator',
           displayName: '001门店管理员',
           password: 'example-Scoped-Operator-Password-42',
-          roles: ['OTA_OPERATION_MANAGER'],
+          roles: ['GENERAL_MANAGER'],
           hotelIds: [hotel001.hotelId],
         }),
       },
@@ -120,6 +120,32 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
     const visibleHotels = (await scopedDirectory.json()).data.hotels
     assert.deepEqual(visibleHotels.map((hotel) => hotel.hotelCode), ['001'])
 
+    const hotelBasePath =
+      `/api/v1/ota/tenants/${encodeURIComponent(hotel001.tenantId)}`
+      + `/hotels/${encodeURIComponent(hotel001.hotelId)}`
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/configuration`,
+      { headers: operatorHeaders },
+    )).status, 403)
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/report-sources`,
+      { headers: operatorHeaders },
+    )).status, 403)
+    const sanitizedOtaResponse = await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/ota-sources`,
+      { headers: operatorHeaders },
+    )
+    assert.equal(sanitizedOtaResponse.status, 200)
+    const sanitizedOtaSources = (await sanitizedOtaResponse.json()).data
+    assert.ok(sanitizedOtaSources.every((source) =>
+      source.portalUrl === ''
+      && source.dataEndpointUrl === ''
+      && source.requestPayloadJson === ''))
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/pms-login-config`,
+      { headers: operatorHeaders },
+    )).status, 200)
+
     const scopedPath = (hotel) =>
       `/api/v1/ota/tenants/${encodeURIComponent(hotel.tenantId)}`
       + `/hotels/${encodeURIComponent(hotel.hotelId)}/trusted-device`
@@ -139,7 +165,7 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           displayName: '002门店管理员',
-          roles: ['OTA_OPERATION_MANAGER'],
+          roles: ['GENERAL_MANAGER'],
           hotelIds: [hotel002.hotelId],
           enabled: true,
         }),
@@ -150,6 +176,22 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
       `http://127.0.0.1:${port}/api/v1/ota/simulation/hotels`,
       { headers: operatorHeaders },
     )).status, 401)
+
+    const cancelledRoleResponse = await fetch(
+      `http://127.0.0.1:${port}/api/v1/auth/accounts`,
+      {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'legacy-role-user',
+          displayName: '已取消角色测试',
+          password: 'example-Legacy-Role-Password-42',
+          roles: ['REVENUE_MANAGER'],
+          hotelIds: [hotel001.hotelId],
+        }),
+      },
+    )
+    assert.equal(cancelledRoleResponse.status, 400)
   } finally {
     if (child.exitCode === null) {
       child.kill()

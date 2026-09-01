@@ -212,6 +212,19 @@ export interface LuopanBrowserConfigView {
   rowVersion: number
 }
 
+export interface LuopanBrowserRepairView {
+  providerCode: 'LUOPAN_CLOUD'
+  portalUrl: string
+  enabled: boolean
+  profileConfigured: boolean
+  scopeStatus: 'NOT_VALIDATED' | 'SINGLE_HOTEL_CONFIRMED'
+  lastValidatedAt: string | null
+  lastBusinessDate: string | null
+  lastCollectionStatus: 'NEVER' | 'COMPLETE' | 'PARTIAL' | 'FAILED'
+  lastCollectionAt: string | null
+  lastErrorCode: string | null
+}
+
 export type OtaPlatformCode =
   | 'CTRIP'
   | 'MEITUAN'
@@ -1181,6 +1194,25 @@ export function saveLuopanBrowserConfig(
 export function validateLuopanBrowserConfig(
   context: HotelContext,
 ): Promise<LuopanBrowserConfigView> {
+  return postCommand(
+    scopedPath(context, '/luopan-browser-session-validations'),
+    {
+      reasonCode: 'VALIDATE_LUOPAN_BROWSER_SESSION',
+    },
+  )
+}
+
+export function loadLuopanBrowserRepair(
+  context: HotelContext,
+): Promise<LuopanBrowserRepairView> {
+  return authenticatedRequest(
+    scopedPath(context, '/luopan-browser-repair'),
+  )
+}
+
+export function validateLuopanBrowserRepair(
+  context: HotelContext,
+): Promise<LuopanBrowserRepairView> {
   return postCommand(
     scopedPath(context, '/luopan-browser-session-validations'),
     {

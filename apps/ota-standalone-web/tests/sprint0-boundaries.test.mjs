@@ -57,6 +57,18 @@ test('Sprint 0 web does not persist access tokens in browser storage', () => {
   assert.equal(sessionSource.includes('sessionStorage'), false)
 })
 
+test('people permissions expose the current roles and retire canceled roles from assignment', () => {
+  const roleOptionsBlock = peoplePermissionsSource.slice(
+    peoplePermissionsSource.indexOf('const ROLE_OPTIONS'),
+    peoplePermissionsSource.indexOf('const ASSIGNABLE_ROLES'),
+  )
+  assert.match(roleOptionsBlock, /'PLATFORM_ADMIN'/)
+  assert.match(roleOptionsBlock, /'GENERAL_MANAGER'/)
+  assert.match(roleOptionsBlock, /'OTA_OPERATION_MANAGER'/)
+  assert.doesNotMatch(roleOptionsBlock, /'REVENUE_MANAGER'|'HOTEL_P1_HANDLER'/)
+  assert.match(peoplePermissionsSource, /只有管理员可以查看及编辑采集配置；其他角色仅能进入登录修复/)
+})
+
 test('operations console exposes store, exception, people and scoped store-detail pages', () => {
   assert.match(appSource, /StoreOverviewPage/)
   assert.match(appSource, /StoreDetailPage/)
@@ -75,7 +87,8 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.match(monitorSource, /系统会按旺季\/节假日与普通日期的动态时段采集/)
   assert.match(monitorSource, /重新采集已配置报表/)
   assert.match(monitorSource, /进入报表接口核对配置/)
-  assert.match(storeConsoleSource, /setTab\('collection'\)/)
+  assert.match(storeConsoleSource, /const connectionTab(?:: StoreTab)? = canConfigure \? 'collection' : 'repair'/)
+  assert.match(storeConsoleSource, /setTab\(connectionTab\)/)
   assert.match(storeConsoleSource, /attentionItems=\{\[\]\}/)
   assert.match(monitorSource, /incompleteMonitorAttention/)
   assert.match(monitorSource, /reportSourceGuidance/)
@@ -181,8 +194,10 @@ test('new hotels use an explicit PMS template without copying store secrets or O
 
 test('report source administration and scoped revenue configuration stay separate', () => {
   assert.match(appSource, /const platformAdmin = session\.account\.roles\.includes\('PLATFORM_ADMIN'\)/)
-  assert.match(appSource, /canRevenueConfigure = canConfigure[\s\S]*REVENUE_MANAGER/)
-  assert.match(storeConsoleSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canConfigure\}/)
+  assert.match(appSource, /const canConfigure = platformAdmin/)
+  assert.match(appSource, /canRevenueConfigure = platformAdmin[\s\S]*OTA_OPERATION_MANAGER/)
+  assert.match(storeConsoleSource, /tab === 'collection' && canConfigure[\s\S]*ReportSourceConfigPage[\s\S]*canConfigure/)
+  assert.match(storeConsoleSource, /tab === 'repair'[\s\S]*StoreRepairPanel/)
   assert.match(storeConsoleSource, /MappingTargetPage context=\{context\} canConfigure=\{canRevenueConfigure\}/)
 })
 
@@ -292,7 +307,7 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(fliggySourceCollectorSource, /OTA_FLIGGY_PAGINATION_STALLED/)
   assert.doesNotMatch(monitorSource, /bestPeerPoiId/)
   assert.match(monitorSource, /直达修改/)
-  assert.match(storeConsoleSource, /setTab\('collection'\)/)
+  assert.match(storeConsoleSource, /setTab\(connectionTab\)/)
   assert.match(businessApiSource, /\/ota-sources/)
   assert.match(businessApiSource, /\/ota-source-refreshes/)
   assert.match(reviewApiSource, /ota-source-configs\.json/)

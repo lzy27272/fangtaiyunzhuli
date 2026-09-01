@@ -186,7 +186,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @keyframes drawer-in { from { transform: translateX(30px); opacity: .7; } }
 .side-drawer > header, .side-drawer > footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 20px 24px; border-bottom: 1px solid var(--console-line); }.side-drawer > footer { justify-content: flex-end; border-top: 1px solid var(--console-line); border-bottom: 0; }.side-drawer h2 { margin: 0; font-size: 1.25rem; }.side-drawer .section-kicker { margin-bottom: .35rem; }
 .drawer-body { overflow: auto; padding: 24px; }.form-stack { display: grid; align-content: start; gap: 1rem; }.form-stack label small { color: var(--console-muted); font-weight: 500; }.form-stack fieldset { margin: .3rem 0; padding: 1rem; border: 1px solid var(--console-line); border-radius: 7px; }.form-stack legend { padding: 0 .3rem; color: #405149; font-size: .78rem; font-weight: 800; }
-.checkbox-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }.checkbox-grid label, .toggle-field { display: flex; align-items: center; gap: .5rem; color: #495b53; font-size: .75rem; font-weight: 600; }.hotel-grid { grid-template-columns: 1fr; max-height: 250px; overflow: auto; }.empty-inline { padding: 1rem; color: var(--console-muted); font-size: .75rem; }
+.checkbox-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }.checkbox-grid label, .toggle-field { display: flex; align-items: center; gap: .5rem; color: #495b53; font-size: .75rem; font-weight: 600; }.checkbox-grid input[type='checkbox'], .toggle-field input[type='checkbox'] { width: auto; flex: 0 0 auto; margin: 0; padding: 0; }.hotel-grid { grid-template-columns: 1fr; max-height: 250px; overflow: auto; }.empty-inline { padding: 1rem; color: var(--console-muted); font-size: .75rem; }
 
 /* People */
 .data-table { border: 1px solid var(--console-line); border-radius: 7px; background: #fff; overflow: hidden; }.data-table .table-head, .data-table .table-row { display: grid; align-items: center; gap: 1rem; padding: .78rem 1rem; border-bottom: 1px solid var(--console-line); }.data-table .table-head { color: var(--console-muted); background: #f7f9f8; font-size: .68rem; font-weight: 800; }.data-table .table-row { min-height: 62px; font-size: .75rem; }.data-table .table-row:last-child { border-bottom: 0; }.people-table .table-head, .people-table .table-row { grid-template-columns: 1.1fr 1.3fr .75fr .55fr .75fr auto; }.person-cell { display: flex; align-items: center; gap: .65rem; }.person-cell i { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: var(--console-green); background: var(--console-green-soft); font-style: normal; font-weight: 800; }.person-cell b, .data-table span { min-width: 0; }.person-cell b, .audit-table span { display: grid; gap: .12rem; }.person-cell small, .audit-table small { color: var(--console-muted); font-weight: 500; }
@@ -238,4 +238,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .side-drawer > header, .side-drawer > footer { padding: 16px; }.drawer-body { padding: 18px 16px; }.checkbox-grid { grid-template-columns: 1fr; }
   .exception-summary { grid-template-columns: repeat(2, 1fr); }.issue-list > article { gap: .65rem; padding: .7rem; }.issue-store small { display: none; }
   .audit-table .table-head { display: none; }.audit-table .table-row { grid-template-columns: 1fr; gap: .25rem; }
+}
+
+.repair-access-layout { display: grid; gap: 18px; }
+.repair-access-intro { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; }
+.repair-access-intro h2, .repair-access-intro p { margin: 0; }
+.repair-access-intro p { margin-top: 5px; color: var(--console-muted); }
+.repair-credential-card .report-source-form { margin-top: 16px; }
+.repair-credential-card .button-row { justify-content: flex-end; margin-top: 16px; }
+
+@media (max-width: 720px) {
+  .repair-access-intro { grid-template-columns: auto minmax(0, 1fr); }
+  .repair-access-intro > .status-label { grid-column: 1 / -1; justify-self: start; }
 }

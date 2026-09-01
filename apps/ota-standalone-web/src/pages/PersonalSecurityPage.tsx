@@ -4,9 +4,10 @@ import { setSession, type AuthSession, type OtaRole } from '../auth/session'
 import { Icon, Status } from '../components/ConsoleUi'
 
 const ROLE_LABELS: Record<OtaRole, string> = {
-  PLATFORM_ADMIN: '平台管理员', OTA_OPERATION_ASSISTANT: 'OTA 运营助理',
-  OTA_OPERATION_MANAGER: 'OTA 运营经理', CEO: '总经理',
-  REGIONAL_MANAGER: '区域经理', REVENUE_MANAGER: '收益经理', HOTEL_P1_HANDLER: '异常处理人',
+  PLATFORM_ADMIN: '管理员', OTA_OPERATION_ASSISTANT: 'OTA 运营助理',
+  OTA_OPERATION_MANAGER: '运营总监', CEO: '总经理',
+  REGIONAL_MANAGER: '区域经理', GENERAL_MANAGER: '店长',
+  REVENUE_MANAGER: '已取消：收益经理', HOTEL_P1_HANDLER: '已取消：异常处理人',
 }
 
 export function PersonalSecurityPage({ session, onSessionChange }: { session: AuthSession; onSessionChange: (session: AuthSession) => void }) {
