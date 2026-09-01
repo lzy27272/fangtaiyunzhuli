@@ -189,7 +189,7 @@ test('submits transient manager credentials before requesting the SMS code', asy
     page,
     context,
     phone: '13800138000',
-    password: 'temporary-example-password',
+    password: 'example-temporary-password',
   })
 
   assert.ok(calls.some((call) =>
@@ -199,7 +199,7 @@ test('submits transient manager credentials before requesting the SMS code', asy
   assert.ok(calls.some((call) =>
     call.action === 'fill'
     && call.selector === bieyanghongLoginSelectors.secretInput
-    && call.value === 'temporary-example-password'))
+    && call.value === 'example-temporary-password'))
   assert.ok(calls.some((call) =>
     call.action === 'click'
     && call.selector === bieyanghongLoginSelectors.agreement))
@@ -234,7 +234,7 @@ test('keeps the browser open for manager-operated Meituan risk verification', as
     page,
     context,
     phone: '13800138000',
-    password: 'temporary-example-password',
+    password: 'example-temporary-password',
   })
 
   assert.equal(prepared.alreadyAuthenticated, false)

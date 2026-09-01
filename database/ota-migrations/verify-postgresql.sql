@@ -354,7 +354,7 @@ BEGIN
     END IF;
 
     IF NOT control.jsonb_contains_forbidden_secret_key('{"bearer_value":"forbidden"}'::JSONB) THEN
-        RAISE EXCEPTION 'Secret-key JSON guard did not reject bearer fragments';
+        RAISE EXCEPTION 'Secret-key JSON guard did not reject bearer-field fragments';
     END IF;
 
     IF NOT control.jsonb_contains_forbidden_secret_key('{"secret_ref_token":"forbidden"}'::JSONB) THEN

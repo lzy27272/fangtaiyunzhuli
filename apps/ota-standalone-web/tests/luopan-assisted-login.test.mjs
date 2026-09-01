@@ -38,7 +38,7 @@ test('Luopan assisted login accepts the live userId account field', async () => 
   const { page, calls } = fakePage()
   const captcha = await prepareLuopanLoginPage(page, {
     username: 'example-user',
-    password: 'sample',
+    password: 'example-sample',
   })
 
   assert.match(luopanLoginPageSelectors.username, /name="userId"/u)
@@ -57,7 +57,7 @@ test('Luopan assisted login reports a stable form error code', async () => {
   await assert.rejects(
     prepareLuopanLoginPage(page, {
       username: 'example-user',
-      password: 'sample',
+      password: 'example-sample',
     }),
     { message: 'LUOPAN_LOGIN_FORM_UNAVAILABLE' },
   )
@@ -71,7 +71,7 @@ test('Luopan assisted login reports a stable captcha error code', async () => {
   await assert.rejects(
     prepareLuopanLoginPage(page, {
       username: 'example-user',
-      password: 'sample',
+      password: 'example-sample',
     }),
     { message: 'LUOPAN_CAPTCHA_UNAVAILABLE' },
   )

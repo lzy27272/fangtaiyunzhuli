@@ -15,7 +15,7 @@ test('gateway URL is pinned to the vendor read-only gateway', () => {
     scopeId: 'scope-1',
     hotelId: 'hotel-1',
     sobCode: 'code-1',
-    password: 'secret-value',
+    password: 'example-secret-value',
     query: { query_date: '2026-08-03' },
   })
 
@@ -36,7 +36,7 @@ test('gateway URL rejects paths outside the allowlisted endpoint shape', () => {
       scopeId: 'scope-1',
       hotelId: 'hotel-1',
       sobCode: 'code-1',
-      password: 'secret-value',
+      password: 'example-secret-value',
     }),
     /ENDPOINT_NOT_ALLOWED/,
   )
