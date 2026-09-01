@@ -152,6 +152,7 @@ export function MonitorPage({
   const [run, setRun] = useState<LiveCollectionRunView | null>(null)
   const [hotRoomTypeCodes, setHotRoomTypeCodes] = useState<string[]>([])
   const [savedHotRoomTypeCodes, setSavedHotRoomTypeCodes] = useState<string[]>([])
+  const [hotRoomRowVersion, setHotRoomRowVersion] = useState(0)
   const [reportSources, setReportSources] = useState<ReportSourceView[]>([])
   const [otaSources, setOtaSources] = useState<OtaSourceView[]>([])
   const [luopanConfig, setLuopanConfig] =
@@ -183,6 +184,7 @@ export function MonitorPage({
       setMonitor(monitorView)
       setHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
       setSavedHotRoomTypeCodes(hotRoomConfig.roomTypeCodes)
+      setHotRoomRowVersion(hotRoomConfig.rowVersion)
       setReportSources(sourceConfig)
       setOtaSources(otaSourceConfig)
       setLuopanConfig(luopanConfigView)
@@ -219,6 +221,7 @@ export function MonitorPage({
     if (!context) {
       setHotRoomTypeCodes([])
       setSavedHotRoomTypeCodes([])
+      setHotRoomRowVersion(0)
       setReportSources([])
       setOtaSources([])
       setLuopanConfig(null)
@@ -243,9 +246,11 @@ export function MonitorPage({
       const saved = await saveHotSellingRoomTypes(
         context,
         hotRoomTypeCodes,
+        hotRoomRowVersion,
       )
       setHotRoomTypeCodes(saved.roomTypeCodes)
       setSavedHotRoomTypeCodes(saved.roomTypeCodes)
+      setHotRoomRowVersion(saved.rowVersion)
       setMonitor(await loadMonitor(context))
       setNotice('热销房型配置已保存；可售为0或以下时生成独立售罄预警。')
     } catch (cause) {

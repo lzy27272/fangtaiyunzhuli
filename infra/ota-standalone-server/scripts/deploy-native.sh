@@ -26,6 +26,8 @@ protected_paths=(
   /var/lib/sifangguan-ota/ota-source-secrets.json
   /var/lib/sifangguan-ota/luopan-session-secrets.json
   /var/lib/sifangguan-ota/hot-selling-room-types.json
+  /var/lib/sifangguan-ota/room-type-mappings.json
+  /var/lib/sifangguan-ota/ota-room-type-catalogs.json
   /var/lib/sifangguan-ota/business-day-controls.json
   /var/lib/sifangguan-ota/luopan-browser-configs.json
   /var/lib/sifangguan-ota/luopan-session-secrets.json
@@ -80,7 +82,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "${listing_file}"; then
   exit 2
 fi
 if grep -Eiq \
-  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry(-[^/]+)?\.json|runtime\.env)$' \
+  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|hot-selling-room-types\.json|room-type-mappings\.json|ota-room-type-catalogs\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry(-[^/]+)?\.json|runtime\.env)$' \
   "${listing_file}"; then
   echo "RELEASE_ARCHIVE_FORBIDDEN_CONTENT" >&2
   exit 2

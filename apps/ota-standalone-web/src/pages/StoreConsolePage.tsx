@@ -3,18 +3,18 @@ import {
   listSimulationHotels,
   loadBriefs,
   loadConfiguration,
-  loadHotSellingRoomTypes,
   loadIncidents,
   loadMonitor,
   loadOtaSources,
+  loadRoomTypeConfiguration,
   loadWeComConfig,
-  saveHotSellingRoomTypes,
   triggerLiveCollection,
   type BriefView,
   type HotelContext,
   type IncidentView,
   type MonitorView,
   type OtaSourceView,
+  type RoomTypeConfigurationView,
   type SimulationConfiguration,
   type SimulationHotelView,
   type WeComConfigView,
@@ -35,6 +35,7 @@ import {
   unitLabel,
 } from '../ui/businessDisplay'
 import { HistoryPage } from './HistoryPage'
+import { HotSellingRoomConfigPanel } from './HotSellingRoomConfigPanel'
 import { MappingTargetPage } from './MappingTargetPage'
 import { ReportSourceConfigPage } from './ReportSourceConfigPage'
 import { StoreRepairPanel } from './StoreRepairPanel'
@@ -278,12 +279,12 @@ interface DetailData {
   wecom: WeComConfigView | null
   briefs: BriefView[]
   incidents: IncidentView[]
-  hotSelling: string[]
+  roomTypes: RoomTypeConfigurationView | null
 }
 
 const emptyDetail: DetailData = {
   configuration: null, monitor: null, otaSources: [], wecom: null,
-  briefs: [], incidents: [], hotSelling: [],
+  briefs: [], incidents: [], roomTypes: null,
 }
 
 export function StoreDetailPage({
@@ -309,7 +310,6 @@ export function StoreDetailPage({
   const [error, setError] = useState('')
   const [collecting, setCollecting] = useState(false)
   const [notice, setNotice] = useState('')
-  const [hotSellingDraft, setHotSellingDraft] = useState<string[]>([])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -317,7 +317,7 @@ export function StoreDetailPage({
     const results = await Promise.allSettled([
       loadConfiguration(context), loadMonitor(context), loadOtaSources(context),
       loadWeComConfig(context), loadBriefs(context), loadIncidents(context),
-      loadHotSellingRoomTypes(context),
+      loadRoomTypeConfiguration(context),
     ])
     setData({
       configuration: results[0].status === 'fulfilled' ? results[0].value : null,
@@ -326,10 +326,13 @@ export function StoreDetailPage({
       wecom: results[3].status === 'fulfilled' ? results[3].value : null,
       briefs: results[4].status === 'fulfilled' ? results[4].value : [],
       incidents: results[5].status === 'fulfilled' ? results[5].value : [],
-      hotSelling: results[6].status === 'fulfilled' ? results[6].value.roomTypeCodes : [],
+      roomTypes: results[6].status === 'fulfilled' ? results[6].value : null,
     })
-    if (results.every((result) => result.status === 'rejected')) setError('门店数据暂时不可用，请检查连接状态。')
-    if (results[6].status === 'fulfilled') setHotSellingDraft(results[6].value.roomTypeCodes)
+    if (results.every((result) => result.status === 'rejected')) {
+      setError('门店数据暂时不可用，请检查连接状态。')
+    } else if (results[6].status === 'rejected') {
+      setError('房型配置服务读取失败，请刷新后重试；PMS 采集数据未被修改。')
+    }
     setLoading(false)
   }, [context])
 
@@ -347,15 +350,6 @@ export function StoreDetailPage({
     } catch (cause) {
       setError(businessErrorMessage(cause, '采集触发失败'))
     } finally { setCollecting(false) }
-  }
-
-  const saveHotSelling = async () => {
-    try {
-      const saved = await saveHotSellingRoomTypes(context, [...new Set(hotSellingDraft)])
-      setData((current) => ({ ...current, hotSelling: saved.roomTypeCodes }))
-      setHotSellingDraft(saved.roomTypeCodes)
-      setNotice('热销房型配置已保存。')
-    } catch (cause) { setError(businessErrorMessage(cause, '热销房型保存失败')) }
   }
 
   const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, incidents: data.incidents, unavailable: Boolean(error) }
@@ -427,27 +421,20 @@ export function StoreDetailPage({
 
       {!loading && tab === 'operations' ? (
         <div className="operations-layout">
-          <section className="content-panel operation-quick-config">
-            <div className="section-heading small"><div><h2>热销房型</h2><p>直接勾选需要重点关注的房型，无需填写系统编码。</p></div></div>
-            <div className="room-type-picker">
-              {(data.monitor?.inventory ?? []).map((roomType) => (
-                <label key={roomType.physicalRoomTypeCode}>
-                  <input
-                    checked={hotSellingDraft.includes(roomType.physicalRoomTypeCode)}
-                    disabled={!canRevenueConfigure}
-                    type="checkbox"
-                    onChange={(event) => setHotSellingDraft((current) => event.target.checked
-                      ? [...current, roomType.physicalRoomTypeCode]
-                      : current.filter((code) => code !== roomType.physicalRoomTypeCode))}
-                  />
-                  <span>{roomType.displayName}</span>
-                </label>
-              ))}
-              {!data.monitor?.inventory?.length ? <EmptyState title="暂无可选房型" detail="完成一次酒店系统采集后即可直接勾选。" /> : null}
-            </div>
-            <button className="primary-button" disabled={!canRevenueConfigure} type="button" onClick={() => void saveHotSelling()}>保存热销房型</button>
-          </section>
-          <div className="embedded-legacy-page"><MappingTargetPage context={context} canConfigure={canRevenueConfigure} /></div>
+          {data.roomTypes ? (
+            <HotSellingRoomConfigPanel
+              canConfigure={canRevenueConfigure}
+              configuration={data.roomTypes}
+              context={context}
+              onSaved={(roomTypes) => setData((current) => ({
+                ...current,
+                roomTypes,
+              }))}
+            />
+          ) : (
+            <EmptyState title="房型配置暂不可用" detail="房型配置服务读取失败，请刷新后重试；这不等同于 PMS 尚未采集。" />
+          )}
+          <div className="embedded-legacy-page"><MappingTargetPage context={context} canConfigure={canRevenueConfigure} showProductMappings={false} /></div>
         </div>
       ) : null}
 

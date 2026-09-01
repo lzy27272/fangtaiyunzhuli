@@ -25,6 +25,12 @@ import {
 import { createReviewAuthStore } from './review-auth-store.mjs'
 import { collectOtaSource } from './ota-source-collector.mjs'
 import {
+  mergeRoomTypeCatalogs,
+  mergeRoomTypeCatalogsPreserving,
+  normalizeStoredRoomTypeMappings,
+  validateRoomTypeMappings,
+} from './room-type-catalog.mjs'
+import {
   builtInFliggyEndpointUrl,
   fliggyBuiltInFallbackSource,
   sanitizeFliggyEndpointUrl,
@@ -227,6 +233,12 @@ const businessDayControlPath = dataPath
   : null
 const hotSellingRoomTypePath = dataPath
   ? join(dirname(dataPath), 'hot-selling-room-types.json')
+  : null
+const roomTypeMappingPath = dataPath
+  ? join(dirname(dataPath), 'room-type-mappings.json')
+  : null
+const otaRoomTypeCatalogPath = dataPath
+  ? join(dirname(dataPath), 'ota-room-type-catalogs.json')
   : null
 const simulationHotelPath = dataPath
   ? join(dirname(dataPath), 'simulation-hotels.json')
@@ -438,6 +450,7 @@ const bieyanghongTargetedRecoveryResults = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
 const businessDayControlsByHotel = new Map()
 const hotSellingRoomTypesByHotel = new Map()
+const otaRoomTypeCatalogsByHotel = new Map()
 const weComConfigsByHotel = new Map()
 const weComSecretsByHotel = new Map()
 const weComDeliveriesByKey = new Map()
@@ -1421,6 +1434,7 @@ const normalizeOtaSources = (
     previousSources.map((source) => [source.sourceId, source]),
   )
   const normalized = input.map((source) => {
+    const previous = previousById.get(source?.sourceId)
     const cookieUpdate = source?.cookieUpdate ?? { action: 'KEEP' }
     const credentialUpdate =
       source?.credentialUpdate ?? { action: 'KEEP' }
@@ -1477,12 +1491,38 @@ const normalizeOtaSources = (
     ) {
       throw new Error('OTA_SOURCE_SCHEMA_INVALID')
     }
-    const previous = previousById.get(source.sourceId)
+    if (
+      !persisted
+      && (
+        (previous && source.rowVersion !== previous.rowVersion)
+        || (!previous && source.rowVersion !== 0)
+      )
+    ) {
+      throw new Error('OTA_SOURCE_VERSION_CONFLICT')
+    }
     const lastState = persisted ? source : previous
     const pollIntervalMinutes =
       persisted && source.pollIntervalPolicyVersion !== 1
         ? OTA_DEFAULT_POLL_INTERVAL_MINUTES
         : source.pollIntervalMinutes
+    const normalizedPortalUrl = normalizeOptionalOtaUrl(source.portalUrl)
+    const normalizedDataEndpointUrl = normalizeOptionalOtaUrl(
+      source.dataEndpointUrl,
+    )
+    const normalizedRequestPayloadJson =
+      requestPayload === null ? '' : JSON.stringify(requestPayload)
+    const sourceConfigurationChanged = !previous || [
+      ['displayName', source.displayName.trim()],
+      ['platformCode', source.platformCode],
+      ['portalUrl', normalizedPortalUrl],
+      ['dataEndpointUrl', normalizedDataEndpointUrl],
+      ['requestMethod', source.requestMethod],
+      ['requestPayloadJson', normalizedRequestPayloadJson],
+      ['pollIntervalMinutes', pollIntervalMinutes],
+      ['enabled', source.enabled],
+    ].some(([key, value]) => previous?.[key] !== value)
+      || cookieUpdate.action !== 'KEEP'
+      || credentialUpdate.action !== 'KEEP'
     return {
       sourceId: source.sourceId,
       displayName: source.displayName.trim(),
@@ -1490,8 +1530,7 @@ const normalizeOtaSources = (
       portalUrl: normalizeOptionalOtaUrl(source.portalUrl),
       dataEndpointUrl: normalizeOptionalOtaUrl(source.dataEndpointUrl),
       requestMethod: source.requestMethod,
-      requestPayloadJson:
-        requestPayload === null ? '' : JSON.stringify(requestPayload),
+      requestPayloadJson: normalizedRequestPayloadJson,
       pollIntervalMinutes,
       pollIntervalPolicyVersion: 1,
       enabled: source.enabled,
@@ -1554,7 +1593,11 @@ const normalizeOtaSources = (
           <= fliggyControlledLoginPolicy.maxAttemptsPerWindow
           ? lastState.loginAttemptCount
           : 0,
-      rowVersion: persisted ? source.rowVersion : source.rowVersion + 1,
+      rowVersion: persisted
+        ? source.rowVersion
+        : sourceConfigurationChanged
+          ? (previous?.rowVersion ?? 0) + 1
+          : previous.rowVersion,
     }
   })
   if (
@@ -1564,6 +1607,47 @@ const normalizeOtaSources = (
     throw new Error('OTA_SOURCE_DUPLICATE')
   }
   return normalized
+}
+
+const assertOtaSourceDeletions = (
+  input,
+  previousSources,
+  remainingSources,
+) => {
+  if (!Array.isArray(input) || input.length > 10) {
+    throw new Error('OTA_SOURCE_VERSION_CONFLICT')
+  }
+  const remainingIds = new Set(remainingSources.map(
+    (source) => source.sourceId,
+  ))
+  const previousById = new Map(previousSources.map(
+    (source) => [source.sourceId, source],
+  ))
+  const omittedIds = previousSources
+    .filter((source) => !remainingIds.has(source.sourceId))
+    .map((source) => source.sourceId)
+  const deletionIds = new Set()
+  for (const deletion of input) {
+    const previous = previousById.get(deletion?.sourceId)
+    if (
+      !deletion
+      || typeof deletion !== 'object'
+      || !previous
+      || remainingIds.has(deletion.sourceId)
+      || !Number.isInteger(deletion.expectedRowVersion)
+      || deletion.expectedRowVersion !== previous.rowVersion
+      || deletionIds.has(deletion.sourceId)
+    ) {
+      throw new Error('OTA_SOURCE_VERSION_CONFLICT')
+    }
+    deletionIds.add(deletion.sourceId)
+  }
+  if (
+    deletionIds.size !== omittedIds.length
+    || omittedIds.some((sourceId) => !deletionIds.has(sourceId))
+  ) {
+    throw new Error('OTA_SOURCE_VERSION_CONFLICT')
+  }
 }
 
 const otaSecretsForHotel = (hotelId) =>
@@ -1830,6 +1914,153 @@ if (otaSourceConfigPath && existsSync(otaSourceConfigPath)) {
   }
 }
 
+const otaRoomTypeCatalogFingerprint = (hotelId, source) => {
+  return createHash('sha256')
+    .update(JSON.stringify({
+      hotelId,
+      sourceId: source.sourceId,
+      platformCode: source.platformCode,
+      dataEndpointUrl: source.dataEndpointUrl,
+      requestMethod: source.requestMethod,
+      requestPayloadJson: source.requestPayloadJson,
+    }))
+    .digest('hex')
+}
+
+const otaRoomTypeCatalogMatchesSource = (hotelId, catalog, source) => (
+  Boolean(catalog)
+  && catalog.platformCode === source.platformCode
+  && (
+    typeof catalog.sourceFingerprint === 'string'
+      ? catalog.sourceFingerprint
+        === otaRoomTypeCatalogFingerprint(hotelId, source)
+      : catalog.sourceRowVersion === source.rowVersion
+  )
+)
+
+if (otaRoomTypeCatalogPath && existsSync(otaRoomTypeCatalogPath)) {
+  try {
+    const persistedCatalogs = JSON.parse(
+      readFileSync(otaRoomTypeCatalogPath, 'utf8'),
+    )
+    if (
+      persistedCatalogs
+      && typeof persistedCatalogs === 'object'
+      && !Array.isArray(persistedCatalogs)
+    ) {
+      for (const [hotelId, sourceCatalogs] of Object.entries(
+        persistedCatalogs,
+      )) {
+        if (
+          !hotels.some((hotel) => hotel.hotelId === hotelId)
+          || !sourceCatalogs
+          || typeof sourceCatalogs !== 'object'
+          || Array.isArray(sourceCatalogs)
+        ) continue
+        const configuredSources = new Map(
+          (otaSourcesByHotel.get(hotelId) ?? [])
+            .map((source) => [source.sourceId, source]),
+        )
+        const normalized = {}
+        for (const [sourceId, catalog] of Object.entries(sourceCatalogs)) {
+          const source = configuredSources.get(sourceId)
+          if (
+            !source
+            || !catalog
+            || typeof catalog !== 'object'
+            || Array.isArray(catalog)
+          ) continue
+          normalized[sourceId] = {
+            sourceId,
+            platformCode: source.platformCode,
+            displayName: source.displayName,
+            sourceRowVersion:
+              Number.isInteger(catalog.sourceRowVersion)
+                ? catalog.sourceRowVersion
+                : null,
+            sourceFingerprint:
+              typeof catalog.sourceFingerprint === 'string'
+              && /^[a-f0-9]{64}$/.test(catalog.sourceFingerprint)
+                ? catalog.sourceFingerprint
+                : null,
+            observedAt:
+              typeof catalog.observedAt === 'string'
+                ? catalog.observedAt
+                : null,
+            roomTypes: mergeRoomTypeCatalogs(catalog.roomTypes),
+          }
+        }
+        otaRoomTypeCatalogsByHotel.set(hotelId, normalized)
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_OTA_ROOM_TYPE_CATALOG_STORE_IGNORED\n')
+  }
+}
+
+const replaceMapContents = (target, replacement) => {
+  target.clear()
+  for (const [key, value] of replacement) target.set(key, value)
+}
+
+const persistOtaRoomTypeCatalogs = (
+  catalogsByHotel = otaRoomTypeCatalogsByHotel,
+) => {
+  if (!otaRoomTypeCatalogPath) return
+  mkdirSync(dirname(otaRoomTypeCatalogPath), { recursive: true })
+  const temporaryPath = `${otaRoomTypeCatalogPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      Object.fromEntries(catalogsByHotel),
+      null,
+      2,
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, otaRoomTypeCatalogPath)
+}
+
+const updateOtaRoomTypeCatalog = ({
+  hotelId,
+  source,
+  roomTypes,
+  observedAt,
+}) => {
+  const current = { ...(otaRoomTypeCatalogsByHotel.get(hotelId) ?? {}) }
+  const observedRoomTypes = mergeRoomTypeCatalogs(roomTypes)
+  if (observedRoomTypes.length === 0) return false
+  const existing = current[source.sourceId]
+  const sameConnectorVersion = otaRoomTypeCatalogMatchesSource(
+    hotelId,
+    existing,
+    source,
+  )
+  const pinnedRoomTypeCodes = sameConnectorVersion
+    ? hotSellingRoomTypesFor(hotelId).mappings
+      .filter((mapping) => mapping.sourceId === source.sourceId)
+      .map((mapping) => mapping.otaRoomTypeCode)
+    : []
+  const normalizedRoomTypes = mergeRoomTypeCatalogsPreserving(
+    [sameConnectorVersion ? existing.roomTypes : [], observedRoomTypes],
+    pinnedRoomTypeCodes,
+  )
+  current[source.sourceId] = {
+    sourceId: source.sourceId,
+    platformCode: source.platformCode,
+    displayName: source.displayName,
+    sourceRowVersion: source.rowVersion,
+    sourceFingerprint: otaRoomTypeCatalogFingerprint(hotelId, source),
+    observedAt,
+    roomTypes: normalizedRoomTypes,
+  }
+  const nextCatalogs = new Map(otaRoomTypeCatalogsByHotel)
+  nextCatalogs.set(hotelId, current)
+  persistOtaRoomTypeCatalogs(nextCatalogs)
+  replaceMapContents(otaRoomTypeCatalogsByHotel, nextCatalogs)
+  return true
+}
+
 if (otaSourceSecretPath && existsSync(otaSourceSecretPath)) {
   try {
     const persistedSecrets = JSON.parse(
@@ -1923,6 +2154,39 @@ const persistBusinessDayControls = () => {
   renameSync(temporaryPath, businessDayControlPath)
 }
 
+const normalizePersistedRoomTypeMappingsFor = (hotelId, input) => {
+  const mappings = []
+  let invalidMappingCount = 0
+  for (const mapping of Array.isArray(input) ? input : []) {
+    try {
+      const [normalizedMapping] = normalizeStoredRoomTypeMappings([
+        mapping,
+      ])
+      const ownerConflict = mappings.some((current) => (
+        current.sourceId === normalizedMapping.sourceId
+        && current.otaRoomTypeCode === normalizedMapping.otaRoomTypeCode
+        && current.physicalRoomTypeCode
+          !== normalizedMapping.physicalRoomTypeCode
+      ))
+      if (ownerConflict) throw new Error('ROOM_TYPE_MAPPING_CONFLICT')
+      if (!mappings.some((current) => (
+        current.physicalRoomTypeCode
+          === normalizedMapping.physicalRoomTypeCode
+        && current.sourceId === normalizedMapping.sourceId
+        && current.otaRoomTypeCode === normalizedMapping.otaRoomTypeCode
+      ))) mappings.push(normalizedMapping)
+    } catch {
+      invalidMappingCount += 1
+    }
+  }
+  if (invalidMappingCount > 0) {
+    process.stderr.write(
+      `REVIEW_HOT_ROOM_MAPPING_ITEMS_IGNORED:${hotelId}:${invalidMappingCount}\n`,
+    )
+  }
+  return mappings
+}
+
 if (hotSellingRoomTypePath && existsSync(hotSellingRoomTypePath)) {
   try {
     const persistedHotRooms = JSON.parse(
@@ -1942,12 +2206,21 @@ if (hotSellingRoomTypePath && existsSync(hotSellingRoomTypePath)) {
           config.roomTypeCodes.filter(
             (code) =>
               typeof code === 'string'
-              && /^[A-Za-z0-9-]{3,80}$/.test(code),
+              && /^[A-Za-z0-9:_-]{3,100}$/.test(code),
           ),
         ),
       ].slice(0, 30)
+      const mappings = normalizePersistedRoomTypeMappingsFor(
+        hotelId,
+        config.mappings,
+      )
       hotSellingRoomTypesByHotel.set(hotelId, {
         roomTypeCodes,
+        mappings,
+        rowVersion:
+          Number.isInteger(config.rowVersion) && config.rowVersion >= 0
+            ? config.rowVersion
+            : 0,
         updatedAt:
           typeof config.updatedAt === 'string' ? config.updatedAt : null,
       })
@@ -1957,26 +2230,239 @@ if (hotSellingRoomTypePath && existsSync(hotSellingRoomTypePath)) {
   }
 }
 
+if (roomTypeMappingPath && existsSync(roomTypeMappingPath)) {
+  try {
+    const persistedMappings = JSON.parse(
+      readFileSync(roomTypeMappingPath, 'utf8'),
+    )
+    for (const [hotelId, mappingConfig] of Object.entries(
+      persistedMappings,
+    )) {
+      if (
+        !hotels.some((hotel) => hotel.hotelId === hotelId)
+        || !mappingConfig
+        || typeof mappingConfig !== 'object'
+      ) continue
+      const current = hotSellingRoomTypesByHotel.get(hotelId) ?? {
+        roomTypeCodes: [],
+        mappings: [],
+        rowVersion: 0,
+        updatedAt: null,
+      }
+      const mappingUpdatedAt =
+        typeof mappingConfig.updatedAt === 'string'
+          ? mappingConfig.updatedAt
+          : null
+      const mappingIsCurrent = Boolean(
+        mappingUpdatedAt
+        && (
+          !current.updatedAt
+          || mappingUpdatedAt.localeCompare(current.updatedAt) >= 0
+        ),
+      )
+      const journalRoomTypeCodes = Array.isArray(
+        mappingConfig.roomTypeCodes,
+      )
+        ? [...new Set(mappingConfig.roomTypeCodes.filter((code) => (
+          typeof code === 'string'
+          && /^[A-Za-z0-9:_-]{3,100}$/.test(code)
+        )))].slice(0, 30)
+        : null
+      const canonicalRowVersion =
+        Number.isInteger(mappingConfig.rowVersion)
+        && mappingConfig.rowVersion >= 0
+          ? mappingConfig.rowVersion
+          : current.rowVersion
+      const legacySelectionIsNewer = Boolean(
+        current.updatedAt
+        && (
+          !mappingUpdatedAt
+          || current.updatedAt.localeCompare(mappingUpdatedAt) > 0
+        ),
+      )
+      hotSellingRoomTypesByHotel.set(hotelId, {
+        ...current,
+        roomTypeCodes:
+          mappingIsCurrent && journalRoomTypeCodes
+            ? journalRoomTypeCodes
+            : current.roomTypeCodes,
+        mappings: normalizePersistedRoomTypeMappingsFor(
+          hotelId,
+          mappingConfig.mappings,
+        ),
+        rowVersion: legacySelectionIsNewer
+          ? Math.max(current.rowVersion, canonicalRowVersion) + 1
+          : canonicalRowVersion,
+        updatedAt: mappingIsCurrent
+          ? mappingUpdatedAt
+          : current.updatedAt,
+      })
+    }
+  } catch {
+    process.stderr.write('REVIEW_ROOM_TYPE_MAPPING_STORE_IGNORED\n')
+  }
+}
+
 const hotSellingRoomTypesFor = (hotelId) =>
   hotSellingRoomTypesByHotel.get(hotelId) ?? {
     roomTypeCodes: [],
+    mappings: [],
+    rowVersion: 0,
     updatedAt: null,
   }
 
-const persistHotSellingRoomTypes = () => {
+const persistHotSellingRoomTypes = (
+  configsByHotel = hotSellingRoomTypesByHotel,
+) => {
   if (!hotSellingRoomTypePath) return
   mkdirSync(dirname(hotSellingRoomTypePath), { recursive: true })
   const temporaryPath = `${hotSellingRoomTypePath}.${process.pid}.tmp`
   writeFileSync(
     temporaryPath,
     `${JSON.stringify(
-      Object.fromEntries(hotSellingRoomTypesByHotel),
+      Object.fromEntries([...configsByHotel].map(([hotelId, config]) => [
+        hotelId,
+        {
+          roomTypeCodes: config.roomTypeCodes,
+          updatedAt: config.updatedAt,
+        },
+      ])),
       null,
       2,
     )}\n`,
     { encoding: 'utf8', mode: 0o600 },
   )
   renameSync(temporaryPath, hotSellingRoomTypePath)
+}
+
+const persistRoomTypeMappings = (
+  configsByHotel = hotSellingRoomTypesByHotel,
+) => {
+  if (!roomTypeMappingPath) return
+  mkdirSync(dirname(roomTypeMappingPath), { recursive: true })
+  const temporaryPath = `${roomTypeMappingPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      Object.fromEntries([...configsByHotel].map(([hotelId, config]) => [
+        hotelId,
+        {
+          schemaVersion: 1,
+          roomTypeCodes: config.roomTypeCodes,
+          mappings: config.mappings,
+          rowVersion: config.rowVersion,
+          updatedAt: config.updatedAt,
+        },
+      ])),
+      null,
+      2,
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, roomTypeMappingPath)
+}
+
+const commitHotSellingRoomTypes = (hotelId, config) => {
+  const nextConfigs = new Map(hotSellingRoomTypesByHotel)
+  nextConfigs.set(hotelId, config)
+  // Canonical state is one atomic file; the legacy file is a rollback mirror.
+  persistRoomTypeMappings(nextConfigs)
+  replaceMapContents(hotSellingRoomTypesByHotel, nextConfigs)
+  try {
+    persistHotSellingRoomTypes(nextConfigs)
+  } catch {
+    process.stderr.write(
+      `REVIEW_HOT_ROOM_LEGACY_MIRROR_FAILED:${hotelId}\n`,
+    )
+  }
+}
+
+const latestPhysicalInventorySnapshotFor = (hotelId) => {
+  const snapshots = liveSnapshotStore[hotelId] ?? []
+  for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+    const candidate = snapshots[index]
+    if (
+      Array.isArray(candidate?.physicalInventory)
+      && candidate.physicalInventory.length > 0
+    ) return candidate
+  }
+  return null
+}
+
+const currentRoomTypeMappingsFor = (hotelId) => {
+  const config = hotSellingRoomTypesFor(hotelId)
+  const sourceById = new Map(
+    (otaSourcesByHotel.get(hotelId) ?? [])
+      .filter((source) => source.enabled)
+      .map((source) => [source.sourceId, source]),
+  )
+  const sourceCatalogs = otaRoomTypeCatalogsByHotel.get(hotelId) ?? {}
+  return config.mappings.flatMap((mapping) => {
+    const source = sourceById.get(mapping.sourceId)
+    const catalog = sourceCatalogs[mapping.sourceId]
+    if (
+      !source
+      || !catalog
+      || !otaRoomTypeCatalogMatchesSource(hotelId, catalog, source)
+    ) return []
+    const roomType = (catalog.roomTypes ?? []).find((candidate) => (
+      candidate.roomTypeCode === mapping.otaRoomTypeCode
+    ))
+    return roomType
+      ? [{ ...mapping, otaRoomTypeName: roomType.displayName }]
+      : []
+  })
+}
+
+const roomTypeConfigurationFor = (hotelId) => {
+  const snapshot = latestPhysicalInventorySnapshotFor(hotelId)
+  const config = hotSellingRoomTypesFor(hotelId)
+  const sourceCatalogs = otaRoomTypeCatalogsByHotel.get(hotelId) ?? {}
+  const otaSources = (otaSourcesByHotel.get(hotelId) ?? [])
+    .filter((source) => source.enabled)
+    .map((source) => {
+      const catalog = sourceCatalogs[source.sourceId]
+      const catalogMatchesSource = otaRoomTypeCatalogMatchesSource(
+        hotelId,
+        catalog,
+        source,
+      )
+      return {
+        sourceId: source.sourceId,
+        displayName: source.displayName,
+        platformCode: source.platformCode,
+        observedAt: catalogMatchesSource
+          ? catalog.observedAt ?? null
+          : null,
+        refreshStatus: source.lastRefreshStatus,
+        roomTypes: catalogMatchesSource ? catalog.roomTypes ?? [] : [],
+      }
+    })
+  const currentOtaRoomNames = new Map(
+    currentRoomTypeMappingsFor(hotelId).map((mapping) => [
+      `${mapping.sourceId}:${mapping.otaRoomTypeCode}`,
+      mapping.otaRoomTypeName,
+    ]),
+  )
+  return {
+    rowVersion: config.rowVersion,
+    updatedAt: config.updatedAt,
+    pmsObservedAt: snapshot?.observedAt ?? null,
+    pmsRoomTypes: (snapshot?.physicalInventory ?? []).map((room) => ({
+      physicalRoomTypeCode: room.physicalRoomTypeCode,
+      displayName: room.displayName,
+      primaryAvailableRooms: room.primaryAvailableRooms ?? null,
+    })),
+    otaSources,
+    mappings: config.mappings.map((mapping) => ({
+      ...mapping,
+      otaRoomTypeName:
+        currentOtaRoomNames.get(
+          `${mapping.sourceId}:${mapping.otaRoomTypeCode}`,
+        ) ?? mapping.otaRoomTypeName,
+    })),
+    hotSellingRoomTypeCodes: config.roomTypeCodes,
+  }
 }
 
 const weComSecretScope = (hotelId) => `wecom-webhook:${hotelId}`
@@ -3574,13 +4060,22 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
     if (sourceIndex < 0) throw new Error('OTA_SOURCE_NOT_FOUND')
     const source = sources[sourceIndex]
     try {
-      const collectSource = async (candidateSource) => collectOtaSource({
-        source: candidateSource,
-        cookie: otaSecretValuesFor(hotelId, sourceId).cookie,
-        businessDate: (liveSnapshotStore[hotelId] ?? []).at(-1)
-          ?.businessDate,
-        validStayedOrderCountThroughPreviousBusinessDate: null,
-      })
+      let observedRoomTypes = []
+      const collectSource = async (candidateSource) => {
+        observedRoomTypes = []
+        return collectOtaSource({
+          source: candidateSource,
+          cookie: otaSecretValuesFor(hotelId, sourceId).cookie,
+          businessDate: (liveSnapshotStore[hotelId] ?? []).at(-1)
+            ?.businessDate,
+          validStayedOrderCountThroughPreviousBusinessDate: null,
+          onRoomTypeCatalog: (roomTypes) => {
+            observedRoomTypes = mergeRoomTypeCatalogs(roomTypes)
+          },
+          roomTypeCatalogScope: `${hotelId}:${sourceId}`,
+          roomTypeCatalogHmacKey: cookieSecretKey,
+        })
+      }
       const collect = async () => {
         try {
           return await collectSource(source)
@@ -3617,15 +4112,34 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
         }
         summary = await collect()
       }
+      const activeSources = otaSourcesByHotel.get(hotelId) ?? []
+      const activeSourceIndex = activeSources.findIndex(
+        (candidate) => candidate.sourceId === sourceId,
+      )
+      const activeSource = activeSources[activeSourceIndex]
+      if (
+        !activeSource
+        || activeSource.rowVersion !== source.rowVersion
+        || activeSource.platformCode !== source.platformCode
+      ) {
+        throw new Error('OTA_SOURCE_CHANGED_DURING_REFRESH')
+      }
       const updated = {
-        ...source,
+        ...activeSource,
         lastRefreshStatus: 'COMPLETE',
         lastRefreshAt: summary.observedAt,
         lastErrorCode: null,
         lastSummary: summary,
       }
-      sources[sourceIndex] = updated
-      const pairedSources = pairOtaReviewAndOrderSources(sources)
+      updateOtaRoomTypeCatalog({
+        hotelId,
+        source: updated,
+        roomTypes: observedRoomTypes,
+        observedAt: summary.observedAt,
+      })
+      const nextSources = [...activeSources]
+      nextSources[activeSourceIndex] = updated
+      const pairedSources = pairOtaReviewAndOrderSources(nextSources)
       otaSourcesByHotel.set(hotelId, pairedSources)
       persistOtaSources()
       return decorateOtaSources(hotelId, [
@@ -3634,15 +4148,37 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
       ])[0]
     } catch (error) {
       const errorCode = safeOtaRefreshErrorCode(error)
+      const activeSources = otaSourcesByHotel.get(hotelId) ?? []
+      const activeSourceIndex = activeSources.findIndex(
+        (candidate) => candidate.sourceId === sourceId,
+      )
+      const activeSource = activeSources[activeSourceIndex]
+      const sourceUnchanged = Boolean(
+        activeSource
+        && activeSource.rowVersion === source.rowVersion
+        && activeSource.platformCode === source.platformCode,
+      )
+      if (!sourceUnchanged) {
+        process.stderr.write(
+          `${JSON.stringify({
+            event: 'OTA_SOURCE_REFRESH_DISCARDED',
+            hotelId,
+            sourceId,
+            errorCode,
+          })}\n`,
+        )
+        throw new Error('OTA_SOURCE_CHANGED_DURING_REFRESH')
+      }
       const updated = {
-        ...source,
+        ...activeSource,
         lastRefreshStatus: 'FAILED',
         lastRefreshAt: new Date().toISOString(),
         lastErrorCode: errorCode,
         lastSummary: null,
       }
-      sources[sourceIndex] = updated
-      const pairedSources = pairOtaReviewAndOrderSources(sources)
+      const nextSources = [...activeSources]
+      nextSources[activeSourceIndex] = updated
+      const pairedSources = pairOtaReviewAndOrderSources(nextSources)
       otaSourcesByHotel.set(hotelId, pairedSources)
       persistOtaSources()
       process.stderr.write(
@@ -6259,7 +6795,11 @@ const scheduleRecoveryHotSellingDelivery = ({
                 null,
                 hotSellingRoomTypesFor(selected.hotelId).roomTypeCodes,
               ),
-              { messagePrefix: '补发售罄预警' },
+              {
+                messagePrefix: '补发售罄预警',
+                roomTypeMappings:
+                  currentRoomTypeMappingsFor(selected.hotelId),
+              },
             ),
         }),
       })
@@ -6655,7 +7195,11 @@ const scheduledHotSellingSoldOutDeliveryTick = async () => {
                 null,
                 hotSellingRoomTypesFor(selected.hotelId).roomTypeCodes,
               ),
-              { messagePrefix },
+              {
+                messagePrefix,
+                roomTypeMappings:
+                  currentRoomTypeMappingsFor(selected.hotelId),
+              },
             ),
         })
       } catch (error) {
@@ -7978,9 +8522,15 @@ const server = createServer(async (request, response) => {
         ) {
           throw new Error('OTA_SOURCE_REASON_CODE_INVALID')
         }
+        const previousSources = otaSourcesByHotel.get(hotelId) ?? []
         const normalized = normalizeOtaSources(
           body.sources,
-          otaSourcesByHotel.get(hotelId) ?? [],
+          previousSources,
+        )
+        assertOtaSourceDeletions(
+          body.deletedSources ?? [],
+          previousSources,
+          normalized,
         )
         applyOtaSecretUpdates(hotelId, body.sources)
         otaSourcesByHotel.set(hotelId, normalized)
@@ -8223,6 +8773,83 @@ const server = createServer(async (request, response) => {
         json(response, 200, { data: control })
         return
       }
+      if (
+        request.method === 'GET'
+        && suffix === '/room-type-configuration'
+      ) {
+        json(response, 200, {
+          data: roomTypeConfigurationFor(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/room-type-configuration'
+      ) {
+        const body = await readBody(request)
+        if (
+          !Number.isInteger(body.expectedRowVersion)
+          || body.expectedRowVersion < 0
+          || !Array.isArray(body.hotSellingRoomTypeCodes)
+          || body.hotSellingRoomTypeCodes.length > 30
+          || typeof body.reasonCode !== 'string'
+          || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
+        ) {
+          throw new Error('ROOM_TYPE_CONFIGURATION_INVALID')
+        }
+        const current = hotSellingRoomTypesFor(hotelId)
+        if (body.expectedRowVersion !== current.rowVersion) {
+          throw new Error('ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT')
+        }
+        const latestSnapshot = latestPhysicalInventorySnapshotFor(hotelId)
+        const knownCodes = new Set(
+          (latestSnapshot?.physicalInventory ?? [])
+            .map((room) => room.physicalRoomTypeCode),
+        )
+        const roomTypeCodes = [...new Set(body.hotSellingRoomTypeCodes)]
+        if (roomTypeCodes.some((code) => (
+          typeof code !== 'string' || !knownCodes.has(code)
+        ))) {
+          throw new Error('ROOM_TYPE_CONFIGURATION_INVALID')
+        }
+        const sourceCatalogs = otaRoomTypeCatalogsByHotel.get(hotelId) ?? {}
+        const configuredSources = otaSourcesByHotel.get(hotelId) ?? []
+        const sourceById = new Map(
+          configuredSources.map((source) => [source.sourceId, source]),
+        )
+        const catalogsBySourceId = new Map(
+          Object.entries(sourceCatalogs)
+            .map(([sourceId, catalog]) => {
+              const source = sourceById.get(sourceId)
+              const matches = Boolean(
+                source
+                && otaRoomTypeCatalogMatchesSource(
+                  hotelId,
+                  catalog,
+                  source,
+                ),
+              )
+              return [sourceId, matches ? catalog.roomTypes ?? [] : []]
+            }),
+        )
+        const mappings = validateRoomTypeMappings({
+          input: body.mappings,
+          knownPhysicalRoomTypeCodes: knownCodes,
+          otaSources: configuredSources,
+          catalogsBySourceId,
+        })
+        const config = {
+          roomTypeCodes,
+          mappings,
+          rowVersion: current.rowVersion + 1,
+          updatedAt: new Date().toISOString(),
+        }
+        commitHotSellingRoomTypes(hotelId, config)
+        json(response, 200, {
+          data: roomTypeConfigurationFor(hotelId),
+        })
+        return
+      }
       if (request.method === 'GET' && suffix === '/hot-selling-room-types') {
         json(response, 200, {
           data: hotSellingRoomTypesFor(hotelId),
@@ -8237,13 +8864,14 @@ const server = createServer(async (request, response) => {
         if (
           !Array.isArray(body.roomTypeCodes)
           || body.roomTypeCodes.length > 30
+          || !Number.isInteger(body.expectedRowVersion)
+          || body.expectedRowVersion < 0
           || typeof body.reasonCode !== 'string'
           || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
         ) {
           throw new Error('HOT_SELLING_ROOM_TYPES_INVALID')
         }
-        const latestSnapshot =
-          (liveSnapshotStore[hotelId] ?? []).at(-1) ?? null
+        const latestSnapshot = latestPhysicalInventorySnapshotFor(hotelId)
         const knownCodes = new Set(
           (latestSnapshot?.physicalInventory ?? [])
             .map((room) => room.physicalRoomTypeCode),
@@ -8258,12 +8886,17 @@ const server = createServer(async (request, response) => {
         ) {
           throw new Error('HOT_SELLING_ROOM_TYPES_INVALID')
         }
+        const current = hotSellingRoomTypesFor(hotelId)
+        if (body.expectedRowVersion !== current.rowVersion) {
+          throw new Error('ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT')
+        }
         const config = {
           roomTypeCodes,
+          mappings: current.mappings,
+          rowVersion: current.rowVersion + 1,
           updatedAt: new Date().toISOString(),
         }
-        hotSellingRoomTypesByHotel.set(hotelId, config)
-        persistHotSellingRoomTypes()
+        commitHotSellingRoomTypes(hotelId, config)
         json(response, 200, { data: config })
         return
       }
@@ -8590,6 +9223,7 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('LIVE_')
                     || error.message.startsWith('FUTURE_')
                     || error.message.startsWith('OTA_')
+                    || error.message.startsWith('ROOM_TYPE_')
                     || error.message.startsWith('LUOPAN_')
                     || error.message.startsWith('BIEYANGHONG_')
                     || error.message.startsWith('TRUSTED_DEVICE_')
@@ -8597,7 +9231,15 @@ const server = createServer(async (request, response) => {
                   )
                     ? error.message
            : 'REVIEW_API_FAILED_CLOSED'
-    json(response, 400, { code })
+    json(
+      response,
+      [
+        'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
+        'OTA_SOURCE_VERSION_CONFLICT',
+        'OTA_SOURCE_CHANGED_DURING_REFRESH',
+      ].includes(code) ? 409 : 400,
+      { code },
+    )
   }
 })
 

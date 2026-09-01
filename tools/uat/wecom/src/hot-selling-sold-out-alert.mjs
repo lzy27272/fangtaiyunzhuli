@@ -1,5 +1,15 @@
 const MAX_MESSAGE_BYTES = 1900
 
+const PLATFORM_LABELS = Object.freeze({
+  CTRIP: '携程',
+  MEITUAN: '美团',
+  FLIGGY: '飞猪',
+  DOUYIN: '抖音',
+  QUNAR: '去哪儿',
+  TONGCHENG: '同程',
+  OTHER: '其他渠道',
+})
+
 const finiteNumber = (value) => {
   if (
     value === null
@@ -103,12 +113,33 @@ export const createHotSellingSoldOutWeComPayloads = (
       ? `｜${options.messagePrefix.trim().slice(0, 16)}`
       : ''
   const roomNames = alerts.map((alert) => alert.displayName)
+  const mappings = Array.isArray(options.roomTypeMappings)
+    ? options.roomTypeMappings
+    : []
+  const mappedRoomNames = alerts.flatMap((alert) => {
+    const aliases = mappings
+      .filter((mapping) => (
+        mapping?.physicalRoomTypeCode === alert.physicalRoomTypeCode
+        && typeof mapping.otaRoomTypeName === 'string'
+        && mapping.otaRoomTypeName.trim()
+      ))
+      .map((mapping) => (
+        `${PLATFORM_LABELS[mapping.platformCode] ?? '渠道'}`
+        + `/${mapping.otaRoomTypeName.trim().slice(0, 60)}`
+      ))
+    return aliases.length > 0
+      ? [`${alert.displayName}＝${[...new Set(aliases)].join('、')}`]
+      : []
+  })
   return [buildPayload([
     '【热销房型售罄预警】',
     `${monitor.hotelName.trim().slice(0, 40)}｜独立库存预警${prefix}`,
     `⏰截止 ${cutoffHour(monitor.cutoffAt)}｜营业日 ${shortDate(monitor.businessDate)}`,
     '',
     `售罄房型｜${listWithinByteBudget(roomNames, 1000)}`,
+    ...(mappedRoomNames.length > 0
+      ? [`渠道对应｜${listWithinByteBudget(mappedRoomNames, 480)}`]
+      : []),
     '建议处理｜立即复核渠道价格、房态和后续库存释放策略。',
     '发送规则｜今日经营、远期房态两类简报送达后1分钟独立发送。',
     '判定规则｜仅可靠可售量为0或以下时触发；数据缺失不误报。',

@@ -84,7 +84,10 @@ export function NewStoreWizard({
       setError('新增渠道至少需要填写渠道名称和官方入口。')
       return
     }
-    setCustomChannels((current) => [...current, { ...customDraft, id: `other-${Date.now()}` }])
+    setCustomChannels((current) => [
+      ...current,
+      { ...customDraft, id: crypto.randomUUID() },
+    ])
     setCustomDraft({ name: '', portalUrl: '', dataEndpointUrl: '' })
     setShowCustom(false)
     setError('')
@@ -130,13 +133,13 @@ export function NewStoreWizard({
       const existingPlatforms = new Set(existingSources.map((source) => source.platformCode))
       for (const option of OTA_OPTIONS.filter((item) => selected.has(item.code) && !existingPlatforms.has(item.code))) {
         inputs.push({
-          sourceId: `${option.code.toLowerCase()}-primary`,
+          sourceId: crypto.randomUUID(),
           displayName: `${option.name}经营数据`,
           platformCode: option.code,
           portalUrl: '',
           dataEndpointUrl: '',
           requestMethod: 'GET',
-          requestPayloadJson: '{}',
+          requestPayloadJson: '',
           pollIntervalMinutes: 120,
           enabled: true,
           cookieUpdate: { action: 'KEEP' },
@@ -151,7 +154,7 @@ export function NewStoreWizard({
           platformCode: 'OTHER',
           portalUrl: channel.portalUrl,
           dataEndpointUrl: channel.dataEndpointUrl || channel.portalUrl,
-          requestMethod: 'GET', requestPayloadJson: '{}', pollIntervalMinutes: 60,
+          requestMethod: 'GET', requestPayloadJson: '', pollIntervalMinutes: 60,
           enabled: true, cookieUpdate: { action: 'KEEP' }, credentialUpdate: { action: 'KEEP' }, rowVersion: 0,
         })
       }

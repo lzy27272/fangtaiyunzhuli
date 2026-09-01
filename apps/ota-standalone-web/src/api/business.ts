@@ -580,7 +580,47 @@ export interface BusinessDayControlView {
 
 export interface HotSellingRoomTypeConfigView {
   roomTypeCodes: string[]
+  rowVersion: number
   updatedAt: string | null
+}
+
+export interface ObservedOtaRoomTypeView {
+  roomTypeCode: string
+  displayName: string
+}
+
+export interface RoomTypeCatalogSourceView {
+  sourceId: string
+  displayName: string
+  platformCode: OtaPlatformCode
+  observedAt: string | null
+  refreshStatus: 'NEVER' | 'COMPLETE' | 'FAILED'
+  roomTypes: ObservedOtaRoomTypeView[]
+}
+
+export interface PmsRoomTypeCatalogItemView {
+  physicalRoomTypeCode: string
+  displayName: string
+  primaryAvailableRooms: number | null
+}
+
+export interface RoomTypeMappingView {
+  physicalRoomTypeCode: string
+  sourceId: string
+  platformCode: OtaPlatformCode
+  otaRoomTypeCode: string
+  otaRoomTypeName: string
+  matchMethod: 'AUTO_NAME' | 'MANUAL'
+}
+
+export interface RoomTypeConfigurationView {
+  rowVersion: number
+  updatedAt: string | null
+  pmsObservedAt: string | null
+  pmsRoomTypes: PmsRoomTypeCatalogItemView[]
+  otaSources: RoomTypeCatalogSourceView[]
+  mappings: RoomTypeMappingView[]
+  hotSellingRoomTypeCodes: string[]
 }
 
 export interface BriefView {
@@ -1230,11 +1270,16 @@ export function loadOtaSources(
 export function saveOtaSources(
   context: HotelContext,
   sources: OtaSourceInput[],
+  deletedSources: Array<{
+    sourceId: string
+    expectedRowVersion: number
+  }> = [],
 ): Promise<OtaSourceView[]> {
   return postCommand<OtaSourceView[]>(
     scopedPath(context, '/ota-sources'),
     {
       sources,
+      deletedSources,
       reasonCode: 'UPDATE_OTA_SOURCE_CONFIG',
     },
   )
@@ -1460,12 +1505,39 @@ export function loadHotSellingRoomTypes(
 export function saveHotSellingRoomTypes(
   context: HotelContext,
   roomTypeCodes: string[],
+  expectedRowVersion: number,
 ): Promise<HotSellingRoomTypeConfigView> {
   return postCommand<HotSellingRoomTypeConfigView>(
     scopedPath(context, '/hot-selling-room-types'),
     {
       roomTypeCodes,
+      expectedRowVersion,
       reasonCode: 'UPDATE_HOT_SELLING_ROOM_TYPES',
+    },
+  )
+}
+
+export function loadRoomTypeConfiguration(
+  context: HotelContext,
+): Promise<RoomTypeConfigurationView> {
+  return authenticatedRequest(
+    scopedPath(context, '/room-type-configuration'),
+  )
+}
+
+export function saveRoomTypeConfiguration(
+  context: HotelContext,
+  input: {
+    expectedRowVersion: number
+    mappings: RoomTypeMappingView[]
+    hotSellingRoomTypeCodes: string[]
+  },
+): Promise<RoomTypeConfigurationView> {
+  return postCommand<RoomTypeConfigurationView>(
+    scopedPath(context, '/room-type-configuration'),
+    {
+      ...input,
+      reasonCode: 'UPDATE_ROOM_TYPE_CONFIGURATION',
     },
   )
 }

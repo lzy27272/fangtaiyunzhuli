@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { extractRoomTypeCatalog } from './room-type-catalog.mjs'
 
 const FLIGGY_MTOP_HOST = 'h5api.m.fliggy.com'
 const FLIGGY_ORDER_API = 'mtop.taobao.hotel.ebooking.order.list.get'
@@ -849,6 +850,9 @@ const collectDirectFliggySummary = async ({
   businessDate,
   requestJson,
   now,
+  onRoomTypeCatalog,
+  roomTypeCatalogScope,
+  roomTypeCatalogHmacKey,
 }) => {
   const kind = sourceKind({ source, endpoint })
   const effectiveBusinessDate = canonicalDate(businessDate) ?? shanghaiDate(now())
@@ -919,6 +923,17 @@ const collectDirectFliggySummary = async ({
     httpStatus: response.httpStatus,
     detectedFields: fieldNames(selected.rows),
   }
+  if (kind === 'ORDER') {
+    onRoomTypeCatalog(extractRoomTypeCatalog(
+      selected.rows,
+      {
+        platformCode: 'FLIGGY',
+        allowProductNames: true,
+        scope: roomTypeCatalogScope,
+        hmacKey: roomTypeCatalogHmacKey,
+      },
+    ))
+  }
   const summary = kind === 'ORDER'
     ? orderSummary({
         pages,
@@ -947,6 +962,9 @@ export const collectFliggySourceSummary = async ({
   businessDate,
   requestJson,
   now = () => new Date(),
+  onRoomTypeCatalog = () => {},
+  roomTypeCatalogScope = source?.sourceId ?? 'FLIGGY',
+  roomTypeCatalogHmacKey = null,
 }) => {
   if (endpoint.hostname.toLowerCase() !== FLIGGY_MTOP_HOST) {
     return collectDirectFliggySummary({
@@ -956,6 +974,9 @@ export const collectFliggySourceSummary = async ({
       businessDate,
       requestJson,
       now,
+      onRoomTypeCatalog,
+      roomTypeCatalogScope,
+      roomTypeCatalogHmacKey,
     })
   }
   if (source.requestMethod !== 'GET') {
@@ -999,6 +1020,17 @@ export const collectFliggySourceSummary = async ({
     requestJson,
     now,
   })
+  if (kind === 'ORDER') {
+    onRoomTypeCatalog(extractRoomTypeCatalog(
+      pages.records,
+      {
+        platformCode: 'FLIGGY',
+        allowProductNames: true,
+        scope: roomTypeCatalogScope,
+        hmacKey: roomTypeCatalogHmacKey,
+      },
+    ))
+  }
   return kind === 'ORDER'
     ? orderSummary({
         pages,

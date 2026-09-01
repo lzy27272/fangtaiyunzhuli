@@ -18,6 +18,7 @@ import { businessErrorMessage } from '../ui/businessDisplay'
 interface Props {
   context: HotelContext | null
   canConfigure: boolean
+  showProductMappings?: boolean
 }
 
 interface MappingDraft {
@@ -50,7 +51,11 @@ function todayInShanghai(): string {
   }).format(new Date())
 }
 
-export function MappingTargetPage({ context, canConfigure }: Props) {
+export function MappingTargetPage({
+  context,
+  canConfigure,
+  showProductMappings = true,
+}: Props) {
   const [configuration, setConfiguration] = useState<SimulationConfiguration | null>(null)
   const [draft, setDraft] = useState<MappingDraft>(EMPTY_MAPPING)
   const [loading, setLoading] = useState(false)
@@ -197,8 +202,10 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
       <div className="page-heading">
         <div>
           <p className="eyebrow">运营设置</p>
-          <h2>销售目标与房型对应</h2>
-          <p>设置每日销售目标，并把渠道售卖名称对应到酒店实体房型。</p>
+          <h2>{showProductMappings ? '销售目标与房型对应' : '销售目标与计算规则'}</h2>
+          <p>{showProductMappings
+            ? '设置每日销售目标，并把渠道售卖名称对应到酒店实体房型。'
+            : '设置每日房费目标、目标 ADR 与旺季节奏；PMS 房型和 OTA 对应关系在上方维护。'}</p>
         </div>
         <span className="mode-chip">保存后自动同步</span>
       </div>
@@ -235,90 +242,94 @@ export function MappingTargetPage({ context, canConfigure }: Props) {
                 </div>
               </div>
 
-              <h3>房型对应关系</h3>
-              <div className="mapping-list">
-                {joinedMappings.map(({ mapping, product, pool }) => (
-                  <article key={mapping.mappingVersionId}>
-                    <div>
-                      <strong>{pool?.displayName ?? '库存池不存在'}</strong>
-                      <small>酒店实体房型</small>
-                    </div>
-                    <span>{product?.sourceCode ?? '未知'} · {product?.displayName ?? '产品不存在'}</span>
-                    <details className="technical-details"><summary>查看平台产品编号</summary><code>{product?.externalProductCode ?? mapping.productId}</code></details>
-                    <b>{mapping.rowVersion === 0 ? '待保存' : `第${mapping.rowVersion}版`}</b>
-                  </article>
-                ))}
-                {joinedMappings.length === 0
-                  ? <div className="state-panel">尚未设置房型对应关系，渠道库存暂时无法自动核对。</div>
-                  : null}
-              </div>
+              {showProductMappings ? (
+                <>
+                  <h3>房型对应关系</h3>
+                  <div className="mapping-list">
+                    {joinedMappings.map(({ mapping, product, pool }) => (
+                      <article key={mapping.mappingVersionId}>
+                        <div>
+                          <strong>{pool?.displayName ?? '库存池不存在'}</strong>
+                          <small>酒店实体房型</small>
+                        </div>
+                        <span>{product?.sourceCode ?? '未知'} · {product?.displayName ?? '产品不存在'}</span>
+                        <details className="technical-details"><summary>查看平台产品编号</summary><code>{product?.externalProductCode ?? mapping.productId}</code></details>
+                        <b>{mapping.rowVersion === 0 ? '待保存' : `第${mapping.rowVersion}版`}</b>
+                      </article>
+                    ))}
+                    {joinedMappings.length === 0
+                      ? <div className="state-panel">尚未设置房型对应关系，渠道库存暂时无法自动核对。</div>
+                      : null}
+                  </div>
 
-              {canConfigure ? (
-                <div className="mapping-editor">
-                  <label>
-                    酒店房型编号
-                    <input
-                      value={draft.inventoryPoolCode}
-                      onChange={(event) => setDraft({ ...draft, inventoryPoolCode: event.target.value.toUpperCase() })}
-                    />
-                  </label>
-                  <label>
-                    酒店房型名称
-                    <input
-                      value={draft.physicalRoomTypeName}
-                      onChange={(event) => setDraft({ ...draft, physicalRoomTypeName: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    有效总房量
-                    <input
-                      inputMode="numeric"
-                      value={draft.physicalRoomCount}
-                      onChange={(event) => setDraft({ ...draft, physicalRoomCount: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    来源
-                    <select
-                      value={draft.sourceSystem}
-                      onChange={(event) => setDraft({
-                        ...draft,
-                        sourceSystem: event.target.value as MappingDraft['sourceSystem'],
-                      })}
-                    >
-                      <option value="CTRIP">携程</option>
-                      <option value="MEITUAN">美团</option>
-                    </select>
-                  </label>
-                  <label>
-                    平台产品编号
-                    <input
-                      value={draft.productCode}
-                      onChange={(event) => setDraft({ ...draft, productCode: event.target.value.toUpperCase() })}
-                    />
-                  </label>
-                  <label>
-                    售卖名称
-                    <input
-                      value={draft.productName}
-                      onChange={(event) => setDraft({ ...draft, productName: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    餐食
-                    <select
-                      value={draft.mealPlanCode}
-                      onChange={(event) => setDraft({
-                        ...draft,
-                        mealPlanCode: event.target.value as MappingDraft['mealPlanCode'],
-                      })}
-                    >
-                      <option value="ROOM_ONLY">无早</option>
-                      <option value="BREAKFAST_INCLUDED">含早</option>
-                    </select>
-                  </label>
-                  <button className="secondary" type="button" onClick={addMapping}>添加对应关系</button>
-                </div>
+                  {canConfigure ? (
+                    <div className="mapping-editor">
+                      <label>
+                        酒店房型编号
+                        <input
+                          value={draft.inventoryPoolCode}
+                          onChange={(event) => setDraft({ ...draft, inventoryPoolCode: event.target.value.toUpperCase() })}
+                        />
+                      </label>
+                      <label>
+                        酒店房型名称
+                        <input
+                          value={draft.physicalRoomTypeName}
+                          onChange={(event) => setDraft({ ...draft, physicalRoomTypeName: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        有效总房量
+                        <input
+                          inputMode="numeric"
+                          value={draft.physicalRoomCount}
+                          onChange={(event) => setDraft({ ...draft, physicalRoomCount: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        来源
+                        <select
+                          value={draft.sourceSystem}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            sourceSystem: event.target.value as MappingDraft['sourceSystem'],
+                          })}
+                        >
+                          <option value="CTRIP">携程</option>
+                          <option value="MEITUAN">美团</option>
+                        </select>
+                      </label>
+                      <label>
+                        平台产品编号
+                        <input
+                          value={draft.productCode}
+                          onChange={(event) => setDraft({ ...draft, productCode: event.target.value.toUpperCase() })}
+                        />
+                      </label>
+                      <label>
+                        售卖名称
+                        <input
+                          value={draft.productName}
+                          onChange={(event) => setDraft({ ...draft, productName: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        餐食
+                        <select
+                          value={draft.mealPlanCode}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            mealPlanCode: event.target.value as MappingDraft['mealPlanCode'],
+                          })}
+                        >
+                          <option value="ROOM_ONLY">无早</option>
+                          <option value="BREAKFAST_INCLUDED">含早</option>
+                        </select>
+                      </label>
+                      <button className="secondary" type="button" onClick={addMapping}>添加对应关系</button>
+                    </div>
+                  ) : null}
+                </>
               ) : null}
 
               <h3>旺季销售进度参考</h3>

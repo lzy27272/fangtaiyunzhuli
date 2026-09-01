@@ -204,6 +204,8 @@ export function OtaSourceConfigPanel({
   onStatusChanged,
 }: Props) {
   const [sources, setSources] = useState<OtaSourceView[]>([])
+  const [persistedSourceVersions, setPersistedSourceVersions] =
+    useState<Record<string, number>>({})
   const [controlledLogins, setControlledLogins] =
     useState<OtaControlledLoginProfile[]>([])
   const [controlledLoginResult, setControlledLoginResult] =
@@ -241,6 +243,9 @@ export function OtaSourceConfigPanel({
       loadOtaControlledLogins(context),
     ])
     setSources(rows)
+    setPersistedSourceVersions(Object.fromEntries(
+      rows.map((source) => [source.sourceId, source.rowVersion]),
+    ))
     setControlledLogins(loginProfiles)
     setPortalUrlEnabled(Object.fromEntries(
       rows.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
@@ -268,6 +273,9 @@ export function OtaSourceConfigPanel({
       .then(([rows, loginProfiles]) => {
         if (!cancelled) {
           setSources(rows)
+          setPersistedSourceVersions(Object.fromEntries(
+            rows.map((source) => [source.sourceId, source.rowVersion]),
+          ))
           setControlledLogins(loginProfiles)
           setControlledLoginResult(null)
           setVerificationAnswer('')
@@ -494,8 +502,19 @@ export function OtaSourceConfigPanel({
       const saved = await saveOtaSources(
         context,
         sources.map(inputFor),
+        Object.entries(persistedSourceVersions)
+          .filter(([sourceId]) => !sources.some(
+            (source) => source.sourceId === sourceId,
+          ))
+          .map(([sourceId, expectedRowVersion]) => ({
+            sourceId,
+            expectedRowVersion,
+          })),
       )
       setSources(saved)
+      setPersistedSourceVersions(Object.fromEntries(
+        saved.map((source) => [source.sourceId, source.rowVersion]),
+      ))
       setPortalUrlEnabled(Object.fromEntries(
         saved.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
       ))

@@ -38,11 +38,28 @@ test('standalone alert contains only reliably sold-out hot-selling rooms', () =>
   const selected = selectHotSellingSoldOutAlerts(monitor)
   assert.deepEqual(selected.map((alert) => alert.displayName), ['无界PRO大'])
 
-  const payload = createHotSellingSoldOutWeComPayloads(monitor)[0]
+  const payload = createHotSellingSoldOutWeComPayloads(monitor, {
+    roomTypeMappings: [
+      {
+        physicalRoomTypeCode: 'HOT-001',
+        platformCode: 'CTRIP',
+        otaRoomTypeName: '景观大床房(无早)',
+      },
+      {
+        physicalRoomTypeCode: 'HOT-001',
+        platformCode: 'MEITUAN',
+        otaRoomTypeName: '轻奢大床房',
+      },
+    ],
+  })[0]
   assert.equal(payload.msgtype, 'text')
   assert.deepEqual(payload.text.mentioned_list, ['@all'])
   assert.match(payload.text.content, /^【热销房型售罄预警】/)
   assert.match(payload.text.content, /售罄房型｜无界PRO大/)
+  assert.match(
+    payload.text.content,
+    /渠道对应｜无界PRO大＝携程\/景观大床房\(无早\)、美团\/轻奢大床房/u,
+  )
   assert.doesNotMatch(payload.text.content, /无界双床|无界套房/)
   assert.ok(
     Buffer.byteLength(payload.text.content, 'utf8')

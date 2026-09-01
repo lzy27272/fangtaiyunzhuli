@@ -13,6 +13,7 @@ export type IconName =
   | 'shield'
   | 'logout'
   | 'check'
+  | 'close'
   | 'arrow'
 
 export type PlatformIconName =
@@ -51,6 +52,7 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></>,
     logout: <><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6" /></>,
     check: <path d="m5 12 4 4L19 6" />,
+    close: <path d="m6 6 12 12M18 6 6 18" />,
     arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   }
   return <svg {...common}>{paths[name]}</svg>

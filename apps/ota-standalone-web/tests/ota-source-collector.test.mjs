@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   classifyOtaRedirect,
   collectOtaSource,
+  otaProviderBooleanTrue,
   summarizeOtaJson,
 } from '../../../tools/uat/ota-source-collector.mjs'
 import {
@@ -10,7 +11,56 @@ import {
   sanitizeFliggyEndpointUrl,
 } from '../../../tools/uat/fliggy-source-collector.mjs'
 
+test('provider boolean normalization accepts common pagination encodings', () => {
+  assert.equal(otaProviderBooleanTrue(true), true)
+  assert.equal(otaProviderBooleanTrue(1), true)
+  assert.equal(otaProviderBooleanTrue('true'), true)
+  assert.equal(otaProviderBooleanTrue('1'), true)
+  assert.equal(otaProviderBooleanTrue(' TRUE '), true)
+  assert.equal(otaProviderBooleanTrue(false), false)
+  assert.equal(otaProviderBooleanTrue(0), false)
+  assert.equal(otaProviderBooleanTrue('false'), false)
+})
+
+test('Douyin pagination fails closed when an encoded has-more page is empty', async () => {
+  const common = {
+    cookie: 'session=synthetic-douyin-cookie',
+    businessDate: '2026-08-12',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+  }
+  await assert.rejects(collectOtaSource({
+    ...common,
+    source: {
+      platformCode: 'DOUYIN',
+      requestMethod: 'POST',
+      dataEndpointUrl:
+        'https://life.douyin.com/life/trade_view/v1/workbench/book/query/list',
+      requestPayloadJson: '{}',
+    },
+    fetchImpl: async () => new Response(JSON.stringify({
+      status_code: 0,
+      data: { data: [], pagination: { has_more: 'true' } },
+    }), { status: 200 }),
+  }), /OTA_DOUYIN_ORDER_PAGINATION_STALLED/u)
+
+  await assert.rejects(collectOtaSource({
+    ...common,
+    source: {
+      platformCode: 'DOUYIN',
+      requestMethod: 'GET',
+      dataEndpointUrl:
+        'https://life.douyin.com/life/infra/v1/review/get_review_list/',
+      requestPayloadJson: '',
+    },
+    fetchImpl: async () => new Response(JSON.stringify({
+      status_code: 0,
+      data: { reviews: [], has_more: '1', next_cursor: 'next' },
+    }), { status: 200 }),
+  }), /OTA_DOUYIN_REVIEW_PAGINATION_STALLED/u)
+})
+
 test('OTA JSON refresh stores only data-shape summary and detected dimensions', async () => {
+  let observedRoomTypes = []
   const result = await collectOtaSource({
     source: {
       requestMethod: 'POST',
@@ -37,6 +87,9 @@ test('OTA JSON refresh stores only data-shape summary and detected dimensions', 
       })
     },
     now: () => new Date('2026-07-28T03:00:00.000Z'),
+    onRoomTypeCatalog: (roomTypes) => {
+      observedRoomTypes = roomTypes
+    },
   })
 
   assert.equal(result.recordPath, '$.data')
@@ -47,6 +100,9 @@ test('OTA JSON refresh stores only data-shape summary and detected dimensions', 
   )
   assert.equal(JSON.stringify(result).includes('secret-cookie-value'), false)
   assert.equal(JSON.stringify(result).includes('大床房'), false)
+  assert.equal(observedRoomTypes.length, 1)
+  assert.equal(observedRoomTypes[0].displayName, '大床房')
+  assert.match(observedRoomTypes[0].roomTypeCode, /^OBS-[a-f0-9]{20}$/u)
 })
 
 test('Meituan e-booking refresh adds only its fixed browser context', async () => {
@@ -789,7 +845,7 @@ test('Douyin order projection decodes JSON-string rows without retaining order d
                 },
                 play_methods_v2: { is_cancel: false },
               })],
-          pagination: { total_count: 8_575, has_more: pageIndex === 1 },
+          pagination: { total_count: 8_575, has_more: pageIndex === 1 ? 1 : 0 },
         },
       }), { status: 200 })
     },

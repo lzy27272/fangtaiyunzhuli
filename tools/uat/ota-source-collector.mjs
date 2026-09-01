@@ -11,6 +11,10 @@ import {
   collectFliggySourceSummary,
   isFliggySource,
 } from './fliggy-source-collector.mjs'
+import {
+  extractRoomTypeCatalog,
+  mergeRoomTypeCatalogs,
+} from './room-type-catalog.mjs'
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_SCAN_ROWS = 200
@@ -45,6 +49,15 @@ const MEITUAN_PEER_RANK_METRICS = Object.freeze({
 const CONTROLLED_BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
   + 'AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36'
+
+export const otaProviderBooleanTrue = (value) => (
+  value === true
+  || value === 1
+  || (
+    typeof value === 'string'
+    && ['1', 'true'].includes(value.trim().toLowerCase())
+  )
+)
 
 const privateIpv4 = (address) => {
   const octets = String(address).split('.').map(Number)
@@ -564,7 +577,7 @@ export const summarizeDouyinReviewJson = (root) => {
       scope: 'ENDPOINT_TOTAL_AND_CURRENT_PAGE',
       totalCount,
       returnedCount: rows.length,
-      hasMore: root.data.has_more === true,
+      hasMore: otaProviderBooleanTrue(root.data.has_more),
       safeDiagnosticsVersion: 1,
       schemaDiagnosticsVersion: 7,
       scoreFieldProfiles: douyinScoreFieldProfiles(rows),
@@ -731,13 +744,13 @@ const collectDouyinReviewDiagnosticsSummaryLegacy = async ({
       }
       attitudeSignalProfiles.set(profile.attitude, current)
     }
-    if (
-      response.root?.data?.has_more !== true
-      || rows.length === 0
-      || (totalCount !== null && fetchedRowCount >= totalCount)
-    ) {
+    const hasMore = otaProviderBooleanTrue(response.root?.data?.has_more)
+    if (!hasMore || (totalCount !== null && fetchedRowCount >= totalCount)) {
       paginationComplete = true
       break
+    }
+    if (rows.length === 0) {
+      throw new Error('OTA_DOUYIN_REVIEW_PAGINATION_STALLED')
     }
     const nextCursor = response.root?.data?.next_cursor
     const searchAfter = response.root?.data?.search_after
@@ -932,9 +945,13 @@ const collectDouyinReviewSummary = async ({
         )
       }
     }
-    if (response.root?.data?.has_more !== true || rows.length === 0) {
+    const hasMore = otaProviderBooleanTrue(response.root?.data?.has_more)
+    if (!hasMore) {
       paginationComplete = true
       break
+    }
+    if (rows.length === 0) {
+      throw new Error('OTA_DOUYIN_REVIEW_PAGINATION_STALLED')
     }
     const nextCursor = response.root?.data?.next_cursor
     const searchAfter = response.root?.data?.search_after
@@ -1122,7 +1139,9 @@ export const summarizeDouyinOrderJson = (root) => {
       returnedCount: rows.length,
       canceledCount,
       nonCanceledCount: rows.length - canceledCount,
-      hasMore: root?.data?.pagination?.has_more === true,
+      hasMore: otaProviderBooleanTrue(
+        root?.data?.pagination?.has_more,
+      ),
       schemaDiagnosticsVersion: 7,
       identityFieldProfiles: identityFieldProfiles(rows),
       dateFieldProfiles: dateFieldProfiles(rows),
@@ -1137,6 +1156,9 @@ const collectDouyinOrderSummary = async ({
   businessDate,
   fetchImpl,
   now,
+  onRoomTypeCatalog,
+  roomTypeCatalogScope,
+  roomTypeCatalogHmacKey,
 }) => {
   const effectiveBusinessDate = canonicalDate(businessDate)
     ?? shanghaiDate(now())
@@ -1168,6 +1190,7 @@ const collectDouyinOrderSummary = async ({
   let duplicateCount = 0
   let httpStatus = 200
   let paginationComplete = rangeEnd < rangeStart
+  let observedRoomTypes = []
 
   for (
     let pageIndex = 1;
@@ -1208,6 +1231,15 @@ const collectDouyinOrderSummary = async ({
       }
       throw error
     }
+    observedRoomTypes = mergeRoomTypeCatalogs(
+      observedRoomTypes,
+      extractRoomTypeCatalog(rows, {
+        platformCode: 'DOUYIN',
+        allowProductNames: true,
+        scope: roomTypeCatalogScope,
+        hmacKey: roomTypeCatalogHmacKey,
+      }),
+    )
     fetchedPageCount += 1
     let newIdentityCount = 0
     for (const row of rows) {
@@ -1226,10 +1258,15 @@ const collectDouyinOrderSummary = async ({
       monthlyCount += 1
       if (douyinOrderCanceled(row)) canceledCount += 1
     }
-    const hasMore = response.root?.data?.pagination?.has_more === true
-    if (!hasMore || rows.length === 0) {
+    const hasMore = otaProviderBooleanTrue(
+      response.root?.data?.pagination?.has_more,
+    )
+    if (!hasMore) {
       paginationComplete = true
       break
+    }
+    if (rows.length === 0) {
+      throw new Error('OTA_DOUYIN_ORDER_PAGINATION_STALLED')
     }
     if (newIdentityCount === 0) {
       throw new Error('OTA_DOUYIN_ORDER_PAGINATION_STALLED')
@@ -1238,6 +1275,7 @@ const collectDouyinOrderSummary = async ({
   if (!paginationComplete) {
     throw new Error('OTA_DOUYIN_ORDER_PAGINATION_INCOMPLETE')
   }
+  onRoomTypeCatalog(observedRoomTypes)
   return {
     observedAt: now().toISOString(),
     httpStatus,
@@ -1439,6 +1477,9 @@ const collectMeituanOrderSummary = async ({
   businessDate,
   fetchImpl,
   now,
+  onRoomTypeCatalog,
+  roomTypeCatalogScope,
+  roomTypeCatalogHmacKey,
 }) => {
   const effectiveBusinessDate = canonicalDate(businessDate)
     ?? shanghaiDate(now())
@@ -1448,6 +1489,7 @@ const collectMeituanOrderSummary = async ({
   const rangeStart = `${effectiveBusinessDate.slice(0, 7)}-01`
   const rangeEnd = addCalendarDays(effectiveBusinessDate, -1)
   if (rangeEnd < rangeStart) {
+    onRoomTypeCatalog([])
     return {
       observedAt: now().toISOString(),
       httpStatus: 200,
@@ -1488,6 +1530,15 @@ const collectMeituanOrderSummary = async ({
     headers,
     fetchImpl,
   })
+  onRoomTypeCatalog(extractRoomTypeCatalog(
+    allResponse.root,
+    {
+      platformCode: 'MEITUAN',
+      allowProductNames: true,
+      scope: roomTypeCatalogScope,
+      hmacKey: roomTypeCatalogHmacKey,
+    },
+  ))
   return {
     observedAt: now().toISOString(),
     httpStatus: allResponse.httpStatus,
@@ -1508,6 +1559,9 @@ export const collectOtaSource = async ({
   fetchImpl = globalThis.fetch,
   lookupImpl = lookup,
   now = () => new Date(),
+  onRoomTypeCatalog = () => {},
+  roomTypeCatalogScope = source?.sourceId ?? source?.platformCode ?? 'OTA',
+  roomTypeCatalogHmacKey = null,
 }) => {
   if (
     !source
@@ -1559,6 +1613,9 @@ export const collectOtaSource = async ({
       businessDate,
       fetchImpl,
       now,
+      onRoomTypeCatalog,
+      roomTypeCatalogScope,
+      roomTypeCatalogHmacKey,
     })
   }
   if (isDouyinReviewSource({ source: effectiveSource, endpoint })) {
@@ -1578,6 +1635,9 @@ export const collectOtaSource = async ({
       businessDate,
       fetchImpl,
       now,
+      onRoomTypeCatalog,
+      roomTypeCatalogScope,
+      roomTypeCatalogHmacKey,
     })
   }
   if (isFliggySource({ source: effectiveSource, endpoint })) {
@@ -1591,6 +1651,9 @@ export const collectOtaSource = async ({
         fetchImpl,
       }),
       now,
+      onRoomTypeCatalog,
+      roomTypeCatalogScope,
+      roomTypeCatalogHmacKey,
     })
   }
   let body
@@ -1613,6 +1676,11 @@ export const collectOtaSource = async ({
     fetchImpl,
   })
   const { root } = response
+  onRoomTypeCatalog(extractRoomTypeCatalog(root, {
+    platformCode: effectiveSource.platformCode ?? 'OTHER',
+    scope: roomTypeCatalogScope,
+    hmacKey: roomTypeCatalogHmacKey,
+  }))
   const summary = summarizeOtaJson(root)
   const peerRanking = summarizeMeituanPeerRanking({
     root,
