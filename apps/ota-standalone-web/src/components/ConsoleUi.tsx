@@ -15,6 +15,17 @@ export type IconName =
   | 'check'
   | 'arrow'
 
+export type PlatformIconName =
+  | 'PMS'
+  | 'CTRIP'
+  | 'MEITUAN'
+  | 'FLIGGY'
+  | 'DOUYIN'
+  | 'QUNAR'
+  | 'TONGCHENG'
+  | 'OTHER'
+  | 'BROADCAST'
+
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const common = {
     width: size,
@@ -43,6 +54,39 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   }
   return <svg {...common}>{paths[name]}</svg>
+}
+
+export function PlatformIcon({ name, size = 24 }: { name: PlatformIconName; size?: number }) {
+  const className = `platform-icon platform-icon-${name.toLowerCase()}`
+  const style = { width: size, height: size }
+
+  if (name === 'PMS') {
+    return <span aria-hidden="true" className={className} style={style}><Icon name="hotel" size={Math.round(size * .64)} /></span>
+  }
+  if (name === 'CTRIP') {
+    return (
+      <span aria-hidden="true" className={className} style={style}>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M7 13.5c3.5-4.7 6.2-5.2 10-2.4M9.2 16.5l6.1-7" /></svg>
+      </span>
+    )
+  }
+  if (name === 'DOUYIN') {
+    return (
+      <span aria-hidden="true" className={className} style={style}>
+        <svg viewBox="0 0 24 24"><path d="M14 5v9.1a3.6 3.6 0 1 1-2.8-3.5V7.2c2.3 2.2 4 2.7 6.1 2.8V7.2C15.9 7 14.8 6.3 14 5Z" /></svg>
+      </span>
+    )
+  }
+
+  const glyph = {
+    MEITUAN: '美',
+    FLIGGY: '飞',
+    QUNAR: '去',
+    TONGCHENG: '同',
+    OTHER: '+',
+    BROADCAST: '播',
+  }[name]
+  return <span aria-hidden="true" className={className} style={style}>{glyph}</span>
 }
 
 export function Brand({ compact = false }: { compact?: boolean }) {

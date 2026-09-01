@@ -12,4 +12,10 @@ export default defineConfig({
       '/api': process.env.OTA_API_PROXY_TARGET ?? 'http://localhost:8091',
     },
   },
+  preview: {
+    port: 4180,
+    proxy: {
+      '/api': process.env.OTA_API_PROXY_TARGET ?? 'http://localhost:8091',
+    },
+  },
 })

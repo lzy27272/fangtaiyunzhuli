@@ -19,7 +19,15 @@ import {
   type SimulationHotelView,
   type WeComConfigView,
 } from '../api/business'
-import { EmptyState, Icon, LoadingState, Status, type Tone } from '../components/ConsoleUi'
+import {
+  EmptyState,
+  Icon,
+  LoadingState,
+  PlatformIcon,
+  Status,
+  type PlatformIconName,
+  type Tone,
+} from '../components/ConsoleUi'
 import { HistoryPage } from './HistoryPage'
 import { MappingTargetPage } from './MappingTargetPage'
 import { ReportSourceConfigPage } from './ReportSourceConfigPage'
@@ -55,6 +63,20 @@ const sourceDisplayName = (platform: string) => ({
   QUNAR: '去哪儿', TONGCHENG: '同程', OTHER: '其他渠道',
 }[platform] ?? platform)
 
+const PLATFORM_ORDER = ['CTRIP', 'MEITUAN', 'FLIGGY', 'DOUYIN', 'QUNAR', 'TONGCHENG', 'OTHER'] as const
+
+const configuredOtaSources = (sources: OtaSourceView[]) => [...sources]
+  .sort((left, right) => {
+    const leftIndex = PLATFORM_ORDER.indexOf(left.platformCode as typeof PLATFORM_ORDER[number])
+    const rightIndex = PLATFORM_ORDER.indexOf(right.platformCode as typeof PLATFORM_ORDER[number])
+    return (leftIndex < 0 ? PLATFORM_ORDER.length : leftIndex)
+      - (rightIndex < 0 ? PLATFORM_ORDER.length : rightIndex)
+  })
+  .filter((source, index, all) =>
+    all.findIndex((candidate) => candidate.platformCode === source.platformCode) === index)
+
+const storeMonogram = (hotelName: string) => hotelName.trim().match(/[\u3400-\u9fffA-Za-z0-9]/)?.[0] ?? '店'
+
 function otaState(source: OtaSourceView | undefined): { tone: Tone; label: string } {
   if (!source) return { tone: 'muted', label: '未配置' }
   if (!source.enabled) return { tone: 'muted', label: '已停用' }
@@ -80,6 +102,22 @@ function broadcastState(summary: HotelSummary): { tone: Tone; label: string } {
   }
   if (summary.wecom?.lastDelivery?.deliveryStatus === 'DELIVERED') return { tone: 'ok', label: '正常' }
   return { tone: 'warning', label: '待验证' }
+}
+
+function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } | null {
+  const pms = pmsState(summary)
+  if (pms.tone === 'error' || pms.label === '数据不完整') {
+    return { tab: 'collection', label: '检查 PMS' }
+  }
+  const failedOta = configuredOtaSources(summary.otaSources)
+    .find((source) => otaState(source).tone === 'error')
+  if (failedOta) {
+    return { tab: 'collection', label: `检查${sourceDisplayName(failedOta.platformCode)}` }
+  }
+  if (broadcastState(summary).tone === 'error') {
+    return { tab: 'broadcast', label: '检查播报' }
+  }
+  return null
 }
 
 async function loadHotelSummary(hotel: SimulationHotelView): Promise<HotelSummary> {
@@ -140,16 +178,11 @@ export function StoreOverviewPage({
       || summary.hotel.hotelName.toLowerCase().includes(query)
       || summary.hotel.hotelCode.toLowerCase().includes(query)
       || PMS_LABELS[summary.hotel.pmsSystemCode].toLowerCase().includes(query)
-    const needsAttention = pmsState(summary).tone === 'error'
-      || broadcastState(summary).tone === 'error'
-      || summary.otaSources.some((source) => otaState(source).tone === 'error')
+    const needsAttention = Boolean(directTarget(summary))
     return matchesSearch && (filter === 'ALL' || (filter === 'ATTENTION' ? needsAttention : !needsAttention))
   }), [filter, search, summaries])
 
-  const abnormalCount = summaries.filter((summary) =>
-    pmsState(summary).tone === 'error'
-    || broadcastState(summary).tone === 'error'
-    || summary.otaSources.some((source) => otaState(source).tone === 'error')).length
+  const abnormalCount = summaries.filter((summary) => directTarget(summary)).length
   const latest = summaries
     .map((summary) => summary.monitor?.cutoffAt)
     .filter((value): value is string => Boolean(value))
@@ -199,24 +232,30 @@ export function StoreOverviewPage({
         {filtered.map((summary) => {
           const pms = pmsState(summary)
           const broadcast = broadcastState(summary)
-          const platformMap = new Map(summary.otaSources.map((source) => [source.platformCode, source]))
+          const otaSources = configuredOtaSources(summary.otaSources)
+          const direct = directTarget(summary)
           const openIncidents = summary.incidents.filter((item) => !/CLOSED|RESOLVED/i.test(item.status)).length
+          const rowTone = pms.tone === 'error'
+            || otaSources.some((source) => otaState(source).tone === 'error')
+            || broadcast.tone === 'error'
+            ? 'error'
+            : direct ? 'warning' : 'ok'
           return (
-            <article className={`store-row${pms.tone === 'error' || broadcast.tone === 'error' ? ' has-error' : ''}`} key={summary.hotel.hotelId}>
+            <article className={`store-row has-${rowTone}`} key={summary.hotel.hotelId}>
               <button className="store-main" type="button" onClick={() => onOpen(summary.hotel)}>
-                <span className="store-avatar">{summary.hotel.hotelCode.slice(-1)}</span>
+                <span className="store-avatar">{storeMonogram(summary.hotel.hotelName)}</span>
                 <span><strong>{summary.hotel.hotelCode} · {summary.hotel.hotelName}</strong><small>{PMS_LABELS[summary.hotel.pmsSystemCode]} · {summary.hotel.lifecycleStatus}</small></span>
               </button>
               <div className="source-statuses">
-                <Status tone={pms.tone}>PMS · {pms.label}</Status>
-                {(['CTRIP', 'MEITUAN', 'FLIGGY', 'DOUYIN'] as const).map((platform) => {
-                  const state = otaState(platformMap.get(platform))
-                  return <Status key={platform} tone={state.tone}>{sourceDisplayName(platform)} · {state.label}</Status>
+                <button aria-label={`打开 PMS 采集配置，当前${pms.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, 'collection')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
+                {otaSources.map((source) => {
+                  const state = otaState(source)
+                  return <button aria-label={`打开${sourceDisplayName(source.platformCode)}配置，当前${state.label}`} className="channel-status-link" key={source.platformCode} onClick={() => onOpen(summary.hotel, 'collection')} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button>
                 })}
-                <Status tone={broadcast.tone}>播报 · {broadcast.label}</Status>
+                <button aria-label={`打开播报记录，当前${broadcast.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, 'broadcast')} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
               </div>
               <div className="store-meta"><strong>{formatTime(summary.monitor?.cutoffAt)}</strong><small>{openIncidents ? `${openIncidents}项异常待处理` : '最近检查'}</small></div>
-              <button className="row-action" type="button" onClick={() => onOpen(summary.hotel)}>进入门店<Icon name="chevron" /></button>
+              <button className={`row-action${direct ? ' direct' : ''}`} type="button" onClick={() => onOpen(summary.hotel, direct?.tab)}>{direct ? <><Icon name="arrow" />一键直达<small>{direct.label}</small></> : <>进入门店<Icon name="chevron" /></>}</button>
             </article>
           )
         })}
@@ -323,9 +362,9 @@ export function StoreDetailPage({
       </div>
 
       <div className="store-health-bar">
-        <Status tone={pms.tone}>PMS · {pms.label}</Status>
-        {data.otaSources.map((source) => { const state = otaState(source); return <Status key={source.sourceId} tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status> })}
-        <Status tone={broadcast.tone}>播报 · {broadcast.label}</Status>
+        <button className="channel-status-link" onClick={() => setTab('collection')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
+        {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <button className="channel-status-link" key={source.platformCode} onClick={() => setTab('collection')} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button> })}
+        <button className="channel-status-link" onClick={() => setTab('broadcast')} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
       </div>
 
       <nav className="store-tabs" aria-label="门店功能">
@@ -356,8 +395,8 @@ export function StoreDetailPage({
             <section className="content-panel">
               <div className="section-heading small"><div><h2>数据连接</h2><p>连接状态与最近同步时间</p></div><button className="text-link" onClick={() => setTab('collection')} type="button">查看配置</button></div>
               <div className="connection-table">
-                <div><strong>{PMS_LABELS[hotel.pmsSystemCode]}</strong><Status tone={pms.tone}>{pms.label}</Status><span>{formatTime(data.monitor?.cutoffAt)}</span></div>
-                {data.otaSources.map((source) => { const state = otaState(source); return <div key={source.sourceId}><strong>{sourceDisplayName(source.platformCode)}</strong><Status tone={state.tone}>{state.label}</Status><span>{formatTime(source.lastRefreshAt)}</span></div> })}
+                <div><strong className="connection-name"><PlatformIcon name="PMS" />{PMS_LABELS[hotel.pmsSystemCode]}</strong><Status tone={pms.tone}>{pms.label}</Status><span>{formatTime(data.monitor?.cutoffAt)}</span></div>
+                {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <div key={source.platformCode}><strong className="connection-name"><PlatformIcon name={source.platformCode as PlatformIconName} />{sourceDisplayName(source.platformCode)}</strong><Status tone={state.tone}>{state.label}</Status><span>{formatTime(source.lastRefreshAt)}</span></div> })}
               </div>
             </section>
             <section className="content-panel">
