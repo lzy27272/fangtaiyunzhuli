@@ -400,10 +400,39 @@ if (-not $SkipTests) {
     if ($testFiles.Count -lt 1) {
         throw 'WEB_TEST_FILES_NOT_FOUND'
     }
-    Invoke-CheckedCommand `
-        -FilePath $nodePath `
-        -Arguments (@('--test') + $testFiles) `
-        -WorkingDirectory $webRoot
+    $previousNodePath = $env:NODE_PATH
+    $runtimeNodeModules = Join-Path (
+        Split-Path (Split-Path $nodePath -Parent) -Parent
+    ) 'node_modules'
+    $nodeModuleSearchPaths = @(
+        (Join-Path $webRoot 'node_modules'),
+        $runtimeNodeModules
+    ) | Where-Object {
+        Test-Path -LiteralPath $_ -PathType Container
+    } | Select-Object -Unique
+    if (-not [string]::IsNullOrWhiteSpace($previousNodePath)) {
+        $nodeModuleSearchPaths += $previousNodePath.Split(
+            [IO.Path]::PathSeparator,
+            [StringSplitOptions]::RemoveEmptyEntries
+        )
+    }
+    try {
+        $env:NODE_PATH = (
+            $nodeModuleSearchPaths | Select-Object -Unique
+        ) -join [IO.Path]::PathSeparator
+        Invoke-CheckedCommand `
+            -FilePath $nodePath `
+            -Arguments (@('--test') + $testFiles) `
+            -WorkingDirectory $webRoot
+    }
+    finally {
+        if ([string]::IsNullOrEmpty($previousNodePath)) {
+            Remove-Item Env:NODE_PATH -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:NODE_PATH = $previousNodePath
+        }
+    }
 }
 Invoke-CheckedCommand `
     -FilePath $nodePath `

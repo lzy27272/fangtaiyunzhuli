@@ -45,3 +45,14 @@ test('release scripts provision a distinct persistent pseudonym key without prin
     /Buffer\.from\(pseudonymSecretKey \?\? '', 'base64url'\)\.length !== 32/u,
   )
 })
+
+test('release tests expose locked Node modules to root-level collectors', () => {
+  const publish = readRepoFile(
+    'infra/ota-standalone-server/scripts/Publish-OtaStandaloneServer.ps1',
+  )
+
+  assert.match(publish, /\$runtimeNodeModules = Join-Path/u)
+  assert.match(publish, /\$env:NODE_PATH = \(/u)
+  assert.match(publish, /\$previousNodePath/u)
+  assert.match(publish, /Remove-Item Env:NODE_PATH/u)
+})
