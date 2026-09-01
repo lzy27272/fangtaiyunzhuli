@@ -30,13 +30,13 @@ const availablePort = async () => {
   return port
 }
 
-const signedHeaders = ({ privateKey, deviceId, path, body }) => {
+const signedHeaders = ({ privateKey, deviceId, hotelCode = '001', path, body }) => {
   const timestamp = new Date().toISOString()
   const nonce = randomBytes(24).toString('base64url')
   const signature = sign(null, Buffer.from(trustedDeviceCanonicalMessage({
     method: 'POST',
     path,
-    hotelCode: '001',
+    hotelCode,
     deviceId,
     timestamp,
     nonce,
@@ -221,6 +221,120 @@ test('001 trusted device API enrolls, verifies and accepts a scoped snapshot', a
     const status = (await statusResponse.json()).data
     assert.equal(status.device.lastCompleteness, 'COMPLETE')
     assert.equal(status.device.lastBusinessDate, snapshot.businessDate)
+
+    const create003Response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/ota/simulation/hotels`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tenantCode: '001',
+          tenantDisplayName: '四方馆酒店管理',
+          hotelCode: '003',
+          hotelDisplayName: '003测试门店',
+          pmsSystemCode: 'MEITUAN_BIEYANGHONG',
+          timezone: 'Asia/Shanghai',
+          reasonCode: 'TRUSTED_DEVICE_MULTI_STORE_TEST',
+        }),
+      },
+    )
+    assert.equal(create003Response.status, 201)
+    const hotels003Response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/ota/simulation/hotels`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+    const hotel003 = (await hotels003Response.json()).data.hotels
+      .find((hotel) => hotel.hotelCode === '003')
+    assert.ok(hotel003)
+    const scoped003 = `/api/v1/ota/tenants/${encodeURIComponent(hotel003.tenantId)}`
+      + `/hotels/${encodeURIComponent(hotel003.hotelId)}`
+    const enrollment003Response = await fetch(
+      `http://127.0.0.1:${port}${scoped003}/trusted-device/enrollment`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ label: '003 API test' }),
+      },
+    )
+    assert.equal(enrollment003Response.status, 201)
+    const enrollment003 = (await enrollment003Response.json()).data
+    assert.match(enrollment003.enrollmentCode, /^003-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u)
+    const key003 = generateKeyPairSync('ed25519')
+    const enrolled003Response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/trusted-device/enroll`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hotelCode: '003',
+          enrollmentCode: enrollment003.enrollmentCode,
+          label: '003 API test',
+          publicKeyPem: key003.publicKey.export({ format: 'pem', type: 'spki' }).toString(),
+        }),
+      },
+    )
+    assert.equal(enrolled003Response.status, 201)
+    const device003 = (await enrolled003Response.json()).data
+    const config003Body = { hotelCode: '003' }
+    const config003Response = await fetch(
+      `http://127.0.0.1:${port}${configPath}`,
+      {
+        method: 'POST',
+        headers: signedHeaders({
+          privateKey: key003.privateKey,
+          deviceId: device003.deviceId,
+          hotelCode: '003',
+          path: configPath,
+          body: config003Body,
+        }),
+        body: JSON.stringify(config003Body),
+      },
+    )
+    assert.equal(config003Response.status, 200)
+    assert.equal((await config003Response.json()).data.hotel.hotelCode, '003')
+    const legacyCollectionAfterEnrollment = await fetch(
+      `http://127.0.0.1:${port}${scoped003}/live-collection-runs`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      },
+    )
+    assert.equal(legacyCollectionAfterEnrollment.status, 400)
+    assert.equal(
+      (await legacyCollectionAfterEnrollment.json()).code,
+      'TRUSTED_DEVICE_COLLECTION_REQUIRED',
+    )
+    const crossStoreResponse = await fetch(
+      `http://127.0.0.1:${port}${configPath}`,
+      {
+        method: 'POST',
+        headers: signedHeaders({
+          privateKey,
+          deviceId: device.deviceId,
+          hotelCode: '003',
+          path: configPath,
+          body: config003Body,
+        }),
+        body: JSON.stringify(config003Body),
+      },
+    )
+    assert.notEqual(crossStoreResponse.status, 200)
+    const healthAfter003 = await fetch(`http://127.0.0.1:${port}/health`)
+      .then((response) => response.json())
+    assert.deepEqual(
+      healthAfter003.trustedDevices.map((item) => item.hotelCode).sort(),
+      ['001', '003'],
+    )
   } finally {
     if (child.exitCode === null) {
       child.kill()

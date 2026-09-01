@@ -1,17 +1,22 @@
 param(
   [string]$NodePath = 'node.exe',
   [string]$StatePath = '',
-  [string]$Uri = 'sfgtrusted001://repair'
+  [ValidatePattern('^[A-Z0-9][A-Z0-9_-]{0,15}$')]
+  [string]$HotelCode = '001',
+  [string]$Uri = ''
 )
 
 $ErrorActionPreference = 'Stop'
+$protocolCode = $HotelCode.ToLowerInvariant().Replace('_', '-')
+if (-not $Uri) { $Uri = "sfgtrusted${protocolCode}://repair" }
 $normalizedUri = $Uri.Trim().TrimEnd('/')
-if ($normalizedUri -notmatch '^sfgtrusted001://(login|repair)$') {
-  throw 'Invalid 001 trusted-device command URI.'
+$expectedProtocol = "sfgtrusted$protocolCode"
+if ($normalizedUri -notmatch ('^' + [regex]::Escape($expectedProtocol) + '://(login|repair)$')) {
+  throw "Invalid $HotelCode trusted-device command URI."
 }
 $command = $Matches[1].ToLowerInvariant()
 $agentPath = Join-Path $PSScriptRoot 'trusted-device-agent.mjs'
-$arguments = @($agentPath, $command)
+$arguments = @($agentPath, $command, '--hotel', $HotelCode)
 if ($StatePath) { $arguments += @('--state', $StatePath) }
 & $NodePath @arguments
-if ($LASTEXITCODE -ne 0) { throw "001 trusted-device operation failed. Exit code: $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "$HotelCode trusted-device operation failed. Exit code: $LASTEXITCODE" }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const ENROLLMENT_PATTERN = /^001-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u
+const ENROLLMENT_PATTERN = /^([A-Z0-9][A-Z0-9_-]{0,15})-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u
 const BUNDLE_FILES = [
   ['tools/trusted-device/Install-001TrustedDevice.ps1', '../trusted-device/Install-001TrustedDevice.ps1'],
   ['tools/trusted-device/Start-001Login.ps1', '../trusted-device/Start-001Login.ps1'],
@@ -26,9 +26,11 @@ export const renderTrustedDeviceBootstrapPowerShell = ({
   enrollmentCode,
   serverOrigin,
 }) => {
-  if (!ENROLLMENT_PATTERN.test(String(enrollmentCode ?? ''))) {
+  const enrollmentMatch = ENROLLMENT_PATTERN.exec(String(enrollmentCode ?? ''))
+  if (!enrollmentMatch) {
     throw new Error('TRUSTED_DEVICE_ENROLLMENT_CODE_INVALID')
   }
+  const hotelCode = enrollmentMatch[1]
   let origin
   try {
     origin = new URL(String(serverOrigin ?? ''))
@@ -49,7 +51,8 @@ export const renderTrustedDeviceBootstrapPowerShell = ({
 
   return [
     "$ErrorActionPreference = 'Stop'",
-    "$bundleRoot = Join-Path $env:TEMP ('Sifangguan-001-' + [guid]::NewGuid().ToString('N'))",
+    `$hotelCode = ${powerShellLiteral(hotelCode)}`,
+    "$bundleRoot = Join-Path $env:TEMP ('Sifangguan-' + $hotelCode + '-' + [guid]::NewGuid().ToString('N'))",
     'function Write-B64File([string]$RelativePath, [string]$Encoded) {',
     '  $target = Join-Path $bundleRoot $RelativePath',
     '  New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null',
@@ -59,8 +62,8 @@ export const renderTrustedDeviceBootstrapPowerShell = ({
     '  New-Item -ItemType Directory -Path $bundleRoot -Force | Out-Null',
     fileCommands.split('\n').map((line) => `  ${line}`).join('\n'),
     "  $installer = Join-Path $bundleRoot 'tools\\trusted-device\\Install-001TrustedDevice.ps1'",
-    `  & $installer -EnrollmentCode ${powerShellLiteral(enrollmentCode)} -ServerOrigin ${powerShellLiteral(origin.origin)}`,
-    "  if ($LASTEXITCODE -ne 0) { throw '001可信设备安装失败。' }",
+    `  & $installer -EnrollmentCode ${powerShellLiteral(enrollmentCode)} -HotelCode $hotelCode -ServerOrigin ${powerShellLiteral(origin.origin)}`,
+    "  if ($LASTEXITCODE -ne 0) { throw ($hotelCode + '可信设备安装失败。') }",
     '} finally {',
     '  if (Test-Path -LiteralPath $bundleRoot) {',
     '    Remove-Item -LiteralPath $bundleRoot -Recurse -Force -ErrorAction SilentlyContinue',
@@ -70,6 +73,9 @@ export const renderTrustedDeviceBootstrapPowerShell = ({
 }
 
 export const renderTrustedDeviceBootstrapCommand = (options) => {
+  const enrollmentMatch = ENROLLMENT_PATTERN.exec(String(options?.enrollmentCode ?? ''))
+  if (!enrollmentMatch) throw new Error('TRUSTED_DEVICE_ENROLLMENT_CODE_INVALID')
+  const hotelCode = enrollmentMatch[1]
   const script = `\ufeff${renderTrustedDeviceBootstrapPowerShell(options)}`
   const encoded = Buffer.from(script, 'utf8').toString('base64')
   const chunks = encoded.match(/.{1,3000}/gu) ?? []
@@ -78,8 +84,8 @@ export const renderTrustedDeviceBootstrapCommand = (options) => {
   return [
     '@echo off',
     'setlocal',
-    'set "SFG_B64=%TEMP%\\Sifangguan-001-%RANDOM%-%RANDOM%.b64"',
-    'set "SFG_PS1=%TEMP%\\Sifangguan-001-%RANDOM%-%RANDOM%.ps1"',
+    `set "SFG_B64=%TEMP%\\Sifangguan-${hotelCode}-%RANDOM%-%RANDOM%.b64"`,
+    `set "SFG_PS1=%TEMP%\\Sifangguan-${hotelCode}-%RANDOM%-%RANDOM%.ps1"`,
     ...writeChunks,
     'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$b=[IO.File]::ReadAllText($env:SFG_B64);[IO.File]::WriteAllBytes($env:SFG_PS1,[Convert]::FromBase64String($b))"',
     'if errorlevel 1 goto :failed',
@@ -89,12 +95,12 @@ export const renderTrustedDeviceBootstrapCommand = (options) => {
     'if not "%SFG_EXIT%"=="0" goto :failed_code',
     'exit /b 0',
     ':failed_code',
-    'echo 001 trusted device setup failed. Exit code: %SFG_EXIT%',
+    `echo ${hotelCode} trusted device setup failed. Exit code: %SFG_EXIT%`,
     'pause',
     'exit /b %SFG_EXIT%',
     ':failed',
     'del /q "%SFG_B64%" "%SFG_PS1%" >nul 2>nul',
-    'echo 001 trusted device setup failed.',
+    `echo ${hotelCode} trusted device setup failed.`,
     'pause',
     'exit /b 1',
   ].join('\r\n') + '\r\n'

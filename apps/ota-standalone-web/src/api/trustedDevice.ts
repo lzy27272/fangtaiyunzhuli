@@ -31,13 +31,13 @@ export interface TrustedDeviceStatus {
 export interface TrustedDeviceEnrollment {
   enrollmentCode: string
   expiresAt: string
-  hotelCode: '001'
+  hotelCode: string
   label: string
 }
 
 export interface TrustedDeviceBootstrapDownload {
   blob: Blob
-  fileName: 'Sifangguan-001-Setup.cmd'
+  fileName: string
   expiresAt: string | null
 }
 
@@ -100,7 +100,7 @@ export const loadTrustedDeviceStatus = (
 
 export const createTrustedDeviceEnrollment = (
   context: HotelContext,
-  label = '001门店采集电脑',
+  label = '门店采集电脑',
 ): Promise<TrustedDeviceEnrollment> => request(
   context,
   '/trusted-device/enrollment',
@@ -149,14 +149,15 @@ const downloadBootstrap = async (
   if (!response.ok) throw new Error(await failureCode(response))
   return {
     blob: await response.blob(),
-    fileName: 'Sifangguan-001-Setup.cmd',
+    fileName: response.headers.get('x-sfg-bootstrap-file-name')
+      ?? 'Sifangguan-Trusted-Device-Setup.cmd',
     expiresAt: response.headers.get('x-sfg-enrollment-expires-at'),
   }
 }
 
 export const downloadTrustedDeviceBootstrap = (
   context: HotelContext,
-  label = '001门店采集电脑',
+  label = '门店采集电脑',
 ): Promise<TrustedDeviceBootstrapDownload> =>
   downloadBootstrap(context, label)
 

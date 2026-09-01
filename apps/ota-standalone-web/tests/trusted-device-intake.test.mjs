@@ -129,3 +129,67 @@ test('001 trusted device enrollment stores only public key and rejects replay', 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('trusted-device registries isolate two Bieyanghong stores', async () => {
+  const root = await mkdtemp(join(os.tmpdir(), 'trusted-device-multistore-'))
+  try {
+    const now = new Date('2026-09-01T02:00:00.000Z')
+    const hotel003 = {
+      ...hotel,
+      hotelId: '20000000-0000-4000-8000-000000000003',
+      hotelCode: '003',
+      hotelName: '003测试门店',
+    }
+    const store001 = createTrustedDeviceIntakeStore({
+      path: join(root, '001.json'),
+      hotel,
+    })
+    const store003 = createTrustedDeviceIntakeStore({
+      path: join(root, '003.json'),
+      hotel: hotel003,
+    })
+    const key001 = generateKeyPairSync('ed25519')
+    const enrollment001 = store001.createEnrollment({ now })
+    const device001 = store001.enroll({
+      hotelCode: '001',
+      enrollmentCode: enrollment001.enrollmentCode,
+      publicKeyPem: key001.publicKey.export({ format: 'pem', type: 'spki' }).toString(),
+      now: new Date(now.getTime() + 1_000),
+    })
+    const requestNow = new Date(now.getTime() + 2_000)
+    const body003 = { hotelCode: '003' }
+    const request003 = {
+      method: 'POST',
+      path: '/api/v1/trusted-device/config',
+      hotelCode: '003',
+      deviceId: device001.deviceId,
+      timestamp: requestNow.toISOString(),
+      nonce: 'fedcba9876543210fedcba9876543210',
+      body: body003,
+    }
+    const signature = sign(
+      null,
+      Buffer.from(trustedDeviceCanonicalMessage(request003)),
+      key001.privateKey,
+    ).toString('base64url')
+    assert.throws(
+      () => store003.verifyRequest({
+        method: request003.method,
+        path: request003.path,
+        body: body003,
+        headers: {
+          'x-sfg-device-id': device001.deviceId,
+          'x-sfg-device-timestamp': request003.timestamp,
+          'x-sfg-device-nonce': request003.nonce,
+          'x-sfg-device-signature': signature,
+        },
+        now: requestNow,
+      }),
+      /TRUSTED_DEVICE_NOT_ACTIVE/u,
+    )
+    assert.equal(store001.status().hotelCode, '001')
+    assert.equal(store003.status().hotelCode, '003')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

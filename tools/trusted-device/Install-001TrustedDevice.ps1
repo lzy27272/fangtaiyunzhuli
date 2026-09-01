@@ -1,13 +1,27 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidatePattern('^001-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$')]
+  [ValidatePattern('^[A-Z0-9][A-Z0-9_-]{0,15}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$')]
   [string]$EnrollmentCode,
+  [ValidatePattern('^[A-Z0-9][A-Z0-9_-]{0,15}$')]
+  [string]$HotelCode = '',
   [string]$ServerOrigin = 'https://www.sfgzt.cn',
   [string]$NodePath = 'node.exe',
-  [string]$InstallRoot = "$env:LOCALAPPDATA\Sifangguan\TrustedDevice001\app"
+  [string]$InstallRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
+if ($EnrollmentCode -notmatch '^([A-Z0-9][A-Z0-9_-]{0,15})-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$') {
+  throw 'EnrollmentCode format is invalid.'
+}
+$enrollmentHotelCode = $Matches[1]
+if (-not $HotelCode) { $HotelCode = $enrollmentHotelCode }
+if ($HotelCode -ne $enrollmentHotelCode) {
+  throw 'HotelCode must match the enrollment code.'
+}
+$stateDirectoryName = if ($HotelCode -eq '001') { 'TrustedDevice001' } else { "TrustedDevice-$HotelCode" }
+if (-not $InstallRoot) {
+  $InstallRoot = Join-Path $env:LOCALAPPDATA "Sifangguan\$stateDirectoryName\app"
+}
 $resolvedRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 if (-not $resolvedRoot.StartsWith([System.IO.Path]::GetFullPath($env:LOCALAPPDATA), [System.StringComparison]::OrdinalIgnoreCase)) {
   throw 'InstallRoot must be inside the current user LOCALAPPDATA directory.'
@@ -56,7 +70,7 @@ if (-not (Test-Path -LiteralPath $resolvedNpmPath -PathType Leaf)) {
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-Write-Host '[2/5] Installing the 001 trusted-device files...'
+Write-Host "[2/5] Installing the $HotelCode trusted-device files..."
 $files = @(
   'tools\trusted-device\trusted-device-agent.mjs',
   'tools\trusted-device\package.json',
@@ -78,29 +92,29 @@ try {
   Write-Host '[3/5] Installing collector dependencies. The first run may take 1-2 minutes...'
   & $resolvedNpmPath install --omit=dev --ignore-scripts --no-audit --no-fund
   if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed. Exit code: $LASTEXITCODE" }
-  Write-Host '[4/5] Registering the 001 trusted device...'
-  $deviceStatePath = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001\device-state.json'
+  Write-Host "[4/5] Registering the $HotelCode trusted device..."
+  $deviceStatePath = Join-Path $env:LOCALAPPDATA "Sifangguan\$stateDirectoryName\device-state.json"
   $deviceReady = $false
   if (Test-Path -LiteralPath $deviceStatePath -PathType Leaf) {
-    & $resolvedNodePath '.\trusted-device-agent.mjs' status
+    & $resolvedNodePath '.\trusted-device-agent.mjs' status --hotel $HotelCode
     if ($LASTEXITCODE -eq 0) {
       $deviceReady = $true
       Write-Host 'An existing trusted device is valid. Keeping its device key and browser session.'
     }
   }
   if (-not $deviceReady) {
-    & $resolvedNodePath '.\trusted-device-agent.mjs' enroll --code $EnrollmentCode --server $ServerOrigin
+    & $resolvedNodePath '.\trusted-device-agent.mjs' enroll --hotel $HotelCode --code $EnrollmentCode --server $ServerOrigin
     if ($LASTEXITCODE -ne 0) { throw "Trusted-device enrollment failed. Exit code: $LASTEXITCODE" }
   }
 } finally {
   Pop-Location
 }
 
-$taskName = 'Sifangguan-001-Trusted-Collector'
+$taskName = "Sifangguan-$HotelCode-Trusted-Collector"
 $agentPath = Join-Path $packageRoot 'trusted-device-agent.mjs'
 $taskAction = New-ScheduledTaskAction `
   -Execute $resolvedNodePath `
-  -Argument ('"' + $agentPath + '" collect-if-due') `
+  -Argument ('"' + $agentPath + '" collect-if-due --hotel ' + $HotelCode) `
   -WorkingDirectory $packageRoot
 $taskTrigger = New-ScheduledTaskTrigger `
   -Once `
@@ -115,22 +129,24 @@ Register-ScheduledTask `
   -Action $taskAction `
   -Trigger $taskTrigger `
   -Settings $taskSettings `
-  -Description 'Sifangguan 001 trusted-device collector. Checks the active collection window every 5 minutes.' `
+  -Description "Sifangguan $HotelCode trusted-device collector. Checks the active collection window every 5 minutes." `
   -Force | Out-Null
 
-$protocolRoot = 'HKCU:\Software\Classes\sfgtrusted001'
+$protocolCode = $HotelCode.ToLowerInvariant().Replace('_', '-')
+$protocolName = "sfgtrusted$protocolCode"
+$protocolRoot = "HKCU:\Software\Classes\$protocolName"
 $protocolCommand = Join-Path $protocolRoot 'shell\open\command'
 New-Item -Path $protocolCommand -Force | Out-Null
-Set-Item -Path $protocolRoot -Value 'URL:Sifangguan 001 Trusted Device'
+Set-Item -Path $protocolRoot -Value "URL:Sifangguan $HotelCode Trusted Device"
 New-ItemProperty -Path $protocolRoot -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
 $loginScript = Join-Path $packageRoot 'Start-001Login.ps1'
-$openCommand = '"powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $loginScript + '" -NodePath "' + $resolvedNodePath + '" -Uri "%1"'
+$openCommand = '"powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $loginScript + '" -NodePath "' + $resolvedNodePath + '" -HotelCode "' + $HotelCode + '" -Uri "%1"'
 Set-Item -Path $protocolCommand -Value $openCommand
 
-$stateRoot = Join-Path $env:LOCALAPPDATA 'Sifangguan\TrustedDevice001'
+$stateRoot = Join-Path $env:LOCALAPPDATA "Sifangguan\$stateDirectoryName"
 & icacls.exe $stateRoot /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Failed to secure the local credential directory. Exit code: $LASTEXITCODE" }
 
 Write-Host '[5/5] Installation complete. Opening the official Meituan login page...'
-& $resolvedNodePath $agentPath login
-if ($LASTEXITCODE -ne 0) { throw "001 trusted-device login was not completed. Exit code: $LASTEXITCODE" }
+& $resolvedNodePath $agentPath login --hotel $HotelCode
+if ($LASTEXITCODE -ne 0) { throw "$HotelCode trusted-device login was not completed. Exit code: $LASTEXITCODE" }

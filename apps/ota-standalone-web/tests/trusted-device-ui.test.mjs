@@ -7,7 +7,7 @@ const readSource = (relativePath) => readFile(
   'utf8',
 )
 
-test('001 configuration page uses trusted device mode and never requests credentials', async () => {
+test('Bieyanghong configuration page uses per-store trusted device mode and never requests credentials', async () => {
   const [page, panel, client, agent, installer, launcher] = await Promise.all([
     readSource('../src/pages/ReportSourceConfigPage.tsx'),
     readSource('../src/pages/TrustedDevicePanel.tsx'),
@@ -22,8 +22,8 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(panel, /下载安装并进入登录/u)
   assert.match(panel, /一键检查并修复/u)
   assert.match(panel, /仅打开美团登录/u)
-  assert.match(panel, /sfgtrusted001:\/\/login/u)
-  assert.match(panel, /sfgtrusted001:\/\/repair/u)
+  assert.match(panel, /`sfgtrusted\$\{protocolCode\}:\/\/login`/u)
+  assert.match(panel, /`sfgtrusted\$\{protocolCode\}:\/\/repair`/u)
   assert.match(panel, /lastSnapshotAt/u)
   assert.match(panel, /lastCompleteness === 'COMPLETE'/u)
   assert.match(panel, /Ed25519设备签名/u)
@@ -36,11 +36,11 @@ test('001 configuration page uses trusted device mode and never requests credent
   assert.match(agent, /--remote-debugging-address=127\.0\.0\.1/u)
   assert.doesNotMatch(agent, /launchPersistentContext/u)
   assert.doesNotMatch(agent, /--enable-automation/u)
-  assert.match(installer, /HKCU:\\Software\\Classes\\sfgtrusted001/u)
+  assert.match(installer, /HKCU:\\Software\\Classes\\\$protocolName/u)
   assert.match(installer, /-Uri "%1"/u)
   assert.match(installer, /-WindowStyle Hidden/u)
-  assert.match(launcher, /sfgtrusted001:\/\/\(login\|repair\)/u)
-  assert.match(launcher, /@\(\$agentPath, \$command\)/u)
+  assert.match(launcher, /\$expectedProtocol/u)
+  assert.match(launcher, /@\(\$agentPath, \$command, '--hotel', \$HotelCode\)/u)
   assert.match(installer, /Node\.js LTS/u)
   assert.match(installer, /\$env:ProgramFiles/u)
   const resolver = installer.match(

@@ -1,320 +1,135 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { hasRefreshContext, login, logout, refreshSession } from './api/auth'
-import type { HotelContext } from './api/business'
-import { clearSession, getSession, setSession, type AuthSession, type OtaRole } from './auth/session'
-import { HotelContextBar } from './components/HotelContextBar'
-import { AccountSecurityPage } from './pages/AccountSecurityPage'
-import { HistoryPage } from './pages/HistoryPage'
-import { MappingTargetPage } from './pages/MappingTargetPage'
-import { MonitorPage } from './pages/MonitorPage'
-import { ReportSourceConfigPage } from './pages/ReportSourceConfigPage'
-import type { ReportSourceAttention } from './pages/reportSourceAttention'
+import type { SimulationHotelView } from './api/business'
+import { clearSession, getSession, setSession, type AuthSession } from './auth/session'
+import { Brand, Icon, LoadingState } from './components/ConsoleUi'
+import { ExceptionCenterPage } from './pages/ExceptionCenterPage'
+import { NewStoreWizard } from './pages/NewStoreWizard'
+import { PeoplePermissionsPage } from './pages/PeoplePermissionsPage'
+import { PersonalSecurityPage } from './pages/PersonalSecurityPage'
+import { loadAuthorizedHotels, StoreDetailPage, StoreOverviewPage, type StoreTab } from './pages/StoreConsolePage'
 
-function LoginPanel({ onAuthenticated }: { onAuthenticated: (session: AuthSession) => void }) {
+type AppPage = 'stores' | 'exceptions' | 'people' | 'security' | 'store-detail' | 'new-store'
+
+function LoginPanel({ expired, onAuthenticated }: { expired: boolean; onAuthenticated: (session: AuthSession) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError('')
-    setSubmitting(true)
+    event.preventDefault(); setSubmitting(true); setError('')
     try {
       const session = await login(username.trim(), password)
-      setSession(session)
-      setPassword('')
-      onAuthenticated(session)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '登录失败')
-    } finally {
-      setSubmitting(false)
-    }
+      setSession(session); setPassword(''); onAuthenticated(session)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '登录失败，请稍后重试') }
+    finally { setSubmitting(false) }
   }
 
-  return (
-    <main className="login-layout">
-      <section className="brand-panel" aria-label="产品说明">
-        <p className="eyebrow">REPORT-FUSION-V0.1</p>
-        <h1>四方馆经营自动化后台</h1>
-        <p>独立运行的多报表融合计算、小时经营简报与P1风险控制后台。</p>
-        <div className="sprint-badge">本机评审 · 多URL报表融合</div>
-      </section>
-
-      <section className="login-panel">
-        <form onSubmit={submit}>
-          <h2>本地人员账号登录</h2>
-          <p className="muted">后台账号与报表接口、OTA及企业微信凭据严格分离。</p>
-
-          <label>
-            账号
-            <input
-              autoComplete="username"
-              autoFocus
-              required
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-            />
-          </label>
-          <label>
-            密码
-            <input
-              autoComplete="current-password"
-              required
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-
-          {error ? <div className="error" role="alert">{error}</div> : null}
-          <button disabled={submitting || !username.trim() || !password} type="submit">
-            {submitting ? '正在验证…' : '安全登录'}
-          </button>
-          <p className="security-note">Access Token仅保存在当前页面内存；刷新凭据由安全Cookie承载。</p>
-        </form>
-      </section>
-    </main>
-  )
+  return <main className="new-login-page">
+    <header className="login-header"><Brand /><span>酒店经营自动化后台</span></header>
+    <div className="login-content">
+      <section className="login-intro"><p className="section-kicker">SIFANGGUAN HOTEL OPERATIONS</p><h1>让每一家门店的<br />数据与播报<span>清晰可控</span></h1><p>统一管理 PMS、OTA 数据连接、采集状态和企业微信播报，账号只访问已授权门店。</p><ul><li><Icon name="shield" />门店级权限隔离</li><li><Icon name="radio" />采集与播报状态可追踪</li><li><Icon name="alert" />异常一键直达处理</li></ul></section>
+      <section className="new-login-panel"><form onSubmit={submit}>
+        <div className="login-form-title"><span className="brand-mark"><Icon name="hotel" /></span><div><h2>登录经营中心</h2><p>使用平台管理账号登录</p></div></div>
+        {expired ? <div className="session-expired"><Icon name="alert" /><span><strong>登录会话已过期</strong><small>请重新登录，未保存的账号密码不会被保留。</small></span></div> : null}
+        <label>登录账号<input autoComplete="username" autoFocus required value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入账号" /></label>
+        <label>登录密码<input autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入密码" /></label>
+        {error ? <div className="inline-message error" role="alert">{error}</div> : null}
+        <button className="primary-button login-submit" disabled={submitting || !username.trim() || !password} type="submit">{submitting ? '正在安全验证…' : '登录'}<Icon name="arrow" /></button>
+        <p className="login-help">忘记账号或密码，请联系平台管理员处理。</p>
+      </form></section>
+    </div>
+    <footer className="login-footer">四方馆酒店经营中心 · 登录资料与业务平台凭据严格分离</footer>
+  </main>
 }
 
-type PageCode =
-  | 'connections'
-  | 'monitor'
-  | 'mapping'
-  | 'history'
-  | 'security'
-
-const NAVIGATION: Array<{ code: PageCode; number: string; label: string }> = [
-  { code: 'connections', number: '01', label: '报表接口' },
-  { code: 'monitor', number: '02', label: '实时监控' },
-  { code: 'mapping', number: '03', label: '指标规则' },
-  { code: 'history', number: '04', label: '简报推送' },
-  { code: 'security', number: '05', label: '账号安全' },
-]
-
-const ROLE_LABELS: Record<OtaRole, string> = {
-  PLATFORM_ADMIN: '平台管理员',
-  OTA_OPERATION_ASSISTANT: 'OTA运营助理',
-  OTA_OPERATION_MANAGER: 'OTA运营经理',
-  CEO: '总经理',
-  REGIONAL_MANAGER: '区域经理',
-  REVENUE_MANAGER: '收益经理',
-  HOTEL_P1_HANDLER: 'P1处理人',
-}
-
-function getRoleSummary(roles: OtaRole[]): string {
-  const [primaryRole] = roles
-  if (!primaryRole) return '未配置权限'
-
-  const primaryLabel = ROLE_LABELS[primaryRole]
-  return roles.length > 1 ? `${primaryLabel} · ${roles.length}项权限` : primaryLabel
-}
-
-function SprintOneShell({
-  session,
-  onLogout,
-  onSessionChange,
-}: {
-  session: AuthSession
-  onLogout: () => void
-  onSessionChange: (session: AuthSession) => void
-}) {
+function ConsoleShell({ session, onSessionChange, onSignedOut }: { session: AuthSession; onSessionChange: (session: AuthSession) => void; onSignedOut: () => void }) {
+  const [page, setPage] = useState<AppPage>('stores')
+  const [hotels, setHotels] = useState<SimulationHotelView[]>([])
+  const [selectedHotel, setSelectedHotel] = useState<SimulationHotelView | null>(null)
+  const [selectedTab, setSelectedTab] = useState<StoreTab>('overview')
+  const [loadingDirectory, setLoadingDirectory] = useState(true)
+  const [directoryError, setDirectoryError] = useState('')
   const [working, setWorking] = useState(false)
-  const [logoutError, setLogoutError] = useState('')
-  const [page, setPage] = useState<PageCode>('monitor')
-  const [context, setContext] = useState<HotelContext | null>(null)
-  const [reportSourceAttention, setReportSourceAttention] =
-    useState<ReportSourceAttention[]>([])
-  const [otaAttentionSourceId, setOtaAttentionSourceId] =
-    useState<string | null>(null)
-  const canAdminConfigure = session.account.roles.includes('PLATFORM_ADMIN')
-    || session.account.roles.includes('OTA_OPERATION_MANAGER')
-  const canRevenueConfigure = canAdminConfigure
-    || session.account.roles.includes('REVENUE_MANAGER')
-  const canManageAccounts = session.account.roles.includes('PLATFORM_ADMIN')
-  const roleSummary = getRoleSummary(session.account.roles)
-  const fullRoleList = session.account.roles.map((role) => ROLE_LABELS[role]).join(' · ')
+  const [accountMenu, setAccountMenu] = useState(false)
+  const [mobileMenu, setMobileMenu] = useState(false)
+
+  const platformAdmin = session.account.roles.includes('PLATFORM_ADMIN')
+  const canConfigure = platformAdmin || session.account.roles.includes('OTA_OPERATION_MANAGER')
+  const canRevenueConfigure = canConfigure || session.account.roles.includes('REVENUE_MANAGER')
+
+  const refreshHotels = useCallback(async () => {
+    setLoadingDirectory(true); setDirectoryError('')
+    try {
+      const rows = await loadAuthorizedHotels()
+      const allowed = session.account.hotelIds === null ? rows : rows.filter((hotel) => session.account.hotelIds?.includes(hotel.hotelId))
+      setHotels(allowed)
+      setSelectedHotel((current) => current ? allowed.find((hotel) => hotel.hotelId === current.hotelId) ?? null : null)
+    } catch (cause) { setDirectoryError(cause instanceof Error ? cause.message : '门店目录读取失败') }
+    finally { setLoadingDirectory(false) }
+  }, [session.account.hotelIds])
+  useEffect(() => { void refreshHotels() }, [refreshHotels])
+
+  const navigate = (next: AppPage) => { setPage(next); setAccountMenu(false); setMobileMenu(false) }
+  const openHotel = (hotel: SimulationHotelView, tab: StoreTab = 'overview') => { setSelectedHotel(hotel); setSelectedTab(tab); navigate('store-detail') }
+  const activeTopPage = page === 'store-detail' || page === 'new-store' ? 'stores' : page
 
   async function signOut() {
     setWorking(true)
-    setLogoutError('')
-    try {
-      await logout()
-      clearSession()
-      onLogout()
-    } catch (reason) {
-      setLogoutError(reason instanceof Error ? reason.message : '退出失败，请重试')
-    } finally {
-      setWorking(false)
+    try { await logout(); clearSession(); onSignedOut() }
+    catch (reason) {
+      setDirectoryError(reason instanceof Error ? `${reason.message}，当前会话仍保留。` : '退出失败，当前会话仍保留。')
     }
+    finally { setWorking(false) }
   }
+  const storeLabel = useMemo(() => `${hotels.length} 家门店`, [hotels.length])
 
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <p className="eyebrow">REPORT-FUSION-V0.1</p>
-          <strong>四方馆酒店房态运营助手</strong>
-        </div>
-        <nav aria-label="业务页面">
-          {NAVIGATION
-            .filter((item) => item.code !== 'security' || canManageAccounts)
-            .map((item) => (
-            <button
-              className={page === item.code ? 'active' : ''}
-              key={item.code}
-              type="button"
-              onClick={() => {
-                setReportSourceAttention([])
-                setOtaAttentionSourceId(null)
-                setPage(item.code)
-              }}
-            >
-              <span>{item.number}</span>
-              {item.label}
-            </button>
-            ))}
-        </nav>
-        <div className="sidebar-account">
-          <span className="status-dot" aria-hidden="true" />
-          <div>
-            <strong>{session.account.displayName}</strong>
-            <small aria-label={`权限：${fullRoleList}`} title={fullRoleList}>{roleSummary}</small>
-          </div>
-        </div>
-      </aside>
-
-      <main className="workspace">
-        <header className="workspace-header">
-          <div>
-            <p className="eyebrow">LOCAL REVIEW · REPORT FUSION</p>
-            <h1>多报表融合经营闭环</h1>
-          </div>
-          <button className="secondary" disabled={working} onClick={signOut} type="button">
-            {working ? '正在安全退出…' : '退出登录'}
-          </button>
-        </header>
-
-        <div className="simulation-banner" role="status">
-          <strong>本机试点环境 · 报表只读采集已启用 · 企微UAT推送可配置</strong>
-          <span>7月、8月、节假日及前一天从08:00起每小时采集播报；其他日期09/11/13点及14:00后每小时采集播报，末班均为次日01:00。Webhook在本机加密保存，推送结果可追踪。</span>
-        </div>
-
-        {logoutError ? <div className="shell-error" role="alert">{logoutError}，当前会话仍保留。</div> : null}
-        <HotelContextBar
-          canCreate={canManageAccounts}
-          context={context}
-          onApply={(nextContext) => {
-            setReportSourceAttention([])
-            setOtaAttentionSourceId(null)
-            setContext(nextContext)
-          }}
-        />
-
-        {page === 'connections' ? (
-          <ReportSourceConfigPage
-            attentionItems={reportSourceAttention}
-            otaAttentionSourceId={otaAttentionSourceId}
-            context={context}
-            canConfigure={canAdminConfigure}
-          />
-        ) : null}
-        {page === 'monitor' ? (
-          <MonitorPage
-            context={context}
-            onOpenReportSources={(attention) => {
-              setReportSourceAttention(attention)
-              setOtaAttentionSourceId(null)
-              setPage('connections')
-            }}
-            onOpenOtaSource={(sourceId) => {
-              setReportSourceAttention([])
-              setOtaAttentionSourceId(sourceId ?? '')
-              setPage('connections')
-            }}
-          />
-        ) : null}
-        {page === 'mapping' ? <MappingTargetPage context={context} canConfigure={canRevenueConfigure} /> : null}
-        {page === 'history' ? (
-          <HistoryPage
-            context={context}
-            canConfigure={canAdminConfigure}
-          />
-        ) : null}
-        {page === 'security' && canManageAccounts ? (
-          <AccountSecurityPage
-            session={session}
-            onSessionChange={onSessionChange}
-          />
-        ) : null}
-      </main>
-    </div>
-  )
+  return <div className="console-shell">
+    <header className="console-header">
+      <Brand />
+      <button className="mobile-menu-button" type="button" onClick={() => setMobileMenu((value) => !value)} aria-label="打开导航">☰</button>
+      <nav className={mobileMenu ? 'mobile-open' : ''} aria-label="全局导航">
+        <button className={activeTopPage === 'stores' ? 'active' : ''} type="button" onClick={() => navigate('stores')}><Icon name="hotel" />门店总览</button>
+        <button className={activeTopPage === 'exceptions' ? 'active' : ''} type="button" onClick={() => navigate('exceptions')}><Icon name="alert" />异常处理</button>
+        {platformAdmin ? <button className={activeTopPage === 'people' ? 'active' : ''} type="button" onClick={() => navigate('people')}><Icon name="users" />人员与权限</button> : null}
+      </nav>
+      <div className="header-actions">
+        <span className="scope-badge">{session.account.hotelIds === null ? `全部门店 · ${hotels.length}家` : storeLabel}</span>
+        <div className="account-menu-wrap"><button className="account-trigger" type="button" onClick={() => setAccountMenu((value) => !value)}><span>{session.account.displayName.slice(0, 1)}</span><b>{session.account.displayName}<small>{platformAdmin ? '平台管理员' : '门店管理账号'}</small></b><span className="caret">⌄</span></button>{accountMenu ? <div className="account-popover"><button type="button" onClick={() => navigate('security')}><Icon name="shield" />账号安全</button><button disabled={working} type="button" onClick={() => void signOut()}><Icon name="logout" />{working ? '正在退出…' : '退出登录'}</button></div> : null}</div>
+      </div>
+    </header>
+    <main className="console-main">
+      {loadingDirectory && page !== 'security' ? <LoadingState label="正在载入授权门店…" /> : null}
+      {page === 'stores' ? <StoreOverviewPage hotels={hotels} loadingDirectory={loadingDirectory} directoryError={directoryError} canCreate={platformAdmin} onCreate={() => navigate('new-store')} onOpen={openHotel} onOpenException={() => navigate('exceptions')} onRefreshDirectory={() => void refreshHotels()} /> : null}
+      {page === 'store-detail' && selectedHotel ? <StoreDetailPage hotel={selectedHotel} initialTab={selectedTab} canConfigure={canConfigure} canRevenueConfigure={canRevenueConfigure} onBack={() => navigate('stores')} onOpenExceptions={() => navigate('exceptions')} /> : null}
+      {page === 'new-store' && platformAdmin ? <NewStoreWizard session={session} onCancel={() => navigate('stores')} onCreated={(hotel) => { void refreshHotels(); openHotel(hotel, 'collection') }} /> : null}
+      {page === 'exceptions' ? <ExceptionCenterPage hotels={hotels} onOpenStore={openHotel} /> : null}
+      {page === 'people' && platformAdmin ? <PeoplePermissionsPage session={session} hotels={hotels} /> : null}
+      {page === 'security' ? <PersonalSecurityPage session={session} onSessionChange={onSessionChange} /> : null}
+    </main>
+  </div>
 }
 
 export default function App() {
-  const [session, updateSession] = useState<AuthSession | null>(() => getSession())
-  const [restoring, setRestoring] = useState(() => getSession() === null && hasRefreshContext())
+  const initialSession = getSession()
+  const [session, updateSession] = useState<AuthSession | null>(initialSession)
+  const [restoring, setRestoring] = useState(initialSession === null && hasRefreshContext())
+  const [expired, setExpired] = useState(false)
 
   useEffect(() => {
-    if (getSession() || !hasRefreshContext()) {
-      setRestoring(false)
-      return
-    }
+    if (getSession() || !hasRefreshContext()) { setRestoring(false); return }
     let cancelled = false
-    refreshSession()
-      .then((restored) => {
-        if (cancelled) return
-        setSession(restored)
-        updateSession(restored)
-      })
-      .catch(() => {
-        if (cancelled) return
-        clearSession()
-        updateSession(null)
-      })
-      .finally(() => {
-        if (!cancelled) setRestoring(false)
-      })
-    return () => {
-      cancelled = true
-    }
+    refreshSession().then((restored) => { if (!cancelled) { setSession(restored); updateSession(restored) } }).catch(() => { if (!cancelled) { clearSession(); updateSession(null); setExpired(true) } }).finally(() => { if (!cancelled) setRestoring(false) })
+    return () => { cancelled = true }
   }, [])
-
   useEffect(() => {
     if (!session) return
     let cancelled = false
-    const delayMs = Math.max(1_000, (session.expiresInSeconds - 60) * 1_000)
-    const timer = window.setTimeout(() => {
-      refreshSession()
-        .then((refreshed) => {
-          if (cancelled) return
-          setSession(refreshed)
-          updateSession(refreshed)
-        })
-        .catch(() => {
-          if (cancelled) return
-          clearSession()
-          updateSession(null)
-        })
-    }, delayMs)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
+    const timer = window.setTimeout(() => { refreshSession().then((refreshed) => { if (!cancelled) { setSession(refreshed); updateSession(refreshed) } }).catch(() => { if (!cancelled) { clearSession(); updateSession(null); setExpired(true) } }) }, Math.max(1_000, (session.expiresInSeconds - 60) * 1_000))
+    return () => { cancelled = true; window.clearTimeout(timer) }
   }, [session])
 
-  if (restoring) {
-    return <main className="login-layout" aria-live="polite">正在安全恢复会话…</main>
-  }
-  return session
-    ? (
-      <SprintOneShell
-        session={session}
-        onLogout={() => updateSession(null)}
-        onSessionChange={updateSession}
-      />
-    )
-    : <LoginPanel onAuthenticated={updateSession} />
+  if (restoring) return <main className="restore-screen"><Brand /><LoadingState label="正在安全恢复会话…" /></main>
+  return session ? <ConsoleShell session={session} onSessionChange={(next) => { setSession(next); updateSession(next) }} onSignedOut={() => updateSession(null)} /> : <LoginPanel expired={expired} onAuthenticated={(next) => { setExpired(false); updateSession(next) }} />
 }

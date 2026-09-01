@@ -21,6 +21,7 @@ import {
 } from './reportSourceAttention'
 import { DataAccessOverviewPanel } from './DataAccessOverviewPanel'
 import { TrustedDevicePanel } from './TrustedDevicePanel'
+import { loadTrustedDeviceStatus } from '../api/trustedDevice'
 
 interface Props {
   context: HotelContext | null
@@ -117,6 +118,8 @@ export function ReportSourceConfigPage({
   const [savingPmsLogin, setSavingPmsLogin] = useState(false)
   const [pmsLoginError, setPmsLoginError] = useState('')
   const [pmsLoginNotice, setPmsLoginNotice] = useState('')
+  const [trustedDeviceEligible, setTrustedDeviceEligible] =
+    useState<boolean | null>(null)
   const [overviewVersion, setOverviewVersion] = useState(0)
 
   useEffect(() => {
@@ -158,12 +161,20 @@ export function ReportSourceConfigPage({
     setPmsLoginNotice('')
     if (!context) {
       setPmsLoginConfig(null)
+      setTrustedDeviceEligible(null)
       return
     }
     let cancelled = false
-    loadPmsLoginConfig(context)
-      .then((config) => {
-        if (!cancelled) setPmsLoginConfig(config)
+    setTrustedDeviceEligible(null)
+    Promise.all([
+      loadPmsLoginConfig(context),
+      loadTrustedDeviceStatus(context),
+    ])
+      .then(([config, trustedDevice]) => {
+        if (!cancelled) {
+          setPmsLoginConfig(config)
+          setTrustedDeviceEligible(trustedDevice.eligible)
+        }
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -490,6 +501,7 @@ export function ReportSourceConfigPage({
               setOverviewVersion((current) => current + 1)}
           />
 
+          {trustedDeviceEligible === false ? (
           <article className="report-source-card pms-login-card">
             <header>
               <div>
@@ -599,6 +611,7 @@ export function ReportSourceConfigPage({
               <p className="success-note" role="status">{pmsLoginNotice}</p>
             ) : null}
           </article>
+          ) : null}
 
           {definitionsLocked ? (
             <div className="security-note report-source-note" role="status">

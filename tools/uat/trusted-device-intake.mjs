@@ -59,7 +59,7 @@ export const trustedDeviceCanonicalMessage = ({
   sha256(stableJson(body)),
 ].join('\n')
 
-const canonicalLabel = (value, fallback = '001门店可信设备') => {
+const canonicalLabel = (value, fallback = '门店可信设备') => {
   const label = String(value ?? '').trim()
   if (!label) return fallback
   if (label.length > MAX_LABEL_LENGTH || /[\r\n\u0000]/u.test(label)) {
@@ -190,10 +190,12 @@ const publicDevice = (device) => device ? ({
 export const createTrustedDeviceIntakeStore = ({ path = null, hotel }) => {
   if (
     !hotel
-    || hotel.hotelCode !== TRUSTED_DEVICE_PILOT_HOTEL_CODE
+    || typeof hotel.hotelCode !== 'string'
+    || !/^[A-Z0-9][A-Z0-9_-]{0,15}$/u.test(hotel.hotelCode)
+    || hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
     || typeof hotel.hotelId !== 'string'
     || typeof hotel.tenantId !== 'string'
-  ) throw new Error('TRUSTED_DEVICE_PILOT_HOTEL_INVALID')
+  ) throw new Error('TRUSTED_DEVICE_HOTEL_INVALID')
 
   let state = loadState(path, hotel.hotelId)
 
@@ -240,7 +242,7 @@ export const createTrustedDeviceIntakeStore = ({ path = null, hotel }) => {
       enrollmentId: randomUUID(),
       hotelId: hotel.hotelId,
       hotelCode: hotel.hotelCode,
-      label: canonicalLabel(label),
+      label: canonicalLabel(label, `${hotel.hotelCode}门店可信设备`),
       codeHash: sha256(code),
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + TRUSTED_DEVICE_ENROLLMENT_TTL_MS).toISOString(),

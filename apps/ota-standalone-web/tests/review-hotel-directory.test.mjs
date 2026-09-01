@@ -313,7 +313,10 @@ test('created review hotels are returned by the directory and survive restart', 
         }),
       },
     )
-    assert.equal(saveTemplateLogin.status, 200)
+    assert.equal(saveTemplateLogin.status, 400)
+    assert.deepEqual(await saveTemplateLogin.json(), {
+      code: 'TRUSTED_DEVICE_CREDENTIAL_UPLOAD_REJECTED',
+    })
 
     const create = await fetch(
       `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
@@ -472,7 +475,7 @@ test('created review hotels are returned by the directory and survive restart', 
       data: {
         configured: false,
         updatedAt: null,
-        loginMode: 'CONTROLLED_BROWSER',
+        loginMode: 'STORE_TRUSTED_DEVICE',
         loginExecutionEnabled: false,
       },
     })
@@ -496,9 +499,12 @@ test('created review hotels are returned by the directory and survive restart', 
       },
     )
     const savedCreatedLoginText = await saveCreatedLogin.text()
-    assert.equal(saveCreatedLogin.status, 200)
+    assert.equal(saveCreatedLogin.status, 400)
     assert.doesNotMatch(savedCreatedLoginText, /synthetic-created-(?:user|password)/)
-    assert.equal(JSON.parse(savedCreatedLoginText).data.configured, true)
+    assert.equal(
+      JSON.parse(savedCreatedLoginText).code,
+      'TRUSTED_DEVICE_CREDENTIAL_UPLOAD_REJECTED',
+    )
     const optionalPortalSourceId = '46000000-0000-4000-8000-000000000001'
     const saveOptionalPortalOta = await fetch(
       `${createdPath}/ota-sources`,
@@ -644,7 +650,7 @@ test('created review hotels are returned by the directory and survive restart', 
     )
     assert.equal(
       (await restartedLoginConfig.json()).data.configured,
-      true,
+      false,
     )
     const restartedOptionalPortalOta = await fetch(
       `${restartedCreatedPath}/ota-sources`,

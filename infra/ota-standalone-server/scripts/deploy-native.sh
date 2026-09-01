@@ -34,6 +34,18 @@ protected_paths=(
   /var/lib/sifangguan-ota/wecom-repair-bot-secrets.json
   /var/lib/sifangguan-ota/trusted-device-registry.json
 )
+if [[ -d /var/lib/sifangguan-ota ]]; then
+  while IFS= read -r -d '' registry_path; do
+    protected_paths+=("${registry_path}")
+  done < <(
+    find /var/lib/sifangguan-ota \
+      -maxdepth 1 \
+      -type f \
+      -name 'trusted-device-registry-*.json' \
+      -print0 \
+      | sort -z
+  )
+fi
 
 cleanup_temporary_files() {
   if [[ -n ${listing_file} && -f ${listing_file} ]]; then
@@ -67,7 +79,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "${listing_file}"; then
   exit 2
 fi
 if grep -Eiq \
-  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry\.json|runtime\.env)$' \
+  '(^|/)(\.git|\.uat-runtime|node_modules|tmp)(/|$)|(^|/)(credentials\.json|secret-key\.dpapi|report-source-cookie-secrets\.json|pms-login-secrets\.json|luopan-session-secrets\.json|ota-source-secrets\.json|wecom-webhook-secrets\.json|wecom-repair-bot-secrets\.json|trusted-device-registry(-[^/]+)?\.json|runtime\.env)$' \
   "${listing_file}"; then
   echo "RELEASE_ARCHIVE_FORBIDDEN_CONTENT" >&2
   exit 2

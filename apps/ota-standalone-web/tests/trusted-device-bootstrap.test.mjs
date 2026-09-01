@@ -34,3 +34,14 @@ test('bootstrap adds a UTF-8 BOM to PowerShell payloads for Windows PowerShell 5
     assert.equal(content.subarray(0, UTF8_BOM.length).equals(UTF8_BOM), true)
   }
 })
+
+test('bootstrap binds installer and temporary files to the enrollment hotel', () => {
+  const script = renderTrustedDeviceBootstrapPowerShell({
+    enrollmentCode: '003-ABCD-EFGH-IJKL',
+    serverOrigin: 'https://www.sfgzt.cn',
+  })
+  assert.match(script, /\$hotelCode = '003'/u)
+  assert.match(script, /-HotelCode \$hotelCode/u)
+  assert.match(script, /Sifangguan-' \+ \$hotelCode/u)
+  assert.doesNotMatch(script, /-HotelCode '001'/u)
+})

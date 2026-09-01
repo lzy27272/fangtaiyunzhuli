@@ -9,6 +9,10 @@ const businessApiSource = await readFile(new URL('../src/api/business.ts', impor
 const monitorSource = await readFile(new URL('../src/pages/MonitorPage.tsx', import.meta.url), 'utf8')
 const historySource = await readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8')
 const accountSecuritySource = await readFile(new URL('../src/pages/AccountSecurityPage.tsx', import.meta.url), 'utf8')
+const personalSecuritySource = await readFile(new URL('../src/pages/PersonalSecurityPage.tsx', import.meta.url), 'utf8')
+const peoplePermissionsSource = await readFile(new URL('../src/pages/PeoplePermissionsPage.tsx', import.meta.url), 'utf8')
+const storeConsoleSource = await readFile(new URL('../src/pages/StoreConsolePage.tsx', import.meta.url), 'utf8')
+const newStoreWizardSource = await readFile(new URL('../src/pages/NewStoreWizard.tsx', import.meta.url), 'utf8')
 const mappingSource = await readFile(new URL('../src/pages/MappingTargetPage.tsx', import.meta.url), 'utf8')
 const reportSourceSource = await readFile(new URL('../src/pages/ReportSourceConfigPage.tsx', import.meta.url), 'utf8')
 const otaSourceConfigSource = await readFile(new URL('../src/pages/OtaSourceConfigPanel.tsx', import.meta.url), 'utf8')
@@ -53,16 +57,16 @@ test('Sprint 0 web does not persist access tokens in browser storage', () => {
   assert.equal(sessionSource.includes('sessionStorage'), false)
 })
 
-test('pilot shell exposes five report-fusion pages and controlled WeCom UAT delivery', () => {
-  assert.match(appSource, /ReportSourceConfigPage/)
-  assert.match(appSource, /MonitorPage/)
-  assert.match(appSource, /MappingTargetPage/)
-  assert.match(appSource, /HistoryPage/)
-  assert.match(appSource, /AccountSecurityPage/)
-  assert.match(appSource, /LOCAL REVIEW · REPORT FUSION/)
-  assert.match(appSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canAdminConfigure\}/)
-  assert.match(appSource, /报表只读采集已启用 · 企微UAT推送可配置/)
-  assert.match(appSource, /HistoryPage[\s\S]*canConfigure=\{canAdminConfigure\}/)
+test('operations console exposes store, exception, people and scoped store-detail pages', () => {
+  assert.match(appSource, /StoreOverviewPage/)
+  assert.match(appSource, /StoreDetailPage/)
+  assert.match(appSource, /ExceptionCenterPage/)
+  assert.match(appSource, /PeoplePermissionsPage/)
+  assert.match(appSource, /PersonalSecurityPage/)
+  assert.match(appSource, /门店总览/)
+  assert.match(storeConsoleSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canConfigure\}/)
+  assert.match(storeConsoleSource, /MappingTargetPage[\s\S]*canConfigure=\{canRevenueConfigure\}/)
+  assert.match(storeConsoleSource, /HistoryPage[\s\S]*canConfigure=\{canConfigure\}/)
   assert.match(monitorSource, /triggerLiveCollection/)
   assert.doesNotMatch(monitorSource, /confirmBusinessDateAndCollect/)
   assert.doesNotMatch(monitorSource, /loadBusinessDayControl|saveBusinessDayControl/)
@@ -71,11 +75,8 @@ test('pilot shell exposes five report-fusion pages and controlled WeCom UAT deli
   assert.match(monitorSource, /系统会按旺季\/节假日与普通日期的动态时段采集/)
   assert.match(monitorSource, /重新采集已配置报表/)
   assert.match(monitorSource, /进入报表接口核对配置/)
-  assert.match(
-    appSource,
-    /onOpenReportSources=\{\(attention\) => \{[\s\S]*setReportSourceAttention\(attention\)[\s\S]*setPage\('connections'\)/,
-  )
-  assert.match(appSource, /attentionItems=\{reportSourceAttention\}/)
+  assert.match(storeConsoleSource, /setTab\('collection'\)/)
+  assert.match(storeConsoleSource, /attentionItems=\{\[\]\}/)
   assert.match(monitorSource, /incompleteMonitorAttention/)
   assert.match(monitorSource, /reportSourceGuidance/)
   assert.match(reportSourceSource, /最近一次采集需要核对以下报表/)
@@ -111,25 +112,22 @@ test('cookie-authenticated logout forwards a double-submit CSRF token', () => {
 })
 
 test('platform administrators can rotate their own login credentials', () => {
-  assert.match(appSource, /code: 'security'/)
-  assert.match(
-    appSource,
-    /item\.code !== 'security' \|\| canManageAccounts/,
-  )
-  assert.match(accountSecuritySource, /changeCredentials/)
-  assert.match(accountSecuritySource, /currentPassword/)
-  assert.match(accountSecuritySource, /newUsername/)
-  assert.match(accountSecuritySource, /newPassword/)
-  assert.match(accountSecuritySource, /type="password"/)
-  assert.match(accountSecuritySource, /旧登录已失效/)
+  assert.match(appSource, /'security'/)
+  assert.match(appSource, /PersonalSecurityPage/)
+  assert.match(personalSecuritySource, /changeCredentials/)
+  assert.match(personalSecuritySource, /currentPassword/)
+  assert.match(personalSecuritySource, /newUsername/)
+  assert.match(personalSecuritySource, /newPassword/)
+  assert.match(personalSecuritySource, /type="password"/)
+  assert.match(personalSecuritySource, /旧登录会话已失效/)
   assert.match(authApiSource, /\/auth\/credentials/)
   assert.match(
     authApiSource,
     /Authorization: `Bearer \$\{session\.accessToken\}`/,
   )
-  assert.doesNotMatch(accountSecuritySource, /localStorage|sessionStorage/)
-  assert.match(accountSecuritySource, /新增账号并绑定门店/u)
-  assert.match(accountSecuritySource, /服务端强隔离/u)
+  assert.doesNotMatch(personalSecuritySource, /localStorage|sessionStorage/)
+  assert.match(peoplePermissionsSource, /新增管理账号/u)
+  assert.match(peoplePermissionsSource, /服务端/u)
   assert.match(authApiSource, /\/auth\/accounts/u)
 })
 
@@ -182,10 +180,10 @@ test('new hotels use an explicit PMS template without copying store secrets or O
 })
 
 test('report source administration and scoped revenue configuration stay separate', () => {
-  assert.match(appSource, /const canAdminConfigure = session\.account\.roles\.includes\('PLATFORM_ADMIN'\)/)
-  assert.match(appSource, /canRevenueConfigure = canAdminConfigure[\s\S]*REVENUE_MANAGER/)
-  assert.match(appSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canAdminConfigure\}/)
-  assert.match(appSource, /MappingTargetPage context=\{context\} canConfigure=\{canRevenueConfigure\}/)
+  assert.match(appSource, /const platformAdmin = session\.account\.roles\.includes\('PLATFORM_ADMIN'\)/)
+  assert.match(appSource, /canRevenueConfigure = canConfigure[\s\S]*REVENUE_MANAGER/)
+  assert.match(storeConsoleSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canConfigure\}/)
+  assert.match(storeConsoleSource, /MappingTargetPage context=\{context\} canConfigure=\{canRevenueConfigure\}/)
 })
 
 test('simulation views fail closed and never sum shared OTA inventory', () => {
@@ -294,7 +292,7 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(fliggySourceCollectorSource, /OTA_FLIGGY_PAGINATION_STALLED/)
   assert.doesNotMatch(monitorSource, /bestPeerPoiId/)
   assert.match(monitorSource, /直达修改/)
-  assert.match(appSource, /onOpenOtaSource/)
+  assert.match(storeConsoleSource, /setTab\('collection'\)/)
   assert.match(businessApiSource, /\/ota-sources/)
   assert.match(businessApiSource, /\/ota-source-refreshes/)
   assert.match(reviewApiSource, /ota-source-configs\.json/)

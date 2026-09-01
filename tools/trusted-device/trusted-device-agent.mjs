@@ -28,7 +28,6 @@ import { trustedDeviceCanonicalMessage } from '../uat/trusted-device-intake.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright-core')
 
-const HOTEL_CODE = '001'
 const DEFAULT_SERVER_ORIGIN = 'https://www.sfgzt.cn'
 const DEFAULT_CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const LEGACY_REVENUE_SOURCE_ID = '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0'
@@ -36,11 +35,6 @@ const LEGACY_REVENUE_ENDPOINT =
   'https://pms.meituan.com/hotelpms/api/v2/report/jy09'
 const CURRENT_REVENUE_ENDPOINT =
   'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview'
-const stateRoot = process.env.LOCALAPPDATA
-  ? join(process.env.LOCALAPPDATA, 'Sifangguan', 'TrustedDevice001')
-  : join(os.homedir(), '.sifangguan', 'trusted-device-001')
-const defaultStatePath = join(stateRoot, 'device-state.json')
-
 const args = process.argv.slice(2)
 const command = args.shift() ?? 'help'
 const option = (name, fallback = null) => {
@@ -49,6 +43,28 @@ const option = (name, fallback = null) => {
     ? args[index + 1]
     : fallback
 }
+
+const enrollmentHotelCode =
+  /^([A-Z0-9][A-Z0-9_-]{0,15})-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u
+    .exec(String(option('code', '')))?.[1] ?? ''
+const HOTEL_CODE = String(
+  option('hotel', enrollmentHotelCode || '001'),
+).trim().toUpperCase()
+if (!/^[A-Z0-9][A-Z0-9_-]{0,15}$/u.test(HOTEL_CODE)) {
+  throw new Error('TRUSTED_DEVICE_HOTEL_CODE_INVALID')
+}
+const stateRoot = process.env.LOCALAPPDATA
+  ? join(
+      process.env.LOCALAPPDATA,
+      'Sifangguan',
+      HOTEL_CODE === '001' ? 'TrustedDevice001' : `TrustedDevice-${HOTEL_CODE}`,
+    )
+  : join(
+      os.homedir(),
+      '.sifangguan',
+      HOTEL_CODE === '001' ? 'trusted-device-001' : `trusted-device-${HOTEL_CODE.toLowerCase()}`,
+    )
+const defaultStatePath = join(stateRoot, 'device-state.json')
 
 const statePath = resolve(option('state', defaultStatePath))
 const browserExecutable = option(
@@ -127,8 +143,12 @@ const signedPost = async (state, path, body) => {
 const enroll = async () => {
   const enrollmentCode = option('code')
   const serverOrigin = String(option('server', DEFAULT_SERVER_ORIGIN)).replace(/\/$/u, '')
-  const label = option('label', '001门店采集电脑')
-  if (!enrollmentCode || !/^001-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u.test(enrollmentCode)) {
+  const label = option('label', `${HOTEL_CODE}门店采集电脑`)
+  if (
+    !enrollmentCode
+    || !/^[A-Z0-9][A-Z0-9_-]{0,15}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u.test(enrollmentCode)
+    || !enrollmentCode.startsWith(`${HOTEL_CODE}-`)
+  ) {
     throw new Error('TRUSTED_DEVICE_ENROLLMENT_CODE_REQUIRED')
   }
   if (!serverOrigin.startsWith('https://')) {
@@ -157,7 +177,7 @@ const enroll = async () => {
     enrolledAt: device.enrolledAt,
   }
   atomicWrite(statePath, next)
-  process.stdout.write('001可信设备注册成功。私钥与浏览器会话仅保存在本机。\n')
+  process.stdout.write(`${HOTEL_CODE}可信设备注册成功。私钥与浏览器会话仅保存在本机。\n`)
 }
 
 const delay = (milliseconds) => new Promise((resolvePromise) =>
@@ -314,7 +334,7 @@ const waitForOfficialLogin = async (
       { waitUntil: 'domcontentloaded', timeout: 30_000 },
     ).catch(() => {})
   } else {
-    process.stdout.write('已检测到001本机有效登录会话。\n')
+    process.stdout.write(`已检测到${HOTEL_CODE}本机有效登录会话。\n`)
     return
   }
   process.stdout.write(
@@ -323,7 +343,7 @@ const waitForOfficialLogin = async (
   const deadline = Date.now() + 30 * 60_000
   while (Date.now() < deadline) {
     if (await usableOfficialSession(context)) {
-      process.stdout.write('已检测到001本机会话。未上传Cookie或账号信息。\n')
+      process.stdout.write(`已检测到${HOTEL_CODE}本机会话。未上传Cookie或账号信息。\n`)
       return
     }
     await delay(2_000)
@@ -341,7 +361,7 @@ const cookieHeaderFrom = (cookies) => cookies
   .map((cookie) => `${cookie.name}=${cookie.value}`)
   .join('; ')
 
-const currentSourcesFor001 = (sources) => sources.map((source) =>
+const currentSourcesForTrustedDevice = (sources) => sources.map((source) =>
   source.sourceId === LEGACY_REVENUE_SOURCE_ID
   && source.endpointUrl === LEGACY_REVENUE_ENDPOINT
     ? {
@@ -372,7 +392,7 @@ const collectOnce = async () => {
     throw new Error('TRUSTED_DEVICE_LOGIN_REQUIRED')
   }
 
-  const collectionSources = currentSourcesFor001(config.sources)
+  const collectionSources = currentSourcesForTrustedDevice(config.sources)
   const previousStore = loadSnapshotStore(state.snapshotPath)
   const previousSnapshots = previousStore[config.hotel.hotelId] ?? []
   const enabledSources = collectionSources.filter((source) => source.enabled)
@@ -409,7 +429,7 @@ const collectOnce = async () => {
     { hotelCode: HOTEL_CODE, snapshot: cloudSnapshot },
   )
   process.stdout.write(
-    `001采集完成：${result.snapshot.businessDate}，${result.snapshot.completeness}`
+    `${HOTEL_CODE}采集完成：${result.snapshot.businessDate}，${result.snapshot.completeness}`
     + `${receipt.replayed ? '（云端已存在）' : '（已签名上报）'}。\n`,
   )
   return result
@@ -421,7 +441,7 @@ const repair = async () => {
     if (result.snapshot.completeness !== 'COMPLETE') {
       throw new Error('TRUSTED_DEVICE_REPAIR_INCOMPLETE')
     }
-    process.stdout.write('001一键修复完成；当前会话有效，采集与上报正常。\n')
+    process.stdout.write(`${HOTEL_CODE}一键修复完成；当前会话有效，采集与上报正常。\n`)
     return
   } catch (error) {
     const reauthenticationRequired = new Set([
@@ -438,7 +458,7 @@ const repair = async () => {
   if (result.snapshot.completeness !== 'COMPLETE') {
     throw new Error('TRUSTED_DEVICE_REPAIR_INCOMPLETE')
   }
-  process.stdout.write('001一键修复完成；登录已确认，采集与上报正常。\n')
+  process.stdout.write(`${HOTEL_CODE}一键修复完成；登录已确认，采集与上报正常。\n`)
 }
 
 const collectIfDue = async () => {
@@ -458,18 +478,18 @@ const status = async () => {
     { hotelCode: HOTEL_CODE },
   )
   process.stdout.write(
-    `001可信设备正常；云端配置${remote.sources.length}个报表数据源。\n`,
+    `${HOTEL_CODE}可信设备正常；云端配置${remote.sources.length}个报表数据源。\n`,
   )
 }
 
 const help = () => process.stdout.write([
-  '001门店可信设备采集器',
-  '  enroll --code 001-XXXX-XXXX-XXXX [--server https://www.sfgzt.cn]',
-  '  login',
-  '  repair',
-  '  collect-once',
-  '  collect-if-due',
-  '  status',
+  '门店可信设备采集器',
+  '  enroll --hotel 门店编号 --code 门店编号-XXXX-XXXX-XXXX [--server https://www.sfgzt.cn]',
+  '  login --hotel 门店编号',
+  '  repair --hotel 门店编号',
+  '  collect-once --hotel 门店编号',
+  '  collect-if-due --hotel 门店编号',
+  '  status --hotel 门店编号',
 ].join('\n') + '\n')
 
 try {

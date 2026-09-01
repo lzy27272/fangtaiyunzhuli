@@ -70,6 +70,7 @@ export function TrustedDevicePanel({
   }, [context.hotelId, context.tenantId])
 
   if (!status?.eligible) return null
+  const hotelCode = status.hotelCode
 
   const generateEnrollment = async () => {
     if (!canConfigure || loading) return
@@ -77,10 +78,13 @@ export function TrustedDevicePanel({
     setError('')
     setNotice('')
     try {
-      const created = await createTrustedDeviceEnrollment(context)
+      const created = await createTrustedDeviceEnrollment(
+        context,
+        `${hotelCode}门店采集电脑`,
+      )
       setEnrollment(created)
       await refresh()
-      setNotice('安装码已生成。请仅在001门店指定电脑上使用，15分钟后自动失效。')
+      setNotice(`安装码已生成。请仅在${hotelCode}门店指定电脑上使用，15分钟后自动失效。`)
       onStatusChanged()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成安装码失败')
@@ -95,7 +99,10 @@ export function TrustedDevicePanel({
     setError('')
     setNotice('')
     try {
-      const download = await downloadTrustedDeviceBootstrap(context)
+      const download = await downloadTrustedDeviceBootstrap(
+        context,
+        `${hotelCode}门店采集电脑`,
+      )
       const href = URL.createObjectURL(download.blob)
       const anchor = document.createElement('a')
       anchor.href = href
@@ -120,8 +127,9 @@ export function TrustedDevicePanel({
 
   const openInstalledLogin = () => {
     setError('')
-    setNotice('正在调用本机001采集器打开美团官方登录；浏览器询问时请选择“打开”。')
-    window.location.href = 'sfgtrusted001://login'
+    setNotice(`正在调用本机${hotelCode}采集器打开美团官方登录；浏览器询问时请选择“打开”。`)
+    const protocolCode = hotelCode.toLowerCase().replaceAll('_', '-')
+    window.location.href = `sfgtrusted${protocolCode}://login`
   }
 
   const openInstalledRepair = () => {
@@ -132,9 +140,10 @@ export function TrustedDevicePanel({
     setRepairing(true)
     setError('')
     setNotice(
-      '正在唤起001本机一键修复助手；若美团要求验证，请在官方Chrome完成，之后会自动采集。',
+      `正在唤起${hotelCode}本机一键修复助手；若美团要求验证，请在官方Chrome完成，之后会自动采集。`,
     )
-    window.location.href = 'sfgtrusted001://repair'
+    const protocolCode = hotelCode.toLowerCase().replaceAll('_', '-')
+    window.location.href = `sfgtrusted${protocolCode}://repair`
     repairPollRef.current = window.setInterval(() => {
       if (repairPollInFlightRef.current) return
       if (Date.now() >= deadline) {
@@ -153,7 +162,7 @@ export function TrustedDevicePanel({
           setRepairing(false)
           if (next.device?.lastCompleteness === 'COMPLETE') {
             setError('')
-            setNotice('001一键修复完成：登录、采集与云端上报均正常。')
+            setNotice(`${hotelCode}一键修复完成：登录、采集与云端上报均正常。`)
             onStatusChanged()
           } else {
             setNotice('')
@@ -178,7 +187,7 @@ export function TrustedDevicePanel({
       const result = await revokeTrustedDevice(context)
       setStatus(result.status)
       setEnrollment(null)
-      setNotice(result.revoked ? '001可信设备已撤销。' : '当前没有可撤销的设备。')
+      setNotice(result.revoked ? `${hotelCode}可信设备已撤销。` : '当前没有可撤销的设备。')
       onStatusChanged()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '撤销设备失败')
@@ -197,8 +206,8 @@ export function TrustedDevicePanel({
     <article className="report-source-card trusted-device-card">
       <header>
         <div>
-          <span>001 · STORE TRUSTED DEVICE</span>
-          <strong>001门店可信设备采集</strong>
+          <span>{hotelCode} · STORE TRUSTED DEVICE</span>
+          <strong>{hotelCode}门店可信设备采集</strong>
         </div>
         <span className="mode-chip">
           {status.device ? '设备已绑定' : '等待安装'}
@@ -270,10 +279,10 @@ export function TrustedDevicePanel({
         </div>
       ) : null}
       <p className="trusted-device-install-note">
-        已绑定的001门店电脑可直接一键检查；会话有效时自动恢复采集，失效时只需在美团官网完成人工验证。其他电脑首次使用仍需下载安装并绑定，系统不会绕过平台风控。
+        已绑定的{hotelCode}门店电脑可直接一键检查；会话有效时自动恢复采集，失效时只需在美团官网完成人工验证。其他电脑首次使用仍需下载安装并绑定，系统不会绕过平台风控。
       </p>
       <div className="trusted-device-policy">
-        <span>门店范围：仅001</span>
+        <span>门店范围：仅{hotelCode}</span>
         <span>认证：Ed25519设备签名</span>
         <span>防护：5分钟时效 + 随机数防重放</span>
         <span>本机检查：每5分钟，仅到点采集一次</span>
