@@ -55,4 +55,9 @@ test('release tests expose locked Node modules to root-level collectors', () => 
   assert.match(publish, /\$env:NODE_PATH = \(/u)
   assert.match(publish, /\$previousNodePath/u)
   assert.match(publish, /Remove-Item Env:NODE_PATH/u)
+  assert.ok(
+    publish.indexOf("Test-Path -LiteralPath $bundledNode")
+      < publish.indexOf("Get-Command 'node.exe'"),
+    'release must prefer the bundled Node runtime before the ambient PATH',
+  )
 })

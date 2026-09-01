@@ -118,16 +118,16 @@ function Resolve-RequiredCommand([string]$Name) {
 }
 
 function Resolve-NodeRuntime {
-    $command = Get-Command 'node.exe' -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
-    }
     $bundledNode = Join-Path $env:USERPROFILE (
         '.cache\codex-runtimes\codex-primary-runtime\' +
         'dependencies\node\bin\node.exe'
     )
     if (Test-Path -LiteralPath $bundledNode -PathType Leaf) {
         return $bundledNode
+    }
+    $command = Get-Command 'node.exe' -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
     }
     throw 'REQUIRED_NODE_RUNTIME_NOT_FOUND'
 }
