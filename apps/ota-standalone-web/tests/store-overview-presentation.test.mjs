@@ -33,7 +33,7 @@ test('store overview and exception center expose one PMS repair state without he
   assert.match(storePage, /label: '需要修复处理'/u)
   assert.match(storePage, /tab: 'repair', label: 'PMS需要修复处理'/u)
   assert.match(exceptionPage, /PMS需要修复处理/u)
-  assert.match(exceptionPage, /onOpenStore\(selected\.hotel, 'repair'\)/u)
+  assert.match(exceptionPage, /onOpenStore\(issue\.hotel, 'repair'\)/u)
   assert.doesNotMatch(exceptionPage, /可信设备离线/u)
   assert.doesNotMatch(repairDomain, /lastSeenAt/u)
   assert.match(repairDomain, /90 \* 60 \* 1000/u)

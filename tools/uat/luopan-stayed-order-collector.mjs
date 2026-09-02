@@ -4,7 +4,7 @@ import { isAuthenticationUrl } from './luopan-network-sanitizer.mjs'
 const SEARCH_URL =
   'http://bj.chinapms.com:8880/pms-web/room_register/room_register_search.do'
 const PAGE_SIZE = 10
-const MAX_PAGES = 100
+const MAX_PAGES = 200
 const FETCH_CONCURRENCY = 4
 
 const canonicalDate = (value) => {
@@ -286,3 +286,9 @@ export const collectLuopanStayedOrderSummary = async ({
     secretKey,
   })
 }
+
+export const luopanStayedOrderCollectorLimits = Object.freeze({
+  pageSize: PAGE_SIZE,
+  maxPages: MAX_PAGES,
+  fetchConcurrency: FETCH_CONCURRENCY,
+})

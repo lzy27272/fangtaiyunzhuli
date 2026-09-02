@@ -130,6 +130,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .inline-message.error { border-color: #efc1bb; color: #a52e22; background: var(--console-error-soft); }
 .inline-message.success { border-color: #b9ddce; color: #176347; background: var(--console-green-soft); }
 .inline-message.info { border-color: #bdd6e6; color: #2c627f; background: #f0f8fc; }
+.inline-message.progress { display: grid; gap: .3rem; border-color: #b8d4c8; color: #174f3b; background: #f0f8f4; }
+.inline-message.progress span { line-height: 1.6; }
 
 /* Stores */
 .store-list { display: grid; gap: 10px; }

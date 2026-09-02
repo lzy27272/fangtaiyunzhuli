@@ -193,6 +193,19 @@ test('baseline-pending template does not invent hourly changes', () => {
   assert.doesNotMatch(content, /新增｜4/)
 })
 
+test('Luopan brief treats its three enabled core sources as complete', () => {
+  const payloads = createReportMonitorWeComPayloads({
+    ...monitor,
+    sources: monitor.sources.slice(0, 3),
+  }, {
+    snapshot,
+    briefId: 'brief-luopan-3-of-3',
+  })
+
+  assert.match(payloads[0].text.content, /采集 02:02（3\/3完整）/)
+  assert.doesNotMatch(payloads[0].text.content, /部分|缺失/)
+})
+
 test('08:00 first brief labels the 01:00 to 08:00 pause summary', () => {
   const payloads = createReportMonitorWeComPayloads({
     ...monitor,

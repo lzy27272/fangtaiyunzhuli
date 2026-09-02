@@ -57,6 +57,7 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   PMS_SCOPE_NOT_APPROVED: 'PMS门店范围尚未授权',
   PMS_BUSINESS_DATE_UNAVAILABLE: '无法读取酒店营业日',
   PMS_BUSINESS_DATE_INVALID: '酒店营业日异常',
+  LUOPAN_ORDER_DETAIL_NOT_CONFIGURED: '罗盘订单明细尚未配置',
   VERIFICATION_REQUIRED: '需要验证码',
   EXTERNAL_VERIFICATION_REQUIRED: '需要在官网完成验证',
   RATE_LIMITED: '操作过于频繁，请稍后重试',
@@ -82,15 +83,22 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
 }
 
 const METRIC_LABELS: Record<string, string> = {
-  EXPECTED_ROOM_REVENUE: '预计房费',
-  ROOM_REVENUE: '房费收入',
-  ADR: '平均房价',
-  REVPAR: '每间可售房收入',
+  totalRevenue: '当日预计房费',
+  adr: '平均房价（ADR）',
+  revPar: '单房收益（RevPAR）',
+  soldRooms: '当日已售间夜',
+  availableRooms: '当日剩余可售房',
+  targetProgress: '营收目标完成率',
+  sellProgress: '出租率（OCC）',
+  EXPECTED_ROOM_REVENUE: '当日预计房费',
+  ROOM_REVENUE: '当日房费收入',
+  ADR: '平均房价（ADR）',
+  REVPAR: '单房收益（RevPAR）',
   SOLD_ROOMS: '已售房间',
-  SOLD_ROOM_NIGHTS: '已售间夜',
-  AVAILABLE_ROOMS: '可售房间',
+  SOLD_ROOM_NIGHTS: '当日已售间夜',
+  AVAILABLE_ROOMS: '当日剩余可售房',
   PHYSICAL_AVAILABLE_ROOMS: '实体可售房间',
-  OCCUPANCY_RATE: '入住率',
+  OCCUPANCY_RATE: '出租率（OCC）',
   ORDER_COUNT: '订单量',
   STAY_ROOM_NIGHTS: '入住间夜',
   REVIEW_SCORE: '评价得分',
@@ -100,6 +108,7 @@ const METRIC_LABELS: Record<string, string> = {
 }
 
 const UNIT_LABELS: Record<string, string> = {
+  CURRENCY: '元',
   CNY: '元',
   RMB: '元',
   ROOM: '间',

@@ -19,6 +19,22 @@ import {
 import { businessCodeLabel, businessErrorMessage, safeBusinessText } from '../ui/businessDisplay'
 import type { StoreTab } from './StoreConsolePage'
 
+const COLLECTION_FEEDBACK_TIMEOUT_MS = 120_000
+
+async function withCollectionFeedbackTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('本次采集耗时较长，服务器可能仍在继续处理。请稍后点击“重新检查”查看结果。'))
+    }, COLLECTION_FEEDBACK_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([operation, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 type IssueKind = 'PMS_REPAIR' | 'LOGIN' | 'COLLECTION' | 'PARTIAL' | 'BROADCAST'
 interface ConsoleIssue {
   id: string
@@ -38,6 +54,21 @@ const sourceLabel = (value: string) => ({ CTRIP: '携程', MEITUAN: '美团', FL
 const fmt = (value: string) => {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
+function collectionResultNotice(issue: ConsoleIssue, run: Awaited<ReturnType<typeof triggerLiveCollection>>) {
+  if (run.status === 'SUCCEEDED') {
+    return `${issue.hotel.hotelCode} 门店重新采集成功，${run.successfulSourceCount}/${run.sourceCount} 个数据源已更新。`
+  }
+  const pendingReasons = [...new Set(
+    run.monitor.sources
+      .filter((source) => source.completeness !== 'COMPLETE')
+      .map((source) => businessCodeLabel(source.errorCode, businessCodeLabel(source.reportType, '数据来源待核对'))),
+  )]
+  const detail = pendingReasons.length
+    ? `待处理：${pendingReasons.join('、')}。`
+    : '请进入门店检查未完成的数据来源。'
+  return `${issue.hotel.hotelCode} 门店重新采集完成：${run.successfulSourceCount}/${run.sourceCount} 个数据源成功，结果仍不完整。${detail}`
 }
 
 function classifyIncident(incident: IncidentView): IssueKind | null {
@@ -115,6 +146,7 @@ export function ExceptionCenterPage({
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<ConsoleIssue | null>(null)
   const [processing, setProcessing] = useState(false)
+  const [processingSeconds, setProcessingSeconds] = useState(0)
   const [notice, setNotice] = useState('')
   const [note, setNote] = useState('')
 
@@ -125,6 +157,15 @@ export function ExceptionCenterPage({
     finally { setLoading(false) }
   }, [hotels])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    if (!processing) return undefined
+    const startedAt = Date.now()
+    setProcessingSeconds(0)
+    const timer = window.setInterval(() => {
+      setProcessingSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [processing])
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -135,17 +176,21 @@ export function ExceptionCenterPage({
   const count = (kind: IssueKind) => issues.filter((item) => item.kind === kind).length
   const safeAction = async () => {
     if (!selected) return
-    if (selected.kind === 'PMS_REPAIR' || selected.kind === 'LOGIN') {
-      setSelected(null); onOpenStore(selected.hotel, 'repair'); return
+    const issue = selected
+    if (issue.kind === 'PMS_REPAIR' || issue.kind === 'LOGIN') {
+      setSelected(null); onOpenStore(issue.hotel, 'repair'); return
     }
-    if (selected.kind === 'BROADCAST') {
-      setSelected(null); onOpenStore(selected.hotel, 'broadcast'); return
+    if (issue.kind === 'BROADCAST') {
+      setSelected(null); onOpenStore(issue.hotel, 'broadcast'); return
     }
     setProcessing(true); setError(''); setNotice('')
     try {
-      const run = await triggerLiveCollection({ tenantId: selected.hotel.tenantId, hotelId: selected.hotel.hotelId })
-      setNotice(run.status === 'SUCCEEDED' ? `${selected.hotel.hotelCode} 门店重新采集成功。` : `重新采集完成，状态：${businessCodeLabel(run.status)}`)
-      setSelected(null); setNote(''); await refresh()
+      const run = await withCollectionFeedbackTimeout(triggerLiveCollection({
+        tenantId: issue.hotel.tenantId,
+        hotelId: issue.hotel.hotelId,
+      }))
+      setNotice(collectionResultNotice(issue, run))
+      setSelected(null); setNote(''); void refresh()
     } catch (cause) { setError(businessErrorMessage(cause, '重新采集失败')) }
     finally { setProcessing(false) }
   }
@@ -168,7 +213,7 @@ export function ExceptionCenterPage({
         return <article key={issue.id}><span className={`issue-icon ${tone}`}><Icon name="alert" /></span><div className="issue-store"><strong>{issue.hotel.hotelCode} · {issue.hotel.hotelName}</strong><small>{issue.source}</small></div><div><strong>{issue.title}</strong><small>{issue.detail}</small></div><div><strong>{fmt(issue.observedAt)}</strong><small>最近发现</small></div><Status tone={tone}>待处理</Status><button className="row-action" onClick={() => { setSelected(issue); setNote(''); setError('') }} type="button">检查处理<Icon name="chevron" /></button></article>
       })}</div>
 
-      {selected ? <div className="drawer-backdrop" onMouseDown={() => setSelected(null)}><aside className="side-drawer wide" onMouseDown={(event) => event.stopPropagation()}><header><div><p className="section-kicker">异常详情</p><h2>{selected.title}</h2></div><button className="icon-button" onClick={() => setSelected(null)} type="button">×</button></header><div className="drawer-body"><div className="issue-detail-head"><span className="issue-icon error"><Icon name="alert" /></span><div><strong>{selected.hotel.hotelCode} · {selected.hotel.hotelName}</strong><small>{selected.source} · {fmt(selected.observedAt)}</small></div></div><dl className="review-list compact"><div><dt>异常类型</dt><dd>{KIND_LABEL[selected.kind]}</dd></div><div><dt>原因</dt><dd>{selected.detail}</dd></div><div><dt>当前状态</dt><dd><Status tone="error">待处理</Status></dd></div><div><dt>安全处理方式</dt><dd>{selected.kind === 'PMS_REPAIR' || selected.kind === 'LOGIN' ? '进入PMS修复，根据提示完成重新绑定、范围授权或官网验证。' : selected.kind === 'BROADCAST' ? '检查最近投递和数据完整性，确认未送达后再补发。' : '触发一次安全重新采集，不执行批量登录。'}</dd></div></dl><label className="optional-note">处理说明（选填）<textarea placeholder="可填写本次处理说明；不填写也可以继续" value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} /><small>{note.length}/500 · 当前接口暂不保存处理说明</small></label>{error ? <div className="inline-message error" role="alert">{error}</div> : null}</div><footer><button className="quiet-button" type="button" onClick={() => setSelected(null)}>取消</button><button className="primary-button danger-safe" disabled={processing} type="button" onClick={() => void safeAction()}>{processing ? '正在处理…' : actionLabel}</button></footer></aside></div> : null}
+      {selected ? <div className="drawer-backdrop" onMouseDown={() => setSelected(null)}><aside className="side-drawer wide" onMouseDown={(event) => event.stopPropagation()}><header><div><p className="section-kicker">异常详情</p><h2>{selected.title}</h2></div><button className="icon-button" onClick={() => setSelected(null)} type="button">×</button></header><div className="drawer-body"><div className="issue-detail-head"><span className="issue-icon error"><Icon name="alert" /></span><div><strong>{selected.hotel.hotelCode} · {selected.hotel.hotelName}</strong><small>{selected.source} · {fmt(selected.observedAt)}</small></div></div><dl className="review-list compact"><div><dt>异常类型</dt><dd>{KIND_LABEL[selected.kind]}</dd></div><div><dt>原因</dt><dd>{selected.detail}</dd></div><div><dt>当前状态</dt><dd><Status tone="error">待处理</Status></dd></div><div><dt>安全处理方式</dt><dd>{selected.kind === 'PMS_REPAIR' || selected.kind === 'LOGIN' ? '进入PMS修复，根据提示完成重新绑定、范围授权或官网验证。' : selected.kind === 'BROADCAST' ? '检查最近投递和数据完整性，确认未送达后再补发。' : '触发一次安全重新采集，不执行批量登录。'}</dd></div></dl><label className="optional-note">处理说明（选填）<textarea placeholder="可填写本次处理说明；不填写也可以继续" value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} /><small>{note.length}/500 · 当前接口暂不保存处理说明</small></label>{processing ? <div className="inline-message progress" role="status" aria-live="polite"><strong>采集请求已提交</strong><span>正在连接酒店系统并核对数据，已等待 {processingSeconds} 秒。罗盘采集通常需要 30–90 秒，请勿重复点击。</span></div> : null}{error ? <div className="inline-message error" role="alert">{error}</div> : null}</div><footer><button className="quiet-button" type="button" onClick={() => setSelected(null)}>{processing ? '关闭弹窗' : '取消'}</button><button className="primary-button danger-safe" disabled={processing} type="button" onClick={() => void safeAction()}>{processing ? `正在采集 ${processingSeconds} 秒` : actionLabel}</button></footer></aside></div> : null}
     </section>
   )
 }
