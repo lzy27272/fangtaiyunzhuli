@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHmac } from 'node:crypto'
 import test from 'node:test'
 import {
   collectLiveReports,
@@ -289,6 +290,28 @@ test('collector creates a safe real baseline from all three PMS reports', async 
     endDate: '2026-10-24',
     dimension: 'Hotel',
   })
+})
+
+test('collector accepts the decoded trusted-device pseudonym key', async () => {
+  const pseudonymKey = Buffer.alloc(32, 7)
+  const result = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [],
+    secretKey: pseudonymKey,
+    target: null,
+    now: new Date('2026-07-26T10:00:00Z'),
+    fetchImpl: fetchFor(1, []),
+  })
+  const room = result.snapshot.physicalInventory[0]
+  const code = createHmac('sha256', pseudonymKey)
+    .update(`room-type:${room.displayName}`)
+    .digest('hex')
+    .slice(0, 16)
+
+  assert.equal(room.inventoryPoolId, `PMS-${code}`)
+  assert.equal(room.physicalRoomTypeCode, `PMS-${code}`)
 })
 
 test('current Meituan business overview replaces the rejected legacy revenue report', async () => {

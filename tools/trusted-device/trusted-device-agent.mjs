@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import {
+  createHmac,
   generateKeyPairSync,
   randomBytes,
   randomInt,
@@ -502,7 +503,32 @@ const collectOnce = async () => {
 
   const collectionSources = currentSourcesForTrustedDevice(config.sources)
   const previousStore = loadSnapshotStore(state.snapshotPath)
-  const previousSnapshots = previousStore[config.hotel.hotelId] ?? []
+  const pseudonymKey = Buffer.from(config.pseudonymKey, 'base64url')
+  const matchesCurrentPseudonymKey = (snapshot) => {
+    const rooms = [
+      ...(Array.isArray(snapshot?.physicalInventory)
+        ? snapshot.physicalInventory
+        : []),
+      ...(Array.isArray(snapshot?.roomForecast)
+        ? snapshot.roomForecast
+        : []),
+    ]
+    return rooms.length > 0 && rooms.every((room) => {
+      if (typeof room?.displayName !== 'string') return false
+      const code = createHmac('sha256', pseudonymKey)
+        .update(`room-type:${room.displayName}`)
+        .digest('hex')
+        .slice(0, 16)
+      return room.inventoryPoolId === `PMS-${code}`
+        && room.physicalRoomTypeCode === `PMS-${code}`
+    })
+  }
+  // Releases before 2026-09-02 treated the Base64URL key as UTF-8 text.
+  // Ignore those local baselines so the first corrected upload cannot report
+  // a false order delta after the room identity key changes.
+  const previousSnapshots = (
+    previousStore[config.hotel.hotelId] ?? []
+  ).filter(matchesCurrentPseudonymKey)
   const enabledSources = collectionSources.filter((source) => source.enabled)
   const cookiesBySourceId = Object.fromEntries(
     enabledSources.map((source) => [source.sourceId, cookieHeader]),
@@ -515,12 +541,13 @@ const collectOnce = async () => {
       sources: collectionSources,
       cookiesBySourceId,
       previousSnapshots,
-      secretKey: config.pseudonymKey,
+      secretKey: pseudonymKey,
       legacySecretKey: state.localHmacSecret,
       target: null,
       hotSellingRoomTypeCodes: config.hotSellingRoomTypeCodes ?? [],
     })
   } finally {
+    pseudonymKey.fill(0)
     for (const key of Object.keys(cookiesBySourceId)) {
       cookiesBySourceId[key] = null
     }

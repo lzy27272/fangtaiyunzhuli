@@ -70,6 +70,16 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(agent, /source\.endpointUrl === LEGACY_REVENUE_ENDPOINT/u)
   assert.match(agent, /home\/workbench\/businessOverview/u)
   assert.match(agent, /sources: collectionSources/u)
+  assert.match(
+    agent,
+    /Buffer\.from\(config\.pseudonymKey, 'base64url'\)/u,
+  )
+  assert.match(
+    agent,
+    /previousStore\[config\.hotel\.hotelId\][\s\S]+?\.filter\(matchesCurrentPseudonymKey\)/u,
+  )
+  assert.match(agent, /secretKey: pseudonymKey/u)
+  assert.match(agent, /pseudonymKey\.fill\(0\)/u)
   assert.match(agent, /process\.exit\(0\)/u)
   assert.match(agent, /process\.exit\(1\)/u)
   assert.match(agent, /else if \(command === 'repair'\) await repair\(\)/u)
