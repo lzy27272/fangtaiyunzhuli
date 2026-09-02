@@ -257,7 +257,7 @@ test('room type configuration saves atomically, conflicts safely and survives re
       JSON.stringify({
         [hotelId]: {
           roomTypeCodes: [],
-          updatedAt: '2026-09-02T00:00:00.000Z',
+          updatedAt: new Date(Date.now() + 60_000).toISOString(),
         },
       }),
     )
