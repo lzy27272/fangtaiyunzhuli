@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import test from 'node:test'
 import {
   evaluatePmsRepair,
@@ -119,4 +120,16 @@ test('repair notice uses the unified business label and contains no heartbeat la
   assert.match(content, /PMS门店范围尚未授权/u)
   assert.match(content, /一键直达/u)
   assert.doesNotMatch(content, /心跳|离线/u)
+})
+
+test('production release package includes the PMS repair alert runtime module', () => {
+  const publishScript = fs.readFileSync(
+    new URL(
+      '../../../infra/ota-standalone-server/scripts/Publish-OtaStandaloneServer.ps1',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+
+  assert.match(publishScript, /'tools\/uat\/pms-repair-alert\.mjs'/)
 })
