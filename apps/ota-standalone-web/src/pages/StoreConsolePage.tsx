@@ -422,6 +422,7 @@ export function StoreDetailPage({
   const pmsRepair = pmsRepairState(summary)
   const broadcast = broadcastState(summary)
   const connectionTab: StoreTab = canConfigure ? 'collection' : 'repair'
+  const lastCollectionAt = data.monitor?.cutoffAt ?? null
 
   return (
     <section className="console-page store-detail-page">
@@ -458,7 +459,16 @@ export function StoreDetailPage({
             <button className="issue-banner" type="button" onClick={onOpenExceptions}><Icon name="alert" size={22} /><span><strong>{data.incidents.filter((item) => item.type !== 'PMS_REPAIR_REQUIRED' && !/CLOSED|RESOLVED/i.test(item.status)).length}项其他问题需要处理</strong><small>查看异常原因及安全处理入口</small></span><span>进入异常处理<Icon name="chevron" /></span></button>
           ) : null}
 
-          <div className="section-heading"><div><h2>总数据预览</h2><p>PMS 与 OTA 最近一次成功采集结果；不完整数据不会作为正式播报依据。</p></div><button className="primary-button" disabled={collecting} onClick={() => void collect()} type="button"><Icon name="refresh" />{collecting ? '正在采集…' : '立即采集'}</button></div>
+          <div className="section-heading overview-data-heading">
+            <div><h2>总数据预览</h2><p>PMS 与 OTA 最近一次成功采集结果；不完整数据不会作为正式播报依据。</p></div>
+            <div className="overview-data-actions">
+              <div className="last-collection-time" aria-label={`最后采集时间：${lastCollectionAt ? formatTime(lastCollectionAt) : '尚未采集'}`}>
+                <span>最后采集时间</span>
+                <strong>{lastCollectionAt ? <time dateTime={lastCollectionAt}>{formatTime(lastCollectionAt)}</time> : '尚未采集'}</strong>
+              </div>
+              <button className="primary-button" disabled={collecting} onClick={() => void collect()} type="button"><Icon name="refresh" />{collecting ? '正在采集…' : '立即采集'}</button>
+            </div>
+          </div>
           <div className="metric-table">
             {Object.entries(data.monitor?.metrics ?? {}).slice(0, 8).map(([code, metric]) => (
               <div key={code}><span>{metricLabel(code)}</span><strong>{metric.state === 'AVAILABLE' ? `${metric.value ?? '—'}${unitLabel(metric.unit) ? ` ${unitLabel(metric.unit)}` : ''}` : '—'}</strong><small>{metric.state === 'AVAILABLE' ? '已采集' : businessCodeLabel(metric.state, '数据待确认')}</small></div>
