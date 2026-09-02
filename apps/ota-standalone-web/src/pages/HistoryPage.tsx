@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   loadBriefs,
   loadIncidents,
   loadOutboxPreview,
   loadWeComConfig,
+  replayLatestWeComBrief,
   saveWeComConfig,
   sendWeComTestSuite,
   type BriefView,
@@ -11,6 +12,7 @@ import {
   type IncidentView,
   type OutboxPreview,
   type WeComConfigView,
+  type WeComManualReplayView,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
 import {
@@ -24,6 +26,7 @@ import { WeComRepairBotConfigPanel } from './WeComRepairBotConfigPanel'
 interface Props {
   context: HotelContext | null
   canConfigure: boolean
+  onStatusChanged?: () => void
 }
 
 const TEMPLATE_LABELS: Record<string, string> = {
@@ -43,7 +46,13 @@ const TEMPLATE_LABELS: Record<string, string> = {
 const templateLabel = (code: string) =>
   TEMPLATE_LABELS[code] ?? businessCodeLabel(code, '其他业务消息')
 
-export function HistoryPage({ context, canConfigure }: Props) {
+const createManualReplayOperationKey = (): string => {
+  const randomPart = globalThis.crypto?.randomUUID?.().toUpperCase()
+    ?? `${Date.now()}_${Math.random().toString(16).slice(2)}`.toUpperCase()
+  return `MANUAL_REPLAY_${randomPart}`
+}
+
+export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
   const [briefs, setBriefs] = useState<BriefView[]>([])
   const [incidents, setIncidents] = useState<IncidentView[]>([])
   const [outbox, setOutbox] = useState<OutboxPreview[]>([])
@@ -55,35 +64,64 @@ export function HistoryPage({ context, canConfigure }: Props) {
   const [loading, setLoading] = useState(false)
   const [savingWeCom, setSavingWeCom] = useState(false)
   const [sendingTest, setSendingTest] = useState(false)
+  const [replaying, setReplaying] = useState(false)
+  const [replayResult, setReplayResult] =
+    useState<WeComManualReplayView | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const replayOperationRef = useRef<{
+    collectionRunId: string
+    operationKey: string
+  } | null>(null)
+  const replayAttemptRef = useRef(0)
+  const refreshSequenceRef = useRef(0)
+  const tenantId = context?.tenantId
+  const hotelId = context?.hotelId
 
   const refresh = useCallback(async () => {
-    if (!context) return
+    const sequence = ++refreshSequenceRef.current
+    if (!tenantId || !hotelId) return
+    const activeContext = { tenantId, hotelId }
     setLoading(true)
     setError('')
     try {
       const [briefRows, incidentRows, outboxRows, config] = await Promise.all([
-        loadBriefs(context),
-        loadIncidents(context),
-        loadOutboxPreview(context),
-        loadWeComConfig(context),
+        loadBriefs(activeContext),
+        loadIncidents(activeContext),
+        loadOutboxPreview(activeContext),
+        loadWeComConfig(activeContext),
       ])
+      if (sequence !== refreshSequenceRef.current) return
       setBriefs(briefRows)
       setIncidents(incidentRows)
       setOutbox(outboxRows)
       setWeComConfig(config)
       setWeComEnabled(config.enabled)
     } catch (cause) {
+      if (sequence !== refreshSequenceRef.current) return
       setError(businessErrorMessage(cause, '读取历史失败'))
     } finally {
-      setLoading(false)
+      if (sequence === refreshSequenceRef.current) setLoading(false)
     }
-  }, [context])
+  }, [hotelId, tenantId])
 
   useEffect(() => {
     void refresh()
+    return () => {
+      refreshSequenceRef.current += 1
+    }
   }, [refresh])
+
+  useEffect(() => {
+    replayAttemptRef.current += 1
+    replayOperationRef.current = null
+    setReplaying(false)
+    setReplayResult(null)
+    setNotice('')
+    return () => {
+      replayAttemptRef.current += 1
+    }
+  }, [hotelId, tenantId])
 
   async function saveAutomation() {
     if (!context) return
@@ -156,6 +194,78 @@ export function HistoryPage({ context, canConfigure }: Props) {
       setError(businessErrorMessage(cause, '企微测试发送失败'))
     } finally {
       setSendingTest(false)
+    }
+  }
+
+  const latestBrief = [...briefs]
+    .sort((left, right) => left.cutoffAt.localeCompare(right.cutoffAt))
+    .at(-1) ?? null
+  const latestCompleteBrief = latestBrief
+    && latestBrief.completenessCode === 'COMPLETE'
+    && !latestBrief.simulationMode
+    ? latestBrief
+    : null
+
+  async function replayLatestBrief() {
+    if (
+      !context
+      || !canConfigure
+      || replaying
+      || !latestCompleteBrief
+      || !weComConfig?.enabled
+      || !weComConfig.webhookConfigured
+    ) return
+    const confirmed = window.confirm(
+      `将按最新完整数据（截止${formatBusinessTime(latestCompleteBrief.cutoffAt)}）`
+      + '补发正式播报到企业微信群，并@所有人。请确认群内尚未收到同一播报，是否继续？',
+    )
+    if (!confirmed) return
+
+    const collectionRunId = latestCompleteBrief.simulationRunId
+    if (
+      !replayOperationRef.current
+      || replayOperationRef.current.collectionRunId !== collectionRunId
+    ) {
+      replayOperationRef.current = {
+        collectionRunId,
+        operationKey: createManualReplayOperationKey(),
+      }
+    }
+    const operationKey = replayOperationRef.current.operationKey
+    const attempt = ++replayAttemptRef.current
+    setReplaying(true)
+    setReplayResult(null)
+    setError('')
+    setNotice('')
+    try {
+      const result = await replayLatestWeComBrief(
+        context,
+        collectionRunId,
+        operationKey,
+      )
+      if (attempt !== replayAttemptRef.current) return
+      setReplayResult(result)
+      const deliveredCount = result.deliveries.filter(
+        (delivery) => delivery.deliveryStatus === 'DELIVERED',
+      ).length
+      const failedCount = new Set([
+        ...result.failedTemplates.map((item) => item.templateCode),
+        ...result.deliveries
+          .filter((delivery) => delivery.deliveryStatus !== 'DELIVERED')
+          .map((delivery) => delivery.deliveryType),
+      ]).size
+      setNotice(
+        `${result.replayed ? '已安全返回同一补发操作结果' : '正式播报补发处理完成'}`
+        + `：送达 ${deliveredCount}，失败 ${failedCount}，跳过 ${result.skippedTemplates.length}。`,
+      )
+      await refresh()
+      if (attempt !== replayAttemptRef.current) return
+      onStatusChanged?.()
+    } catch (cause) {
+      if (attempt !== replayAttemptRef.current) return
+      setError(businessErrorMessage(cause, '补发最新正式播报失败'))
+    } finally {
+      if (attempt === replayAttemptRef.current) setReplaying(false)
     }
   }
 
@@ -287,6 +397,102 @@ export function HistoryPage({ context, canConfigure }: Props) {
               </button>
             </div>
           </section>
+
+          {canConfigure ? (
+            <section className="wecom-automation-card">
+              <div className="page-heading">
+                <div>
+                  <p className="eyebrow">正式播报补发</p>
+                  <h3>补发最新正式播报</h3>
+                  <p>
+                    手工采集仅更新数据，不自动群发。此操作使用最新完整数据补发正式播报，
+                    提交前会再次确认，并@企业微信群所有人。
+                  </p>
+                </div>
+                <button
+                  disabled={
+                    replaying
+                    || !latestCompleteBrief
+                    || !weComConfig?.enabled
+                    || !weComConfig.webhookConfigured
+                  }
+                  type="button"
+                  onClick={() => void replayLatestBrief()}
+                >
+                  {replaying ? '正在补发…' : '补发最新正式播报'}
+                </button>
+              </div>
+              <div className="wecom-status-row">
+                <span>
+                  最新完整数据｜
+                  {latestCompleteBrief
+                    ? formatBusinessTime(latestCompleteBrief.cutoffAt)
+                    : '暂无可补发的完整数据'}
+                </span>
+                <span>
+                  群机器人｜
+                  {weComConfig?.webhookConfigured ? '已配置' : '未配置'}
+                </span>
+                <span>
+                  自动推送｜
+                  {weComConfig?.enabled ? '已启用' : '未启用'}
+                </span>
+              </div>
+              {replayResult ? (
+                <div className="history-columns" role="status">
+                  <section>
+                    <h3>各模板送达结果</h3>
+                    {replayResult.deliveries.map((delivery, index) => (
+                      <article
+                        className="history-card"
+                        key={`${delivery.deliveryType}:${index}`}
+                      >
+                        <header>
+                          <strong>{templateLabel(delivery.deliveryType)}</strong>
+                          <b>{businessCodeLabel(delivery.deliveryStatus, '结果待确认')}</b>
+                        </header>
+                        <p>{businessCodeLabel(delivery.reasonCode, '原因待确认')}</p>
+                        <small>
+                          分段送达 {delivery.deliveredPartCount}/{delivery.partCount}
+                          {delivery.completedAt || delivery.attemptedAt
+                            ? `｜${formatBusinessTime(delivery.completedAt ?? delivery.attemptedAt ?? '')}`
+                            : ''}
+                        </small>
+                      </article>
+                    ))}
+                    {replayResult.deliveries.length === 0
+                      ? <div className="state-panel">本次没有产生可发送模板。</div>
+                      : null}
+                  </section>
+                  <section>
+                    <h3>失败与跳过</h3>
+                    {replayResult.failedTemplates.map((item) => (
+                      <article className="history-card" key={`failed:${item.templateCode}`}>
+                        <header>
+                          <strong>{templateLabel(item.templateCode)}</strong>
+                          <b className="unsafe">生成或发送失败</b>
+                        </header>
+                        <p>{businessCodeLabel(item.reasonCode, '原因待确认')}</p>
+                      </article>
+                    ))}
+                    {replayResult.skippedTemplates.map((item) => (
+                      <article className="history-card" key={`skipped:${item.templateCode}`}>
+                        <header>
+                          <strong>{templateLabel(item.templateCode)}</strong>
+                          <b>本次跳过</b>
+                        </header>
+                        <p>{businessCodeLabel(item.reasonCode, '无适用数据')}</p>
+                      </article>
+                    ))}
+                    {replayResult.failedTemplates.length === 0
+                      && replayResult.skippedTemplates.length === 0
+                      ? <div className="state-panel">没有失败或跳过的模板。</div>
+                      : null}
+                  </section>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           {notice ? <div className="success" role="status">{notice}</div> : null}
 

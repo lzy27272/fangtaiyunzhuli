@@ -699,6 +699,27 @@ export interface WeComTestSuiteView {
   failedTemplates: WeComTestSuiteTemplateResult[]
 }
 
+export interface WeComManualReplayDeliveryView {
+  deliveryType: string
+  deliveryStatus: WeComDeliveryView['deliveryStatus']
+  reasonCode: string
+  attemptedAt?: string | null
+  completedAt?: string | null
+  partCount: number
+  deliveredPartCount: number
+}
+
+export interface WeComManualReplayView {
+  operationKey: string
+  collectionRunId: string
+  cutoffAt: string
+  replayed: boolean
+  overallStatus: 'COMPLETE' | 'PARTIAL'
+  deliveries: WeComManualReplayDeliveryView[]
+  skippedTemplates: WeComTestSuiteTemplateResult[]
+  failedTemplates: WeComTestSuiteTemplateResult[]
+}
+
 export interface WeComConfigView {
   enabled: boolean
   sendMinute: 6
@@ -1625,6 +1646,21 @@ export function sendWeComTestSuite(
   return postCommand<WeComTestSuiteView>(
     scopedPath(context, '/wecom-test-suite-deliveries'),
     { reasonCode: 'SEND_WECOM_UAT_TEST_SUITE' },
+  )
+}
+
+export function replayLatestWeComBrief(
+  context: HotelContext,
+  expectedCollectionRunId: string,
+  operationKey: string,
+): Promise<WeComManualReplayView> {
+  return postCommand<WeComManualReplayView>(
+    scopedPath(context, '/wecom-manual-replay-deliveries'),
+    {
+      expectedCollectionRunId,
+      operationKey,
+      reasonCode: 'MANUAL_REPLAY_LATEST_COMPLETE',
+    },
   )
 }
 

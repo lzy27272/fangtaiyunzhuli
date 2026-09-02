@@ -59,6 +59,7 @@ $runtimeSourcePaths = @(
     'infra/ota-standalone-server/scripts/status-native.sh',
     'infra/ota-standalone-server/scripts/configure-ai-runtime.sh',
     'tools/uat/ota-standalone-review-api.mjs',
+    'tools/uat/wecom-manual-replay.mjs',
     'tools/uat/pms-repair-alert.mjs',
     'tools/uat/report-source-cookie-crypto.mjs',
     'tools/uat/review-auth-store.mjs',

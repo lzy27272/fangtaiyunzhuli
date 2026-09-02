@@ -5,6 +5,7 @@ import {
   loadConfiguration,
   loadIncidents,
   loadMonitor,
+  loadOutboxPreview,
   loadOtaSources,
   loadRoomTypeConfiguration,
   loadWeComConfig,
@@ -13,6 +14,7 @@ import {
   type HotelContext,
   type IncidentView,
   type MonitorView,
+  type OutboxPreview,
   type OtaSourceView,
   type RoomTypeConfigurationView,
   type SimulationConfiguration,
@@ -347,11 +349,13 @@ interface DetailData {
   incidents: IncidentView[]
   roomTypes: RoomTypeConfigurationView | null
   trustedDeviceStatus: TrustedDeviceStatus | null
+  outbox: OutboxPreview[]
 }
 
 const emptyDetail: DetailData = {
   configuration: null, monitor: null, otaSources: [], wecom: null,
   briefs: [], incidents: [], roomTypes: null, trustedDeviceStatus: null,
+  outbox: [],
 }
 
 export function StoreDetailPage({
@@ -392,6 +396,7 @@ export function StoreDetailPage({
       loadWeComConfig(context), loadBriefs(context), loadIncidents(context),
       loadRoomTypeConfiguration(context),
       loadTrustedDeviceStatus(context),
+      loadOutboxPreview(context),
     ])
     if (sequence !== refreshSequenceRef.current) return
     setData({
@@ -403,6 +408,7 @@ export function StoreDetailPage({
       incidents: results[5].status === 'fulfilled' ? results[5].value : [],
       roomTypes: results[6].status === 'fulfilled' ? results[6].value : null,
       trustedDeviceStatus: results[7].status === 'fulfilled' ? results[7].value : null,
+      outbox: results[8].status === 'fulfilled' ? results[8].value : [],
     })
     const unavailable = results.every((result) => result.status === 'rejected')
     setDataUnavailable(unavailable)
@@ -479,7 +485,9 @@ export function StoreDetailPage({
         }
         await refresh()
         if (!isCurrentOperation()) return
-        setNotice('本机采集已完成，数据预览已更新。')
+        setNotice(
+          '本机采集已完成，仅更新数据，不自动群发。可在“播报记录”中确认后补发最新正式播报。',
+        )
         return
       }
 
@@ -497,7 +505,11 @@ export function StoreDetailPage({
       }
       const run = await triggerLiveCollection(context)
       if (!isCurrentOperation()) return
-      setNotice(run.status === 'SUCCEEDED' ? '采集已完成，数据预览已更新。' : `采集完成：${businessCodeLabel(run.status)}`)
+      setNotice(
+        run.status === 'SUCCEEDED'
+          ? '采集已完成，仅更新数据，不自动群发。可在“播报记录”中确认后补发最新正式播报。'
+          : `采集完成：${businessCodeLabel(run.status)}；仅更新数据，不自动群发。`,
+      )
       await refresh()
     } catch (cause) {
       if (
@@ -520,6 +532,13 @@ export function StoreDetailPage({
   const broadcast = broadcastState(summary)
   const connectionTab: StoreTab = canConfigure ? 'collection' : 'repair'
   const lastCollectionAt = data.monitor?.cutoffAt ?? null
+  const latestBrief = [...data.briefs]
+    .sort((left, right) => left.cutoffAt.localeCompare(right.cutoffAt))
+    .at(-1)
+  const latestDelivered = [...data.outbox]
+    .filter((message) => message.deliveryStatus === 'DELIVERED')
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .at(-1)
   const trustedDeviceCollection = data.trustedDeviceStatus?.eligible
     && data.trustedDeviceStatus.mode === 'STORE_TRUSTED_DEVICE'
 
@@ -559,7 +578,7 @@ export function StoreDetailPage({
           ) : null}
 
           <div className="section-heading overview-data-heading">
-            <div><h2>总数据预览</h2><p>PMS 与 OTA 最近一次成功采集结果；不完整数据不会作为正式播报依据。</p></div>
+            <div><h2>总数据预览</h2><p>PMS 与 OTA 最近一次成功采集结果；手工采集仅更新数据，不自动群发。</p></div>
             <div className="overview-data-actions">
               <div className="last-collection-time" aria-label={`最后采集时间：${lastCollectionAt ? formatTime(lastCollectionAt) : '尚未采集'}`}>
                 <span>最后采集时间</span>
@@ -584,8 +603,8 @@ export function StoreDetailPage({
               </div>
             </section>
             <section className="content-panel">
-              <div className="section-heading small"><div><h2>播报状态</h2><p>企业微信最近一次投递</p></div><button className="text-link" onClick={() => setTab(broadcast.tab)} type="button">{broadcast.tab === 'collection' ? '检查上游数据' : '查看记录'}</button></div>
-              <div className="broadcast-summary"><Status tone={broadcast.tone}>{broadcast.label}</Status><dl><div><dt>最近投递</dt><dd>{formatTime(data.wecom?.lastDelivery?.attemptedAt)}</dd></div><div><dt>结果</dt><dd>{businessCodeLabel(data.wecom?.lastDelivery?.deliveryStatus, '尚未投递')}</dd></div><div><dt>已生成简报</dt><dd>{data.briefs.length} 条</dd></div></dl></div>
+              <div className="section-heading small"><div><h2>播报状态</h2><p>最新数据与企业微信送达分别记录</p></div><button className="text-link" onClick={() => setTab(broadcast.tab)} type="button">{broadcast.tab === 'collection' ? '检查上游数据' : canConfigure ? '查看及补发' : '查看记录'}</button></div>
+              <div className="broadcast-summary"><Status tone={broadcast.tone}>{broadcast.label}</Status><dl><div><dt>最新数据时间</dt><dd>{formatTime(lastCollectionAt)}</dd></div><div><dt>最新简报状态</dt><dd>{businessCodeLabel(latestBrief?.deliveryStatus, '尚未生成')}</dd></div><div><dt>最近企微送达</dt><dd>{formatTime(latestDelivered?.createdAt)}</dd></div></dl></div>
             </section>
           </div>
         </div>
@@ -614,7 +633,7 @@ export function StoreDetailPage({
         </div>
       ) : null}
 
-      {!loading && tab === 'broadcast' ? <div className="embedded-legacy-page"><HistoryPage context={context} canConfigure={canConfigure} /></div> : null}
+      {!loading && tab === 'broadcast' ? <div className="embedded-legacy-page"><HistoryPage context={context} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /></div> : null}
     </section>
   )
 }

@@ -149,6 +149,15 @@ import {
 } from './wecom/src/wecom-group-robot.mjs'
 import { createWeComTestSuitePlan } from './wecom/src/wecom-test-suite.mjs'
 import {
+  MANUAL_REPLAY_MESSAGE_PREFIX,
+  manualReplayDeliveryDecision,
+  manualReplayDeliveryView,
+  manualReplayMessageKey,
+  normalizeManualReplayRequest,
+  safeManualReplayFailureReason,
+  selectLatestAuthoritativeCompleteSnapshot,
+} from './wecom-manual-replay.mjs'
+import {
   auditBriefingStore,
   dailyBriefingAuditSlot,
   dailyBriefingRepairSlot,
@@ -500,6 +509,7 @@ const weComConfigsByHotel = new Map()
 const weComSecretsByHotel = new Map()
 const weComDeliveriesByKey = new Map()
 const weComDeliveryLocks = new Map()
+const weComManualReplayLocks = new Map()
 const futureDemandRiskStates = {}
 const briefingHealthAudits = []
 const lastScheduledCollectionSlotByHotel = new Map()
@@ -7036,6 +7046,175 @@ const futureBookingPayloads = ({
   },
 )
 
+const manualReplayFailureForDecision = (decision) => {
+  if (decision === 'MANUAL_RECONCILIATION_REQUIRED') {
+    return 'WECOM_MANUAL_REPLAY_MANUAL_RECONCILIATION_REQUIRED'
+  }
+  if (decision === 'OPERATION_SCOPE_CONFLICT') {
+    return 'WECOM_MANUAL_REPLAY_OPERATION_SCOPE_CONFLICT'
+  }
+  return 'WECOM_MANUAL_REPLAY_REJECTED_NO_AUTOMATIC_RETRY'
+}
+
+const runWeComManualReplay = async ({ hotelId, body }) => {
+  const request = normalizeManualReplayRequest(body)
+  const hotel = selectedHotel(hotelId)
+  const snapshot = selectLatestAuthoritativeCompleteSnapshot({
+    snapshots: liveSnapshotStore[hotelId] ?? [],
+    expectedCollectionRunId: request.expectedCollectionRunId,
+    trustedDeviceStatus: trustedDeviceEligible(hotel)
+      ? trustedDeviceStoreFor(hotel).status()
+      : null,
+  })
+  const templates = [
+    {
+      templateCode: 'TODAY_REVENUE',
+      messageKey: manualReplayMessageKey({
+        hotelId,
+        operationKey: request.operationKey,
+        deliveryType: 'TODAY_REVENUE',
+      }),
+      delivery: () => deliverWeComSnapshot({
+        hotelId,
+        snapshot,
+        messageKey: manualReplayMessageKey({
+          hotelId,
+          operationKey: request.operationKey,
+          deliveryType: 'TODAY_REVENUE',
+        }),
+        messagePrefix: MANUAL_REPLAY_MESSAGE_PREFIX,
+        deliveryType: 'TODAY_REVENUE',
+      }),
+    },
+  ]
+  const skippedTemplates = []
+  if (
+    Array.isArray(snapshot.futureBookingChanges?.daily)
+    && snapshot.futureBookingChanges.daily.length > 0
+  ) {
+    const messageKey = manualReplayMessageKey({
+      hotelId,
+      operationKey: request.operationKey,
+      deliveryType: 'FUTURE_14D',
+    })
+    templates.push({
+      templateCode: 'FUTURE_14D',
+      messageKey,
+      delivery: () => deliverWeComSnapshot({
+        hotelId,
+        snapshot,
+        messageKey,
+        messagePrefix: MANUAL_REPLAY_MESSAGE_PREFIX,
+        deliveryType: 'FUTURE_14D',
+        payloadFactory: ({ hotel: selected, snapshot: current }) =>
+          futureBookingPayloads({
+            hotel: selected,
+            snapshot: current,
+            messagePrefix: MANUAL_REPLAY_MESSAGE_PREFIX,
+          }),
+      }),
+    })
+  } else {
+    skippedTemplates.push({
+      templateCode: 'FUTURE_14D',
+      reasonCode: 'FUTURE_BOOKING_SNAPSHOT_REQUIRED',
+    })
+  }
+
+  const operationLockKey = templates[0].messageKey
+  const running = weComManualReplayLocks.get(operationLockKey)
+  if (running) {
+    const result = await running
+    return { ...result, replayed: true }
+  }
+
+  const operation = (async () => {
+    const existingBefore = new Map(templates.map((template) => [
+      template.messageKey,
+      weComDeliveriesByKey.get(template.messageKey) ?? null,
+    ]))
+    const result = {
+      operationKey: request.operationKey,
+      collectionRunId: snapshot.collectionRunId,
+      cutoffAt: snapshot.observedAt,
+      replayed: templates.every((template) =>
+        existingBefore.get(template.messageKey) !== null),
+      overallStatus: 'COMPLETE',
+      deliveries: [],
+      skippedTemplates,
+      failedTemplates: [],
+    }
+
+    const hasOperationScopeConflict = templates.some((template) =>
+      manualReplayDeliveryDecision({
+        delivery: existingBefore.get(template.messageKey),
+        hotelId,
+        snapshot,
+      }) === 'OPERATION_SCOPE_CONFLICT')
+    if (hasOperationScopeConflict) {
+      for (const template of templates) {
+        const existing = existingBefore.get(template.messageKey)
+        if (existing) {
+          result.deliveries.push(manualReplayDeliveryView(existing))
+        }
+        result.failedTemplates.push({
+          templateCode: template.templateCode,
+          reasonCode: 'WECOM_MANUAL_REPLAY_OPERATION_SCOPE_CONFLICT',
+        })
+      }
+      result.overallStatus = 'PARTIAL'
+      return result
+    }
+
+    for (const template of templates) {
+      const existing = existingBefore.get(template.messageKey)
+      const decision = manualReplayDeliveryDecision({
+        delivery: existing,
+        hotelId,
+        snapshot,
+      })
+      if (existing) {
+        result.deliveries.push(manualReplayDeliveryView(existing))
+        if (decision !== 'ALREADY_DELIVERED') {
+          result.failedTemplates.push({
+            templateCode: template.templateCode,
+            reasonCode: manualReplayFailureForDecision(decision),
+          })
+          result.overallStatus = 'PARTIAL'
+        }
+        continue
+      }
+      try {
+        const delivery = await template.delivery()
+        const deliveredView = manualReplayDeliveryView(delivery)
+        result.deliveries.push(deliveredView)
+        if (delivery.deliveryStatus !== 'DELIVERED') {
+          result.failedTemplates.push({
+            templateCode: template.templateCode,
+            reasonCode: manualReplayFailureForDecision(
+              manualReplayDeliveryDecision({ delivery, hotelId, snapshot }),
+            ),
+          })
+          result.overallStatus = 'PARTIAL'
+        }
+      } catch (error) {
+        result.failedTemplates.push({
+          templateCode: template.templateCode,
+          reasonCode: safeManualReplayFailureReason(error),
+        })
+        result.overallStatus = 'PARTIAL'
+      }
+    }
+    return result
+  })()
+  weComManualReplayLocks.set(operationLockKey, operation)
+  try {
+    return await operation
+  } finally {
+    weComManualReplayLocks.delete(operationLockKey)
+  }
+}
+
 const recoveryDeliveryView = (delivery) => ({
   messageKey: delivery.messageKey,
   deliveryType: delivery.deliveryType,
@@ -9856,6 +10035,27 @@ const server = createServer(async (request, response) => {
       }
       if (
         request.method === 'POST'
+        && suffix === '/wecom-manual-replay-deliveries'
+      ) {
+        const result = await runWeComManualReplay({
+          hotelId,
+          body: await readBody(request),
+        })
+        auditSecurityEvent({
+          action: 'WECOM_MANUAL_REPLAY',
+          outcome: result.failedTemplates.length > 0 ? 'BLOCKED' : 'SUCCEEDED',
+          request,
+          principal: requestPrincipal,
+          hotelId,
+          reasonCode:
+            result.failedTemplates[0]?.reasonCode
+            ?? 'MANUAL_REPLAY_LATEST_COMPLETE',
+        })
+        json(response, 200, { data: result })
+        return
+      }
+      if (
+        request.method === 'POST'
         && suffix === '/wecom-test-suite-deliveries'
       ) {
         const body = await readBody(request)
@@ -10152,6 +10352,10 @@ const server = createServer(async (request, response) => {
         'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
         'OTA_SOURCE_VERSION_CONFLICT',
         'OTA_SOURCE_CHANGED_DURING_REFRESH',
+        'WECOM_MANUAL_REPLAY_AUTHORITATIVE_SNAPSHOT_REQUIRED',
+        'WECOM_MANUAL_REPLAY_COMPLETE_SNAPSHOT_REQUIRED',
+        'WECOM_MANUAL_REPLAY_LATEST_SNAPSHOT_CHANGED',
+        'WECOM_MANUAL_REPLAY_SNAPSHOT_REQUIRED',
       ].includes(code)
         ? 409
         : code === 'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED'
