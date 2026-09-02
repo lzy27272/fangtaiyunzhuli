@@ -102,7 +102,63 @@ const request = async <T>(
 
 export const loadTrustedDeviceStatus = (
   context: HotelContext,
-): Promise<TrustedDeviceStatus> => request(context, '/trusted-device')
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<TrustedDeviceStatus> => request(
+  context,
+  '/trusted-device',
+  { signal },
+)
+
+export const trustedDeviceRepairUrl = (hotelCode: string): string => {
+  const protocolCode = hotelCode.toLowerCase().replaceAll('_', '-')
+  if (!/^[a-z0-9][a-z0-9-]{0,15}$/u.test(protocolCode)) {
+    throw new Error('可信设备门店编号无效')
+  }
+  return `sfgtrusted${protocolCode}://repair`
+}
+
+export async function waitForTrustedDeviceSnapshot(
+  context: HotelContext,
+  baselineSnapshotAt: string | null,
+  {
+    signal,
+    timeoutMs = 5 * 60_000,
+    pollIntervalMs = 3_000,
+  }: {
+    signal?: AbortSignal
+    timeoutMs?: number
+    pollIntervalMs?: number
+  } = {},
+): Promise<TrustedDeviceStatus> {
+  const wait = (durationMs: number): Promise<void> => new Promise(
+    (resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'))
+        return
+      }
+      const onAbort = () => {
+        globalThis.clearTimeout(timer)
+        reject(new DOMException('Aborted', 'AbortError'))
+      }
+      const timer = globalThis.setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort)
+        resolve()
+      }, durationMs)
+      signal?.addEventListener('abort', onAbort, { once: true })
+    },
+  )
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    await wait(pollIntervalMs)
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const next = await loadTrustedDeviceStatus(context, { signal })
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const latest = next.device?.lastSnapshotAt ?? null
+    if (latest && latest !== baselineSnapshotAt) return next
+  }
+  throw new Error('本机采集器未在5分钟内返回新数据，请进入登录修复查看状态。')
+}
 
 export const createTrustedDeviceEnrollment = (
   context: HotelContext,

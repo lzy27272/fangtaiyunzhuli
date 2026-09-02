@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   listSimulationHotels,
   loadBriefs,
@@ -35,7 +35,9 @@ import {
 } from '../domain/pmsRepair'
 import {
   loadTrustedDeviceStatus,
+  trustedDeviceRepairUrl,
   type TrustedDeviceStatus,
+  waitForTrustedDeviceSnapshot,
 } from '../api/trustedDevice'
 import {
   businessCodeLabel,
@@ -373,10 +375,16 @@ export function StoreDetailPage({
   const [data, setData] = useState<DetailData>(emptyDetail)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [dataUnavailable, setDataUnavailable] = useState(false)
   const [collecting, setCollecting] = useState(false)
   const [notice, setNotice] = useState('')
+  const collectingRef = useRef(false)
+  const collectionAbortRef = useRef<AbortController | null>(null)
+  const refreshSequenceRef = useRef(0)
+  const contextKey = `${context.tenantId}\u0000${context.hotelId}`
 
   const refresh = useCallback(async () => {
+    const sequence = ++refreshSequenceRef.current
     setLoading(true)
     setError('')
     const results = await Promise.allSettled([
@@ -385,6 +393,7 @@ export function StoreDetailPage({
       loadRoomTypeConfiguration(context),
       loadTrustedDeviceStatus(context),
     ])
+    if (sequence !== refreshSequenceRef.current) return
     setData({
       configuration: results[0].status === 'fulfilled' ? results[0].value : null,
       monitor: results[1].status === 'fulfilled' ? results[1].value : null,
@@ -395,7 +404,9 @@ export function StoreDetailPage({
       roomTypes: results[6].status === 'fulfilled' ? results[6].value : null,
       trustedDeviceStatus: results[7].status === 'fulfilled' ? results[7].value : null,
     })
-    if (results.every((result) => result.status === 'rejected')) {
+    const unavailable = results.every((result) => result.status === 'rejected')
+    setDataUnavailable(unavailable)
+    if (unavailable) {
       setError('门店数据暂时不可用，请检查连接状态。')
     }
     setLoading(false)
@@ -404,25 +415,113 @@ export function StoreDetailPage({
   useEffect(() => {
     setTab(initialTab === 'collection' && !canConfigure ? 'repair' : initialTab)
   }, [canConfigure, initialTab])
+  useEffect(() => {
+    collectionAbortRef.current?.abort()
+    collectionAbortRef.current = null
+    collectingRef.current = false
+    refreshSequenceRef.current += 1
+    setCollecting(false)
+    setNotice('')
+    setError('')
+    setData(emptyDetail)
+    setDataUnavailable(false)
+    return () => {
+      refreshSequenceRef.current += 1
+      collectionAbortRef.current?.abort()
+      collectionAbortRef.current = null
+      collectingRef.current = false
+    }
+  }, [contextKey])
   useEffect(() => { void refresh() }, [refresh])
 
   const collect = async () => {
+    if (collectingRef.current) return
+    collectingRef.current = true
     setCollecting(true); setNotice(''); setError('')
+    const controller = new AbortController()
+    collectionAbortRef.current?.abort()
+    collectionAbortRef.current = controller
+    const isCurrentOperation = () => (
+      collectionAbortRef.current === controller && !controller.signal.aborted
+    )
     try {
+      const trusted = data.trustedDeviceStatus
+      if (!trusted) {
+        throw new Error('采集方式尚未加载，请刷新状态后重试。')
+      }
+      if (trusted.eligible) {
+        if (trusted.mode !== 'STORE_TRUSTED_DEVICE') {
+          throw new Error('可信设备采集状态异常，请刷新后重试。')
+        }
+        if (!trusted.device || trusted.device.status !== 'ACTIVE') {
+          setTab('repair')
+          throw new Error('请先在登录修复中完成本机可信设备安装与绑定。')
+        }
+        const baselineSnapshotAt = trusted.device.lastSnapshotAt
+        setNotice(
+          `正在调用${trusted.hotelCode}门店电脑采集；浏览器询问时请选择“打开”。`,
+        )
+        // Keep the external-protocol navigation in the original click stack;
+        // awaiting a network request first can consume Chrome user activation.
+        window.location.href = trustedDeviceRepairUrl(trusted.hotelCode)
+        const next = await waitForTrustedDeviceSnapshot(
+          context,
+          baselineSnapshotAt,
+          { signal: controller.signal },
+        )
+        if (!isCurrentOperation()) return
+        if (
+          next.device?.lastCompleteness !== 'COMPLETE'
+          || !next.device.cutoverReady
+        ) {
+          setTab('repair')
+          throw new Error('本机已返回数据，但快照仍不完整，请进入登录修复查看状态。')
+        }
+        await refresh()
+        if (!isCurrentOperation()) return
+        setNotice('本机采集已完成，数据预览已更新。')
+        return
+      }
+
+      // Only stores explicitly declared ineligible for trusted-device mode
+      // both in the loaded page and in a fresh server read may use the legacy
+      // cloud collector. A status read failure therefore fails closed.
+      const latest = await loadTrustedDeviceStatus(
+        context,
+        { signal: controller.signal },
+      )
+      if (!isCurrentOperation()) return
+      setData((current) => ({ ...current, trustedDeviceStatus: latest }))
+      if (latest.eligible) {
+        throw new Error('该门店已切换为本机可信设备采集，请再次点击“立即采集”。')
+      }
       const run = await triggerLiveCollection(context)
+      if (!isCurrentOperation()) return
       setNotice(run.status === 'SUCCEEDED' ? '采集已完成，数据预览已更新。' : `采集完成：${businessCodeLabel(run.status)}`)
       await refresh()
     } catch (cause) {
+      if (
+        controller.signal.aborted
+        || (cause instanceof DOMException && cause.name === 'AbortError')
+      ) return
       setError(businessErrorMessage(cause, '采集触发失败'))
-    } finally { setCollecting(false) }
+    } finally {
+      if (collectionAbortRef.current === controller) {
+        collectionAbortRef.current = null
+        collectingRef.current = false
+        setCollecting(false)
+      }
+    }
   }
 
-  const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, briefs: data.briefs, incidents: data.incidents, trustedDeviceStatus: data.trustedDeviceStatus, unavailable: Boolean(error) }
+  const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, briefs: data.briefs, incidents: data.incidents, trustedDeviceStatus: data.trustedDeviceStatus, unavailable: dataUnavailable }
   const pms = pmsState(summary)
   const pmsRepair = pmsRepairState(summary)
   const broadcast = broadcastState(summary)
   const connectionTab: StoreTab = canConfigure ? 'collection' : 'repair'
   const lastCollectionAt = data.monitor?.cutoffAt ?? null
+  const trustedDeviceCollection = data.trustedDeviceStatus?.eligible
+    && data.trustedDeviceStatus.mode === 'STORE_TRUSTED_DEVICE'
 
   return (
     <section className="console-page store-detail-page">
@@ -466,7 +565,7 @@ export function StoreDetailPage({
                 <span>最后采集时间</span>
                 <strong>{lastCollectionAt ? <time dateTime={lastCollectionAt}>{formatTime(lastCollectionAt)}</time> : '尚未采集'}</strong>
               </div>
-              <button className="primary-button" disabled={collecting} onClick={() => void collect()} type="button"><Icon name="refresh" />{collecting ? '正在采集…' : '立即采集'}</button>
+              <button className="primary-button" disabled={collecting} onClick={() => void collect()} type="button"><Icon name="refresh" />{collecting ? (trustedDeviceCollection ? '正在调用本机…' : '正在采集…') : (trustedDeviceCollection ? '本机立即采集' : '立即采集')}</button>
             </div>
           </div>
           <div className="metric-table">

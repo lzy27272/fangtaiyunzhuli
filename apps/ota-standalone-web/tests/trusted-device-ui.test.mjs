@@ -112,3 +112,65 @@ test('public proxy exposes only the three signed trusted-device intake paths', a
   assert.match(route, /reverse_proxy 127\.0\.0\.1:8091/u)
   assert.doesNotMatch(route, /\/api\/v1\/trusted-device\/\*/u)
 })
+
+test('store immediate collection routes trusted devices to the local repair protocol', async () => {
+  const [storePage, client] = await Promise.all([
+    readSource('../src/pages/StoreConsolePage.tsx'),
+    readSource('../src/api/trustedDevice.ts'),
+  ])
+  const collectStart = storePage.indexOf('const collect = async () =>')
+  const controllerAt = storePage.indexOf(
+    'const controller = new AbortController()',
+    collectStart,
+  )
+  const trustedBranchAt = storePage.indexOf(
+    'if (trusted.eligible)',
+    collectStart,
+  )
+  const protocolAt = storePage.indexOf(
+    'window.location.href = trustedDeviceRepairUrl(trusted.hotelCode)',
+    trustedBranchAt,
+  )
+  const trustedPollAt = storePage.indexOf(
+    'await waitForTrustedDeviceSnapshot(',
+    trustedBranchAt,
+  )
+  const freshStatusAt = storePage.indexOf(
+    'const latest = await loadTrustedDeviceStatus(',
+    trustedBranchAt,
+  )
+  const legacyCollectionAt = storePage.indexOf(
+    'await triggerLiveCollection(context)',
+    freshStatusAt,
+  )
+
+  assert.ok(collectStart >= 0)
+  assert.ok(controllerAt > collectStart)
+  assert.ok(trustedBranchAt >= 0)
+  assert.ok(protocolAt > trustedBranchAt)
+  assert.ok(trustedPollAt > protocolAt)
+  assert.ok(freshStatusAt > trustedPollAt)
+  assert.ok(legacyCollectionAt > trustedBranchAt)
+  assert.ok(controllerAt < trustedPollAt)
+  assert.match(storePage, /if \(trusted\.eligible\) \{/u)
+  assert.match(storePage, /if \(collectingRef\.current\) return/u)
+  assert.match(storePage, /trustedDeviceRepairUrl\(trusted\.hotelCode\)/u)
+  assert.match(storePage, /waitForTrustedDeviceSnapshot/u)
+  assert.match(
+    storePage,
+    /loadTrustedDeviceStatus\(\s*context,\s*\{ signal: controller\.signal \},\s*\)/u,
+  )
+  assert.match(storePage, /if \(latest\.eligible\) \{/u)
+  assert.match(
+    storePage,
+    /if \(collectionAbortRef\.current === controller\) \{[\s\S]+?setCollecting\(false\)/u,
+  )
+  assert.match(storePage, /refreshSequenceRef/u)
+  assert.match(storePage, /本机立即采集/u)
+  assert.match(storePage, /unavailable: dataUnavailable/u)
+  assert.doesNotMatch(storePage, /unavailable: Boolean\(error\)/u)
+  assert.match(client, /`sfgtrusted\$\{protocolCode\}:\/\/repair`/u)
+  assert.match(client, /loadTrustedDeviceStatus\(context, \{ signal \}\)/u)
+  assert.match(client, /removeEventListener\('abort', onAbort\)/u)
+  assert.match(client, /latest && latest !== baselineSnapshotAt/u)
+})
