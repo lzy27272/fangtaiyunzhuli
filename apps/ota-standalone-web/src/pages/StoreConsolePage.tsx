@@ -54,6 +54,7 @@ export interface HotelSummary {
   monitor: MonitorView | null
   otaSources: OtaSourceView[]
   wecom: WeComConfigView | null
+  briefs: BriefView[]
   incidents: IncidentView[]
   trustedDeviceStatus: TrustedDeviceStatus | null
   unavailable: boolean
@@ -139,15 +140,30 @@ function pmsState(summary: HotelSummary): { tone: Tone; label: string } {
   return { tone: 'ok', label: '正常' }
 }
 
-function broadcastState(summary: HotelSummary): { tone: Tone; label: string } {
-  const failed = summary.incidents.some((item) =>
+function broadcastDiagnosis(summary: HotelSummary): { tone: Tone; label: string; tab: StoreTab } {
+  const failedIncident = summary.incidents.some((item) =>
     /BROADCAST|DELIVERY|WECOM|MESSAGE/i.test(item.type) && !/CLOSED|RESOLVED/i.test(item.status))
-  if (failed || ['REJECTED', 'AMBIGUOUS'].includes(summary.wecom?.lastDelivery?.deliveryStatus ?? '')) {
-    return { tone: 'error', label: '播报异常' }
+  const failedDelivery = ['REJECTED', 'AMBIGUOUS']
+    .includes(summary.wecom?.lastDelivery?.deliveryStatus ?? '')
+  const latestBrief = [...summary.briefs]
+    .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))[0]
+  const monitorReady = summary.monitor?.completeness === 'COMPLETE'
+    && Boolean(summary.monitor.collectionRunId)
+  const briefReady = latestBrief?.completenessCode === 'COMPLETE'
+
+  if ((failedIncident || failedDelivery) && (!monitorReady || !briefReady)) {
+    return { tone: 'warning', label: '上游数据待处理', tab: 'collection' }
   }
-  if (summary.wecom?.lastDelivery?.deliveryStatus === 'DELIVERED') return { tone: 'ok', label: '正常' }
-  return { tone: 'warning', label: '待验证' }
+  if (failedIncident || failedDelivery) {
+    return { tone: 'error', label: '播报异常', tab: 'broadcast' }
+  }
+  if (summary.wecom?.lastDelivery?.deliveryStatus === 'DELIVERED') {
+    return { tone: 'ok', label: '正常', tab: 'broadcast' }
+  }
+  return { tone: 'warning', label: '待验证', tab: 'broadcast' }
 }
+
+const broadcastState = (summary: HotelSummary) => broadcastDiagnosis(summary)
 
 function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } | null {
   if (summary.hotel.pmsSystemCode === 'OTHER') {
@@ -162,16 +178,21 @@ function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } |
   if (failedOta) {
     return { tab: 'collection', label: `检查${sourceDisplayName(failedOta.platformCode)}` }
   }
-  if (broadcastState(summary).tone === 'error') {
-    return { tab: 'broadcast', label: '检查播报' }
+  const broadcast = broadcastDiagnosis(summary)
+  if (broadcast.label === '上游数据待处理') {
+    return { tab: 'collection', label: '检查采集数据' }
+  }
+  if (broadcast.tone === 'error') {
+    return { tab: broadcast.tab, label: '检查播报' }
   }
   return null
 }
 
 async function loadHotelSummary(hotel: SimulationHotelView): Promise<HotelSummary> {
   const context = { tenantId: hotel.tenantId, hotelId: hotel.hotelId }
-  const [monitor, otaSources, wecom, incidents, trustedDeviceStatus] = await Promise.allSettled([
-    loadMonitor(context), loadOtaSources(context), loadWeComConfig(context), loadIncidents(context),
+  const [monitor, otaSources, wecom, briefs, incidents, trustedDeviceStatus] = await Promise.allSettled([
+    loadMonitor(context), loadOtaSources(context), loadWeComConfig(context), loadBriefs(context),
+    loadIncidents(context),
     loadTrustedDeviceStatus(context),
   ])
   return {
@@ -179,9 +200,10 @@ async function loadHotelSummary(hotel: SimulationHotelView): Promise<HotelSummar
     monitor: monitor.status === 'fulfilled' ? monitor.value : null,
     otaSources: otaSources.status === 'fulfilled' ? otaSources.value : [],
     wecom: wecom.status === 'fulfilled' ? wecom.value : null,
+    briefs: briefs.status === 'fulfilled' ? briefs.value : [],
     incidents: incidents.status === 'fulfilled' ? incidents.value : [],
     trustedDeviceStatus: trustedDeviceStatus.status === 'fulfilled' ? trustedDeviceStatus.value : null,
-    unavailable: [monitor, otaSources, wecom, incidents, trustedDeviceStatus].every((item) => item.status === 'rejected'),
+    unavailable: [monitor, otaSources, wecom, briefs, incidents, trustedDeviceStatus].every((item) => item.status === 'rejected'),
   }
 }
 
@@ -302,7 +324,7 @@ export function StoreOverviewPage({
                   const state = otaState(source)
                   return <button aria-label={`打开${sourceDisplayName(source.platformCode)}配置，当前${state.label}`} className="channel-status-link" key={source.platformCode} onClick={() => onOpen(summary.hotel, 'collection')} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button>
                 })}
-                <button aria-label={`打开播报记录，当前${broadcast.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, 'broadcast')} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
+                <button aria-label={`打开${broadcast.tab === 'collection' ? '采集配置' : '播报记录'}，当前${broadcast.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, broadcast.tab)} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
               </div>
               <div className="store-meta"><strong>{formatTime(summary.monitor?.cutoffAt)}</strong><small>{openIncidents ? `${openIncidents}项异常待处理` : '最近检查'}</small></div>
               <button className={`row-action${direct ? ' direct' : ''}`} type="button" onClick={() => onOpen(summary.hotel, direct?.tab)}>{direct ? <><Icon name="arrow" />一键直达<small>{direct.label}</small></> : <>进入门店<Icon name="chevron" /></>}</button>
@@ -395,7 +417,7 @@ export function StoreDetailPage({
     } finally { setCollecting(false) }
   }
 
-  const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, incidents: data.incidents, trustedDeviceStatus: data.trustedDeviceStatus, unavailable: Boolean(error) }
+  const summary: HotelSummary = { hotel, monitor: data.monitor, otaSources: data.otaSources, wecom: data.wecom, briefs: data.briefs, incidents: data.incidents, trustedDeviceStatus: data.trustedDeviceStatus, unavailable: Boolean(error) }
   const pms = pmsState(summary)
   const pmsRepair = pmsRepairState(summary)
   const broadcast = broadcastState(summary)
@@ -412,7 +434,7 @@ export function StoreDetailPage({
       <div className="store-health-bar">
         <button className="channel-status-link" onClick={() => setTab(pmsRepair.required ? 'repair' : connectionTab)} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
         {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <button className="channel-status-link" key={source.platformCode} onClick={() => setTab(connectionTab)} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button> })}
-        <button className="channel-status-link" onClick={() => setTab('broadcast')} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
+        <button className="channel-status-link" onClick={() => setTab(broadcast.tab)} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
       </div>
 
       <nav className="store-tabs" aria-label="门店功能">
@@ -453,7 +475,7 @@ export function StoreDetailPage({
               </div>
             </section>
             <section className="content-panel">
-              <div className="section-heading small"><div><h2>播报状态</h2><p>企业微信最近一次投递</p></div><button className="text-link" onClick={() => setTab('broadcast')} type="button">查看记录</button></div>
+              <div className="section-heading small"><div><h2>播报状态</h2><p>企业微信最近一次投递</p></div><button className="text-link" onClick={() => setTab(broadcast.tab)} type="button">{broadcast.tab === 'collection' ? '检查上游数据' : '查看记录'}</button></div>
               <div className="broadcast-summary"><Status tone={broadcast.tone}>{broadcast.label}</Status><dl><div><dt>最近投递</dt><dd>{formatTime(data.wecom?.lastDelivery?.attemptedAt)}</dd></div><div><dt>结果</dt><dd>{businessCodeLabel(data.wecom?.lastDelivery?.deliveryStatus, '尚未投递')}</dd></div><div><dt>已生成简报</dt><dd>{data.briefs.length} 条</dd></div></dl></div>
             </section>
           </div>

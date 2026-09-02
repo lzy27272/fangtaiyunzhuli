@@ -407,6 +407,7 @@ const hotels = [
     tenantName: '四方馆酒店管理',
     hotelCode: '001',
     hotelName: '喷水池态六酒店',
+    ownershipType: 'DIRECT',
     pmsSystemCode: 'MEITUAN_BIEYANGHONG',
     pmsSystemName: '美团别样红 PMS',
     timezone: 'Asia/Shanghai',
@@ -424,6 +425,7 @@ const hotels = [
     tenantName: '四方馆酒店管理',
     hotelCode: '002',
     hotelName: '解放路MOOODSHIFT酒店',
+    ownershipType: 'DIRECT',
     pmsSystemCode: 'LUOPAN_CLOUD',
     pmsSystemName: '罗盘 PMS',
     timezone: 'Asia/Shanghai',
@@ -555,6 +557,7 @@ const PMS_SYSTEM_CODES = new Set([
   'LUOPAN_CLOUD',
   'OTHER',
 ])
+const HOTEL_OWNERSHIP_TYPES = new Set(['DIRECT', 'NON_DIRECT'])
 const PMS_SYSTEM_NAMES = Object.freeze({
   MEITUAN_BIEYANGHONG: '美团别样红 PMS',
   LUOPAN_CLOUD: '罗盘 PMS',
@@ -589,6 +592,9 @@ const normalizeSimulationHotel = (candidate) => {
     && candidate.pmsSystemName.trim()
     ? candidate.pmsSystemName.trim()
     : PMS_SYSTEM_NAMES[pmsSystemCode]
+  const ownershipType = HOTEL_OWNERSHIP_TYPES.has(candidate.ownershipType)
+    ? candidate.ownershipType
+    : 'DIRECT'
   if (
     !SIMULATION_HOTEL_ID.test(candidate.tenantId)
     || !SIMULATION_HOTEL_ID.test(candidate.hotelId)
@@ -617,6 +623,7 @@ const normalizeSimulationHotel = (candidate) => {
     tenantName,
     hotelCode,
     hotelName,
+    ownershipType,
     pmsSystemCode,
     pmsSystemName,
     timezone,
@@ -642,9 +649,9 @@ const normalizeSimulationHotelInput = (body) => {
   const tenantCode = typeof body.tenantCode === 'string'
     ? body.tenantCode.trim().toUpperCase()
     : null
-  const hotelCode = typeof body.hotelCode === 'string'
+  const hotelCode = typeof body.hotelCode === 'string' && body.hotelCode.trim()
     ? body.hotelCode.trim().toUpperCase()
-    : ''
+    : null
   const tenantName = typeof body.tenantDisplayName === 'string'
     ? body.tenantDisplayName.trim()
     : null
@@ -657,6 +664,9 @@ const normalizeSimulationHotelInput = (body) => {
   const pmsSystemCode = PMS_SYSTEM_CODES.has(body.pmsSystemCode)
     ? body.pmsSystemCode
     : null
+  const ownershipType = HOTEL_OWNERSHIP_TYPES.has(body.ownershipType)
+    ? body.ownershipType
+    : 'DIRECT'
   const suppliedPmsSystemName = typeof body.pmsSystemName === 'string'
     ? body.pmsSystemName.trim()
     : ''
@@ -667,7 +677,7 @@ const normalizeSimulationHotelInput = (body) => {
     (tenantCode !== null && !SIMULATION_HOTEL_CODE.test(tenantCode))
     || (tenantName !== null && (tenantName.length < 1 || tenantName.length > 80))
     || ((tenantCode === null) !== (tenantName === null))
-    || !SIMULATION_HOTEL_CODE.test(hotelCode)
+    || (hotelCode !== null && !SIMULATION_HOTEL_CODE.test(hotelCode))
     || hotelName.length < 1
     || hotelName.length > 80
     || typeof body.reasonCode !== 'string'
@@ -700,11 +710,21 @@ const normalizeSimulationHotelInput = (body) => {
     tenantName,
     hotelCode,
     hotelName,
+    ownershipType,
     pmsSystemCode,
     pmsSystemName,
     pmsCredentials,
     timezone,
   }
+}
+
+const nextSimulationHotelCode = () => {
+  const highest = hotels.reduce((maximum, hotel) => {
+    if (!/^\d{3}$/.test(hotel.hotelCode)) return maximum
+    return Math.max(maximum, Number(hotel.hotelCode))
+  }, 0)
+  if (highest >= 999) throw new Error('SIMULATION_HOTEL_CODE_EXHAUSTED')
+  return String(highest + 1).padStart(3, '0')
 }
 
 const persistSimulationHotels = () => {
@@ -8848,6 +8868,7 @@ const server = createServer(async (request, response) => {
       }
       const input = normalizeSimulationHotelInput(await readBody(request))
       if (!input) throw new Error('SIMULATION_HOTEL_INVALID')
+      const hotelCode = input.hotelCode ?? nextSimulationHotelCode()
       const requestedTenant = input.tenantCode === null
         ? null
         : hotels.find((hotel) => hotel.tenantCode === input.tenantCode)
@@ -8863,7 +8884,7 @@ const server = createServer(async (request, response) => {
       }
       const existing = hotels.find(
         (hotel) =>
-          hotel.hotelCode === input.hotelCode
+          hotel.hotelCode === hotelCode
           && (input.tenantCode === null || hotel.tenantCode === input.tenantCode),
       )
       if (existing) {
@@ -8872,6 +8893,7 @@ const server = createServer(async (request, response) => {
           || existing.timezone !== input.timezone
           || existing.pmsSystemCode !== input.pmsSystemCode
           || existing.pmsSystemName !== input.pmsSystemName
+          || existing.ownershipType !== input.ownershipType
         ) {
           throw new Error('SIMULATION_HOTEL_CODE_CONFLICT')
         }
@@ -8893,8 +8915,9 @@ const server = createServer(async (request, response) => {
         hotelId: randomUUID(),
         tenantCode: input.tenantCode ?? tenant?.tenantCode ?? 'INTERNAL',
         tenantName: input.tenantName ?? tenant?.tenantName ?? '四方馆酒店经营中心',
-        hotelCode: input.hotelCode,
+        hotelCode,
         hotelName: input.hotelName,
+        ownershipType: input.ownershipType,
         pmsSystemCode: input.pmsSystemCode,
         pmsSystemName: input.pmsSystemName,
         timezone: input.timezone,

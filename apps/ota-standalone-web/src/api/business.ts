@@ -889,6 +889,7 @@ export interface SimulationHotelView {
   tenantName: string
   hotelCode: string
   hotelName: string
+  ownershipType: HotelOwnershipType
   pmsSystemCode: PmsSystemCode
   pmsSystemName: string
   timezone: string
@@ -899,6 +900,8 @@ export interface SimulationHotelView {
   simulationOnly: boolean
   rowVersion: number
 }
+
+export type HotelOwnershipType = 'DIRECT' | 'NON_DIRECT'
 
 export type PmsSystemCode =
   | 'MEITUAN_BIEYANGHONG'
@@ -1457,8 +1460,8 @@ export function listSimulationHotels(): Promise<SimulationHotelDirectory> {
 }
 
 export function initializeSimulationHotel(input: {
-  hotelCode: string
   hotelDisplayName: string
+  ownershipType: HotelOwnershipType
   pmsSystemCode: PmsSystemCode
   pmsSystemName?: string
   pmsUsername?: string

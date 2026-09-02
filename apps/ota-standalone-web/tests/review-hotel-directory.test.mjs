@@ -79,6 +79,74 @@ async function stopReviewApi(child) {
   await once(child, 'exit')
 }
 
+test('new store number is generated and ownership survives restart', { timeout: 15_000 }, async () => {
+  const runtimePath = await mkdtemp(join(tmpdir(), 'sfg-auto-hotel-code-'))
+  let first = null
+  let second = null
+  try {
+    first = await startReviewApi(runtimePath)
+    const create = await fetch(
+      `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'auto-store-code-non-direct-001',
+        },
+        body: JSON.stringify({
+          hotelDisplayName: 'Auto Number Non Direct Hotel',
+          ownershipType: 'NON_DIRECT',
+          pmsSystemCode: 'MEITUAN_BIEYANGHONG',
+          timezone: 'Asia/Shanghai',
+          reasonCode: 'CREATE_STORE_FROM_CONSOLE_WIZARD',
+        }),
+      },
+    )
+    assert.equal(create.status, 201)
+    const receipt = await create.json()
+    const directory = await fetch(
+      `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    const created = (await directory.json()).data.hotels.find(
+      (hotel) => hotel.hotelId === receipt.data.resourceId,
+    )
+    assert.equal(created.hotelCode, '003')
+    assert.equal(created.ownershipType, 'NON_DIRECT')
+
+    await stopReviewApi(first.child)
+    first = null
+    second = await startReviewApi(runtimePath)
+    const restartedLogin = await fetch(
+      `http://127.0.0.1:${second.port}/api/v1/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'review-test',
+          password: 'example-Review-Test-Password-42',
+        }),
+      },
+    )
+    assert.equal(restartedLogin.status, 200)
+    const restartedToken = (await restartedLogin.json()).accessToken
+    const restartedDirectory = await fetch(
+      `http://127.0.0.1:${second.port}/api/v1/ota/simulation/hotels`,
+      { headers: { Authorization: `Bearer ${restartedToken}` } },
+    )
+    const restarted = (await restartedDirectory.json()).data.hotels.find(
+      (hotel) => hotel.hotelId === receipt.data.resourceId,
+    )
+    assert.equal(restarted.hotelCode, '003')
+    assert.equal(restarted.ownershipType, 'NON_DIRECT')
+  } finally {
+    if (first) await stopReviewApi(first.child)
+    if (second) await stopReviewApi(second.child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
 test('created review hotels are returned by the directory and survive restart', { timeout: 15_000 }, async () => {
   const runtimePath = await mkdtemp(join(tmpdir(), 'sfg-review-hotel-directory-'))
   let first = null
@@ -413,6 +481,7 @@ test('created review hotels are returned by the directory and survive restart', 
       tenantName: 'Directory Test Tenant',
       hotelCode: '003',
       hotelName: 'Directory Test Hotel',
+      ownershipType: 'DIRECT',
       pmsSystemCode: 'MEITUAN_BIEYANGHONG',
       pmsSystemName: '美团别样红 PMS',
       timezone: 'Asia/Shanghai',

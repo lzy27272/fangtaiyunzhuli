@@ -4,6 +4,7 @@ import {
   listSimulationHotels,
   type HotelContext,
   type PmsSystemCode,
+  type HotelOwnershipType,
   type SimulationHotelView,
 } from '../api/business'
 
@@ -51,8 +52,8 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState({
-    hotelCode: '',
     hotelDisplayName: '',
+    ownershipType: 'DIRECT' as HotelOwnershipType,
     pmsSystemCode: 'MEITUAN_BIEYANGHONG' as PmsSystemCode,
     pmsSystemName: '',
     pmsUsername: '',
@@ -119,7 +120,6 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
   async function createHotel() {
     if (!canCreate) return
     const requiredFields = [
-      draft.hotelCode,
       draft.hotelDisplayName,
       draft.timezone,
       draft.reasonCode,
@@ -140,8 +140,8 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
     setError('')
     try {
       const receipt = await initializeSimulationHotel({
-        hotelCode: draft.hotelCode,
         hotelDisplayName: draft.hotelDisplayName,
+        ownershipType: draft.ownershipType,
         pmsSystemCode: draft.pmsSystemCode,
         ...(draft.pmsSystemCode === 'OTHER'
           ? { pmsSystemName: draft.pmsSystemName }
@@ -165,7 +165,6 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
       setDirectoryState(`${directory.hotels.length}家评审门店`)
       setDraft({
         ...draft,
-        hotelCode: '',
         hotelDisplayName: '',
         pmsUsername: '',
         pmsPassword: '',
@@ -216,18 +215,24 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
           <summary>新增评审门店（无需修改代码或重启）</summary>
           <div>
             <label>
-              门店编号
-              <input
-                value={draft.hotelCode}
-                onChange={(event) => setDraft({ ...draft, hotelCode: event.target.value.toUpperCase() })}
-              />
-            </label>
-            <label>
               门店名称
               <input
                 value={draft.hotelDisplayName}
                 onChange={(event) => setDraft({ ...draft, hotelDisplayName: event.target.value })}
               />
+            </label>
+            <label>
+              所属组织
+              <select
+                value={draft.ownershipType}
+                onChange={(event) => setDraft({
+                  ...draft,
+                  ownershipType: event.target.value as HotelOwnershipType,
+                })}
+              >
+                <option value="DIRECT">直营</option>
+                <option value="NON_DIRECT">非直营</option>
+              </select>
             </label>
             <label>
               PMS系统

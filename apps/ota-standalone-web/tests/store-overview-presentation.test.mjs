@@ -17,6 +17,8 @@ test('store overview renders only configured OTA sources with icons and direct a
   assert.match(storePage, /<PlatformIcon name=\{source\.platformCode as PlatformIconName\}/u)
   assert.match(storePage, /一键直达/u)
   assert.match(storePage, /onOpen\(summary\.hotel, direct\?\.tab\)/u)
+  assert.match(storePage, /label: '上游数据待处理', tab: 'collection'/u)
+  assert.match(storePage, /label: '检查采集数据'/u)
   assert.match(consoleUi, /export function PlatformIcon/u)
 })
 

@@ -262,16 +262,30 @@ test('new hotels use an explicit PMS template without copying store secrets or O
   assert.match(reviewApiSource, /pmsLoginScope\(created\.hotelId\)/)
 })
 
-test('store creation and selection expose only the store number', () => {
-  assert.match(newStoreWizardSource, />门店编号</)
+test('store creation auto-generates the store number and records ownership only', () => {
+  assert.match(newStoreWizardSource, /门店编号由系统[^。]*自动生成/)
+  assert.doesNotMatch(newStoreWizardSource, /draft\.hotelCode/)
+  assert.match(newStoreWizardSource, />所属组织</)
+  assert.match(newStoreWizardSource, /value="DIRECT">直营/)
+  assert.match(newStoreWizardSource, /value="NON_DIRECT">非直营/)
   assert.doesNotMatch(newStoreWizardSource, /租户编号|租户编码|tenantCode|tenantDisplayName/)
   assert.match(hotelContextSource, />门店编号</)
+  assert.doesNotMatch(hotelContextSource, /draft\.hotelCode/)
   assert.doesNotMatch(hotelContextSource, /租户编号|租户编码|tenantReference|tenantDisplayCode/)
   const initializeInput = businessApiSource.slice(
     businessApiSource.indexOf('export function initializeSimulationHotel'),
     businessApiSource.indexOf('export function loadMonitor'),
   )
-  assert.doesNotMatch(initializeInput, /tenantCode|tenantDisplayName/)
+  assert.doesNotMatch(initializeInput, /tenantCode|tenantDisplayName|hotelCode/)
+  assert.match(initializeInput, /ownershipType: HotelOwnershipType/)
+})
+
+test('store direct action diagnoses upstream data before reporting a broadcast failure', () => {
+  assert.match(storeConsoleSource, /loadBriefs\(context\)/)
+  assert.match(storeConsoleSource, /latestBrief\?\.completenessCode === 'COMPLETE'/)
+  assert.match(storeConsoleSource, /label: '上游数据待处理', tab: 'collection'/)
+  assert.match(storeConsoleSource, /tab: 'collection', label: '检查采集数据'/)
+  assert.match(storeConsoleSource, /setTab\(broadcast\.tab\)/)
 })
 
 test('new stores can register another PMS vendor without enabling an unsupported collector', () => {

@@ -11,6 +11,7 @@ import {
   saveOtaSources,
   type OtaPlatformCode,
   type OtaSourceInput,
+  type HotelOwnershipType,
   type PmsSystemCode,
   type SimulationHotelView,
 } from '../api/business'
@@ -54,7 +55,7 @@ export function NewStoreWizard({
   const [showCustom, setShowCustom] = useState(false)
   const [customDraft, setCustomDraft] = useState({ name: '', portalUrl: '', dataEndpointUrl: '' })
   const [draft, setDraft] = useState({
-    hotelCode: '', hotelDisplayName: '',
+    hotelDisplayName: '', ownershipType: 'DIRECT' as HotelOwnershipType,
     timezone: 'Asia/Shanghai', pmsSystemCode: 'MEITUAN_BIEYANGHONG' as PmsSystemCode,
     pmsSystemName: '', pmsUsername: '', pmsPassword: '',
   })
@@ -67,7 +68,7 @@ export function NewStoreWizard({
   }, [session])
 
   const canNext = useMemo(() => {
-    if (step === 0) return Boolean(draft.hotelCode.trim() && draft.hotelDisplayName.trim())
+    if (step === 0) return Boolean(draft.hotelDisplayName.trim())
     if (step === 1 && draft.pmsSystemCode === 'LUOPAN_CLOUD') return Boolean(draft.pmsUsername.trim() && draft.pmsPassword)
     if (step === 1 && draft.pmsSystemCode === 'OTHER') return Boolean(draft.pmsSystemName.trim())
     return true
@@ -99,8 +100,8 @@ export function NewStoreWizard({
     setSubmitting(true); setError(''); setProgress(['正在创建门店基础档案…'])
     try {
       const receipt = await initializeSimulationHotel({
-        hotelCode: draft.hotelCode.trim(),
         hotelDisplayName: draft.hotelDisplayName.trim(),
+        ownershipType: draft.ownershipType,
         pmsSystemCode: draft.pmsSystemCode,
         ...(draft.pmsSystemCode === 'OTHER'
           ? { pmsSystemName: draft.pmsSystemName.trim() }
@@ -192,10 +193,10 @@ export function NewStoreWizard({
       <div className="wizard-panel">
         {step === 0 ? (
           <>
-            <div className="section-heading"><div><h2>门店基本信息</h2><p>编号用于门店目录和权限范围，请使用现有三位编号规范。</p></div></div>
+            <div className="section-heading"><div><h2>门店基本信息</h2><p>门店编号由系统按现有三位编号顺序自动生成，无需填写。</p></div></div>
             <div className="form-grid two">
-              <label>门店编号<input maxLength={16} placeholder="018" value={draft.hotelCode} onChange={(event) => setDraft({ ...draft, hotelCode: event.target.value.toUpperCase() })} /></label>
               <label>门店名称<input placeholder="请输入门店全称" value={draft.hotelDisplayName} onChange={(event) => setDraft({ ...draft, hotelDisplayName: event.target.value })} /></label>
+              <label>所属组织<select value={draft.ownershipType} onChange={(event) => setDraft({ ...draft, ownershipType: event.target.value as HotelOwnershipType })}><option value="DIRECT">直营</option><option value="NON_DIRECT">非直营</option></select></label>
               <label>时区<select value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}><option value="Asia/Shanghai">中国标准时间（上海）</option></select></label>
             </div>
           </>
@@ -236,7 +237,8 @@ export function NewStoreWizard({
           <>
             <div className="section-heading"><div><h2>校验并启用</h2><p>确认配置后创建门店。采集和播报仍需真实登录与数据校验，不会自动绕过平台风控。</p></div></div>
             <dl className="review-list">
-              <div><dt>门店</dt><dd>{draft.hotelCode} · {draft.hotelDisplayName}</dd></div>
+              <div><dt>门店</dt><dd>系统自动编号 · {draft.hotelDisplayName}</dd></div>
+              <div><dt>所属组织</dt><dd>{draft.ownershipType === 'DIRECT' ? '直营' : '非直营'}</dd></div>
               <div><dt>PMS</dt><dd>{draft.pmsSystemCode === 'OTHER' ? draft.pmsSystemName : PMS_OPTIONS.find((item) => item.code === draft.pmsSystemCode)?.name}</dd></div>
               <div><dt>OTA 渠道</dt><dd>{[...selectedOta.map((code) => OTA_OPTIONS.find((item) => item.code === code)?.name), ...customChannels.map((item) => item.name)].filter(Boolean).join('、') || '暂不启用'}</dd></div>
               <div><dt>管理人员</dt><dd>{accounts.filter((account) => account.roles.includes('PLATFORM_ADMIN') || selectedAccounts.includes(account.id)).map((item) => item.displayName).join('、') || '仅平台管理员'}</dd></div>
