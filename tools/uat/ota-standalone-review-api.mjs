@@ -2923,6 +2923,29 @@ const weComRepairBotStatus = () => {
   }
 }
 
+const weComRepairBotStatusForHotel = (hotelId) => {
+  const status = weComRepairBotStatus()
+  const hotelBindings = status.hotelBindings.filter(
+    (binding) => binding.hotelId === hotelId,
+  )
+  const pairingMatchesHotel = status.pairing.active
+    && status.pairing.scope?.type === 'HOTEL'
+    && status.pairing.scope.hotelId === hotelId
+  return {
+    ...status,
+    hotelPairedUserCount:
+      hotelBindings[0]?.pairedUserCount ?? 0,
+    hotelBindings,
+    pairing: pairingMatchesHotel
+      ? status.pairing
+      : {
+        active: false,
+        expiresAt: null,
+        attemptsRemaining: 0,
+      },
+  }
+}
+
 const weComRepairBotReady = () => {
   const status = weComRepairBotStatus()
   return status.enabled
@@ -8806,28 +8829,6 @@ const server = createServer(async (request, response) => {
     }
 
     if (
-      request.method === 'POST'
-      && path === '/api/v1/ota/wecom-repair-bot-pairing'
-    ) {
-      if (!isPlatformAdmin(requestPrincipal)) {
-        rejectForbidden(response)
-        return
-      }
-      const body = await readBody(request)
-      if (
-        body?.reasonCode !== 'START_WECOM_REPAIR_BOT_PAIRING'
-        || typeof body?.hotelId !== 'string'
-        || !SIMULATION_HOTEL_ID.test(body.hotelId)
-      ) {
-        throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUEST_INVALID')
-      }
-      json(response, 201, {
-        data: startWeComRepairBotPairing(body.hotelId),
-      })
-      return
-    }
-
-    if (
       request.method === 'GET'
       && path === '/api/v1/ota/connector-adapters'
     ) {
@@ -9776,6 +9777,31 @@ const server = createServer(async (request, response) => {
         }
         commitHotSellingRoomTypes(hotelId, config)
         json(response, 200, { data: config })
+        return
+      }
+      if (
+        request.method === 'GET'
+        && suffix === '/wecom-repair-bot-config'
+      ) {
+        json(response, 200, {
+          data: weComRepairBotStatusForHotel(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/wecom-repair-bot-pairing'
+      ) {
+        const body = await readBody(request)
+        if (
+          body?.reasonCode !== 'START_WECOM_REPAIR_BOT_PAIRING'
+          || Object.hasOwn(body ?? {}, 'hotelId')
+        ) {
+          throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUEST_INVALID')
+        }
+        json(response, 201, {
+          data: startWeComRepairBotPairing(hotelId),
+        })
         return
       }
       if (request.method === 'GET' && suffix === '/wecom-config') {

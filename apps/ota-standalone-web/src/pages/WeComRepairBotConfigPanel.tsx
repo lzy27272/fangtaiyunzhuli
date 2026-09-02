@@ -3,6 +3,7 @@ import {
   loadWeComRepairBotConfig,
   saveWeComRepairBotConfig,
   startWeComRepairBotPairing,
+  type HotelContext,
   type WeComRepairBotConfigView,
   type WeComRepairBotPairingView,
 } from '../api/business'
@@ -10,6 +11,7 @@ import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   canConfigure: boolean
+  context: HotelContext | null
 }
 
 const connectionLabel = (config: WeComRepairBotConfigView | null) => {
@@ -28,14 +30,13 @@ const connectionLabel = (config: WeComRepairBotConfigView | null) => {
   return labels[config.connectionStatus] ?? config.connectionStatus
 }
 
-export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
+export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
   const [config, setConfig] = useState<WeComRepairBotConfigView | null>(null)
   const [enabled, setEnabled] = useState(false)
   const [botId, setBotId] = useState('')
   const [secret, setSecret] = useState('')
   const [clearCredentials, setClearCredentials] = useState(false)
   const [pairing, setPairing] = useState<WeComRepairBotPairingView | null>(null)
-  const [pairingHotelId, setPairingHotelId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [pairingLoading, setPairingLoading] = useState(false)
@@ -43,15 +44,17 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
   const [error, setError] = useState('')
 
   const refresh = useCallback(async (quiet = false) => {
+    if (!context) {
+      setConfig(null)
+      setPairing(null)
+      if (!quiet) setLoading(false)
+      return
+    }
     if (!quiet) setLoading(true)
     try {
-      const next = await loadWeComRepairBotConfig()
+      const next = await loadWeComRepairBotConfig(context)
       setConfig(next)
       setEnabled(next.enabled)
-      setPairingHotelId((current) =>
-        next.hotelBindings.some((binding) => binding.hotelId === current)
-          ? current
-          : next.hotelBindings[0]?.hotelId ?? '')
       if (!next.pairing.active) setPairing(null)
       setError('')
     } catch (cause) {
@@ -61,7 +64,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
     } finally {
       if (!quiet) setLoading(false)
     }
-  }, [])
+  }, [context])
 
   useEffect(() => {
     void refresh()
@@ -92,12 +95,12 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
         clearCredentials ? false : enabled,
         credentialUpdate,
       )
-      setConfig(next)
       setEnabled(next.enabled)
       setBotId('')
       setSecret('')
       setClearCredentials(false)
       setPairing(null)
+      await refresh(true)
       setNotice(
         next.enabled
           ? '配置已加密保存，服务器正在建立企业微信长连接。'
@@ -111,15 +114,15 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
   }
 
   async function createPairingCode() {
-    if (!pairingHotelId) {
-      setError('请先选择需要新增管理人员的罗盘门店。')
+    if (!context) {
+      setError('当前门店尚未载入，无法新增管理人员。')
       return
     }
     setPairingLoading(true)
     setError('')
     setNotice('')
     try {
-      const next = await startWeComRepairBotPairing(pairingHotelId)
+      const next = await startWeComRepairBotPairing(context)
       setPairing(next)
       setNotice(
         `${next.hotelCode} ${next.displayName} 的配对命令是“绑定 ${next.pairingCode}”；请在10分钟内发送给企业微信智能机器人。`,
@@ -132,7 +135,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
   }
 
   const selectedHotelBinding = config?.hotelBindings.find(
-    (binding) => binding.hotelId === pairingHotelId,
+    (binding) => binding.hotelId === context?.hotelId,
   ) ?? null
 
   return (
@@ -144,7 +147,7 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
           <p>
             服务器通过企业微信官方长连接接收消息，无需域名。
             发现罗盘会话失效时，机器人会私聊发送验证码图片；
-            现有两位全局接收人继续保留；还可按罗盘门店新增管理人员。
+            现有两位全局接收人继续保留；当前页面只能为已进入的门店新增管理人员。
             门店管理人员只接收并处理其授权门店的验证码；
             只有完成一次性绑定的账号可以回复“门店编号 验证码”。
           </p>
@@ -231,36 +234,22 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
 
       <div className="wecom-config-grid">
         <label className="wide-field">
-          选择需要新增管理人员的罗盘门店
-          <select
-            disabled={!canConfigure || loading || pairingLoading}
-            value={pairingHotelId}
-            onChange={(event) => {
-              setPairingHotelId(event.target.value)
-              setPairing(null)
-              setNotice('')
-            }}
-          >
-            {config?.hotelBindings.map((binding) => (
-              <option key={binding.hotelId} value={binding.hotelId}>
-                {binding.hotelCode} · {binding.displayName}（已绑定
-                {binding.pairedUserCount}人）
-              </option>
-            ))}
-          </select>
+          当前门店管理人员
+          <input
+            aria-label="当前门店管理员配置范围"
+            readOnly
+            value={
+              selectedHotelBinding
+                ? `${selectedHotelBinding.hotelCode} · ${selectedHotelBinding.displayName}（已绑定${selectedHotelBinding.pairedUserCount}人）`
+                : loading
+                  ? '正在读取当前门店'
+                  : '当前门店未配置罗盘 PMS'
+            }
+          />
           <small>
-            新人员仅获得所选门店的验证码修复权限；不会替换现有两位全局接收人。
+            当前页面只能为此门店新增管理人员；新人员仅获得此门店的验证码修复权限，不会替换现有两位全局接收人。
           </small>
         </label>
-      </div>
-
-      <div className="wecom-status-row">
-        {config?.hotelBindings.map((binding) => (
-          <span key={binding.hotelId}>
-            {binding.hotelCode} {binding.displayName}｜
-            {binding.pairedUserCount}人
-          </span>
-        ))}
       </div>
 
       <div className="heading-actions">
@@ -293,7 +282,9 @@ export function WeComRepairBotConfigPanel({ canConfigure }: Props) {
               ? '该门店已达绑定上限'
               : selectedHotelBinding
                 ? `为${selectedHotelBinding.hotelCode}新增管理人员`
-                : '请选择罗盘门店'}
+                : loading
+                  ? '正在读取当前门店'
+                  : '当前门店不支持管理员绑定'}
         </button>
       </div>
     </section>

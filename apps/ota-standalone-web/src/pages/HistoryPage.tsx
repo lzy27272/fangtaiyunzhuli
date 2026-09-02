@@ -172,7 +172,10 @@ export function HistoryPage({ context, canConfigure }: Props) {
         </button>
       </div>
 
-      <WeComRepairBotConfigPanel canConfigure={canConfigure} />
+      <WeComRepairBotConfigPanel
+        canConfigure={canConfigure}
+        context={context}
+      />
 
       {!context ? (
         <div className="state-panel">请先在顶部载入租户和门店。</div>

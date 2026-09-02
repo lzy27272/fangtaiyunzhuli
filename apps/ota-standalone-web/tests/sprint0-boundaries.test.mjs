@@ -8,6 +8,10 @@ const authApiSource = await readFile(new URL('../src/api/auth.ts', import.meta.u
 const businessApiSource = await readFile(new URL('../src/api/business.ts', import.meta.url), 'utf8')
 const monitorSource = await readFile(new URL('../src/pages/MonitorPage.tsx', import.meta.url), 'utf8')
 const historySource = await readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8')
+const weComRepairBotPanelSource = await readFile(
+  new URL('../src/pages/WeComRepairBotConfigPanel.tsx', import.meta.url),
+  'utf8',
+)
 const accountSecuritySource = await readFile(new URL('../src/pages/AccountSecurityPage.tsx', import.meta.url), 'utf8')
 const personalSecuritySource = await readFile(new URL('../src/pages/PersonalSecurityPage.tsx', import.meta.url), 'utf8')
 const peoplePermissionsSource = await readFile(new URL('../src/pages/PeoplePermissionsPage.tsx', import.meta.url), 'utf8')
@@ -125,6 +129,19 @@ test('operations console exposes store, exception, people and scoped store-detai
   )
   assert.match(historySource, /type="password"/)
   assert.match(historySource, /saveWeComConfig/)
+  assert.match(
+    historySource,
+    /WeComRepairBotConfigPanel[\s\S]*context=\{context\}/,
+  )
+  assert.match(
+    weComRepairBotPanelSource,
+    /当前页面只能为此门店新增管理人员/,
+  )
+  assert.doesNotMatch(weComRepairBotPanelSource, /<select/)
+  assert.match(
+    businessApiSource,
+    /scopedPath\(context, '\/wecom-repair-bot-pairing'\)/,
+  )
   assert.match(historySource, /sendWeComTestSuite/)
   assert.match(historySource, /采集并发送全部适用模板/)
   assert.match(historySource, /@所有人/)

@@ -109,6 +109,61 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     )
     assert.deepEqual(initial.allowedUserFingerprints, [])
 
+    const tenantId = '10000000-0000-4000-8000-000000000001'
+    const luopanHotelId = '20000000-0000-4000-8000-000000000002'
+    const scopedEndpoint =
+      `http://127.0.0.1:${started.port}/api/v1/ota/tenants/`
+      + `${tenantId}/hotels/${luopanHotelId}`
+    const scopedResponse = await fetch(
+      `${scopedEndpoint}/wecom-repair-bot-config`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    assert.equal(scopedResponse.status, 200)
+    const scoped = (await scopedResponse.json()).data
+    assert.deepEqual(
+      scoped.hotelBindings.map((binding) => binding.hotelId),
+      [luopanHotelId],
+    )
+    assert.equal(
+      scoped.hotelPairedUserCount,
+      scoped.hotelBindings[0].pairedUserCount,
+    )
+
+    const crossStoreBodyResponse = await fetch(
+      `${scopedEndpoint}/wecom-repair-bot-pairing`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          hotelId: '20000000-0000-4000-8000-000000000001',
+          reasonCode: 'START_WECOM_REPAIR_BOT_PAIRING',
+        }),
+      },
+    )
+    assert.equal(crossStoreBodyResponse.status, 400)
+    assert.deepEqual(await crossStoreBodyResponse.json(), {
+      code: 'WECOM_REPAIR_BOT_PAIRING_REQUEST_INVALID',
+    })
+
+    const legacyGlobalPairingResponse = await fetch(
+      `http://127.0.0.1:${started.port}/api/v1/ota/wecom-repair-bot-pairing`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          hotelId: luopanHotelId,
+          reasonCode: 'START_WECOM_REPAIR_BOT_PAIRING',
+        }),
+      },
+    )
+    assert.equal(legacyGlobalPairingResponse.status, 404)
+
     const savedResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {

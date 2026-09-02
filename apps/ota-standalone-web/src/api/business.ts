@@ -1573,8 +1573,12 @@ export function loadWeComConfig(
   return authenticatedRequest(scopedPath(context, '/wecom-config'))
 }
 
-export function loadWeComRepairBotConfig(): Promise<WeComRepairBotConfigView> {
-  return authenticatedRequest('/ota/wecom-repair-bot-config')
+export function loadWeComRepairBotConfig(
+  context: HotelContext,
+): Promise<WeComRepairBotConfigView> {
+  return authenticatedRequest(
+    scopedPath(context, '/wecom-repair-bot-config'),
+  )
 }
 
 export function saveWeComRepairBotConfig(
@@ -1592,11 +1596,11 @@ export function saveWeComRepairBotConfig(
 }
 
 export function startWeComRepairBotPairing(
-  hotelId: string,
+  context: HotelContext,
 ): Promise<WeComRepairBotPairingView> {
   return postCommand<WeComRepairBotPairingView>(
-    '/ota/wecom-repair-bot-pairing',
-    { hotelId, reasonCode: 'START_WECOM_REPAIR_BOT_PAIRING' },
+    scopedPath(context, '/wecom-repair-bot-pairing'),
+    { reasonCode: 'START_WECOM_REPAIR_BOT_PAIRING' },
   )
 }
 
