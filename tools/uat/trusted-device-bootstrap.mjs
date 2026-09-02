@@ -10,6 +10,7 @@ const BUNDLE_FILES = [
   ['tools/trusted-device/trusted-device-local-state.mjs', '../trusted-device/trusted-device-local-state.mjs'],
   ['tools/trusted-device/package.json', '../trusted-device/package.json'],
   ['tools/uat/live-report-collector.mjs', './live-report-collector.mjs'],
+  ['tools/uat/daily-order-summary.mjs', './daily-order-summary.mjs'],
   ['tools/uat/report-schedule.mjs', './report-schedule.mjs'],
   ['tools/uat/trusted-device-intake.mjs', './trusted-device-intake.mjs'],
 ]

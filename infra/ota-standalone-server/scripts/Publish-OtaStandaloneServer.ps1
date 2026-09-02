@@ -88,6 +88,7 @@ $runtimeSourcePaths = @(
     'tools/uat/bieyanghong-targeted-recovery.mjs',
     'tools/uat/bieyanghong_websockify_auth.py',
     'tools/uat/live-report-collector.mjs',
+    'tools/uat/daily-order-summary.mjs',
     'tools/uat/report-schedule.mjs',
     'tools/uat/trusted-device-intake.mjs',
     'tools/uat/trusted-device-bootstrap.mjs',

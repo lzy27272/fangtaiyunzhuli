@@ -1,6 +1,12 @@
+import {
+  DAILY_ORDER_CHANNELS,
+  createDailyOrderSummary,
+  normalizeDailyOrderSummary,
+} from '../../daily-order-summary.mjs'
+
 const MAX_MESSAGE_BYTES = 1900
 const PART_COUNT = 1
-const CHANNEL_ORDER = ['MEITUAN', 'FEIZHU', 'DOUYIN', 'OTHER']
+const CHANNEL_ORDER = DAILY_ORDER_CHANNELS
 
 const finiteNumber = (value) => {
   if (
@@ -136,39 +142,11 @@ const sourceStatus = (monitor) => {
   return `0/${total}不可用`
 }
 
-const emptyOrderBucket = () => ({
-  active: 0,
-  today: 0,
-  future: 0,
-  canceled: 0,
-})
-
 const reportChannel = (channel) => {
   if (channel === 'MEITUAN') return 'MEITUAN'
   if (channel === 'FEIZHU') return 'FEIZHU'
   if (channel === 'DOUYIN') return 'DOUYIN'
   return 'OTHER'
-}
-
-const aggregateDailyOrders = (snapshot) => {
-  const result = Object.fromEntries(
-    CHANNEL_ORDER.map((channel) => [channel, emptyOrderBucket()]),
-  )
-  for (const order of snapshot?.orders ?? []) {
-    if (order?.orderDate !== snapshot.businessDate) continue
-    const roomNights = finiteNumber(order.roomNights)
-    if (roomNights === null) continue
-    const bucket = result[reportChannel(order.channel)]
-    if (order.status === 'CANCELLED') {
-      bucket.canceled += roomNights
-      continue
-    }
-    if (order.status !== 'ACTIVE') continue
-    bucket.active += roomNights
-    if (order.arrivalClass === 'TODAY') bucket.today += roomNights
-    if (order.arrivalClass === 'FUTURE') bucket.future += roomNights
-  }
-  return result
 }
 
 const orderTuple = (summary, field) =>
@@ -182,11 +160,22 @@ const orderTotal = (summary, field) =>
     0,
   )
 
-const dailyOrderLines = (snapshot) => {
-  if (!snapshot || !Array.isArray(snapshot.orders)) {
-    return ['订单数据｜不可用']
+const dailyOrderLines = (snapshot, { orderDataRedacted = false } = {}) => {
+  const aggregate = normalizeDailyOrderSummary(
+    snapshot?.dailyOrderSummary,
+    { businessDate: snapshot?.businessDate ?? null },
+  )
+  let summary = aggregate?.byChannel ?? null
+  if (!summary && Array.isArray(snapshot?.orders)) {
+    if (orderDataRedacted && snapshot.orders.length === 0) {
+      return ['订单数据｜待设备更新后重新采集']
+    }
+    summary = createDailyOrderSummary({
+      orders: snapshot.orders,
+      businessDate: snapshot.businessDate,
+    }).byChannel
   }
-  const summary = aggregateDailyOrders(snapshot)
+  if (!summary) return ['订单数据｜不可用']
   return [
     `今日有效｜${numberText(orderTotal(summary, 'active'))}`
       + `（${orderTuple(summary, 'active')}）`,
@@ -458,7 +447,9 @@ export const createReportMonitorWeComPayloads = (
     '',
     `【订单汇报｜统计日${shortDate(monitor.businessDate)}】`,
     '渠道顺序｜美团/飞猪/抖音/其他',
-    ...dailyOrderLines(snapshot),
+    ...dailyOrderLines(snapshot, {
+      orderDataRedacted: options.orderDataRedacted === true,
+    }),
     '',
     ...hourlyOrderLines(hourly),
     '',

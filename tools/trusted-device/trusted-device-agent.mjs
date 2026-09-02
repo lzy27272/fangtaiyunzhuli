@@ -553,11 +553,16 @@ const collectOnce = async () => {
     }
   }
   appendAndPersistSnapshot(previousStore, state.snapshotPath, result.snapshot)
+  if (
+    result.snapshot.dailyOrderSummary?.businessDate
+      !== result.snapshot.businessDate
+  ) throw new Error('TRUSTED_DEVICE_ORDER_SUMMARY_REQUIRED')
   const cloudSnapshot = {
     ...result.snapshot,
     // Line-level order hashes stay on the store computer. The cloud only
-    // needs the already-computed deltas, forecasts and inventory summaries.
+    // receives channel totals, computed deltas, forecasts and inventory.
     orders: [],
+    dailyOrderSummary: result.snapshot.dailyOrderSummary,
     physicalInventory: result.snapshot.physicalInventory.map(({
       legacyPhysicalRoomTypeCode: _legacyCode,
       ...room

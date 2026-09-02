@@ -4,6 +4,9 @@ import {
   createReportMonitorWeComPayloads,
   reportMonitorBriefLimits,
 } from '../../../tools/uat/wecom/src/report-monitor-brief.mjs'
+import {
+  createDailyOrderSummary,
+} from '../../../tools/uat/daily-order-summary.mjs'
 
 const monitor = {
   collectionRunId: 'run-brief-001',
@@ -191,6 +194,33 @@ test('baseline-pending template does not invent hourly changes', () => {
   const content = payloads[0].text.content
   assert.match(content, /✅小时进单｜同PMS一小时前基线待建立/)
   assert.doesNotMatch(content, /新增｜4/)
+})
+
+test('trusted-device brief uses redacted daily order aggregates', () => {
+  const payloads = createReportMonitorWeComPayloads(monitor, {
+    snapshot: {
+      ...snapshot,
+      dailyOrderSummary: createDailyOrderSummary({
+        orders: snapshot.orders,
+        businessDate: snapshot.businessDate,
+      }),
+      orders: [],
+    },
+    orderDataRedacted: true,
+  })
+  const content = payloads[0].text.content
+  assert.match(content, /今日有效｜64（33\/0\/29\/2）/u)
+  assert.doesNotMatch(content, /订单数据｜待设备更新后重新采集/u)
+})
+
+test('legacy redacted snapshot is unavailable instead of false zero orders', () => {
+  const payloads = createReportMonitorWeComPayloads(monitor, {
+    snapshot: { ...snapshot, orders: [] },
+    orderDataRedacted: true,
+  })
+  const content = payloads[0].text.content
+  assert.match(content, /订单数据｜待设备更新后重新采集/u)
+  assert.doesNotMatch(content, /今日有效｜0（0\/0\/0\/0）/u)
 })
 
 test('Luopan brief treats its three enabled core sources as complete', () => {

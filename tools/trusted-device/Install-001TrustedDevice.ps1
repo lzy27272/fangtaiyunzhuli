@@ -89,6 +89,7 @@ $files = @(
   'tools\trusted-device\Start-001Login.ps1',
   'tools\trusted-device\Uninstall-001TrustedDevice.ps1',
   'tools\uat\live-report-collector.mjs',
+  'tools\uat\daily-order-summary.mjs',
   'tools\uat\report-schedule.mjs',
   'tools\uat\trusted-device-intake.mjs'
 )

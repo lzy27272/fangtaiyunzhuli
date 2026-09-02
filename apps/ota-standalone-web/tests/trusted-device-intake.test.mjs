@@ -7,6 +7,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { createDailyOrderSummary } from '../../../tools/uat/daily-order-summary.mjs'
 import {
   createTrustedDeviceIntakeStore,
   stableJson,
@@ -67,6 +68,10 @@ const minimalSnapshot = (now) => ({
     errorCode: null,
   })),
   orders: [],
+  dailyOrderSummary: createDailyOrderSummary({
+    orders: [],
+    businessDate: now.toISOString().slice(0, 10),
+  }),
   overview: {
     stayDate: now.toISOString().slice(0, 10),
     roomCount: 10,
@@ -319,6 +324,21 @@ test('trusted-device COMPLETE requires exact configured business payload', () =>
   const contracts = snapshot.sources.map(({ sourceId, sourceCode, reportType }) => ({
     sourceId, sourceCode, reportType,
   }))
+  assert.throws(
+    () => validateTrustedDeviceSnapshot({
+      snapshot: {
+        ...snapshot,
+        dailyOrderSummary: {
+          ...snapshot.dailyOrderSummary,
+          businessDate: '2020-01-01',
+        },
+      },
+      hotel,
+      requiredSourceContracts: contracts,
+      now,
+    }),
+    /TRUSTED_DEVICE_SNAPSHOT_ORDER_SUMMARY_INVALID/u,
+  )
   assert.throws(
     () => validateTrustedDeviceSnapshot({
       snapshot: { ...snapshot, physicalInventory: [] },

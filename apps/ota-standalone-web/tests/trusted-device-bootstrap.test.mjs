@@ -57,4 +57,7 @@ test('bootstrap includes the local state concurrency guard used by the agent', (
   assert.ok(files.some(
     ({ target }) => target === 'tools/trusted-device/trusted-device-local-state.mjs',
   ))
+  assert.ok(files.some(
+    ({ target }) => target === 'tools/uat/daily-order-summary.mjs',
+  ))
 })

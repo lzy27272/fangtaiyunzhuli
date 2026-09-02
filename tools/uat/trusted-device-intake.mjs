@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname } from 'node:path'
+import { normalizeDailyOrderSummary } from './daily-order-summary.mjs'
 
 export const TRUSTED_DEVICE_PILOT_HOTEL_CODE = '001'
 export const TRUSTED_DEVICE_ENROLLMENT_TTL_MS = 15 * 60_000
@@ -47,6 +48,7 @@ const SNAPSHOT_KEYS = new Set([
   'completeness',
   'sources',
   'orders',
+  'dailyOrderSummary',
   'overview',
   'futureDaily',
   'physicalInventory',
@@ -459,6 +461,12 @@ export const validateTrustedDeviceSnapshot = ({
   if (snapshot.orders.length !== 0) {
     throw new Error('TRUSTED_DEVICE_SNAPSHOT_ORDERS_MUST_BE_REDACTED')
   }
+  if (
+    Object.hasOwn(snapshot, 'dailyOrderSummary')
+    && !normalizeDailyOrderSummary(snapshot.dailyOrderSummary, {
+      businessDate: snapshot.businessDate,
+    })
+  ) throw new Error('TRUSTED_DEVICE_SNAPSHOT_ORDER_SUMMARY_INVALID')
   for (const source of snapshot.sources) {
     assertExactKeys(source, SOURCE_KEYS, 'TRUSTED_DEVICE_SNAPSHOT_SOURCES_INVALID')
     if (

@@ -12,6 +12,7 @@ import {
   isScheduledBriefSnapshot,
   reportScheduleFor,
 } from './report-schedule.mjs'
+import { createDailyOrderSummary } from './daily-order-summary.mjs'
 
 const MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 const SNAPSHOT_RETENTION = 50
@@ -1457,6 +1458,10 @@ export const collectLiveReports = async ({
       errorCode: source.errorCode,
     })),
     orders: orderReport?.parsed ?? [],
+    dailyOrderSummary: createDailyOrderSummary({
+      orders: orderReport?.parsed ?? [],
+      businessDate: reportDate,
+    }),
     overview,
     futureDaily,
     physicalInventory: mergePhysicalInventory(

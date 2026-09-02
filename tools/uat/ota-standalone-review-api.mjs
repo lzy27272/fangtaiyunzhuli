@@ -4870,6 +4870,7 @@ const deliverWeComSnapshot = async ({
               messagePrefix,
               snapshot,
               briefId: snapshot.collectionRunId,
+              orderDataRedacted: trustedDeviceEligible(hotel),
             },
           )
     const messageSha256 = sha256(
@@ -7738,6 +7739,7 @@ const briefFor = (hotelId) => {
   const payloads = createReportMonitorWeComPayloads(monitor, {
     snapshot,
     briefId: snapshot.collectionRunId,
+    orderDataRedacted: trustedDeviceEligible(hotel),
   })
   const delivery = [...weComDeliveriesByKey.values()]
     .filter(
