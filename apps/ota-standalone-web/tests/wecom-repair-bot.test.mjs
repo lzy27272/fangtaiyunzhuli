@@ -8,7 +8,9 @@ import {
   deliverWeComRepairBotToAllowedUsers,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  planWeComRepairNoticeDeliveries,
   selectWeComRepairNoticeChannels,
+  shouldFanOutWeComRepairNotice,
   weComRepairBotRecipientsForHotel,
 } from '../../../tools/uat/wecom/src/wecom-repair-bot.mjs'
 
@@ -122,6 +124,75 @@ test('repair notices can independently reach the scoped manager and broadcast gr
     groupWebhookEnabled: false,
     groupWebhookConfigured: false,
   }), [])
+  assert.equal(shouldFanOutWeComRepairNotice('PMS_REPAIR_REQUIRED'), true)
+  assert.equal(shouldFanOutWeComRepairNotice('DAILY_MORNING_REPAIR_COMPLETE'), true)
+  assert.equal(shouldFanOutWeComRepairNotice('DAILY_MORNING_REPAIR_FAILED'), true)
+  assert.equal(shouldFanOutWeComRepairNotice('TODAY_OPERATING'), false)
+})
+
+test('repair notice planning retries only historical local group-policy rejections once', () => {
+  const messageKey = 'hotel-013:PMS_REPAIR_REQUIRED:incident-1'
+  const deliveries = new Map([
+    [messageKey, {
+      messageKey,
+      deliveryChannel: null,
+      deliveryStatus: 'REJECTED',
+      reasonCode: 'WECOM_PAYLOAD_INVALID',
+      deliveredPartCount: 0,
+    }],
+    [`${messageKey}:WECOM_LONG_CONNECTION`, {
+      messageKey: `${messageKey}:WECOM_LONG_CONNECTION`,
+      deliveryChannel: 'WECOM_LONG_CONNECTION',
+      deliveryStatus: 'DELIVERED',
+      deliveredPartCount: 2,
+    }],
+  ])
+  const plan = () => planWeComRepairNoticeDeliveries({
+    messageKey,
+    channels: ['WECOM_LONG_CONNECTION', 'WECOM_GROUP_WEBHOOK'],
+    deliveryForKey: (key) => deliveries.get(key),
+  })
+
+  assert.deepEqual(plan(), [
+    {
+      channel: 'WECOM_LONG_CONNECTION',
+      messageKey: `${messageKey}:WECOM_LONG_CONNECTION`,
+    },
+    {
+      channel: 'WECOM_GROUP_WEBHOOK',
+      messageKey: `${messageKey}:LOCAL_POLICY_V2`,
+    },
+  ])
+
+  deliveries.set(`${messageKey}:LOCAL_POLICY_V2`, {
+    deliveryStatus: 'DELIVERED',
+    deliveryChannel: 'WECOM_GROUP_WEBHOOK',
+    deliveredPartCount: 1,
+  })
+  assert.equal(plan()[1].messageKey, `${messageKey}:LOCAL_POLICY_V2`)
+
+  deliveries.set(messageKey, {
+    deliveryChannel: 'WECOM_GROUP_WEBHOOK',
+    deliveryStatus: 'REJECTED',
+    reasonCode: 'WECOM_HTTP_REJECTED',
+    deliveredPartCount: 0,
+  })
+  assert.equal(plan()[1].messageKey, messageKey)
+})
+
+test('new repair incidents use one stable key per delivery channel', () => {
+  const messageKey = 'hotel-013:PMS_REPAIR_REQUIRED:incident-2'
+  assert.deepEqual(planWeComRepairNoticeDeliveries({
+    messageKey,
+    channels: ['WECOM_LONG_CONNECTION', 'WECOM_GROUP_WEBHOOK'],
+    deliveryForKey: () => undefined,
+  }), [
+    { channel: 'WECOM_LONG_CONNECTION', messageKey },
+    {
+      channel: 'WECOM_GROUP_WEBHOOK',
+      messageKey: `${messageKey}:WECOM_GROUP_WEBHOOK`,
+    },
+  ])
 })
 
 test('credentials migrate one legacy user and allow at most two users', () => {

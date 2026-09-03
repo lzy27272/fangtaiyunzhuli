@@ -159,6 +159,56 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
       { headers: operatorHeaders },
     )).status, 404)
 
+    const repairHeaders = {
+      ...operatorHeaders,
+      'Content-Type': 'application/json',
+    }
+    const enrollmentResponse = await fetch(
+      `http://127.0.0.1:${port}${scopedPath(hotel001)}/enrollment`,
+      {
+        method: 'POST',
+        headers: repairHeaders,
+        body: JSON.stringify({ label: '001门店测试电脑' }),
+      },
+    )
+    assert.equal(enrollmentResponse.status, 201)
+    const enrollment = (await enrollmentResponse.json()).data
+    assert.match(
+      enrollment.enrollmentCode,
+      /^001-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u,
+    )
+
+    const bootstrapResponse = await fetch(
+      `http://127.0.0.1:${port}${scopedPath(hotel001)}/bootstrap`,
+      {
+        method: 'POST',
+        headers: repairHeaders,
+        body: JSON.stringify({ label: '001门店测试电脑' }),
+      },
+    )
+    assert.equal(bootstrapResponse.status, 200)
+    assert.equal(
+      bootstrapResponse.headers.get('x-sfg-bootstrap-file-name'),
+      'Sifangguan-001-Setup.cmd',
+    )
+    await bootstrapResponse.arrayBuffer()
+
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${scopedPath(hotel002)}/bootstrap`,
+      {
+        method: 'POST',
+        headers: repairHeaders,
+        body: JSON.stringify({ label: '越权测试电脑' }),
+      },
+    )).status, 404)
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${scopedPath(hotel001)}`,
+      {
+        method: 'DELETE',
+        headers: operatorHeaders,
+      },
+    )).status, 403)
+
     const updateResponse = await fetch(
       `http://127.0.0.1:${port}/api/v1/auth/accounts/${created.id}`,
       {

@@ -112,6 +112,39 @@ test('combined operations brief is an approved operational template', async () =
   assert.deepEqual(JSON.parse(captured.init.body), combinedPayload)
 })
 
+test('registered repair lifecycle notices are approved without group mentions', async () => {
+  const headings = [
+    '【PMS需要修复处理】',
+    '【门店晨间修复完成】',
+    '【门店晨间修复未完成】',
+    '【罗盘简报自动修复完成】',
+    '【罗盘简报自动修复未完成】',
+    '【罗盘简报需要人工验证】',
+  ]
+  let attempts = 0
+  for (const heading of headings) {
+    const repairPayload = {
+      msgtype: 'text',
+      text: {
+        content: `${heading}\n门店：013 · 测试门店\n处理：登录后台按指引修复。`,
+        mentioned_list: [],
+      },
+    }
+    const result = await sendWeComGroupRobotMessage({
+      rawWebhook: webhook,
+      payload: repairPayload,
+      expectedEndpointSha256: endpointSha256,
+      networkAuthorized: true,
+      fetchImpl: async () => {
+        attempts += 1
+        return response({ errcode: 0, errmsg: 'ok' })
+      },
+    })
+    assert.equal(result.deliveryStatus, 'DELIVERED')
+  }
+  assert.equal(attempts, headings.length)
+})
+
 test('unregistered markerless text is rejected before HTTP', async () => {
   let attempts = 0
   await assert.rejects(

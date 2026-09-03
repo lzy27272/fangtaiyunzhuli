@@ -13,7 +13,7 @@ import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
-  canConfigure: boolean
+  canRevokeDevice: boolean
   onStatusChanged: () => void
 }
 
@@ -22,7 +22,7 @@ const formatTime = (value: string | null): string =>
 
 export function TrustedDevicePanel({
   context,
-  canConfigure,
+  canRevokeDevice,
   onStatusChanged,
 }: Props) {
   const [status, setStatus] = useState<TrustedDeviceStatus | null>(null)
@@ -75,7 +75,7 @@ export function TrustedDevicePanel({
   const hotelCode = status.hotelCode
 
   const generateEnrollment = async () => {
-    if (!canConfigure || loading) return
+    if (loading) return
     setLoading(true)
     setError('')
     setNotice('')
@@ -96,7 +96,7 @@ export function TrustedDevicePanel({
   }
 
   const downloadAndInstall = async () => {
-    if (!canConfigure || loading) return
+    if (loading) return
     setLoading(true)
     setError('')
     setNotice('')
@@ -184,7 +184,7 @@ export function TrustedDevicePanel({
   }
 
   const revoke = async () => {
-    if (!canConfigure || loading || !status.device) return
+    if (!canRevokeDevice || loading || !status.device) return
     setLoading(true)
     setError('')
     setNotice('')
@@ -203,8 +203,7 @@ export function TrustedDevicePanel({
 
   const approveScope = async () => {
     if (
-      !canConfigure
-      || loading
+      loading
       || status.device?.scopeApprovalStatus !== 'PENDING'
     ) return
     setLoading(true)
@@ -269,7 +268,7 @@ export function TrustedDevicePanel({
             </button>
           ) : (
             <button
-              disabled={!canConfigure || loading}
+              disabled={loading}
               type="button"
               onClick={() => void downloadAndInstall()}
             >{loading ? '正在生成安装文件…' : '下载安装并进入登录'}</button>
@@ -285,21 +284,21 @@ export function TrustedDevicePanel({
           {status.device ? (
             <button
               className="secondary"
-              disabled={!canConfigure || loading}
+              disabled={loading}
               type="button"
               onClick={() => void downloadAndInstall()}
             >重新下载安装</button>
           ) : null}
           <button
             className="secondary"
-            disabled={!canConfigure || loading}
+            disabled={loading}
             type="button"
             onClick={() => void generateEnrollment()}
           >仅生成安装码</button>
           {status.device ? (
             <button
               className="danger-outline"
-              disabled={!canConfigure || loading}
+              disabled={!canRevokeDevice || loading}
               type="button"
               onClick={() => void revoke()}
             >撤销当前设备</button>
@@ -312,7 +311,7 @@ export function TrustedDevicePanel({
           <strong>请在本机美团官方 Chrome 核对当前登录门店确为 {hotelCode} · {status.hotelName}</strong>
           <small>批准只保存加密的门店范围锚，不显示或保存原始 PMS 门店编号；未批准前旧采集不会被切断。</small>
           <button
-            disabled={!canConfigure || loading}
+            disabled={loading}
             type="button"
             onClick={() => void approveScope()}
           >{loading ? '正在批准…' : '已核对，批准本门店'}</button>

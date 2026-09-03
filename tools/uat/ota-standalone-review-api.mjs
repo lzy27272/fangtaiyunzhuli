@@ -171,7 +171,9 @@ import {
   fingerprintWeComRepairBotValue,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  planWeComRepairNoticeDeliveries,
   selectWeComRepairNoticeChannels,
+  shouldFanOutWeComRepairNotice,
   WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
   WECOM_REPAIR_BOT_MAX_STORE_USERS,
   weComRepairBotRecipientsForHotel,
@@ -5053,7 +5055,7 @@ const deliverWeComAuditNotice = async ({
           msgtype: 'text',
           text: {
             content,
-            mentioned_list: ['@all'],
+            mentioned_list: [],
           },
         },
         expectedEndpointSha256: config.endpointSha256,
@@ -6802,11 +6804,6 @@ const recordNightlyBriefingHealthAudit = ({ hotel, slot, date }) => {
   return record
 }
 
-const REPAIR_ACTION_NOTICE_TYPES = new Set([
-  'PMS_REPAIR_REQUIRED',
-  'DAILY_MORNING_REPAIR_FAILED',
-])
-
 const repairNoticeChannelsFor = (hotel) => {
   const config = weComConfigFor(hotel.hotelId)
   const repairBotReady = weComRepairBotReady()
@@ -6824,20 +6821,6 @@ const repairNoticeChannelsFor = (hotel) => {
   })
 }
 
-const repairNoticeDeliveryPlan = ({ messageKey, channels }) => {
-  const existing = weComDeliveriesByKey.get(messageKey)
-  const existingChannel = existing?.deliveryChannel === 'WECOM_LONG_CONNECTION'
-    ? 'WECOM_LONG_CONNECTION'
-    : 'WECOM_GROUP_WEBHOOK'
-  const primaryChannel = existing ? existingChannel : channels[0]
-  return channels.map((channel) => ({
-    channel,
-    messageKey: channel === primaryChannel
-      ? messageKey
-      : `${messageKey}:${channel}`,
-  }))
-}
-
 const deliverMorningRepairNotice = async ({
   hotel,
   auditRecord,
@@ -6847,13 +6830,17 @@ const deliverMorningRepairNotice = async ({
   const messageKey =
     `${hotel.hotelId}:${deliveryType}:${auditRecord.auditKey}`
   const availableChannels = repairNoticeChannelsFor(hotel)
-  const channels = REPAIR_ACTION_NOTICE_TYPES.has(deliveryType)
+  const channels = shouldFanOutWeComRepairNotice(deliveryType)
     ? availableChannels
     : availableChannels.slice(0, 1)
   if (channels.length === 0) {
     throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
   }
-  const plan = repairNoticeDeliveryPlan({ messageKey, channels })
+  const plan = planWeComRepairNoticeDeliveries({
+    messageKey,
+    channels,
+    deliveryForKey: (key) => weComDeliveriesByKey.get(key),
+  })
   const outcomes = await Promise.allSettled(plan.map((item) =>
     item.channel === 'WECOM_LONG_CONNECTION'
       ? deliverWeComRepairBotDirectMessage({
@@ -6894,9 +6881,10 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
     if (!incident) return null
     const messageKey =
       `${hotel.hotelId}:PMS_REPAIR_REQUIRED:${incident.incidentId}`
-    const deliveryPlan = repairNoticeDeliveryPlan({
+    const deliveryPlan = planWeComRepairNoticeDeliveries({
       messageKey,
       channels: repairNoticeChannelsFor(hotel),
+      deliveryForKey: (key) => weComDeliveriesByKey.get(key),
     })
     if (
       deliveryPlan.length > 0
@@ -8291,6 +8279,9 @@ const REPAIR_WRITE_SUFFIXES = new Set([
   '/ota-controlled-login-verifications',
   '/luopan-browser-session-validations',
   '/pms-login-config',
+  '/trusted-device/bootstrap',
+  '/trusted-device/enrollment',
+  '/trusted-device/scope-approval',
 ])
 
 const assignableReviewRoles = (roles) =>

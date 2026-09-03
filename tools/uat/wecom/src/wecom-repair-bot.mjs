@@ -119,6 +119,51 @@ export const selectWeComRepairNoticeChannels = ({
   return channels
 }
 
+const REPAIR_GROUP_NOTICE_TYPES = new Set([
+  'PMS_REPAIR_REQUIRED',
+  'DAILY_MORNING_REPAIR_COMPLETE',
+  'DAILY_MORNING_REPAIR_FAILED',
+])
+
+export const shouldFanOutWeComRepairNotice = (deliveryType) =>
+  REPAIR_GROUP_NOTICE_TYPES.has(deliveryType)
+
+const LOCAL_GROUP_POLICY_RETRY_REASONS = new Set([
+  'WECOM_PAYLOAD_INVALID',
+  'WECOM_TEMPLATE_POLICY_REQUIRED',
+])
+
+export const planWeComRepairNoticeDeliveries = ({
+  messageKey,
+  channels,
+  deliveryForKey,
+}) => {
+  const existingBase = deliveryForKey(messageKey)
+  const baseChannel = existingBase
+    ? existingBase.deliveryChannel === 'WECOM_LONG_CONNECTION'
+      ? 'WECOM_LONG_CONNECTION'
+      : 'WECOM_GROUP_WEBHOOK'
+    : channels[0]
+
+  return channels.map((channel) => {
+    const canonicalKey = channel === baseChannel
+      ? messageKey
+      : `${messageKey}:${channel}`
+    const existing = deliveryForKey(canonicalKey)
+    const canRetryLocalGroupPolicy =
+      channel === 'WECOM_GROUP_WEBHOOK'
+      && existing?.deliveryStatus === 'REJECTED'
+      && Number(existing.deliveredPartCount ?? 0) === 0
+      && LOCAL_GROUP_POLICY_RETRY_REASONS.has(existing.reasonCode)
+    return {
+      channel,
+      messageKey: canRetryLocalGroupPolicy
+        ? `${canonicalKey}:LOCAL_POLICY_V2`
+        : canonicalKey,
+    }
+  })
+}
+
 export const deliverWeComRepairBotToAllowedUsers = async ({
   credentials,
   hotelId = null,

@@ -10,6 +10,14 @@ const isApprovedOperationalTemplate = (content) =>
   || /^[^\n]{1,40}｜远期房态(?:｜[^\n]{1,12})?\n/u.test(content)
   || /^[^\n]{1,40}｜经营综合简报(?:｜[^\n]{1,12})?\n/u.test(content)
   || content.startsWith('【热销房型售罄预警】\n')
+  || [
+    '【PMS需要修复处理】\n',
+    '【门店晨间修复完成】\n',
+    '【门店晨间修复未完成】\n',
+    '【罗盘简报自动修复完成】\n',
+    '【罗盘简报自动修复未完成】\n',
+    '【罗盘简报需要人工验证】\n',
+  ].some((prefix) => content.startsWith(prefix))
 
 export class SafeWeComError extends Error {
   constructor(reasonCode) {

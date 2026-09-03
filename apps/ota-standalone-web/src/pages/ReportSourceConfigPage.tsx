@@ -468,7 +468,7 @@ export function ReportSourceConfigPage({
           {collectionSection === 'pms' ? <>
             {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
               <TrustedDevicePanel
-                canConfigure={canConfigure}
+                canRevokeDevice={canConfigure}
                 context={context}
                 onStatusChanged={() =>
                   setOverviewVersion((current) => current + 1)}

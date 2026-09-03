@@ -151,7 +151,7 @@ export function StoreRepairPanel({
 
       {trustedDeviceEligible ? (
         <TrustedDevicePanel
-          canConfigure={canConfigure}
+          canRevokeDevice={canConfigure}
           context={context}
           onStatusChanged={onStatusChanged}
         />

@@ -39,6 +39,18 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(agent, /scopeReceipt/u)
   assert.match(panel, /已核对，批准本门店/u)
   assert.match(panel, /scopeApprovalStatus/u)
+  const repairActions = panel.slice(
+    panel.indexOf('const generateEnrollment'),
+    panel.indexOf('const revoke'),
+  )
+  const scopeApproval = panel.slice(
+    panel.indexOf('const approveScope'),
+    panel.indexOf('const copyEnrollment'),
+  )
+  assert.doesNotMatch(repairActions, /canRevokeDevice/u)
+  assert.doesNotMatch(scopeApproval, /canRevokeDevice/u)
+  assert.match(panel, /if \(!canRevokeDevice \|\| loading \|\| !status\.device\) return/u)
+  assert.match(panel, /disabled=\{!canRevokeDevice \|\| loading\}/u)
   assert.match(client, /\/trusted-device\/scope-approval/u)
   assert.match(client, /APPROVE_TRUSTED_DEVICE_STORE_SCOPE/u)
   assert.match(agent, /--remote-debugging-address=127\.0\.0\.1/u)
@@ -118,7 +130,14 @@ test('store immediate collection routes trusted devices to the local repair prot
     readSource('../src/pages/StoreConsolePage.tsx'),
     readSource('../src/api/trustedDevice.ts'),
   ])
-  const collectStart = storePage.indexOf('const collect = async () =>')
+  const detailStart = storePage.indexOf('export function StoreDetailPage')
+  const collectStart = storePage.indexOf('const collect = async () =>', detailStart)
+  const refreshStart = storePage.indexOf(
+    'const refresh = useCallback(async () =>',
+    detailStart,
+  )
+  const refreshEnd = storePage.indexOf('useEffect(() => {', refreshStart)
+  const refreshSource = storePage.slice(refreshStart, refreshEnd)
   const controllerAt = storePage.indexOf(
     'const controller = new AbortController()',
     collectStart,
@@ -145,6 +164,17 @@ test('store immediate collection routes trusted devices to the local repair prot
   )
 
   assert.ok(collectStart >= 0)
+  assert.ok(refreshStart >= 0)
+  assert.ok(refreshEnd > refreshStart)
+  assert.match(
+    refreshSource,
+    /canConfigure \? loadConfiguration\(context\) : Promise\.resolve\(null\)/u,
+  )
+  assert.doesNotMatch(refreshSource, /setLoading\(true\)/u)
+  assert.match(
+    storePage,
+    /setError\(''\)\s+setLoading\(true\)\s+setData\(emptyDetail\)/u,
+  )
   assert.ok(controllerAt > collectStart)
   assert.ok(trustedBranchAt >= 0)
   assert.ok(protocolAt > trustedBranchAt)

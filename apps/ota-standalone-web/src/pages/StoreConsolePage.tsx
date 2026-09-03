@@ -389,10 +389,10 @@ export function StoreDetailPage({
 
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequenceRef.current
-    setLoading(true)
     setError('')
     const results = await Promise.allSettled([
-      loadConfiguration(context), loadMonitor(context), loadOtaSources(context),
+      canConfigure ? loadConfiguration(context) : Promise.resolve(null),
+      loadMonitor(context), loadOtaSources(context),
       loadWeComConfig(context), loadBriefs(context), loadIncidents(context),
       loadRoomTypeConfiguration(context),
       loadTrustedDeviceStatus(context),
@@ -416,7 +416,7 @@ export function StoreDetailPage({
       setError('门店数据暂时不可用，请检查连接状态。')
     }
     setLoading(false)
-  }, [context])
+  }, [canConfigure, context])
 
   useEffect(() => {
     setTab(initialTab === 'collection' && !canConfigure ? 'repair' : initialTab)
@@ -429,6 +429,7 @@ export function StoreDetailPage({
     setCollecting(false)
     setNotice('')
     setError('')
+    setLoading(true)
     setData(emptyDetail)
     setDataUnavailable(false)
     return () => {
