@@ -104,6 +104,7 @@ import {
   buildStoreRepairConsoleUrl,
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
+  pmsRepairNoticeMessageKey,
 } from './pms-repair-alert.mjs'
 import {
   createTrustedDeviceIntakeStore,
@@ -6879,8 +6880,14 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
       now,
     })
     if (!incident) return null
-    const messageKey =
-      `${hotel.hotelId}:PMS_REPAIR_REQUIRED:${incident.incidentId}`
+    const providerLastErrorCode = hotel.pmsSystemCode === 'LUOPAN_CLOUD'
+      ? luopanBrowserConfigRecordFor(hotel.hotelId).lastErrorCode
+      : null
+    const messageKey = pmsRepairNoticeMessageKey({
+      hotel,
+      incident,
+      providerLastErrorCode,
+    })
     const deliveryPlan = planWeComRepairNoticeDeliveries({
       messageKey,
       channels: repairNoticeChannelsFor(hotel),
@@ -6903,6 +6910,7 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
           hotel,
           incident,
           publicOrigin: trustedDevicePublicOrigin,
+          providerLastErrorCode,
         }),
       })
     } catch (error) {

@@ -4,9 +4,11 @@ import test from 'node:test'
 import {
   buildStoreRepairConsoleUrl,
   evaluatePmsRepair,
+  luopanPmsRepairGuidance,
   PMS_REPAIR_STALE_AFTER_MS,
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
+  pmsRepairNoticeMessageKey,
 } from '../../../tools/uat/pms-repair-alert.mjs'
 
 const now = new Date('2026-09-01T15:00:00.000Z')
@@ -126,6 +128,57 @@ test('repair notice includes a login-gated store repair link and no heartbeat la
   )
   assert.match(content, /登录后按页面指引操作/u)
   assert.doesNotMatch(content, /心跳|离线/u)
+})
+
+test('Luopan stale-data notice explains when no captcha is needed', () => {
+  const hotel = {
+    hotelId: 'hotel-007',
+    hotelCode: '007',
+    hotelName: '测试罗盘酒店',
+    pmsSystemCode: 'LUOPAN_CLOUD',
+  }
+  const incident = pmsRepairIncidentFor({
+    hotel,
+    monitor: monitor({ ageMs: PMS_REPAIR_STALE_AFTER_MS + 1 }),
+    trustedDeviceStatus: { eligible: false, device: null },
+    now,
+  })
+  const content = pmsRepairNoticeContent({
+    hotel,
+    incident,
+    publicOrigin: 'https://www.sfgzt.cn',
+    providerLastErrorCode: 'LUOPAN_FORECAST_TABLE_UNAVAILABLE',
+  })
+
+  assert.match(content, /罗盘房态报表页未返回可识别表格/u)
+  assert.match(content, /本次无需验证码/u)
+  assert.match(content, /不会发送无效验证码/u)
+  assert.doesNotMatch(content, /验证码已私聊/u)
+  assert.match(
+    pmsRepairNoticeMessageKey({
+      hotel,
+      incident,
+      providerLastErrorCode: 'LUOPAN_FORECAST_TABLE_UNAVAILABLE',
+    }),
+    /:LUOPAN_GUIDANCE_V1:NONAUTH$/u,
+  )
+})
+
+test('Luopan reauthentication notice routes the manager to the captcha bot', () => {
+  const guidance = luopanPmsRepairGuidance('LUOPAN_REAUTH_REQUIRED')
+  assert.equal(guidance.captchaRequired, true)
+  assert.match(guidance.captchaText, /私聊本店管理员发送验证码图片/u)
+  assert.match(guidance.action, /门店编号 验证码/u)
+
+  const key = pmsRepairNoticeMessageKey({
+    hotel: {
+      hotelId: 'hotel-007',
+      pmsSystemCode: 'LUOPAN_CLOUD',
+    },
+    incident: { incidentId: 'incident-reauth' },
+    providerLastErrorCode: 'LUOPAN_REAUTH_REQUIRED',
+  })
+  assert.match(key, /:LUOPAN_GUIDANCE_V1:REAUTH$/u)
 })
 
 test('repair console links accept only HTTPS origins and three-digit store codes', () => {
