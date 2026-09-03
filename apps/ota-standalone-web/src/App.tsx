@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { hasRefreshContext, login, logout, refreshSession } from './api/auth'
 import type { SimulationHotelView } from './api/business'
 import { clearSession, getSession, setSession, type AuthSession } from './auth/session'
@@ -10,8 +10,27 @@ import { PersonalSecurityPage } from './pages/PersonalSecurityPage'
 import { loadAuthorizedHotels, StoreDetailPage, StoreOverviewPage, type StoreTab } from './pages/StoreConsolePage'
 
 type AppPage = 'stores' | 'exceptions' | 'people' | 'security' | 'store-detail' | 'new-store'
+const REPAIR_HOTEL_QUERY_PARAM = 'repairHotel'
 
-function LoginPanel({ expired, onAuthenticated }: { expired: boolean; onAuthenticated: (session: AuthSession) => void }) {
+const repairHotelCodeFromLocation = () => {
+  const values = new URLSearchParams(window.location.search)
+    .getAll(REPAIR_HOTEL_QUERY_PARAM)
+  return values.length === 1 && /^[0-9]{3}$/u.test(values[0])
+    ? values[0]
+    : null
+}
+
+const clearRepairHotelFromLocation = () => {
+  const current = new URL(window.location.href)
+  current.searchParams.delete(REPAIR_HOTEL_QUERY_PARAM)
+  window.history.replaceState(
+    {},
+    '',
+    `${current.pathname}${current.search}${current.hash}`,
+  )
+}
+
+function LoginPanel({ expired, repairHotelCode, onAuthenticated }: { expired: boolean; repairHotelCode: string | null; onAuthenticated: (session: AuthSession) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -32,6 +51,7 @@ function LoginPanel({ expired, onAuthenticated }: { expired: boolean; onAuthenti
       <section className="login-intro"><p className="section-kicker">四方馆酒店经营中心</p><h1>让每一家门店的<br />数据与播报<span>清晰可控</span></h1><p>统一管理酒店系统、渠道数据连接、采集状态和企业微信播报，账号只访问已授权门店。</p><ul><li><Icon name="shield" />门店级权限隔离</li><li><Icon name="radio" />采集与播报状态可追踪</li><li><Icon name="alert" />异常一键直达处理</li></ul></section>
       <section className="new-login-panel"><form onSubmit={submit}>
         <div className="login-form-title"><span className="brand-mark"><Icon name="hotel" /></span><div><h2>登录经营中心</h2><p>使用平台管理账号登录</p></div></div>
+        {repairHotelCode ? <div className="inline-message success" role="status">登录成功后将直接进入 {repairHotelCode} 门店的修复指引。</div> : null}
         {expired ? <div className="session-expired"><Icon name="alert" /><span><strong>登录会话已过期</strong><small>请重新登录，未保存的账号密码不会被保留。</small></span></div> : null}
         <label>登录账号<input autoComplete="username" autoFocus required value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入账号" /></label>
         <label>登录密码<input autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入密码" /></label>
@@ -44,7 +64,7 @@ function LoginPanel({ expired, onAuthenticated }: { expired: boolean; onAuthenti
   </main>
 }
 
-function ConsoleShell({ session, onSessionChange, onSignedOut }: { session: AuthSession; onSessionChange: (session: AuthSession) => void; onSignedOut: () => void }) {
+function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSignedOut }: { session: AuthSession; initialRepairHotelCode: string | null; onSessionChange: (session: AuthSession) => void; onSignedOut: () => void }) {
   const [page, setPage] = useState<AppPage>('stores')
   const [hotels, setHotels] = useState<SimulationHotelView[]>([])
   const [selectedHotel, setSelectedHotel] = useState<SimulationHotelView | null>(null)
@@ -54,6 +74,7 @@ function ConsoleShell({ session, onSessionChange, onSignedOut }: { session: Auth
   const [working, setWorking] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
   const [mobileMenu, setMobileMenu] = useState(false)
+  const repairLinkHandled = useRef(false)
 
   const platformAdmin = session.account.roles.includes('PLATFORM_ADMIN')
   const canConfigure = platformAdmin
@@ -70,6 +91,29 @@ function ConsoleShell({ session, onSessionChange, onSignedOut }: { session: Auth
     finally { setLoadingDirectory(false) }
   }, [session.account.hotelIds])
   useEffect(() => { void refreshHotels() }, [refreshHotels])
+  useEffect(() => {
+    if (
+      repairLinkHandled.current
+      || !initialRepairHotelCode
+      || loadingDirectory
+      || directoryError
+    ) return
+    repairLinkHandled.current = true
+    const target = hotels.find(
+      (hotel) => hotel.hotelCode === initialRepairHotelCode,
+    )
+    if (!target) {
+      setPage('stores')
+      setDirectoryError(
+        `当前账号没有 ${initialRepairHotelCode} 门店的修复权限，请使用已授权账号登录。`,
+      )
+      return
+    }
+    clearRepairHotelFromLocation()
+    setSelectedHotel(target)
+    setSelectedTab('repair')
+    setPage('store-detail')
+  }, [directoryError, hotels, initialRepairHotelCode, loadingDirectory])
 
   const navigate = (next: AppPage) => { setPage(next); setAccountMenu(false); setMobileMenu(false) }
   const openHotel = (hotel: SimulationHotelView, tab: StoreTab = 'overview') => { setSelectedHotel(hotel); setSelectedTab(tab); navigate('store-detail') }
@@ -113,6 +157,7 @@ function ConsoleShell({ session, onSessionChange, onSignedOut }: { session: Auth
 
 export default function App() {
   const initialSession = getSession()
+  const [repairHotelCode] = useState(() => repairHotelCodeFromLocation())
   const [session, updateSession] = useState<AuthSession | null>(initialSession)
   const [restoring, setRestoring] = useState(initialSession === null && hasRefreshContext())
   const [expired, setExpired] = useState(false)
@@ -131,5 +176,5 @@ export default function App() {
   }, [session])
 
   if (restoring) return <main className="restore-screen"><Brand /><LoadingState label="正在安全恢复会话…" /></main>
-  return session ? <ConsoleShell session={session} onSessionChange={(next) => { setSession(next); updateSession(next) }} onSignedOut={() => updateSession(null)} /> : <LoginPanel expired={expired} onAuthenticated={(next) => { setExpired(false); updateSession(next) }} />
+  return session ? <ConsoleShell session={session} initialRepairHotelCode={repairHotelCode} onSessionChange={(next) => { setSession(next); updateSession(next) }} onSignedOut={() => updateSession(null)} /> : <LoginPanel expired={expired} repairHotelCode={repairHotelCode} onAuthenticated={(next) => { setExpired(false); updateSession(next) }} />
 }

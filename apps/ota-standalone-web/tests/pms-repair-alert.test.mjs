@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import {
+  buildStoreRepairConsoleUrl,
   evaluatePmsRepair,
   PMS_REPAIR_STALE_AFTER_MS,
   pmsRepairIncidentFor,
@@ -104,7 +105,7 @@ test('complete snapshot without a valid collection time is treated as incomplete
   assert.deepEqual(result.reasons.map((reason) => reason.code), ['PMS_SNAPSHOT_INCOMPLETE'])
 })
 
-test('repair notice uses the unified business label and contains no heartbeat language', () => {
+test('repair notice includes a login-gated store repair link and no heartbeat language', () => {
   const incident = pmsRepairIncidentFor({
     hotel: { hotelId: 'hotel-001' },
     monitor: monitor({ ageMs: PMS_REPAIR_STALE_AFTER_MS + 1 }),
@@ -114,12 +115,32 @@ test('repair notice uses the unified business label and contains no heartbeat la
   const content = pmsRepairNoticeContent({
     hotel: { hotelCode: '001', hotelName: '测试酒店' },
     incident,
+    publicOrigin: 'https://www.sfgzt.cn',
   })
   assert.match(content, /PMS需要修复处理/u)
   assert.match(content, /PMS数据超过90分钟未更新/u)
   assert.match(content, /PMS门店范围尚未授权/u)
-  assert.match(content, /一键直达/u)
+  assert.match(
+    content,
+    /https:\/\/www\.sfgzt\.cn\/ota-console\/\?repairHotel=001/u,
+  )
+  assert.match(content, /登录后按页面指引操作/u)
   assert.doesNotMatch(content, /心跳|离线/u)
+})
+
+test('repair console links accept only HTTPS origins and three-digit store codes', () => {
+  assert.equal(buildStoreRepairConsoleUrl({
+    publicOrigin: 'https://www.sfgzt.cn/ignored/path?secret=no',
+    hotelCode: '013',
+  }), 'https://www.sfgzt.cn/ota-console/?repairHotel=013')
+  assert.throws(() => buildStoreRepairConsoleUrl({
+    publicOrigin: 'http://www.sfgzt.cn',
+    hotelCode: '013',
+  }), /PMS_REPAIR_PUBLIC_ORIGIN_INVALID/u)
+  assert.throws(() => buildStoreRepairConsoleUrl({
+    publicOrigin: 'https://www.sfgzt.cn',
+    hotelCode: '../013',
+  }), /PMS_REPAIR_HOTEL_CODE_INVALID/u)
 })
 
 test('production release package includes the PMS repair alert runtime module', () => {

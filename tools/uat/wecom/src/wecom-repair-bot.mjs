@@ -101,21 +101,22 @@ export const weComRepairBotRecipientsForHotel = (credentials, hotelId) => {
   return [...new Set([...allowedUserIds, ...scopedUserIds])]
 }
 
-export const selectWeComRepairNoticeChannel = ({
+export const selectWeComRepairNoticeChannels = ({
   repairBotReady = false,
   recipientCount = 0,
   groupWebhookEnabled = false,
   groupWebhookConfigured = false,
 } = {}) => {
+  const channels = []
   if (
     repairBotReady === true
     && Number.isInteger(recipientCount)
     && recipientCount > 0
-  ) return 'WECOM_LONG_CONNECTION'
+  ) channels.push('WECOM_LONG_CONNECTION')
   if (groupWebhookEnabled === true && groupWebhookConfigured === true) {
-    return 'WECOM_GROUP_WEBHOOK'
+    channels.push('WECOM_GROUP_WEBHOOK')
   }
-  return null
+  return channels
 }
 
 export const deliverWeComRepairBotToAllowedUsers = async ({

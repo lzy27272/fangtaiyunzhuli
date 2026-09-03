@@ -101,6 +101,7 @@ import {
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
 import {
+  buildStoreRepairConsoleUrl,
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
 } from './pms-repair-alert.mjs'
@@ -170,7 +171,7 @@ import {
   fingerprintWeComRepairBotValue,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
-  selectWeComRepairNoticeChannel,
+  selectWeComRepairNoticeChannels,
   WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
   WECOM_REPAIR_BOT_MAX_STORE_USERS,
   weComRepairBotRecipientsForHotel,
@@ -306,6 +307,10 @@ const trustedDevicePublicOrigin = (() => {
     process.exit(2)
   }
 })()
+const storeRepairConsoleUrlFor = (hotel) => buildStoreRepairConsoleUrl({
+  publicOrigin: trustedDevicePublicOrigin,
+  hotelCode: hotel.hotelCode,
+})
 const bieyanghongRemoteDesktopConfig = Object.freeze({
   enabled: process.env.BIEYANGHONG_REMOTE_DESKTOP_ENABLED === 'true',
   display: process.env.BIEYANGHONG_REMOTE_DESKTOP_DISPLAY?.trim() || ':91',
@@ -5036,6 +5041,7 @@ const deliverWeComAuditNotice = async ({
       deliveredPartCount: 0,
       parts: [],
       bodyPreview,
+      deliveryChannel: 'WECOM_GROUP_WEBHOOK',
     }
     weComDeliveriesByKey.set(messageKey, delivery)
     persistWeComDeliveries()
@@ -5341,6 +5347,7 @@ const finishLuopanRepair = async ({
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
         `状态码：${reasonCode}`,
         '系统已停止本次尝试，不会继续提交验证码。',
+        `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
       ].join('\n'),
       bodyPreview:
         `罗盘简报自动修复未完成 · ${hotel.hotelCode} · ${reasonCode}`,
@@ -5420,11 +5427,13 @@ const startLuopanRepairChallenge = async (
       created.tokenSha256,
       handle.login.captcha,
     )
-    const delivery = repairChannel === 'WECOM_LONG_CONNECTION'
-      ? await deliverWeComRepairBotDirectMessage({
+    const repairMessageKey =
+      `${hotelId}:LUOPAN_REPAIR_REQUIRED:${created.record.challengeId}`
+    const deliveryTasks = []
+    if (repairChannel === 'WECOM_LONG_CONNECTION') {
+      deliveryTasks.push(deliverWeComRepairBotDirectMessage({
         hotelId,
-        messageKey:
-          `${hotelId}:LUOPAN_REPAIR_REQUIRED:${created.record.challengeId}`,
+        messageKey: repairMessageKey,
         deliveryType: 'LUOPAN_REPAIR_REQUIRED',
         captcha: handle.login.captcha,
         content: [
@@ -5434,24 +5443,44 @@ const startLuopanRepairChallenge = async (
           `**${hotel.hotelCode} 验证码**`,
           '有效期10分钟，最多提交3次。',
         ].join('\n'),
-      })
-      : await deliverWeComAuditNotice({
-        hotelId,
-        messageKey:
-          `${hotelId}:LUOPAN_REPAIR_REQUIRED:${created.record.challengeId}`,
-        deliveryType: 'LUOPAN_REPAIR_REQUIRED',
-        content: [
+      }))
+    }
+    deliveryTasks.push(deliverWeComAuditNotice({
+      hotelId,
+      messageKey: repairChannel === 'WECOM_LONG_CONNECTION'
+        ? `${repairMessageKey}:WECOM_GROUP_WEBHOOK`
+        : repairMessageKey,
+      deliveryType: 'LUOPAN_REPAIR_REQUIRED',
+      content: repairChannel === 'WECOM_LONG_CONNECTION'
+        ? [
+          '【罗盘简报需要人工验证】',
+          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+          '原因：罗盘登录会话已失效，自动简报已暂停。',
+          '处理：验证码已私聊本店修复管理员；其他授权人员可登录后台按指引处理。',
+          `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
+        ].join('\n')
+        : [
           '【罗盘简报需要人工验证码】',
           `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
           '原因：罗盘登录会话已失效，自动简报已暂停。',
-          '处理：点击下方链接，在企业微信内填写验证码。',
+          '处理：点击一次性链接填写验证码，或登录后台查看修复指引。',
           '有效期：10分钟，最多提交3次。',
           luopanRepairLink(luopanRepairPublicBaseUrl, created.token),
+          `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
         ].join('\n'),
-        bodyPreview:
-          `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
-      })
-    if (delivery.deliveredPartCount < 1) {
+      bodyPreview:
+        `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
+    }))
+    const deliveryOutcomes = await Promise.allSettled(deliveryTasks)
+    const deliveredPartCount = deliveryOutcomes.reduce(
+      (total, outcome) => total + (
+        outcome.status === 'fulfilled'
+          ? outcome.value.deliveredPartCount
+          : 0
+      ),
+      0,
+    )
+    if (deliveredPartCount < 1) {
       throw new Error('LUOPAN_REPAIR_NOTICE_NOT_DELIVERED')
     }
     process.stdout.write(
@@ -6773,6 +6802,42 @@ const recordNightlyBriefingHealthAudit = ({ hotel, slot, date }) => {
   return record
 }
 
+const REPAIR_ACTION_NOTICE_TYPES = new Set([
+  'PMS_REPAIR_REQUIRED',
+  'DAILY_MORNING_REPAIR_FAILED',
+])
+
+const repairNoticeChannelsFor = (hotel) => {
+  const config = weComConfigFor(hotel.hotelId)
+  const repairBotReady = weComRepairBotReady()
+  const recipientCount = repairBotReady
+    ? weComRepairBotRecipientsForHotel(
+      weComRepairBotCredentials ?? {},
+      hotel.hotelId,
+    ).length
+    : 0
+  return selectWeComRepairNoticeChannels({
+    repairBotReady,
+    recipientCount,
+    groupWebhookEnabled: config.enabled,
+    groupWebhookConfigured: config.webhookConfigured,
+  })
+}
+
+const repairNoticeDeliveryPlan = ({ messageKey, channels }) => {
+  const existing = weComDeliveriesByKey.get(messageKey)
+  const existingChannel = existing?.deliveryChannel === 'WECOM_LONG_CONNECTION'
+    ? 'WECOM_LONG_CONNECTION'
+    : 'WECOM_GROUP_WEBHOOK'
+  const primaryChannel = existing ? existingChannel : channels[0]
+  return channels.map((channel) => ({
+    channel,
+    messageKey: channel === primaryChannel
+      ? messageKey
+      : `${messageKey}:${channel}`,
+  }))
+}
+
 const deliverMorningRepairNotice = async ({
   hotel,
   auditRecord,
@@ -6781,57 +6846,38 @@ const deliverMorningRepairNotice = async ({
 }) => {
   const messageKey =
     `${hotel.hotelId}:${deliveryType}:${auditRecord.auditKey}`
-  const config = weComConfigFor(hotel.hotelId)
-  const repairBotReady = weComRepairBotReady()
-  const recipientCount = repairBotReady
-    ? weComRepairBotRecipientsForHotel(
-      weComRepairBotCredentials ?? {},
-      hotel.hotelId,
-    ).length
-    : 0
-  const channel = selectWeComRepairNoticeChannel({
-    repairBotReady,
-    recipientCount,
-    groupWebhookEnabled: config.enabled,
-    groupWebhookConfigured: config.webhookConfigured,
-  })
-  if (channel === 'WECOM_LONG_CONNECTION') {
-    return deliverWeComRepairBotDirectMessage({
-      hotelId: hotel.hotelId,
-      messageKey,
-      deliveryType,
-      content,
-    })
+  const availableChannels = repairNoticeChannelsFor(hotel)
+  const channels = REPAIR_ACTION_NOTICE_TYPES.has(deliveryType)
+    ? availableChannels
+    : availableChannels.slice(0, 1)
+  if (channels.length === 0) {
+    throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
   }
-  if (channel === 'WECOM_GROUP_WEBHOOK') {
-    return deliverWeComAuditNotice({
-      hotelId: hotel.hotelId,
-      messageKey,
-      deliveryType,
-      content,
-      bodyPreview:
-        `${deliveryType} · ${hotel.hotelCode} · ${auditRecord.status}`,
-    })
+  const plan = repairNoticeDeliveryPlan({ messageKey, channels })
+  const outcomes = await Promise.allSettled(plan.map((item) =>
+    item.channel === 'WECOM_LONG_CONNECTION'
+      ? deliverWeComRepairBotDirectMessage({
+        hotelId: hotel.hotelId,
+        messageKey: item.messageKey,
+        deliveryType,
+        content,
+      })
+      : deliverWeComAuditNotice({
+        hotelId: hotel.hotelId,
+        messageKey: item.messageKey,
+        deliveryType,
+        content,
+        bodyPreview:
+          `${deliveryType} · ${hotel.hotelCode} · ${auditRecord.status}`,
+      })))
+  if (outcomes.every((outcome) => outcome.status === 'rejected')) {
+    throw new Error('MORNING_REPAIR_NOTICE_DELIVERY_FAILED')
   }
-  throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
+  return outcomes
 }
 
-const pmsRepairNoticeAvailableFor = (hotel) => {
-  const config = weComConfigFor(hotel.hotelId)
-  const repairBotReady = weComRepairBotReady()
-  const recipientCount = repairBotReady
-    ? weComRepairBotRecipientsForHotel(
-      weComRepairBotCredentials ?? {},
-      hotel.hotelId,
-    ).length
-    : 0
-  return selectWeComRepairNoticeChannel({
-    repairBotReady,
-    recipientCount,
-    groupWebhookEnabled: config.enabled,
-    groupWebhookConfigured: config.webhookConfigured,
-  }) !== null
-}
+const pmsRepairNoticeAvailableFor = (hotel) =>
+  repairNoticeChannelsFor(hotel).length > 0
 
 const scheduledPmsRepairAlertTick = async (now = new Date()) => {
   const attempts = hotels.map(async (hotel) => {
@@ -6848,7 +6894,15 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
     if (!incident) return null
     const messageKey =
       `${hotel.hotelId}:PMS_REPAIR_REQUIRED:${incident.incidentId}`
-    if (weComDeliveriesByKey.has(messageKey)) return null
+    const deliveryPlan = repairNoticeDeliveryPlan({
+      messageKey,
+      channels: repairNoticeChannelsFor(hotel),
+    })
+    if (
+      deliveryPlan.length > 0
+      && deliveryPlan.every((item) =>
+        weComDeliveriesByKey.has(item.messageKey))
+    ) return null
     try {
       return await deliverMorningRepairNotice({
         hotel,
@@ -6857,7 +6911,11 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
           status: 'PMS_REPAIR_REQUIRED',
         },
         deliveryType: 'PMS_REPAIR_REQUIRED',
-        content: pmsRepairNoticeContent({ hotel, incident }),
+        content: pmsRepairNoticeContent({
+          hotel,
+          incident,
+          publicOrigin: trustedDevicePublicOrigin,
+        }),
       })
     } catch (error) {
       process.stderr.write(`${JSON.stringify({
@@ -6994,6 +7052,7 @@ const repairNightlyBriefingHealthAudit = async ({
         `凌晨状态：${auditRecord.status}`,
         `状态码：${reasonCode}`,
         '请由OTA运营人员进入后台处理；系统不会重复登录。',
+        `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
       ].join('\n'),
     }).catch(() => {})
   }

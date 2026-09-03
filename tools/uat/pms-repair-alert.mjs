@@ -2,6 +2,23 @@ import { createHash } from 'node:crypto'
 
 export const PMS_REPAIR_STALE_AFTER_MS = 90 * 60 * 1000
 
+export const buildStoreRepairConsoleUrl = ({ publicOrigin, hotelCode }) => {
+  if (!/^[0-9]{3}$/u.test(String(hotelCode ?? ''))) {
+    throw new Error('PMS_REPAIR_HOTEL_CODE_INVALID')
+  }
+  const origin = new URL(String(publicOrigin ?? ''))
+  if (
+    origin.protocol !== 'https:'
+    || origin.username
+    || origin.password
+  ) {
+    throw new Error('PMS_REPAIR_PUBLIC_ORIGIN_INVALID')
+  }
+  const target = new URL('/ota-console/', origin.origin)
+  target.searchParams.set('repairHotel', hotelCode)
+  return target.toString()
+}
+
 const validTimestamp = (value) => {
   if (typeof value !== 'string' || value.trim() === '') return null
   const parsed = new Date(value)
@@ -88,7 +105,7 @@ export const pmsRepairIncidentFor = ({
   }
 }
 
-export const pmsRepairNoticeContent = ({ hotel, incident }) => {
+export const pmsRepairNoticeContent = ({ hotel, incident, publicOrigin }) => {
   const labels = {
     PMS_SNAPSHOT_INCOMPLETE: 'PMS快照不完整',
     PMS_DATA_STALE: 'PMS数据超过90分钟未更新',
@@ -103,6 +120,10 @@ export const pmsRepairNoticeContent = ({ hotel, incident }) => {
     '【PMS需要修复处理】',
     `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
     `原因：${reasons.join('；') || 'PMS状态异常'}`,
-    '请进入四方馆后台“异常处理”，点击“一键直达”完成修复。',
+    '处理：点击修复后台，登录后按页面指引操作。',
+    `修复后台：${buildStoreRepairConsoleUrl({
+      publicOrigin,
+      hotelCode: hotel.hotelCode,
+    })}`,
   ].join('\n')
 }

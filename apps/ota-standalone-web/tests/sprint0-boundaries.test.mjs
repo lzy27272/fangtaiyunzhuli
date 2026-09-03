@@ -102,6 +102,11 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.match(appSource, /PeoplePermissionsPage/)
   assert.match(appSource, /PersonalSecurityPage/)
   assert.match(appSource, /门店总览/)
+  assert.match(appSource, /REPAIR_HOTEL_QUERY_PARAM = 'repairHotel'/)
+  assert.match(appSource, /hotel\.hotelCode === initialRepairHotelCode/)
+  assert.match(appSource, /setSelectedTab\('repair'\)/)
+  assert.match(appSource, /当前账号没有.*门店的修复权限/)
+  assert.match(appSource, /clearRepairHotelFromLocation\(\)/)
   assert.match(storeConsoleSource, /ReportSourceConfigPage[\s\S]*canConfigure=\{canConfigure\}/)
   assert.match(storeConsoleSource, /MappingTargetPage[\s\S]*canConfigure=\{canRevenueConfigure\}/)
   assert.match(storeConsoleSource, /HistoryPage[\s\S]*canConfigure=\{canConfigure\}/)
@@ -141,6 +146,7 @@ test('operations console exposes store, exception, people and scoped store-detai
     /当前页面只能为此门店新增修复管理员/,
   )
   assert.match(weComRepairBotPanelSource, /门店播报与PMS修复助手/)
+  assert.match(weComRepairBotPanelSource, /同步在群内提醒并附带登录修复入口/)
   assert.doesNotMatch(weComRepairBotPanelSource, /当前门店未配置罗盘 PMS/)
   assert.doesNotMatch(weComRepairBotPanelSource, /<select/)
   assert.match(
