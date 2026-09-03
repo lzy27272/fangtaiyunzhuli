@@ -115,7 +115,7 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
 
   async function createPairingCode() {
     if (!context) {
-      setError('当前门店尚未载入，无法新增管理人员。')
+      setError('当前门店尚未载入，无法新增修复管理员。')
       return
     }
     setPairingLoading(true)
@@ -143,13 +143,12 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
       <div className="page-heading">
         <div>
           <p className="eyebrow">企业微信修复助手</p>
-          <h3>罗盘简报验证码修复助手</h3>
+          <h3>门店播报与PMS修复助手</h3>
           <p>
             服务器通过企业微信官方长连接接收消息，无需域名。
-            发现罗盘会话失效时，机器人会私聊发送验证码图片；
-            现有两位全局接收人继续保留；当前页面只能为已进入的门店新增管理人员。
-            门店管理人员只接收并处理其授权门店的验证码；
-            只有完成一次性绑定的账号可以回复“门店编号 验证码”。
+            当前门店发生PMS或播报异常时，机器人优先私聊已绑定的修复管理员；
+            罗盘验证码可在企微回复，可信设备门店按提示回到门店电脑完成官方验证。
+            现有两位全局接收人继续保留；当前页面只能为已进入的门店新增修复管理员。
           </p>
         </div>
         <b className={config?.paired && config.connected ? 'source-complete' : 'source-partial'}>
@@ -165,7 +164,7 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
             type="checkbox"
             onChange={(event) => setEnabled(event.target.checked)}
           />
-          启用罗盘验证码企业微信修复通道
+          启用企业微信门店修复接手通道
         </label>
         <label>
           企业微信智能机器人编号
@@ -243,11 +242,11 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
                 ? `${selectedHotelBinding.hotelCode} · ${selectedHotelBinding.displayName}（已绑定${selectedHotelBinding.pairedUserCount}人）`
                 : loading
                   ? '正在读取当前门店'
-                  : '当前门店未配置罗盘 PMS'
+                  : '当前门店管理员状态尚未载入'
             }
           />
           <small>
-            当前页面只能为此门店新增管理人员；新人员仅获得此门店的验证码修复权限，不会替换现有两位全局接收人。
+            当前页面只能为此门店新增修复管理员；新人员仅接收和处理此门店的修复任务，不会替换现有两位全局接收人。
           </small>
         </label>
       </div>
@@ -281,10 +280,10 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
                   >= selectedHotelBinding.pairedUserCapacity
               ? '该门店已达绑定上限'
               : selectedHotelBinding
-                ? `为${selectedHotelBinding.hotelCode}新增管理人员`
+                ? `为${selectedHotelBinding.hotelCode}新增修复管理员`
                 : loading
                   ? '正在读取当前门店'
-                  : '当前门店不支持管理员绑定'}
+                  : '当前门店管理员状态不可用'}
         </button>
       </div>
     </section>

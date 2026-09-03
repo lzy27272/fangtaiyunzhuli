@@ -170,6 +170,7 @@ import {
   fingerprintWeComRepairBotValue,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  selectWeComRepairNoticeChannel,
   WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
   WECOM_REPAIR_BOT_MAX_STORE_USERS,
   weComRepairBotRecipientsForHotel,
@@ -2894,7 +2895,6 @@ const weComRepairBotStatus = () => {
     weComRepairBotConfig.allowedUserIdSha256s
       .map((fingerprint) => fingerprint.slice(0, 16))
   const hotelBindings = hotels
-    .filter((hotel) => hotel.pmsSystemCode === 'LUOPAN_CLOUD')
     .map((hotel) => {
       const userIds =
         weComRepairBotCredentials?.hotelAllowedUserIds?.[hotel.hotelId] ?? []
@@ -2953,6 +2953,21 @@ const weComRepairBotStatusForHotel = (hotelId) => {
         expiresAt: null,
         attemptsRemaining: 0,
       },
+  }
+}
+
+const weComRepairBotPublicStatus = () => {
+  const status = weComRepairBotStatus()
+  return {
+    enabled: status.enabled,
+    credentialConfigured: status.credentialConfigured,
+    paired: status.paired,
+    connected: status.connected,
+    connectionStatus: status.connectionStatus,
+    lastAuthenticatedAt: status.lastAuthenticatedAt,
+    lastDisconnectedAt: status.lastDisconnectedAt,
+    lastErrorCode: status.lastErrorCode,
+    updatedAt: status.updatedAt,
   }
 }
 
@@ -3061,8 +3076,7 @@ if (weComRepairBotConfigPath && existsSync(weComRepairBotConfigPath)) {
     const hotelAllowedUserIdSha256s = Object.fromEntries(
       Object.entries(persistedHotelFingerprints)
         .filter(([hotelId]) => hotels.some((hotel) =>
-          hotel.hotelId === hotelId
-          && hotel.pmsSystemCode === 'LUOPAN_CLOUD'))
+          hotel.hotelId === hotelId))
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([hotelId, values]) => {
           const fingerprints = [...new Set(
@@ -3232,9 +3246,7 @@ const startWeComRepairBotPairing = (hotelId) => {
   ) {
     throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
   }
-  const hotel = hotels.find((candidate) =>
-    candidate.hotelId === hotelId
-    && candidate.pmsSystemCode === 'LUOPAN_CLOUD')
+  const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
   if (!hotel) {
     throw new Error('WECOM_REPAIR_BOT_PAIRING_HOTEL_INVALID')
   }
@@ -6479,7 +6491,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     ? body.from.userid.trim()
     : ''
   if (body?.chattype !== 'single' || !userId) {
-    await replyText(frame, '请在与机器人的单聊中完成验证码修复。')
+    await replyText(frame, '请在与机器人的单聊中完成门店修复接手。')
     return
   }
 
@@ -6524,8 +6536,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
       let reply
       if (pairing.scope?.type === 'HOTEL') {
         const hotel = hotels.find((candidate) =>
-          candidate.hotelId === pairing.scope.hotelId
-          && candidate.pmsSystemCode === 'LUOPAN_CLOUD')
+          candidate.hotelId === pairing.scope.hotelId)
         if (!hotel) {
           throw new Error('WECOM_REPAIR_BOT_PAIRING_HOTEL_INVALID')
         }
@@ -6540,7 +6551,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
           ...hotelAllowedUserIds,
           [hotel.hotelId]: hotelUserIds,
         }
-        reply = `绑定成功。你已获授权处理 ${hotel.hotelCode} ${hotel.hotelName}；该门店当前已绑定${hotelUserIds.length}名管理人员。`
+        reply = `绑定成功。你已获授权处理 ${hotel.hotelCode} ${hotel.hotelName}；该门店当前已绑定${hotelUserIds.length}名管理人员。发送“状态”可查看该门店待处理修复任务。`
       } else {
         allowedUserIds = existingAllowedUserIds.includes(pairing.userId)
           ? existingAllowedUserIds
@@ -6548,7 +6559,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         if (allowedUserIds.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
           throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
         }
-        reply = `绑定成功。当前已保留${allowedUserIds.length}/2名全局接收人。`
+        reply = `绑定成功。当前已保留${allowedUserIds.length}/2名全局接收人。发送“状态”可查看待处理修复任务。`
       }
       weComRepairBotCredentials = normalizeWeComRepairBotCredentials({
         ...weComRepairBotCredentials,
@@ -6643,7 +6654,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
       frame,
       statusLines.length > 0
         ? `已安全连接。${statusLines.join('')}`
-        : '已安全连接，目前没有等待填写验证码的门店。',
+        : '已安全连接，目前没有待处理的门店修复任务。',
     )
     return
   }
@@ -6679,7 +6690,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
 
   await replyText(
     frame,
-    '仅支持“门店编号 验证码”，例如：014 5dm8；可发送“状态”查看待处理门店。',
+    '可发送“状态”查看待处理门店；罗盘门店等待验证码时，可发送“门店编号 验证码”，例如：014 5dm8。',
   )
 }
 
@@ -6771,7 +6782,28 @@ const deliverMorningRepairNotice = async ({
   const messageKey =
     `${hotel.hotelId}:${deliveryType}:${auditRecord.auditKey}`
   const config = weComConfigFor(hotel.hotelId)
-  if (config.enabled && config.webhookConfigured) {
+  const repairBotReady = weComRepairBotReady()
+  const recipientCount = repairBotReady
+    ? weComRepairBotRecipientsForHotel(
+      weComRepairBotCredentials ?? {},
+      hotel.hotelId,
+    ).length
+    : 0
+  const channel = selectWeComRepairNoticeChannel({
+    repairBotReady,
+    recipientCount,
+    groupWebhookEnabled: config.enabled,
+    groupWebhookConfigured: config.webhookConfigured,
+  })
+  if (channel === 'WECOM_LONG_CONNECTION') {
+    return deliverWeComRepairBotDirectMessage({
+      hotelId: hotel.hotelId,
+      messageKey,
+      deliveryType,
+      content,
+    })
+  }
+  if (channel === 'WECOM_GROUP_WEBHOOK') {
     return deliverWeComAuditNotice({
       hotelId: hotel.hotelId,
       messageKey,
@@ -6781,25 +6813,24 @@ const deliverMorningRepairNotice = async ({
         `${deliveryType} · ${hotel.hotelCode} · ${auditRecord.status}`,
     })
   }
-  if (weComRepairBotReady()) {
-    return deliverWeComRepairBotDirectMessage({
-      hotelId: hotel.hotelId,
-      messageKey,
-      deliveryType,
-      content,
-    })
-  }
   throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
 }
 
 const pmsRepairNoticeAvailableFor = (hotel) => {
   const config = weComConfigFor(hotel.hotelId)
-  if (config.enabled && config.webhookConfigured) return true
-  return weComRepairBotReady()
-    && weComRepairBotRecipientsForHotel(
+  const repairBotReady = weComRepairBotReady()
+  const recipientCount = repairBotReady
+    ? weComRepairBotRecipientsForHotel(
       weComRepairBotCredentials ?? {},
       hotel.hotelId,
-    ).length > 0
+    ).length
+    : 0
+  return selectWeComRepairNoticeChannel({
+    repairBotReady,
+    recipientCount,
+    groupWebhookEnabled: config.enabled,
+    groupWebhookConfigured: config.webhookConfigured,
+  }) !== null
 }
 
 const scheduledPmsRepairAlertTick = async (now = new Date()) => {
@@ -8233,7 +8264,7 @@ const server = createServer(async (request, response) => {
           ready: luopanAssistedRepairReady(),
           reasonCode: luopanRepairReasonCode(),
           webLinkReady: luopanWebRepairReady,
-          weComRepairBot: weComRepairBotStatus(),
+          weComRepairBot: weComRepairBotPublicStatus(),
         },
         bieyanghongAssistedRepair: {
           enabled:

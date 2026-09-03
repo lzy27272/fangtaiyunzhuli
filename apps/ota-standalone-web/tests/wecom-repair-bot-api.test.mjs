@@ -101,6 +101,10 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     assert.equal(initial.pairedUserCapacity, 2)
     assert.equal(initial.hotelPairedUserCount, 0)
     assert.equal(Array.isArray(initial.hotelBindings), true)
+    assert.deepEqual(
+      initial.hotelBindings.map((binding) => binding.hotelCode),
+      ['001', '002'],
+    )
     assert.equal(
       initial.hotelBindings.every((binding) =>
         binding.pairedUserCount === 0
@@ -110,6 +114,7 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     assert.deepEqual(initial.allowedUserFingerprints, [])
 
     const tenantId = '10000000-0000-4000-8000-000000000001'
+    const trustedDeviceHotelId = '20000000-0000-4000-8000-000000000001'
     const luopanHotelId = '20000000-0000-4000-8000-000000000002'
     const scopedEndpoint =
       `http://127.0.0.1:${started.port}/api/v1/ota/tenants/`
@@ -128,6 +133,20 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
       scoped.hotelPairedUserCount,
       scoped.hotelBindings[0].pairedUserCount,
     )
+
+    const trustedDeviceScopedResponse = await fetch(
+      `http://127.0.0.1:${started.port}/api/v1/ota/tenants/`
+        + `${tenantId}/hotels/${trustedDeviceHotelId}`
+        + '/wecom-repair-bot-config',
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    assert.equal(trustedDeviceScopedResponse.status, 200)
+    const trustedDeviceScoped = (await trustedDeviceScopedResponse.json()).data
+    assert.deepEqual(
+      trustedDeviceScoped.hotelBindings.map((binding) => binding.hotelId),
+      [trustedDeviceHotelId],
+    )
+    assert.equal(trustedDeviceScoped.hotelPairedUserCount, 0)
 
     const crossStoreBodyResponse = await fetch(
       `${scopedEndpoint}/wecom-repair-bot-pairing`,

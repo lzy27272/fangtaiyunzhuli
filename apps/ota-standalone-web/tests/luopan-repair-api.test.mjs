@@ -84,6 +84,21 @@ test('repair page is no-store and assisted repair stays disabled by default', as
       ),
       false,
     )
+    for (const protectedField of [
+      'hotelBindings',
+      'allowedUserFingerprint',
+      'allowedUserFingerprints',
+      'botIdFingerprint',
+      'pairing',
+    ]) {
+      assert.equal(
+        Object.hasOwn(
+          healthBody.luopanAssistedRepair.weComRepairBot,
+          protectedField,
+        ),
+        false,
+      )
+    }
 
     const page = await fetch(
       `http://127.0.0.1:${port}/api/v1/luopan-repair`,

@@ -8,6 +8,7 @@ import {
   deliverWeComRepairBotToAllowedUsers,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  selectWeComRepairNoticeChannel,
   weComRepairBotRecipientsForHotel,
 } from '../../../tools/uat/wecom/src/wecom-repair-bot.mjs'
 
@@ -100,6 +101,27 @@ test('store managers are scoped to their hotel while legacy users stay global', 
       .includes('other.manager'),
     false,
   )
+})
+
+test('repair notices prefer the scoped direct channel over the failed broadcast path', () => {
+  assert.equal(selectWeComRepairNoticeChannel({
+    repairBotReady: true,
+    recipientCount: 1,
+    groupWebhookEnabled: true,
+    groupWebhookConfigured: true,
+  }), 'WECOM_LONG_CONNECTION')
+  assert.equal(selectWeComRepairNoticeChannel({
+    repairBotReady: false,
+    recipientCount: 0,
+    groupWebhookEnabled: true,
+    groupWebhookConfigured: true,
+  }), 'WECOM_GROUP_WEBHOOK')
+  assert.equal(selectWeComRepairNoticeChannel({
+    repairBotReady: true,
+    recipientCount: 0,
+    groupWebhookEnabled: false,
+    groupWebhookConfigured: false,
+  }), null)
 })
 
 test('credentials migrate one legacy user and allow at most two users', () => {

@@ -138,8 +138,10 @@ test('operations console exposes store, exception, people and scoped store-detai
   )
   assert.match(
     weComRepairBotPanelSource,
-    /当前页面只能为此门店新增管理人员/,
+    /当前页面只能为此门店新增修复管理员/,
   )
+  assert.match(weComRepairBotPanelSource, /门店播报与PMS修复助手/)
+  assert.doesNotMatch(weComRepairBotPanelSource, /当前门店未配置罗盘 PMS/)
   assert.doesNotMatch(weComRepairBotPanelSource, /<select/)
   assert.match(
     businessApiSource,
