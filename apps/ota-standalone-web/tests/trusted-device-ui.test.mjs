@@ -63,7 +63,7 @@ test('Bieyanghong configuration keeps trusted-device collection and exposes a se
     await readSource(
       '../../../infra/ota-standalone-server/scripts/Publish-OtaStandaloneServer.ps1',
     ),
-    /tools\\uat\\bieyanghong-cookie-validation\.mjs/u,
+    /tools\/uat\/bieyanghong-cookie-validation\.mjs/u,
   )
   assert.match(panel, /登录会话只留在门店电脑/u)
   assert.match(panel, /下载安装并进入登录/u)
