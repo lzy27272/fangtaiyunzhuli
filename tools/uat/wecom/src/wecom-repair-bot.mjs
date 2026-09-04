@@ -330,8 +330,15 @@ export const createWeComRepairBotRuntime = ({
   createClient = (options) => new WSClient(options),
   onTextMessage = async () => {},
   onStatusChanged = () => {},
+  minimumProactiveIntervalMs = 500,
+  now = () => Date.now(),
+  wait = (milliseconds) => new Promise(
+    (resolve) => setTimeout(resolve, milliseconds),
+  ),
 } = {}) => {
   let client = null
+  let proactiveQueue = Promise.resolve()
+  let lastProactiveCompletedAt = null
   let state = {
     connectionStatus: 'DISABLED',
     lastAuthenticatedAt: null,
@@ -374,6 +381,29 @@ export const createWeComRepairBotRuntime = ({
       msgtype: 'markdown',
       markdown: { content: String(content ?? '').slice(0, 1500) },
     })
+  }
+
+  const proactiveIntervalMs =
+    Number.isInteger(minimumProactiveIntervalMs)
+    && minimumProactiveIntervalMs >= 0
+    && minimumProactiveIntervalMs <= 5_000
+      ? minimumProactiveIntervalMs
+      : 500
+  const enqueueProactive = (operation) => {
+    const queued = proactiveQueue.then(async () => {
+      if (lastProactiveCompletedAt !== null) {
+        const remaining = proactiveIntervalMs
+          - (now() - lastProactiveCompletedAt)
+        if (remaining > 0) await wait(remaining)
+      }
+      try {
+        return await operation()
+      } finally {
+        lastProactiveCompletedAt = now()
+      }
+    })
+    proactiveQueue = queued.catch(() => {})
+    return queued
   }
 
   return {
@@ -461,21 +491,23 @@ export const createWeComRepairBotRuntime = ({
       return replyText(frame, content)
     },
     async sendText(userId, content) {
-      return sendText(userId, content)
+      return enqueueProactive(() => sendText(userId, content))
     },
     async sendCaptcha({ userId, captcha, content }) {
-      if (!Buffer.isBuffer(captcha) || captcha.length < 16) {
-        throw new Error('WECOM_REPAIR_BOT_CAPTCHA_INVALID')
-      }
-      if (!client || state.connectionStatus !== 'AUTHENTICATED') {
-        throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
-      }
-      const uploaded = await client.uploadMedia(captcha, {
-        type: 'image',
-        filename: 'luopan-captcha.png',
+      return enqueueProactive(async () => {
+        if (!Buffer.isBuffer(captcha) || captcha.length < 16) {
+          throw new Error('WECOM_REPAIR_BOT_CAPTCHA_INVALID')
+        }
+        if (!client || state.connectionStatus !== 'AUTHENTICATED') {
+          throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+        }
+        const uploaded = await client.uploadMedia(captcha, {
+          type: 'image',
+          filename: 'luopan-captcha.png',
+        })
+        await client.sendMediaMessage(userId, 'image', uploaded.media_id)
+        return sendText(userId, content)
       })
-      await client.sendMediaMessage(userId, 'image', uploaded.media_id)
-      return sendText(userId, content)
     },
   }
 }

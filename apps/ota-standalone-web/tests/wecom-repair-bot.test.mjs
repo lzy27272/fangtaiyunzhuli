@@ -313,3 +313,52 @@ test('runtime authenticates, receives text and sends captcha without logging fra
     ['upload', 'media', 'message'],
   )
 })
+
+test('runtime serializes and spaces proactive manager messages', async () => {
+  class FakeClient extends EventEmitter {
+    isConnected = false
+    sent = []
+    connect() {
+      this.isConnected = true
+      this.emit('authenticated')
+    }
+    disconnect() {
+      this.isConnected = false
+    }
+    async sendMessage(userId) {
+      this.sent.push(userId)
+      return { errcode: 0 }
+    }
+  }
+  let fake
+  let clock = 1_000
+  const waits = []
+  const runtime = createWeComRepairBotRuntime({
+    createClient: () => {
+      fake = new FakeClient()
+      return fake
+    },
+    minimumProactiveIntervalMs: 500,
+    now: () => clock,
+    wait: async (milliseconds) => {
+      waits.push(milliseconds)
+      clock += milliseconds
+    },
+  })
+  runtime.configure({
+    enabled: true,
+    credentials: {
+      botId: 'aib-example-bot',
+      secret: 'example_secret_value_1234567890',
+    },
+  })
+
+  await Promise.all([
+    runtime.sendText('first.user', '第一条'),
+    runtime.sendText('second.user', '第二条'),
+    runtime.sendText('third.user', '第三条'),
+  ])
+
+  assert.deepEqual(fake.sent, ['first.user', 'second.user', 'third.user'])
+  assert.deepEqual(waits, [500, 500])
+})
