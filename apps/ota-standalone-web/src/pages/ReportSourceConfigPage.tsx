@@ -423,7 +423,11 @@ export function ReportSourceConfigPage({
   }
 
   async function validatePmsCookie() {
-    if (!context || !canConfigure || hotelCode !== '001') return
+    if (
+      !context
+      || !canConfigure
+      || pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
+    ) return
     setPmsCookieError('')
     setPmsCookieValidation(null)
     const cookieHeader = pmsCookieDraft.trim()
@@ -573,12 +577,11 @@ export function ReportSourceConfigPage({
                 <p>厂家名称已保存到门店档案。请先完成该厂家的只读数据接口适配、字段映射和单店校验；通过前不会启用采集或播报。</p>
               </article>
             )}
-            {pmsSystemCode === 'MEITUAN_BIEYANGHONG'
-            && hotelCode === '001' ? (
+            {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
               <article className="report-source-card pms-login-card pms-cookie-validation-card">
                 <header>
                   <div>
-                    <span>001 管理员验证</span>
+                    <span>{hotelCode} 管理员验证</span>
                     <strong>更新并验证 PMS Cookie</strong>
                   </div>
                   <span className="mode-chip">
@@ -589,7 +592,7 @@ export function ReportSourceConfigPage({
                   </span>
                 </header>
                 <p>
-                  粘贴当前 001 门店的 Cookie 后，服务器只读取营业日和已配置报表进行验证。
+                  粘贴当前 {hotelCode} 门店的 Cookie 后，服务器只读取营业日和已配置报表进行验证。
                   只有全部通过才会加密替换；失败保留旧 Cookie，不更新经营数据、不触发播报。
                 </p>
                 <div className="report-source-form">
@@ -612,7 +615,7 @@ export function ReportSourceConfigPage({
                   </label>
                 </div>
                 <footer>
-                  <span>本机可信设备仍是正式采集来源；本次只验证备用云端 Cookie 能否读取 PMS。</span>
+                  <span>验证只作用于当前门店；正式采集仍按本门店已启用的采集方式执行。</span>
                   <button
                     disabled={validatingPmsCookie || !pmsCookieDraft.trim()}
                     type="button"

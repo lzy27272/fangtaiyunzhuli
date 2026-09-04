@@ -79,7 +79,7 @@ const responseFor = (path) => {
   }
 }
 
-test('001 Cookie validation performs a read-only complete collection without returning the Cookie', async () => {
+test('current-store Cookie validation performs a read-only complete collection without returning the Cookie', async () => {
   const requests = []
   const result = await validateBieyanghongCookieAccess({
     hotel,

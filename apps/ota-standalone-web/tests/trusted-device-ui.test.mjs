@@ -7,7 +7,7 @@ const readSource = (relativePath) => readFile(
   'utf8',
 )
 
-test('Bieyanghong configuration keeps trusted-device collection and exposes a separate 001 Cookie validation', async () => {
+test('every Bieyanghong store exposes isolated Cookie validation beside trusted-device collection', async () => {
   const [
     page,
     panel,
@@ -32,7 +32,11 @@ test('Bieyanghong configuration keeps trusted-device collection and exposes a se
   assert.match(page, /更新并验证 PMS Cookie/u)
   assert.match(page, /validateAndUpdatePmsCookie/u)
   assert.match(page, /失败保留旧 Cookie，不更新经营数据、不触发播报/u)
-  assert.match(page, /hotelCode === '001'/u)
+  assert.match(page, /pmsSystemCode !== 'MEITUAN_BIEYANGHONG'/u)
+  assert.doesNotMatch(page, /hotelCode === '001'/u)
+  assert.match(page, /\{hotelCode\} 管理员验证/u)
+  assert.match(page, /当前 \{hotelCode\} 门店/u)
+  assert.match(page, /验证只作用于当前门店/u)
   assert.match(page, /PMS配置/u)
   assert.match(page, /PMS 接口与 Cookie/u)
   assert.match(page, /当前门店的报表名称、接口地址和 Cookie 均独立保存/u)
@@ -61,6 +65,10 @@ test('Bieyanghong configuration keeps trusted-device collection and exposes a se
   )
   assert.ok(readOnlyValidationAt >= 0)
   assert.ok(replacementAt > readOnlyValidationAt)
+  assert.doesNotMatch(
+    validationOperation,
+    /hotel\.hotelCode !== BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE/u,
+  )
   assert.doesNotMatch(
     validationOperation,
     /appendAndPersistSnapshot|deliverWeComSnapshot/u,

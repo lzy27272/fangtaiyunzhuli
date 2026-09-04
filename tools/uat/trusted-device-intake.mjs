@@ -893,6 +893,16 @@ export const createTrustedDeviceIntakeStore = ({
     return Boolean(device && validScopeAnchor(state.scopeAnchor))
   }
 
+  const approvedPmsLoginHotelId = () => {
+    if (
+      !validScopeAnchor(state.scopeAnchor)
+      || scopeApprovalStatus(state.scopeAnchor) !== 'APPROVED'
+    ) return null
+    return canonicalPmsLoginHotelId(openStoreScope(
+      state.scopeAnchor.sealedExpectedPmsLoginHotelId,
+    ))
+  }
+
   const approveStoreScope = ({ now = new Date() } = {}) => {
     const device = activeDevice()
     if (!device || !validScopeAnchor(state.scopeAnchor)) {
@@ -1134,6 +1144,7 @@ export const createTrustedDeviceIntakeStore = ({
     issueScopeChallenge,
     verifyScopeProof,
     hasBoundStoreScope,
+    approvedPmsLoginHotelId,
     approveStoreScope,
     consumeScopeReceipt,
     acceptSnapshot,

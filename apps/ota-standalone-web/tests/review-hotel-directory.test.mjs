@@ -300,7 +300,10 @@ test('created review hotels are returned by the directory and survive restart', 
             cookieUpdate: index === 0
               ? {
                   action: 'REPLACE',
-                  value: 'synthetic_managed_cookie=isolated',
+                  value: [
+                    'hotelpms_login_hotel_id=90090',
+                    'synthetic_managed_cookie=isolated',
+                  ].join('; '),
                 }
               : { action: 'KEEP' },
           })),
@@ -308,6 +311,27 @@ test('created review hotels are returned by the directory and survive restart', 
       },
     )
     assert.equal(saveManagedCookie.status, 200)
+    const rejectCrossStoreManagedCookie = await fetch(
+      `${managedPath}/pms-cookie-validation`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE',
+          cookieHeader: [
+            'hotelpms_login_hotel_id=90091',
+            'synthetic_candidate_cookie=wrong-store',
+          ].join('; '),
+        }),
+      },
+    )
+    assert.equal(rejectCrossStoreManagedCookie.status, 400)
+    assert.deepEqual(await rejectCrossStoreManagedCookie.json(), {
+      code: 'BIEYANGHONG_STORE_SCOPE_INVALID',
+    })
 
     templateSources = templateSources.map((source) =>
       source.sourceId === updatedTemplateSourceId

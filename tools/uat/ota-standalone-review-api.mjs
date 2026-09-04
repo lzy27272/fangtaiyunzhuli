@@ -5671,9 +5671,13 @@ const pmsCookieValue = (cookieHeader, name) => {
 }
 
 const expectedBieyanghongHotelScope = (hotelId) => {
+  const hotel = selectedHotel(hotelId)
   const sources = reportSourcesByHotel.get(hotelId) ?? []
   const encryptedSecrets = secretsForHotel(hotelId)
   const expectedHotelIds = new Set()
+  const approvedTrustedScope = trustedDeviceStoreFor(hotel)
+    ?.approvedPmsLoginHotelId()
+  if (approvedTrustedScope) expectedHotelIds.add(approvedTrustedScope)
   for (const source of sources) {
     const record = encryptedSecrets[source.sourceId]
     if (!record) continue
@@ -5696,11 +5700,8 @@ const expectedBieyanghongHotelScope = (hotelId) => {
 
 const replaceBieyanghongReportCookies = (hotelId, cookieHeader) => {
   const hotel = selectedHotel(hotelId)
-  if (
-    hotel.hotelCode !== BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
-    || hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
-  ) {
-    throw new Error('BIEYANGHONG_REPAIR_PILOT_SCOPE_INVALID')
+  if (hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG') {
+    throw new Error('BIEYANGHONG_PMS_SCOPE_INVALID')
   }
   const expectedHotelId = expectedBieyanghongHotelScope(hotelId)
   const authenticatedHotelId = pmsCookieValue(
@@ -5747,11 +5748,8 @@ const validateAndReplaceBieyanghongReportCookies = async (
   const operation = (async () => {
     const normalizedCookieHeader = normalizeBieyanghongCookieHeader(cookieHeader)
     const hotel = selectedHotel(hotelId)
-    if (
-      hotel.hotelCode !== BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
-      || hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
-    ) {
-      throw new Error('BIEYANGHONG_REPAIR_PILOT_SCOPE_INVALID')
+    if (hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG') {
+      throw new Error('BIEYANGHONG_PMS_SCOPE_INVALID')
     }
     if (!reportSourcesByHotel.has(hotelId)) {
       ensureReportSourcesForEveryHotel()

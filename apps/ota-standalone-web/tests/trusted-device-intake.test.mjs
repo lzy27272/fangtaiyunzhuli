@@ -128,6 +128,7 @@ test('001 trusted device enrollment stores only public key and rejects replay', 
     assert.equal(device.status, 'ACTIVE')
     assert.equal(store.status().device.deviceId, device.deviceId)
     assert.equal(store.status().device.cutoverReady, false)
+    assert.equal(store.approvedPmsLoginHotelId(), null)
 
     const persisted = await readFile(path, 'utf8')
     assert.doesNotMatch(persisted, new RegExp(enrollment.enrollmentCode, 'u'))
@@ -196,6 +197,7 @@ test('001 trusted device enrollment stores only public key and rejects replay', 
       configDigest: 'a'.repeat(64),
       now: requestNow,
     })
+    assert.equal(store.approvedPmsLoginHotelId(), null)
     const parallelChallenge = store.issueScopeChallenge({
       deviceId: device.deviceId,
       now: requestNow,
@@ -275,6 +277,7 @@ test('001 trusted device enrollment stores only public key and rejects replay', 
       /TRUSTED_DEVICE_SCOPE_APPROVAL_REQUIRED/u,
     )
     store.approveStoreScope({ now: requestNow })
+    assert.equal(store.approvedPmsLoginHotelId(), '1001001')
     const snapshotHash = 'b'.repeat(64)
     store.beginCutover({
       deviceId: device.deviceId,
