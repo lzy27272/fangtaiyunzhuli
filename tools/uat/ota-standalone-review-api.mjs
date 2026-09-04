@@ -6827,9 +6827,10 @@ const deliverMorningRepairNotice = async ({
   auditRecord,
   deliveryType,
   content,
+  messageKey = null,
 }) => {
-  const messageKey =
-    `${hotel.hotelId}:${deliveryType}:${auditRecord.auditKey}`
+  const resolvedMessageKey = messageKey
+    ?? `${hotel.hotelId}:${deliveryType}:${auditRecord.auditKey}`
   const availableChannels = repairNoticeChannelsFor(hotel)
   const channels = shouldFanOutWeComRepairNotice(deliveryType)
     ? availableChannels
@@ -6838,7 +6839,7 @@ const deliverMorningRepairNotice = async ({
     throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
   }
   const plan = planWeComRepairNoticeDeliveries({
-    messageKey,
+    messageKey: resolvedMessageKey,
     channels,
     deliveryForKey: (key) => weComDeliveriesByKey.get(key),
   })
@@ -6905,6 +6906,7 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
           auditKey: incident.incidentId,
           status: 'PMS_REPAIR_REQUIRED',
         },
+        messageKey,
         deliveryType: 'PMS_REPAIR_REQUIRED',
         content: pmsRepairNoticeContent({
           hotel,

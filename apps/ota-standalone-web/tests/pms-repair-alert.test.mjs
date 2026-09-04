@@ -181,6 +181,25 @@ test('Luopan reauthentication notice routes the manager to the captcha bot', () 
   assert.match(key, /:LUOPAN_GUIDANCE_V1:REAUTH$/u)
 })
 
+test('scheduled Luopan repair delivery uses the versioned provider guidance key', () => {
+  const apiSource = fs.readFileSync(
+    new URL(
+      '../../../tools/uat/ota-standalone-review-api.mjs',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+
+  assert.match(
+    apiSource,
+    /const messageKey = pmsRepairNoticeMessageKey\([\s\S]{0,1600}deliverMorningRepairNotice\(\{[\s\S]{0,220}messageKey,/u,
+  )
+  assert.match(
+    apiSource,
+    /const resolvedMessageKey = messageKey[\s\S]{0,160}\?\? `\$\{hotel\.hotelId\}:\$\{deliveryType\}:\$\{auditRecord\.auditKey\}`/u,
+  )
+})
+
 test('repair console links accept only HTTPS origins and three-digit store codes', () => {
   assert.equal(buildStoreRepairConsoleUrl({
     publicOrigin: 'https://www.sfgzt.cn/ignored/path?secret=no',
