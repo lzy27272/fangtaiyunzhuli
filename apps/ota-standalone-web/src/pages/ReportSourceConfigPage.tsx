@@ -2,13 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   loadPmsLoginConfig,
   loadReportSources,
-  savePmsLoginConfig,
   saveReportSources,
   triggerLiveCollection,
-  validateAndUpdatePmsCookie,
   type CalculationRole,
   type HotelContext,
-  type PmsCookieValidationView,
   type PmsLoginConfigView,
   type PmsSystemCode,
   type ReportSourceInput,
@@ -26,6 +23,7 @@ import { DataAccessOverviewPanel } from './DataAccessOverviewPanel'
 import { TrustedDevicePanel } from './TrustedDevicePanel'
 import { loadTrustedDeviceStatus } from '../api/trustedDevice'
 import { businessErrorMessage } from '../ui/businessDisplay'
+import { BieyanghongCookieRepairPanel } from './BieyanghongCookieRepairPanel'
 
 interface Props {
   context: HotelContext | null
@@ -122,19 +120,8 @@ export function ReportSourceConfigPage({
   const [notice, setNotice] = useState('')
   const [pmsLoginConfig, setPmsLoginConfig] =
     useState<PmsLoginConfigView | null>(null)
-  const [pmsUsername, setPmsUsername] = useState('')
-  const [pmsPassword, setPmsPassword] = useState('')
-  const [clearPmsLogin, setClearPmsLogin] = useState(false)
-  const [savingPmsLogin, setSavingPmsLogin] = useState(false)
-  const [pmsLoginError, setPmsLoginError] = useState('')
-  const [pmsLoginNotice, setPmsLoginNotice] = useState('')
   const [trustedDeviceEligible, setTrustedDeviceEligible] =
     useState<boolean | null>(null)
-  const [pmsCookieDraft, setPmsCookieDraft] = useState('')
-  const [validatingPmsCookie, setValidatingPmsCookie] = useState(false)
-  const [pmsCookieError, setPmsCookieError] = useState('')
-  const [pmsCookieValidation, setPmsCookieValidation] =
-    useState<PmsCookieValidationView | null>(null)
   const [overviewVersion, setOverviewVersion] = useState(0)
 
   useEffect(() => {
@@ -169,14 +156,6 @@ export function ReportSourceConfigPage({
   }, [context])
 
   useEffect(() => {
-    setPmsUsername('')
-    setPmsPassword('')
-    setClearPmsLogin(false)
-    setPmsLoginError('')
-    setPmsLoginNotice('')
-    setPmsCookieDraft('')
-    setPmsCookieError('')
-    setPmsCookieValidation(null)
     if (!context) {
       setPmsLoginConfig(null)
       setTrustedDeviceEligible(null)
@@ -196,7 +175,7 @@ export function ReportSourceConfigPage({
       })
       .catch((cause) => {
         if (!cancelled) {
-          setPmsLoginError(
+          setError(
             businessErrorMessage(cause, '读取酒店系统登录配置失败'),
           )
         }
@@ -378,86 +357,6 @@ export function ReportSourceConfigPage({
     }
   }
 
-  async function savePmsCredentials() {
-    if (!context || !canConfigure) return
-    setPmsLoginError('')
-    setPmsLoginNotice('')
-    const username = pmsUsername.trim()
-    if (
-      !clearPmsLogin
-      && (
-        !username
-        || !pmsPassword
-        || /[\r\n\u0000]/.test(username)
-        || /[\r\n\u0000]/.test(pmsPassword)
-      )
-    ) {
-      setPmsLoginError('请完整填写账号和密码，且不能包含换行或空字符。')
-      return
-    }
-    setSavingPmsLogin(true)
-    try {
-      const saved = await savePmsLoginConfig(
-        context,
-        clearPmsLogin
-          ? { action: 'CLEAR' }
-          : { action: 'REPLACE', username, password: pmsPassword },
-      )
-      setPmsLoginConfig(saved)
-      setPmsUsername('')
-      setPmsPassword('')
-      setClearPmsLogin(false)
-      setOverviewVersion((current) => current + 1)
-      setPmsLoginNotice(
-        saved.configured
-          ? '酒店系统账号密码已加密保存，页面输入已清空且不会回显。'
-          : '酒店系统账号密码配置已清除。',
-      )
-    } catch (cause) {
-      setPmsLoginError(
-        businessErrorMessage(cause, '保存酒店系统登录配置失败'),
-      )
-    } finally {
-      setSavingPmsLogin(false)
-    }
-  }
-
-  async function validatePmsCookie() {
-    if (
-      !context
-      || !canConfigure
-      || pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
-    ) return
-    setPmsCookieError('')
-    setPmsCookieValidation(null)
-    const cookieHeader = pmsCookieDraft.trim()
-    if (
-      !cookieHeader
-      || cookieHeader.length > 16 * 1024
-      || /[\r\n\u0000]/.test(cookieHeader)
-      || /^cookie\s*:/i.test(cookieHeader)
-    ) {
-      setPmsCookieError('请只粘贴 Cookie 原文，不要包含“Cookie:”前缀、换行或空字符。')
-      return
-    }
-    setValidatingPmsCookie(true)
-    try {
-      const validation = await validateAndUpdatePmsCookie(context, cookieHeader)
-      setPmsCookieDraft('')
-      setPmsCookieValidation(validation)
-      const refreshedSources = await loadReportSources(context)
-      setSources(refreshedSources)
-      setOverviewVersion((current) => current + 1)
-    } catch (cause) {
-      setPmsCookieDraft('')
-      setPmsCookieError(
-        businessErrorMessage(cause, 'Cookie 验证失败；旧 Cookie 未被覆盖'),
-      )
-    } finally {
-      setValidatingPmsCookie(false)
-    }
-  }
-
   return (
     <section className="page-card">
       <div className="page-heading">
@@ -472,7 +371,7 @@ export function ReportSourceConfigPage({
       <div className="collection-step-nav" aria-label="采集设置步骤">
         {([
           ['overview', '状态总览', '先看是否正常'],
-          ['pms', 'PMS配置', '设备、Cookie与接口地址'],
+          ['pms', 'PMS配置', 'Cookie与接口地址'],
           ['ota', '渠道平台', '携程、美团等'],
           ['reports', '高级报表', '接口与登录凭据'],
         ] as const).map(([code, label, detail], index) => (
@@ -555,12 +454,14 @@ export function ReportSourceConfigPage({
               </footer>
             </article>
             {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
-              <TrustedDevicePanel
-                canRevokeDevice={canConfigure}
-                context={context}
-                onStatusChanged={() =>
-                  setOverviewVersion((current) => current + 1)}
-              />
+              trustedDeviceEligible === true ? (
+                <TrustedDevicePanel
+                  canRevokeDevice={canConfigure}
+                  context={context}
+                  onStatusChanged={() =>
+                    setOverviewVersion((current) => current + 1)}
+                />
+              ) : null
             ) : pmsSystemCode === 'LUOPAN_CLOUD' ? (
               <LuopanBrowserConfigPanel
                 canConfigure={canConfigure}
@@ -577,65 +478,22 @@ export function ReportSourceConfigPage({
                 <p>厂家名称已保存到门店档案。请先完成该厂家的只读数据接口适配、字段映射和单店校验；通过前不会启用采集或播报。</p>
               </article>
             )}
-            {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
-              <article className="report-source-card pms-login-card pms-cookie-validation-card">
-                <header>
-                  <div>
-                    <span>{hotelCode} 管理员验证</span>
-                    <strong>更新并验证 PMS Cookie</strong>
-                  </div>
-                  <span className="mode-chip">
-                    {sources.some((source) => source.enabled)
-                    && sources.filter((source) => source.enabled).every(
-                      (source) => source.cookieConfigured,
-                    ) ? '已安全配置' : '待配置'}
-                  </span>
-                </header>
-                <p>
-                  粘贴当前 {hotelCode} 门店的 Cookie 后，服务器只读取营业日和已配置报表进行验证。
-                  只有全部通过才会加密替换；失败保留旧 Cookie，不更新经营数据、不触发播报。
-                </p>
-                <div className="report-source-form">
-                  <label className="wide-field cookie-field">
-                    PMS Cookie 原文
-                    <input
-                      autoComplete="off"
-                      disabled={!canConfigure || validatingPmsCookie}
-                      maxLength={16 * 1024}
-                      placeholder="粘贴 Cookie 原文；不要包含 Cookie: 前缀"
-                      type="password"
-                      value={pmsCookieDraft}
-                      onChange={(event) => {
-                        setPmsCookieDraft(event.target.value)
-                        setPmsCookieError('')
-                        setPmsCookieValidation(null)
-                      }}
-                    />
-                    <small>输入仅用于本次验证，提交后立即从页面清空，服务器不会回显原文。</small>
-                  </label>
-                </div>
-                <footer>
-                  <span>验证只作用于当前门店；正式采集仍按本门店已启用的采集方式执行。</span>
-                  <button
-                    disabled={validatingPmsCookie || !pmsCookieDraft.trim()}
-                    type="button"
-                    onClick={() => void validatePmsCookie()}
-                  >
-                    {validatingPmsCookie ? '验证中…' : '验证通过后保存'}
-                  </button>
-                </footer>
-                {pmsCookieError ? (
-                  <p className="field-error" role="alert">{pmsCookieError}</p>
-                ) : null}
-                {pmsCookieValidation ? (
-                  <p className="success-note" role="status">
-                    Cookie 验证通过并已加密更新：
-                    {pmsCookieValidation.successfulSourceCount}/
-                    {pmsCookieValidation.sourceCount} 个只读来源可用，
-                    PMS 营业日 {pmsCookieValidation.businessDate}；未触发播报。
-                  </p>
-                ) : null}
-              </article>
+            {pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+            && trustedDeviceEligible === false ? (
+              <BieyanghongCookieRepairPanel
+                canSubmit={canConfigure}
+                context={context}
+                hotelCode={hotelCode}
+                onStatusChanged={async () => {
+                  const [refreshedSources, refreshedLogin] = await Promise.all([
+                    loadReportSources(context),
+                    loadPmsLoginConfig(context),
+                  ])
+                  setSources(refreshedSources)
+                  setPmsLoginConfig(refreshedLogin)
+                  setOverviewVersion((current) => current + 1)
+                }}
+              />
             ) : null}
           </> : null}
 
@@ -646,120 +504,6 @@ export function ReportSourceConfigPage({
             onStatusChanged={() =>
               setOverviewVersion((current) => current + 1)}
           /> : null}
-
-          {collectionSection === 'pms'
-          && pmsSystemCode === 'MEITUAN_BIEYANGHONG'
-          && trustedDeviceEligible === false ? (
-          <article className="report-source-card pms-login-card">
-            <header>
-              <div>
-                <span>酒店系统登录</span>
-                <strong>备用账号配置</strong>
-              </div>
-              <span className="mode-chip">
-                {pmsLoginConfig?.configured ? '已加密配置' : '未配置'}
-              </span>
-            </header>
-            <p>
-              账号密码仅按当前门店加密保存，提交后立即从页面清空且不回显。
-              系统不会在此页面自动登录或处理验证码；需要验证时请使用“登录修复”。
-            </p>
-            <div className="report-source-form">
-              <label>
-                PMS账号
-                <input
-                  autoComplete="off"
-                  disabled={!canConfigure || clearPmsLogin}
-                  maxLength={256}
-                  placeholder={
-                    pmsLoginConfig?.configured
-                      ? '已配置；重新填写将替换原账号'
-                      : '请输入PMS登录账号'
-                  }
-                  value={pmsUsername}
-                  onChange={(event) => {
-                    setPmsUsername(event.target.value)
-                    setClearPmsLogin(false)
-                  }}
-                />
-              </label>
-              <label>
-                PMS密码
-                <input
-                  autoComplete="new-password"
-                  disabled={!canConfigure || clearPmsLogin}
-                  maxLength={4096}
-                  placeholder={
-                    pmsLoginConfig?.configured
-                      ? '已配置；重新填写将替换原密码'
-                      : '请输入PMS登录密码'
-                  }
-                  type="password"
-                  value={pmsPassword}
-                  onChange={(event) => {
-                    setPmsPassword(event.target.value)
-                    setClearPmsLogin(false)
-                  }}
-                />
-              </label>
-            </div>
-            {pmsLoginConfig?.configured ? (
-              <label className="cookie-clear-option">
-                <input
-                  checked={clearPmsLogin}
-                  disabled={!canConfigure}
-                  type="checkbox"
-                  onChange={(event) => {
-                    setClearPmsLogin(event.target.checked)
-                    if (event.target.checked) {
-                      setPmsUsername('')
-                      setPmsPassword('')
-                    }
-                  }}
-                />
-                保存时清除当前门店的PMS账号密码
-              </label>
-            ) : null}
-            <footer>
-              <span>
-                {pmsLoginConfig?.configured
-                  ? `配置时间：${pmsLoginConfig.updatedAt
-                    ? new Date(pmsLoginConfig.updatedAt).toLocaleString('zh-CN')
-                    : '已配置'}`
-                  : '账号密码尚未配置'}
-                {' · '}
-                模拟登录：未启用
-              </span>
-              {canConfigure ? (
-                <button
-                  disabled={
-                    savingPmsLogin
-                    || (
-                      !clearPmsLogin
-                      && (!pmsUsername.trim() || !pmsPassword)
-                    )
-                  }
-                  type="button"
-                  onClick={savePmsCredentials}
-                >
-                  {savingPmsLogin
-                    ? '保存中…'
-                    : clearPmsLogin
-                      ? '确认清除'
-                      : pmsLoginConfig?.configured
-                        ? '替换账号密码'
-                        : '保存账号密码'}
-                </button>
-              ) : null}
-            </footer>
-            {pmsLoginError ? (
-              <p className="field-error" role="alert">{pmsLoginError}</p>
-            ) : null}
-            {pmsLoginNotice ? (
-              <p className="success-note" role="status">{pmsLoginNotice}</p>
-            ) : null}
-          </article>
-          ) : null}
 
           {collectionSection === 'reports' ? <>
           <div className="security-note report-source-note">

@@ -661,7 +661,7 @@ test('created review hotels are returned by the directory and survive restart', 
       data: {
         configured: false,
         updatedAt: null,
-        loginMode: 'STORE_TRUSTED_DEVICE',
+        loginMode: 'SERVER_COOKIE',
         loginExecutionEnabled: false,
       },
     })

@@ -185,7 +185,7 @@ export interface ReportSourceInput {
 export interface PmsLoginConfigView {
   configured: boolean
   updatedAt: string | null
-  loginMode: 'CONTROLLED_BROWSER' | 'STORE_TRUSTED_DEVICE'
+  loginMode: 'CONTROLLED_BROWSER' | 'STORE_TRUSTED_DEVICE' | 'SERVER_COOKIE'
   loginExecutionEnabled: boolean
 }
 

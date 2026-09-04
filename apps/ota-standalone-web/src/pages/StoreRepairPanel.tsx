@@ -11,10 +11,12 @@ import {
 import { loadTrustedDeviceStatus } from '../api/trustedDevice'
 import { Icon, LoadingState, Status } from '../components/ConsoleUi'
 import { TrustedDevicePanel } from './TrustedDevicePanel'
+import { BieyanghongCookieRepairPanel } from './BieyanghongCookieRepairPanel'
 import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
+  hotelCode: string
   pmsSystemCode: PmsSystemCode
   canConfigure: boolean
   onStatusChanged: () => void
@@ -25,6 +27,7 @@ const formatTime = (value: string | null): string =>
 
 export function StoreRepairPanel({
   context,
+  hotelCode,
   pmsSystemCode,
   canConfigure,
   onStatusChanged,
@@ -143,8 +146,16 @@ export function StoreRepairPanel({
       <section className="content-panel repair-access-intro">
         <span className="role-icon"><Icon name="shield" /></span>
         <div>
-          <h2>登录修复</h2>
-          <p>此页面只提供账号、密码和官方验证等修复操作，不显示采集网址、Cookie、接口参数或采集规则。</p>
+          <h2>
+            {pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+              ? 'PMS Cookie 修复'
+              : '登录修复'}
+          </h2>
+          <p>
+            {pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+              ? '直接更新当前门店 Cookie 并恢复云端采集，无需下载安装门店软件；Cookie 不会在页面回显。'
+              : '此页面只提供账号、密码和官方验证等修复操作，不显示采集网址、Cookie、接口参数或采集规则。'}
+          </p>
         </div>
         <Status tone="ok">门店范围已校验</Status>
       </section>
@@ -153,6 +164,12 @@ export function StoreRepairPanel({
         <TrustedDevicePanel
           canRevokeDevice={canConfigure}
           context={context}
+          onStatusChanged={onStatusChanged}
+        />
+      ) : pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
+        <BieyanghongCookieRepairPanel
+          context={context}
+          hotelCode={hotelCode}
           onStatusChanged={onStatusChanged}
         />
       ) : (

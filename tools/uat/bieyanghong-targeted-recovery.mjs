@@ -2,8 +2,11 @@ const HOTEL_CODE = /^\d{3}$/
 const OPERATION_KEY = /^[A-Z0-9][A-Z0-9_-]{7,95}$/
 const SAFE_REASON_CODE = /^[A-Z0-9][A-Z0-9_:-]{2,127}$/
 
-export const BIEYANGHONG_RECOVERY_EXCLUDED_HOTEL_CODE = '001'
-export const BIEYANGHONG_RECOVERY_HOTEL_CODES = Object.freeze(['003', '013'])
+export const BIEYANGHONG_RECOVERY_HOTEL_CODES = Object.freeze([
+  '001',
+  '003',
+  '013',
+])
 
 const fail = (reasonCode) => {
   throw new Error(reasonCode)
@@ -27,9 +30,6 @@ export const normalizeBieyanghongRecoveryRequest = (body) => {
   ) {
     fail('BIEYANGHONG_RECOVERY_HOTEL_CODES_INVALID')
   }
-  if (requestedCodes.includes(BIEYANGHONG_RECOVERY_EXCLUDED_HOTEL_CODE)) {
-    fail('BIEYANGHONG_RECOVERY_PILOT_001_EXCLUDED')
-  }
   return {
     operationKey,
     hotelCodes: [...requestedCodes].sort(),
@@ -50,8 +50,7 @@ export const resolveBieyanghongRecoveryTargets = ({
     }
     const hotel = matches[0]
     if (
-      hotel.hotelCode === BIEYANGHONG_RECOVERY_EXCLUDED_HOTEL_CODE
-      || hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
+      hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
     ) {
       fail('BIEYANGHONG_RECOVERY_SCOPE_INVALID')
     }

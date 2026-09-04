@@ -53,6 +53,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 13).toString('base64url'),
       OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 14).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
+      OTA_REVIEW_BIEYANGHONG_COLLECTION_MODE: 'STORE_TRUSTED_DEVICE',
       BIEYANGHONG_NOVNC_ROOT: noVncRoot,
     },
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -352,7 +353,7 @@ test('001 official-login popup is public but challenge data remains token-gated'
     assert.equal(fixedRecovery.status, 400)
     assert.equal(
       (await fixedRecovery.json()).code,
-      'BIEYANGHONG_RECOVERY_HOTEL_NOT_UNIQUE',
+      'BIEYANGHONG_RECOVERY_COLLECTION_NOT_READY',
     )
   } finally {
     if (child.exitCode === null) {

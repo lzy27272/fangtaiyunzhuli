@@ -7,9 +7,11 @@ const readSource = (relativePath) => readFile(
   'utf8',
 )
 
-test('every Bieyanghong store exposes isolated Cookie validation beside trusted-device collection', async () => {
+test('Bieyanghong defaults to scoped server-Cookie repair while retaining an explicit trusted-device rollback', async () => {
   const [
     page,
+    cookieRepair,
+    storeRepair,
     panel,
     client,
     agent,
@@ -19,6 +21,8 @@ test('every Bieyanghong store exposes isolated Cookie validation beside trusted-
     cookieValidation,
   ] = await Promise.all([
     readSource('../src/pages/ReportSourceConfigPage.tsx'),
+    readSource('../src/pages/BieyanghongCookieRepairPanel.tsx'),
+    readSource('../src/pages/StoreRepairPanel.tsx'),
     readSource('../src/pages/TrustedDevicePanel.tsx'),
     readSource('../src/api/trustedDevice.ts'),
     readSource('../../../tools/trusted-device/trusted-device-agent.mjs'),
@@ -28,15 +32,20 @@ test('every Bieyanghong store exposes isolated Cookie validation beside trusted-
     readSource('../../../tools/uat/bieyanghong-cookie-validation.mjs'),
   ])
   assert.match(page, /<TrustedDevicePanel/u)
+  assert.match(page, /trustedDeviceEligible === true/u)
+  assert.match(page, /<BieyanghongCookieRepairPanel/u)
+  assert.match(page, /trustedDeviceEligible === false/u)
   assert.doesNotMatch(page, /<BieyanghongCloudWorkspacePanel/u)
-  assert.match(page, /更新并验证 PMS Cookie/u)
-  assert.match(page, /validateAndUpdatePmsCookie/u)
-  assert.match(page, /失败保留旧 Cookie，不更新经营数据、不触发播报/u)
-  assert.match(page, /pmsSystemCode !== 'MEITUAN_BIEYANGHONG'/u)
+  assert.match(cookieRepair, /验证 Cookie 并恢复采集/u)
+  assert.match(cookieRepair, /validateAndUpdatePmsCookie/u)
+  assert.match(cookieRepair, /triggerLiveCollection/u)
+  assert.match(cookieRepair, /失败保留旧 Cookie，不影响其他门店/u)
+  assert.match(cookieRepair, /无需安装软件/u)
+  assert.match(storeRepair, /<BieyanghongCookieRepairPanel/u)
   assert.doesNotMatch(page, /hotelCode === '001'/u)
-  assert.match(page, /\{hotelCode\} 管理员验证/u)
-  assert.match(page, /当前 \{hotelCode\} 门店/u)
-  assert.match(page, /验证只作用于当前门店/u)
+  assert.match(cookieRepair, /\{hotelCode\} · 云端 Cookie 修复/u)
+  assert.match(cookieRepair, /当前 \{hotelCode\} 门店/u)
+  assert.match(cookieRepair, /本店验证/u)
   assert.match(page, /PMS配置/u)
   assert.match(page, /PMS 接口与 Cookie/u)
   assert.match(page, /当前门店的报表名称、接口地址和 Cookie 均独立保存/u)
@@ -48,6 +57,11 @@ test('every Bieyanghong store exposes isolated Cookie validation beside trusted-
     page.indexOf('PMS 接口与 Cookie') < page.indexOf('<TrustedDevicePanel'),
   )
   assert.match(api, /ensureReportSourcesForEveryHotel/u)
+  assert.match(api, /OTA_REVIEW_BIEYANGHONG_COLLECTION_MODE/u)
+  assert.match(api, /'SERVER_COOKIE'/u)
+  assert.match(api, /!bieyanghongServerCookieModeEnabled/u)
+  assert.match(api, /'\/pms-cookie-validation'/u)
+  assert.match(api, /'\/live-collection-runs'/u)
   assert.doesNotMatch(
     api,
     /REPORT_SOURCE_DEFINITION_MANAGED|LUOPAN_REPORT_SOURCE_ENABLED_ONLY/u,

@@ -253,6 +253,13 @@ const bieyanghongWebRepairReady =
 const trustedDeviceEnabled =
   process.env.OTA_REVIEW_TRUSTED_DEVICE_ENABLED !== 'false'
   && process.env.OTA_REVIEW_TRUSTED_DEVICE_001_ENABLED !== 'false'
+const bieyanghongCollectionMode =
+  process.env.OTA_REVIEW_BIEYANGHONG_COLLECTION_MODE
+    === 'STORE_TRUSTED_DEVICE'
+    ? 'STORE_TRUSTED_DEVICE'
+    : 'SERVER_COOKIE'
+const bieyanghongServerCookieModeEnabled =
+  bieyanghongCollectionMode === 'SERVER_COOKIE'
 const trustedDeviceFixedHotelCodes = new Set(['001', '003', '013'])
 const trustedDeviceAllowedHotelCodes = new Set(
   String(
@@ -784,6 +791,7 @@ if (simulationHotelPath && existsSync(simulationHotelPath)) {
 
 const trustedDeviceEligible = (hotel) =>
   trustedDeviceEnabled
+  && !bieyanghongServerCookieModeEnabled
   && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
   && trustedDeviceAllowedHotelCodes.has(hotel.hotelCode)
   && hotels.filter((candidate) =>
@@ -862,7 +870,11 @@ const trustedDeviceHotelForCode = (hotelCode) => {
 }
 const trustedDeviceNotApplicableStatus = (hotel) => ({
   eligible: false,
-  mode: 'NOT_APPLICABLE',
+  mode:
+    hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+    && bieyanghongServerCookieModeEnabled
+      ? 'SERVER_COOKIE'
+      : 'NOT_APPLICABLE',
   hotelCode: hotel?.hotelCode ?? '',
   hotelName: hotel?.hotelName ?? '',
   enrollmentTtlMinutes: 15,
@@ -1226,20 +1238,40 @@ const normalizePmsLoginCredentials = (credentials) => {
 const pmsLoginConfigFor = (hotelId) => {
   const record = pmsLoginSecretsByHotel.get(hotelId)
   const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
+  const serverCookieMode =
+    hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+    && bieyanghongServerCookieModeEnabled
   const bieyanghongPilot =
     hotel?.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
     && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
   const trustedDeviceMode = trustedDeviceEligible(hotel)
+  const cookieRecords = Object.values(secretsForHotel(hotelId))
+  const cookieUpdatedAt = cookieRecords
+    .map((candidate) => candidate?.updatedAt)
+    .filter((candidate) => typeof candidate === 'string')
+    .sort()
+    .at(-1) ?? null
   return {
-    configured: trustedDeviceMode ? false : Boolean(record),
-    updatedAt: trustedDeviceMode ? null : record?.updatedAt ?? null,
-    loginMode: trustedDeviceMode
-      ? 'STORE_TRUSTED_DEVICE'
-      : bieyanghongPilot
-      ? 'CONTROLLED_BROWSER_CREDENTIALS_THEN_SMS_AUTHORIZATION'
-      : 'CONTROLLED_BROWSER',
+    configured: serverCookieMode
+      ? cookieRecords.length > 0
+      : trustedDeviceMode
+        ? false
+        : Boolean(record),
+    updatedAt: serverCookieMode
+      ? cookieUpdatedAt
+      : trustedDeviceMode
+        ? null
+        : record?.updatedAt ?? null,
+    loginMode: serverCookieMode
+      ? 'SERVER_COOKIE'
+      : trustedDeviceMode
+        ? 'STORE_TRUSTED_DEVICE'
+        : bieyanghongPilot
+          ? 'CONTROLLED_BROWSER_CREDENTIALS_THEN_SMS_AUTHORIZATION'
+          : 'CONTROLLED_BROWSER',
     loginExecutionEnabled:
-      !trustedDeviceMode
+      !serverCookieMode
+      && !trustedDeviceMode
       && bieyanghongPilot
       && bieyanghongAssistedRepairEnabled,
   }
@@ -4626,10 +4658,10 @@ const collectLiveFor = async (
       sources,
       cookiesBySourceId,
       previousSnapshots: liveSnapshotStore[hotelId] ?? [],
-      secretKey: trustedDeviceEligible(hotel)
+      secretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? trustedDevicePseudonymKeyFor(hotel)
         : cookieSecretKey,
-      legacySecretKey: trustedDeviceEligible(hotel)
+      legacySecretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? cookieSecretKey
         : null,
       target: null,
@@ -4637,7 +4669,7 @@ const collectLiveFor = async (
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
       reportDate: businessDayControl.businessDate,
     })
-    if (trustedDeviceEligible(hotel)) {
+    if (hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG') {
       migrateTrustedPseudonymAliases(hotel, result.snapshot)
       result.monitor = monitorFromSnapshot(
         result.snapshot,
@@ -4692,6 +4724,7 @@ const collectLiveFor = async (
       error?.message === 'PMS_SESSION_REAUTH_REQUIRED'
       && hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
       && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+      && !bieyanghongServerCookieModeEnabled
       && !isNightlyRepairDeferred()
     ) {
       void startBieyanghongRepairChallenge(
@@ -4848,7 +4881,8 @@ const deliverWeComSnapshot = async ({
               messagePrefix,
               snapshot,
               briefId: snapshot.collectionRunId,
-              orderDataRedacted: trustedDeviceEligible(hotel),
+              orderDataRedacted:
+                hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG',
             },
           )
     const messageSha256 = sha256(
@@ -5763,10 +5797,10 @@ const validateAndReplaceBieyanghongReportCookies = async (
       sources,
       cookieHeader: normalizedCookieHeader,
       expectedHotelId,
-      secretKey: trustedDeviceEligible(hotel)
+      secretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? trustedDevicePseudonymKeyFor(hotel)
         : cookieSecretKey,
-      legacySecretKey: trustedDeviceEligible(hotel)
+      legacySecretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? cookieSecretKey
         : null,
       reportDate: businessDayControl.businessDate,
@@ -5902,6 +5936,9 @@ const startBieyanghongRepairChallenge = async (
     includeWorkspaceUrl = false,
   } = {},
 ) => {
+  if (bieyanghongServerCookieModeEnabled) {
+    throw new Error('BIEYANGHONG_SERVER_COOKIE_MODE')
+  }
   if (trustedDeviceEnabled) {
     throw new Error('BIEYANGHONG_TRUSTED_DEVICE_MODE')
   }
@@ -6960,6 +6997,16 @@ const repairNightlyBriefingHealthAudit = async ({
   })
   try {
     if (auditRecord.status === 'REAUTH_REQUIRED') {
+      if (
+        hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+        && bieyanghongServerCookieModeEnabled
+      ) {
+        updateBriefingHealthAudit(auditRecord.auditId, {
+          resolutionStatus: 'WAITING_COOKIE_UPDATE',
+          reasonCode: 'BIEYANGHONG_COOKIE_UPDATE_REQUIRED',
+        })
+        return
+      }
       const bieyanghongPilot =
         hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
         && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
@@ -7466,7 +7513,7 @@ const runBieyanghongTargetedRecovery = async (body) => {
     const operationResult = {
       operationKey: request.operationKey,
       requestedHotelCodes: request.hotelCodes,
-      excludedHotelCodes: [BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE],
+      excludedHotelCodes: [],
       startedAt: new Date().toISOString(),
       completedAt: null,
       status: 'RUNNING',
@@ -7607,7 +7654,7 @@ const runBieyanghongTargetedRecovery = async (body) => {
       event: 'BIEYANGHONG_TARGETED_RECOVERY_COMPLETED',
       operationKey: request.operationKey,
       requestedHotelCodes: request.hotelCodes,
-      excludedHotelCodes: [BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE],
+      excludedHotelCodes: [],
       status: operationResult.status,
     })}\n`)
     return operationResult
@@ -7844,7 +7891,7 @@ const briefFor = (hotelId) => {
   const payloads = createReportMonitorWeComPayloads(monitor, {
     snapshot,
     briefId: snapshot.collectionRunId,
-    orderDataRedacted: trustedDeviceEligible(hotel),
+    orderDataRedacted: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG',
   })
   const delivery = [...weComDeliveriesByKey.values()]
     .filter(
@@ -8306,6 +8353,8 @@ const REPAIR_WRITE_SUFFIXES = new Set([
   '/ota-controlled-login-verifications',
   '/luopan-browser-session-validations',
   '/pms-login-config',
+  '/pms-cookie-validation',
+  '/live-collection-runs',
   '/trusted-device/bootstrap',
   '/trusted-device/enrollment',
   '/trusted-device/scope-approval',
@@ -8345,12 +8394,19 @@ const server = createServer(async (request, response) => {
         },
         bieyanghongAssistedRepair: {
           enabled:
-            bieyanghongAssistedRepairEnabled && !trustedDeviceEnabled,
+            bieyanghongAssistedRepairEnabled
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
           ready:
-            bieyanghongAssistedRepairReady() && !trustedDeviceEnabled,
-          reasonCode: trustedDeviceEnabled
-            ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
-            : bieyanghongRepairReasonCode(),
+            bieyanghongAssistedRepairReady()
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
+          reasonCode: bieyanghongServerCookieModeEnabled
+            ? 'BIEYANGHONG_SERVER_COOKIE_MODE'
+            : trustedDeviceEnabled
+              ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
+              : bieyanghongRepairReasonCode(),
+          collectionMode: bieyanghongCollectionMode,
           pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
           credentialInputMode: bieyanghongRemoteDesktopConfig.enabled
             ? 'REMOTE_NATIVE_OFFICIAL_LOGIN'
@@ -8364,9 +8420,13 @@ const server = createServer(async (request, response) => {
             },
           },
           webLinkReady:
-            bieyanghongWebRepairReady && !trustedDeviceEnabled,
+            bieyanghongWebRepairReady
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
           adminWorkspaceReady:
-            bieyanghongAssistedRepairReady() && !trustedDeviceEnabled,
+            bieyanghongAssistedRepairReady()
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
           adminWorkspaceTtlMinutes:
             BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
@@ -9425,6 +9485,8 @@ const server = createServer(async (request, response) => {
         && suffix === '/bieyanghong-workspace'
       ) {
         const eligible =
+          !bieyanghongServerCookieModeEnabled
+          &&
           !trustedDeviceEnabled
           &&
           selected.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
@@ -9435,11 +9497,13 @@ const server = createServer(async (request, response) => {
             ready: eligible && bieyanghongAssistedRepairReady(),
             hotelCode: selected.hotelCode,
             hotelName: selected.hotelName,
-            reasonCode: trustedDeviceEnabled
-              ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
-              : eligible
-                ? bieyanghongRepairReasonCode()
-                : 'BIEYANGHONG_WORKSPACE_HOTEL_NOT_ELIGIBLE',
+            reasonCode: bieyanghongServerCookieModeEnabled
+              ? 'BIEYANGHONG_SERVER_COOKIE_MODE'
+              : trustedDeviceEnabled
+                ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
+                : eligible
+                  ? bieyanghongRepairReasonCode()
+                  : 'BIEYANGHONG_WORKSPACE_HOTEL_NOT_ELIGIBLE',
             workspaceTtlMinutes:
               BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
           },
@@ -9451,6 +9515,9 @@ const server = createServer(async (request, response) => {
         request.method === 'POST'
         && suffix === '/bieyanghong-workspace'
       ) {
+        if (bieyanghongServerCookieModeEnabled) {
+          throw new Error('BIEYANGHONG_SERVER_COOKIE_MODE')
+        }
         if (trustedDeviceEnabled) {
           throw new Error('BIEYANGHONG_TRUSTED_DEVICE_MODE')
         }
@@ -9520,10 +9587,6 @@ const server = createServer(async (request, response) => {
         request.method === 'POST'
         && suffix === '/pms-cookie-validation'
       ) {
-        if (!canConfigureHotels(requestPrincipal)) {
-          rejectForbidden(response)
-          return
-        }
         const body = await readBody(request)
         if (body.reasonCode !== 'VALIDATE_AND_UPDATE_PMS_COOKIE') {
           throw new Error('REASON_CODE_INVALID')
@@ -9863,7 +9926,7 @@ const server = createServer(async (request, response) => {
           return
         }
         if (
-          trustedDeviceEligible(selected)
+          selected.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
           && credentialUpdate.action === 'REPLACE'
         ) {
           throw new Error('TRUSTED_DEVICE_CREDENTIAL_UPLOAD_REJECTED')
