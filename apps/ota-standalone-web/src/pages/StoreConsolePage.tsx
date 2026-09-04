@@ -613,7 +613,7 @@ export function StoreDetailPage({
 
       {!loading && tab === 'repair' ? <StoreRepairPanel context={context} pmsSystemCode={hotel.pmsSystemCode} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /> : null}
 
-      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure pmsSystemCode={hotel.pmsSystemCode} attentionItems={[]} otaAttentionSourceId={null} /></div> : null}
+      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} attentionItems={[]} otaAttentionSourceId={null} /></div> : null}
 
       {!loading && tab === 'operations' ? (
         <div className="operations-layout">

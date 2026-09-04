@@ -86,6 +86,7 @@ $runtimeSourcePaths = @(
     'tools/uat/bieyanghong-repair-challenge.mjs',
     'tools/uat/bieyanghong-repair-page.mjs',
     'tools/uat/bieyanghong-targeted-recovery.mjs',
+    'tools\uat\bieyanghong-cookie-validation.mjs',
     'tools/uat/bieyanghong_websockify_auth.py',
     'tools/uat/live-report-collector.mjs',
     'tools/uat/daily-order-summary.mjs',

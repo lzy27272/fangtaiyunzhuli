@@ -7,17 +7,57 @@ const readSource = (relativePath) => readFile(
   'utf8',
 )
 
-test('Bieyanghong configuration page uses per-store trusted device mode and never requests credentials', async () => {
-  const [page, panel, client, agent, installer, launcher] = await Promise.all([
+test('Bieyanghong configuration keeps trusted-device collection and exposes a separate 001 Cookie validation', async () => {
+  const [
+    page,
+    panel,
+    client,
+    agent,
+    installer,
+    launcher,
+    api,
+    cookieValidation,
+  ] = await Promise.all([
     readSource('../src/pages/ReportSourceConfigPage.tsx'),
     readSource('../src/pages/TrustedDevicePanel.tsx'),
     readSource('../src/api/trustedDevice.ts'),
     readSource('../../../tools/trusted-device/trusted-device-agent.mjs'),
     readSource('../../../tools/trusted-device/Install-001TrustedDevice.ps1'),
     readSource('../../../tools/trusted-device/Start-001Login.ps1'),
+    readSource('../../../tools/uat/ota-standalone-review-api.mjs'),
+    readSource('../../../tools/uat/bieyanghong-cookie-validation.mjs'),
   ])
   assert.match(page, /<TrustedDevicePanel/u)
   assert.doesNotMatch(page, /<BieyanghongCloudWorkspacePanel/u)
+  assert.match(page, /更新并验证 PMS Cookie/u)
+  assert.match(page, /validateAndUpdatePmsCookie/u)
+  assert.match(page, /失败保留旧 Cookie，不更新经营数据、不触发播报/u)
+  assert.match(page, /hotelCode === '001'/u)
+  assert.match(api, /suffix === '\/pms-cookie-validation'/u)
+  const validationOperation = api.slice(
+    api.indexOf('const validateAndReplaceBieyanghongReportCookies'),
+    api.indexOf('const finishBieyanghongRepair'),
+  )
+  const readOnlyValidationAt = validationOperation.indexOf(
+    'await validateBieyanghongCookieAccess',
+  )
+  const replacementAt = validationOperation.indexOf(
+    'replaceBieyanghongReportCookies',
+  )
+  assert.ok(readOnlyValidationAt >= 0)
+  assert.ok(replacementAt > readOnlyValidationAt)
+  assert.doesNotMatch(
+    validationOperation,
+    /appendAndPersistSnapshot|deliverWeComSnapshot/u,
+  )
+  assert.match(cookieValidation, /outboundDeliveryAttempted: false/u)
+  assert.doesNotMatch(cookieValidation, /console\.(?:log|info|warn|error)/u)
+  assert.match(
+    await readSource(
+      '../../../infra/ota-standalone-server/scripts/Publish-OtaStandaloneServer.ps1',
+    ),
+    /tools\\uat\\bieyanghong-cookie-validation\.mjs/u,
+  )
   assert.match(panel, /登录会话只留在门店电脑/u)
   assert.match(panel, /下载安装并进入登录/u)
   assert.match(panel, /一键检查并修复/u)

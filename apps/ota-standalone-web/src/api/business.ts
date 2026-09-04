@@ -194,6 +194,16 @@ export type PmsLoginCredentialUpdate =
   | { action: 'CLEAR' }
   | { action: 'REPLACE'; username: string; password: string }
 
+export interface PmsCookieValidationView {
+  status: 'SUCCEEDED'
+  validatedAt: string
+  businessDate: string
+  sourceCount: number
+  successfulSourceCount: number
+  replacedSourceCount: number
+  outboundDeliveryAttempted: false
+}
+
 export interface LuopanBrowserConfigView {
   providerCode: 'LUOPAN_CLOUD'
   portalUrl: string
@@ -1229,6 +1239,16 @@ export function savePmsLoginConfig(
   return postCommand(scopedPath(context, '/pms-login-config'), {
     credentialUpdate,
     reasonCode: 'UPDATE_PMS_LOGIN_CREDENTIALS',
+  })
+}
+
+export function validateAndUpdatePmsCookie(
+  context: HotelContext,
+  cookieHeader: string,
+): Promise<PmsCookieValidationView> {
+  return postCommand(scopedPath(context, '/pms-cookie-validation'), {
+    cookieHeader,
+    reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE',
   })
 }
 

@@ -101,6 +101,10 @@ import {
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
 import {
+  normalizeBieyanghongCookieHeader,
+  validateBieyanghongCookieAccess,
+} from './bieyanghong-cookie-validation.mjs'
+import {
   buildStoreRepairConsoleUrl,
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
@@ -508,6 +512,7 @@ const activeOtaControlledLoginAttempts = new Map()
 const luopanBrowserConfigsByHotel = new Map()
 const luopanSessionStatesByHotel = new Map()
 const liveCollectionLocks = new Map()
+const pmsCookieValidationLocks = new Map()
 const bieyanghongTargetedRecoveryLocks = new Map()
 const bieyanghongTargetedRecoveryResults = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
@@ -5779,6 +5784,67 @@ const replaceBieyanghongReportCookies = (hotelId, cookieHeader) => {
   return { previous, replaced }
 }
 
+const validateAndReplaceBieyanghongReportCookies = async (
+  hotelId,
+  cookieHeader,
+) => {
+  if (pmsCookieValidationLocks.has(hotelId)) {
+    throw new Error('PMS_COOKIE_VALIDATION_IN_PROGRESS')
+  }
+  const operation = (async () => {
+    const normalizedCookieHeader = normalizeBieyanghongCookieHeader(cookieHeader)
+    const hotel = selectedHotel(hotelId)
+    if (
+      hotel.hotelCode !== BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+      || hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG'
+    ) {
+      throw new Error('BIEYANGHONG_REPAIR_PILOT_SCOPE_INVALID')
+    }
+    if (!reportSourcesByHotel.has(hotelId)) {
+      synchronizeReportSourcesFromPrimary()
+    }
+    const sources = reportSourcesByHotel.get(hotelId) ?? []
+    const secretsBeforeValidation = secretsForHotel(hotelId)
+    const expectedHotelId = expectedBieyanghongHotelScope(hotelId)
+    const businessDayControl = businessDayControlFor(hotelId)
+    const validation = await validateBieyanghongCookieAccess({
+      hotel,
+      sources,
+      cookieHeader: normalizedCookieHeader,
+      expectedHotelId,
+      secretKey: trustedDeviceEligible(hotel)
+        ? trustedDevicePseudonymKeyFor(hotel)
+        : cookieSecretKey,
+      legacySecretKey: trustedDeviceEligible(hotel)
+        ? cookieSecretKey
+        : null,
+      reportDate: businessDayControl.businessDate,
+    })
+    if (reportSourcesByHotel.get(hotelId) !== sources) {
+      throw new Error('REPORT_SOURCE_CHANGED_DURING_VALIDATION')
+    }
+    if (secretsForHotel(hotelId) !== secretsBeforeValidation) {
+      throw new Error('PMS_COOKIE_CHANGED_DURING_VALIDATION')
+    }
+    const replacement = replaceBieyanghongReportCookies(
+      hotelId,
+      normalizedCookieHeader,
+    )
+    return {
+      ...validation,
+      replacedSourceCount: replacement.replaced,
+    }
+  })()
+  pmsCookieValidationLocks.set(hotelId, operation)
+  try {
+    return await operation
+  } finally {
+    if (pmsCookieValidationLocks.get(hotelId) === operation) {
+      pmsCookieValidationLocks.delete(hotelId)
+    }
+  }
+}
+
 const finishBieyanghongRepair = async ({
   hotelId,
   tokenSha256,
@@ -9503,6 +9569,25 @@ const server = createServer(async (request, response) => {
         })
         return
       }
+      if (
+        request.method === 'POST'
+        && suffix === '/pms-cookie-validation'
+      ) {
+        if (!canConfigureHotels(requestPrincipal)) {
+          rejectForbidden(response)
+          return
+        }
+        const body = await readBody(request)
+        if (body.reasonCode !== 'VALIDATE_AND_UPDATE_PMS_COOKIE') {
+          throw new Error('REASON_CODE_INVALID')
+        }
+        const validation = await validateAndReplaceBieyanghongReportCookies(
+          hotelId,
+          body.cookieHeader,
+        )
+        json(response, 200, { data: validation })
+        return
+      }
       if (request.method === 'POST' && suffix === '/report-sources') {
         const body = await readBody(request)
         if (
@@ -10426,6 +10511,7 @@ const server = createServer(async (request, response) => {
                     error.message.startsWith('SIMULATION_')
                     || error.message.startsWith('PMS_LOGIN_')
                     || error.message.startsWith('PMS_BUSINESS_DATE_')
+                    || error.message.startsWith('PMS_COOKIE_')
                     || error.message.startsWith('REPORT_SOURCE_')
                     || error.message.startsWith('WECOM_')
                     || error.message.startsWith('LIVE_')

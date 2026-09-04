@@ -5,8 +5,10 @@ import {
   savePmsLoginConfig,
   saveReportSources,
   triggerLiveCollection,
+  validateAndUpdatePmsCookie,
   type CalculationRole,
   type HotelContext,
+  type PmsCookieValidationView,
   type PmsLoginConfigView,
   type PmsSystemCode,
   type ReportSourceInput,
@@ -28,6 +30,7 @@ import { businessErrorMessage } from '../ui/businessDisplay'
 interface Props {
   context: HotelContext | null
   canConfigure: boolean
+  hotelCode: string
   pmsSystemCode: PmsSystemCode
   attentionItems: ReportSourceAttention[]
   otaAttentionSourceId: string | null
@@ -103,6 +106,7 @@ const sourceCardId = (sourceId: string) =>
 export function ReportSourceConfigPage({
   context,
   canConfigure,
+  hotelCode,
   pmsSystemCode,
   attentionItems,
   otaAttentionSourceId,
@@ -126,6 +130,11 @@ export function ReportSourceConfigPage({
   const [pmsLoginNotice, setPmsLoginNotice] = useState('')
   const [trustedDeviceEligible, setTrustedDeviceEligible] =
     useState<boolean | null>(null)
+  const [pmsCookieDraft, setPmsCookieDraft] = useState('')
+  const [validatingPmsCookie, setValidatingPmsCookie] = useState(false)
+  const [pmsCookieError, setPmsCookieError] = useState('')
+  const [pmsCookieValidation, setPmsCookieValidation] =
+    useState<PmsCookieValidationView | null>(null)
   const [overviewVersion, setOverviewVersion] = useState(0)
 
   useEffect(() => {
@@ -165,6 +174,9 @@ export function ReportSourceConfigPage({
     setClearPmsLogin(false)
     setPmsLoginError('')
     setPmsLoginNotice('')
+    setPmsCookieDraft('')
+    setPmsCookieError('')
+    setPmsCookieValidation(null)
     if (!context) {
       setPmsLoginConfig(null)
       setTrustedDeviceEligible(null)
@@ -416,6 +428,38 @@ export function ReportSourceConfigPage({
     }
   }
 
+  async function validatePmsCookie() {
+    if (!context || !canConfigure || hotelCode !== '001') return
+    setPmsCookieError('')
+    setPmsCookieValidation(null)
+    const cookieHeader = pmsCookieDraft.trim()
+    if (
+      !cookieHeader
+      || cookieHeader.length > 16 * 1024
+      || /[\r\n\u0000]/.test(cookieHeader)
+      || /^cookie\s*:/i.test(cookieHeader)
+    ) {
+      setPmsCookieError('请只粘贴 Cookie 原文，不要包含“Cookie:”前缀、换行或空字符。')
+      return
+    }
+    setValidatingPmsCookie(true)
+    try {
+      const validation = await validateAndUpdatePmsCookie(context, cookieHeader)
+      setPmsCookieDraft('')
+      setPmsCookieValidation(validation)
+      const refreshedSources = await loadReportSources(context)
+      setSources(refreshedSources)
+      setOverviewVersion((current) => current + 1)
+    } catch (cause) {
+      setPmsCookieDraft('')
+      setPmsCookieError(
+        businessErrorMessage(cause, 'Cookie 验证失败；旧 Cookie 未被覆盖'),
+      )
+    } finally {
+      setValidatingPmsCookie(false)
+    }
+  }
+
   return (
     <section className="page-card">
       <div className="page-heading">
@@ -489,6 +533,67 @@ export function ReportSourceConfigPage({
                 <p>厂家名称已保存到门店档案。请先完成该厂家的只读数据接口适配、字段映射和单店校验；通过前不会启用采集或播报。</p>
               </article>
             )}
+            {pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+            && hotelCode === '001' ? (
+              <article className="report-source-card pms-login-card pms-cookie-validation-card">
+                <header>
+                  <div>
+                    <span>001 管理员验证</span>
+                    <strong>更新并验证 PMS Cookie</strong>
+                  </div>
+                  <span className="mode-chip">
+                    {sources.some((source) => source.enabled)
+                    && sources.filter((source) => source.enabled).every(
+                      (source) => source.cookieConfigured,
+                    ) ? '已安全配置' : '待配置'}
+                  </span>
+                </header>
+                <p>
+                  粘贴当前 001 门店的 Cookie 后，服务器只读取营业日和已配置报表进行验证。
+                  只有全部通过才会加密替换；失败保留旧 Cookie，不更新经营数据、不触发播报。
+                </p>
+                <div className="report-source-form">
+                  <label className="wide-field cookie-field">
+                    PMS Cookie 原文
+                    <input
+                      autoComplete="off"
+                      disabled={!canConfigure || validatingPmsCookie}
+                      maxLength={16 * 1024}
+                      placeholder="粘贴 Cookie 原文；不要包含 Cookie: 前缀"
+                      type="password"
+                      value={pmsCookieDraft}
+                      onChange={(event) => {
+                        setPmsCookieDraft(event.target.value)
+                        setPmsCookieError('')
+                        setPmsCookieValidation(null)
+                      }}
+                    />
+                    <small>输入仅用于本次验证，提交后立即从页面清空，服务器不会回显原文。</small>
+                  </label>
+                </div>
+                <footer>
+                  <span>本机可信设备仍是正式采集来源；本次只验证备用云端 Cookie 能否读取 PMS。</span>
+                  <button
+                    disabled={validatingPmsCookie || !pmsCookieDraft.trim()}
+                    type="button"
+                    onClick={() => void validatePmsCookie()}
+                  >
+                    {validatingPmsCookie ? '验证中…' : '验证通过后保存'}
+                  </button>
+                </footer>
+                {pmsCookieError ? (
+                  <p className="field-error" role="alert">{pmsCookieError}</p>
+                ) : null}
+                {pmsCookieValidation ? (
+                  <p className="success-note" role="status">
+                    Cookie 验证通过并已加密更新：
+                    {pmsCookieValidation.successfulSourceCount}/
+                    {pmsCookieValidation.sourceCount} 个只读来源可用，
+                    PMS 营业日 {pmsCookieValidation.businessDate}；未触发播报。
+                  </p>
+                ) : null}
+              </article>
+            ) : null}
           </> : null}
 
           {collectionSection === 'ota' ? <OtaSourceConfigPanel
