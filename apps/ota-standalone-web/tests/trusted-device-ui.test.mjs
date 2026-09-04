@@ -33,6 +33,13 @@ test('Bieyanghong configuration keeps trusted-device collection and exposes a se
   assert.match(page, /validateAndUpdatePmsCookie/u)
   assert.match(page, /失败保留旧 Cookie，不更新经营数据、不触发播报/u)
   assert.match(page, /hotelCode === '001'/u)
+  assert.match(page, /PMS配置/u)
+  assert.match(page, /PMS 数据接口地址/u)
+  assert.match(page, /source\.endpointUrl/u)
+  assert.match(page, /修改接口地址/u)
+  assert.ok(
+    page.indexOf('PMS 数据接口地址') < page.indexOf('<TrustedDevicePanel'),
+  )
   assert.match(api, /suffix === '\/pms-cookie-validation'/u)
   const validationOperation = api.slice(
     api.indexOf('const validateAndReplaceBieyanghongReportCookies'),

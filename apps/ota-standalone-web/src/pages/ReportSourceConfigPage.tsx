@@ -103,6 +103,14 @@ const createEmptySource = (): ReportSourceView => ({
 const sourceCardId = (sourceId: string) =>
   `report-source-${sourceId.replace(/[^A-Za-z0-9_-]/g, '-')}`
 
+const isMeituanPmsSource = (source: ReportSourceView) => {
+  try {
+    return new URL(source.endpointUrl).hostname === 'pms.meituan.com'
+  } catch {
+    return false
+  }
+}
+
 export function ReportSourceConfigPage({
   context,
   canConfigure,
@@ -136,6 +144,7 @@ export function ReportSourceConfigPage({
   const [pmsCookieValidation, setPmsCookieValidation] =
     useState<PmsCookieValidationView | null>(null)
   const [overviewVersion, setOverviewVersion] = useState(0)
+  const pmsReportSources = sources.filter(isMeituanPmsSource)
 
   useEffect(() => {
     if (!context) {
@@ -474,7 +483,7 @@ export function ReportSourceConfigPage({
       <div className="collection-step-nav" aria-label="采集设置步骤">
         {([
           ['overview', '状态总览', '先看是否正常'],
-          ['pms', '酒店系统', '登录与采集设备'],
+          ['pms', 'PMS配置', '设备、Cookie与接口地址'],
           ['ota', '渠道平台', '携程、美团等'],
           ['reports', '高级报表', '接口与登录凭据'],
         ] as const).map(([code, label, detail], index) => (
@@ -510,6 +519,48 @@ export function ReportSourceConfigPage({
           </> : null}
 
           {collectionSection === 'pms' ? <>
+            {pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+            && hotelCode === '001' ? (
+              <article className="report-source-card pms-endpoint-card">
+                <header>
+                  <div>
+                    <span>001 门店 PMS 配置</span>
+                    <strong>PMS 数据接口地址</strong>
+                  </div>
+                  <span className="mode-chip">{pmsReportSources.length} 个接口</span>
+                </header>
+                <p>
+                  当前 001 门店采集使用的只读接口如下。这里直接显示完整地址；
+                  修改接口定义时进入高级报表，Cookie 仍按门店加密隔离。
+                </p>
+                <div className="pms-endpoint-list">
+                  {pmsReportSources.length > 0 ? pmsReportSources.map((source) => (
+                    <div className="pms-endpoint-row" key={source.sourceId}>
+                      <div>
+                        <strong>{source.displayName}</strong>
+                        <span>{REPORT_TYPE_LABELS[source.reportType]}</span>
+                      </div>
+                      <code title={source.endpointUrl}>{source.endpointUrl}</code>
+                      <span className={`endpoint-state ${source.enabled ? 'enabled' : 'disabled'}`}>
+                        {source.enabled ? '已启用' : '已停用'}
+                      </span>
+                    </div>
+                  )) : (
+                    <div className="state-panel">尚未配置 PMS 数据接口。</div>
+                  )}
+                </div>
+                <footer>
+                  <span>接口地址不含 Cookie、令牌或账号密码。</span>
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => setCollectionSection('reports')}
+                  >
+                    修改接口地址
+                  </button>
+                </footer>
+              </article>
+            ) : null}
             {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
               <TrustedDevicePanel
                 canRevokeDevice={canConfigure}
