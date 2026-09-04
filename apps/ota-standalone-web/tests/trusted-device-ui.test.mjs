@@ -34,11 +34,19 @@ test('Bieyanghong configuration keeps trusted-device collection and exposes a se
   assert.match(page, /失败保留旧 Cookie，不更新经营数据、不触发播报/u)
   assert.match(page, /hotelCode === '001'/u)
   assert.match(page, /PMS配置/u)
-  assert.match(page, /PMS 数据接口地址/u)
+  assert.match(page, /PMS 接口与 Cookie/u)
+  assert.match(page, /当前门店的报表名称、接口地址和 Cookie 均独立保存/u)
+  assert.match(page, /本店独立/u)
   assert.match(page, /source\.endpointUrl/u)
-  assert.match(page, /修改接口地址/u)
+  assert.match(page, /修改接口与 Cookie/u)
+  assert.match(page, /新增接口与 Cookie/u)
   assert.ok(
-    page.indexOf('PMS 数据接口地址') < page.indexOf('<TrustedDevicePanel'),
+    page.indexOf('PMS 接口与 Cookie') < page.indexOf('<TrustedDevicePanel'),
+  )
+  assert.match(api, /ensureReportSourcesForEveryHotel/u)
+  assert.doesNotMatch(
+    api,
+    /REPORT_SOURCE_DEFINITION_MANAGED|LUOPAN_REPORT_SOURCE_ENABLED_ONLY/u,
   )
   assert.match(api, /suffix === '\/pms-cookie-validation'/u)
   const validationOperation = api.slice(

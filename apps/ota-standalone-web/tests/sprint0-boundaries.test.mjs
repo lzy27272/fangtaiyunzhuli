@@ -371,13 +371,17 @@ test('multiple report URLs are saved by hotel with HTTPS and secret boundaries',
   assert.doesNotMatch(reportSourceSource, /fetch\(['"`]https?:/)
 })
 
-test('Luopan stores can disable legacy reports without editing interfaces or credentials', () => {
+test('every PMS store can edit hotel-specific interfaces and encrypted credentials', () => {
   assert.match(businessApiSource, /enabledToggleOnly: boolean/)
-  assert.match(reportSourceSource, /保存报表启用状态/)
-  assert.match(reportSourceSource, /无须配置美团报表接口/)
-  assert.match(reportSourceSource, /停用后不要求登录凭据或请求内容/)
-  assert.match(reviewApiSource, /LUOPAN_REPORT_SOURCE_ENABLED_ONLY/)
-  assert.match(reviewApiSource, /reportSourceEnabledToggleOnlyMatch/)
+  assert.match(reportSourceSource, /当前门店独立配置/u)
+  assert.match(reportSourceSource, /新增报表接口/u)
+  assert.match(reportSourceSource, /保存本店配置/u)
+  assert.match(reviewApiSource, /definitionLocked: false/u)
+  assert.match(reviewApiSource, /enabledToggleOnly: false/u)
+  assert.doesNotMatch(
+    reviewApiSource,
+    /LUOPAN_REPORT_SOURCE_ENABLED_ONLY|REPORT_SOURCE_DEFINITION_MANAGED/u,
+  )
   assert.match(monitorSource, /enabledReportSourceIds\.has\(source\.sourceId\)/)
 })
 
@@ -484,8 +488,10 @@ test('each saved data-source configuration triggers a scoped collection while ma
   assert.match(reportSourceSource, /saveReportSources[\s\S]*triggerLiveCollection/)
   assert.match(
     reportSourceSource,
-    /保存当前门店配置并自动采集一次|保存同步接口并自动采集一次/,
+    /保存本店配置并自动采集一次/,
   )
+  assert.match(reportSourceSource, /pmsSystemCode === 'OTHER'/)
+  assert.match(reviewApiSource, /PMS_ADAPTER_NOT_READY/)
   assert.match(otaSourceConfigSource, /saveOtaSources[\s\S]*refreshAfterSave/)
   assert.doesNotMatch(otaSourceConfigSource, /triggerLiveCollection/)
   assert.match(

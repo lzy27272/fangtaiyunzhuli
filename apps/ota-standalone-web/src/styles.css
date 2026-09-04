@@ -881,6 +881,12 @@ details.history-card { display: block; }
   color: #6b7a75;
   font-size: .72rem;
 }
+.pms-endpoint-row > .pms-endpoint-states {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: .35rem;
+}
 .pms-endpoint-row code {
   min-width: 0;
   color: #245749;
@@ -1295,6 +1301,11 @@ details.history-card { display: block; }
     grid-template-columns: 1fr;
     align-items: start;
   }
+  .pms-endpoint-row > .pms-endpoint-states {
+    align-items: stretch;
+    width: 100%;
+  }
+  .pms-endpoint-states .endpoint-state { text-align: center; }
   .pms-endpoint-card > footer {
     align-items: stretch;
     flex-direction: column;

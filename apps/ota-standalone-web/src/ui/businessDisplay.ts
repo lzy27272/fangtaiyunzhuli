@@ -49,6 +49,7 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   COOKIE_NOT_CONFIGURED: '登录凭据尚未配置',
   REPORT_SOURCE_COOKIE_REQUIRED: '需要更新登录凭据',
   REPORT_SOURCE_ENABLED_REQUIRED: '需要启用报表采集',
+  PMS_ADAPTER_NOT_READY: 'PMS厂家接口尚未完成适配，配置已保留但暂不采集',
   PMS_SESSION_REAUTH_REQUIRED: '酒店系统需要重新登录',
   PMS_REPAIR_REQUIRED: 'PMS需要修复处理',
   PMS_SNAPSHOT_INCOMPLETE: 'PMS快照不完整',

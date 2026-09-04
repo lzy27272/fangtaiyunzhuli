@@ -259,15 +259,17 @@ test('created review hotels are returned by the directory and survive restart', 
       { headers: { Authorization: `Bearer ${token}` } },
     )
     const managedReportBody = await managedReportResponse.json()
-    assert.deepEqual(
+    assert.notDeepEqual(
       managedReportBody.data.map(reportSourceDefinition),
       templateSources.map(reportSourceDefinition),
     )
+    assert.equal(managedReportBody.data[2].displayName, '经营概览（房费/ADR/RevPAR）')
     assert.equal(
       managedReportBody.data.every(
         (source) =>
-          source.definitionLocked === true
-          && source.definitionTemplateHotelCode === '001/001'
+          source.definitionLocked === false
+          && source.definitionTemplateHotelCode === '001/090'
+          && source.enabledToggleOnly === false
           && source.cookieConfigured === false,
       ),
       true,
@@ -286,6 +288,12 @@ test('created review hotels are returned by the directory and survive restart', 
           reasonCode: 'REPORT_SOURCE_CONFIG',
           sources: managedReportBody.data.map((source, index) => ({
             ...source,
+            displayName: index === 0
+              ? 'Managed Vendor Orders'
+              : source.displayName,
+            endpointUrl: index === 0
+              ? 'https://managed-pms.example.test/reports/orders'
+              : source.endpointUrl,
             requestPayloadJson: index === 0
               ? '{"hotelSpecific":true}'
               : source.requestPayloadJson,
@@ -300,33 +308,6 @@ test('created review hotels are returned by the directory and survive restart', 
       },
     )
     assert.equal(saveManagedCookie.status, 200)
-
-    const rejectedManagedDefinition = await fetch(
-      `${managedPath}/report-sources`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': 'review-managed-definition-rejected-001',
-        },
-        body: JSON.stringify({
-          reasonCode: 'REPORT_SOURCE_CONFIG',
-          sources: managedReportBody.data.map((source, index) => ({
-            ...source,
-            displayName: index === 0
-              ? 'Managed Hotel Must Not Override'
-              : source.displayName,
-            cookieUpdate: { action: 'KEEP' },
-          })),
-        }),
-      },
-    )
-    assert.equal(rejectedManagedDefinition.status, 400)
-    assert.equal(
-      (await rejectedManagedDefinition.json()).code,
-      'REPORT_SOURCE_DEFINITION_MANAGED',
-    )
 
     templateSources = templateSources.map((source) =>
       source.sourceId === updatedTemplateSourceId
@@ -357,14 +338,18 @@ test('created review hotels are returned by the directory and survive restart', 
       { headers: { Authorization: `Bearer ${token}` } },
     )
     const synchronizedManagedBody = await synchronizedManagedResponse.json()
-    assert.deepEqual(
-      synchronizedManagedBody.data.map(reportSourceDefinition),
-      templateSources.map((source, index) => ({
-        ...reportSourceDefinition(source),
-        requestPayloadJson: index === 0
-          ? '{"hotelSpecific":true}'
-          : source.requestPayloadJson,
-      })),
+    assert.equal(synchronizedManagedBody.data[0].displayName, 'Managed Vendor Orders')
+    assert.equal(
+      synchronizedManagedBody.data[0].endpointUrl,
+      'https://managed-pms.example.test/reports/orders',
+    )
+    assert.equal(
+      synchronizedManagedBody.data[0].requestPayloadJson,
+      '{"hotelSpecific":true}',
+    )
+    assert.equal(
+      synchronizedManagedBody.data[2].displayName,
+      '经营概览（房费/ADR/RevPAR）',
     )
     assert.equal(
       synchronizedManagedBody.data.filter(
@@ -505,6 +490,71 @@ test('created review hotels are returned by the directory and survive restart', 
     assert.equal(createdOtherPms.tenantId, templateHotel.tenantId)
     assert.equal(createdOtherPms.collectionEnabled, false)
     assert.equal(createdOtherPms.configuredMockConnectors, 0)
+    const otherPmsPath =
+      `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
+      + `${createdOtherPms.tenantId}/hotels/${createdOtherPms.hotelId}`
+    const emptyOtherReports = await fetch(`${otherPmsPath}/report-sources`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    assert.deepEqual((await emptyOtherReports.json()).data, [])
+    const otherSourceId = '47000000-0000-4000-8000-000000000001'
+    const saveOtherReport = await fetch(`${otherPmsPath}/report-sources`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'review-other-pms-report-001',
+      },
+      body: JSON.stringify({
+        reasonCode: 'REPORT_SOURCE_CONFIG',
+        sources: [{
+          sourceId: otherSourceId,
+          displayName: '测试厂家营业报表',
+          endpointUrl: 'https://custom-pms.example.test/reports/business',
+          reportType: 'CUSTOM_REPORT',
+          calculationRole: 'AUXILIARY_CALCULATION',
+          pollIntervalMinutes: 30,
+          credentialAlias: 'CUSTOM_PMS_REPORT',
+          requestPayloadJson: '',
+          cookieUpdate: {
+            action: 'REPLACE',
+            value: 'synthetic_other_pms_cookie=isolated',
+          },
+          enabled: false,
+          rowVersion: 0,
+        }],
+      }),
+    })
+    assert.equal(saveOtherReport.status, 200)
+    const configuredOtherReports = await fetch(
+      `${otherPmsPath}/report-sources`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    const configuredOtherBody = (await configuredOtherReports.json()).data
+    assert.equal(configuredOtherBody[0].displayName, '测试厂家营业报表')
+    assert.equal(
+      configuredOtherBody[0].endpointUrl,
+      'https://custom-pms.example.test/reports/business',
+    )
+    assert.equal(configuredOtherBody[0].cookieConfigured, true)
+    assert.equal(configuredOtherBody[0].definitionLocked, false)
+    const blockedOtherCollection = await fetch(
+      `${otherPmsPath}/live-collection-runs`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'review-other-pms-collection-blocked-001',
+        },
+        body: JSON.stringify({}),
+      },
+    )
+    assert.equal(blockedOtherCollection.status, 400)
+    assert.equal(
+      (await blockedOtherCollection.json()).code,
+      'PMS_ADAPTER_NOT_READY',
+    )
     const createdLuopanPath =
       `http://127.0.0.1:${first.port}/api/v1/ota/tenants/`
       + `${createdLuopan.tenantId}/hotels/${createdLuopan.hotelId}`
@@ -556,8 +606,9 @@ test('created review hotels are returned by the directory and survive restart', 
           && source.cookieUpdatedAt === null
           && source.pollIntervalMinutes === 30
           && source.requestPayloadJson === ''
-          && source.definitionLocked === true
-          && source.definitionTemplateHotelCode === '001/001',
+          && source.definitionLocked === false
+          && source.definitionTemplateHotelCode === '002/003'
+          && source.enabledToggleOnly === false,
       ),
       true,
     )
@@ -718,6 +769,15 @@ test('created review hotels are returned by the directory and survive restart', 
       encryptedPmsLoginStore,
       /synthetic-(?:template|created|luopan)-(?:user|password)|example-luopan-password/,
     )
+    const encryptedReportCookieStore = await readFile(
+      join(runtimePath, 'report-source-cookie-secrets.json'),
+      'utf8',
+    )
+    assert.match(encryptedReportCookieStore, /"ciphertext"/)
+    assert.doesNotMatch(
+      encryptedReportCookieStore,
+      /synthetic_(?:template|managed|other_pms)_cookie/,
+    )
 
     await stopReviewApi(first.child)
     first = null
@@ -761,6 +821,17 @@ test('created review hotels are returned by the directory and survive restart', 
       ),
       true,
     )
+    const restartedOtherPmsPath =
+      `http://127.0.0.1:${second.port}/api/v1/ota/tenants/`
+      + `${createdOtherPms.tenantId}/hotels/${createdOtherPms.hotelId}`
+    const restartedOtherReports = await fetch(
+      `${restartedOtherPmsPath}/report-sources`,
+      { headers: { Authorization: `Bearer ${restartedToken}` } },
+    )
+    const restartedOtherBody = (await restartedOtherReports.json()).data
+    assert.equal(restartedOtherBody[0].displayName, '测试厂家营业报表')
+    assert.equal(restartedOtherBody[0].cookieConfigured, true)
+    assert.equal(restartedOtherBody[0].definitionLocked, false)
     const restartedCreatedPath =
       `http://127.0.0.1:${second.port}/api/v1/ota/tenants/`
       + `${created.tenantId}/hotels/${created.hotelId}`
@@ -799,6 +870,11 @@ test('created review hotels are returned by the directory and survive restart', 
       restartedManagedBody.data[0].requestPayloadJson,
       '{"hotelSpecific":true}',
     )
+    assert.equal(restartedManagedBody.data[0].displayName, 'Managed Vendor Orders')
+    assert.equal(
+      restartedManagedBody.data[0].endpointUrl,
+      'https://managed-pms.example.test/reports/orders',
+    )
   } finally {
     if (first) await stopReviewApi(first.child)
     if (second) await stopReviewApi(second.child)
@@ -806,7 +882,7 @@ test('created review hotels are returned by the directory and survive restart', 
   }
 })
 
-test('Luopan legacy reports allow enabled-only changes and keep them across restart', { timeout: 15_000 }, async () => {
+test('Luopan report names, addresses and Cookies are hotel-specific across restart', { timeout: 15_000 }, async () => {
   const runtimePath = await mkdtemp(join(tmpdir(), 'sfg-review-luopan-toggle-'))
   const tenantId = '10000000-0000-4000-8000-000000000001'
   const meituanHotelId = '20000000-0000-4000-8000-000000000001'
@@ -873,51 +949,37 @@ test('Luopan legacy reports allow enabled-only changes and keep them across rest
     })
     const loadedSources = (await loaded.json()).data
     assert.equal(loadedSources[0].enabled, true)
-    assert.equal(loadedSources[0].enabledToggleOnly, true)
+    assert.equal(loadedSources[0].enabledToggleOnly, false)
+    assert.equal(loadedSources[0].definitionLocked, false)
 
-    const disabledResponse = await fetch(`${scopedPath}/report-sources`, {
+    const updatedResponse = await fetch(`${scopedPath}/report-sources`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'Idempotency-Key': 'review-luopan-disable-001',
+        'Idempotency-Key': 'review-luopan-update-001',
       },
       body: JSON.stringify({
-        reasonCode: 'DISABLE_LEGACY_LUOPAN_REPORT',
+        reasonCode: 'UPDATE_LUOPAN_REPORT',
         sources: loadedSources.map((item) => ({
           ...item,
+          displayName: '罗盘本店订单报表',
+          endpointUrl: 'https://luopan.example.test/reports/orders',
           enabled: false,
-          cookieUpdate: { action: 'KEEP' },
+          cookieUpdate: {
+            action: 'REPLACE',
+            value: 'synthetic_luopan_cookie=isolated',
+          },
         })),
       }),
     })
-    assert.equal(disabledResponse.status, 200)
-
-    const changedDefinitionResponse = await fetch(
-      `${scopedPath}/report-sources`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': 'review-luopan-definition-rejected-001',
-        },
-        body: JSON.stringify({
-          reasonCode: 'REJECT_LUOPAN_DEFINITION_EDIT',
-          sources: loadedSources.map((item) => ({
-            ...item,
-            displayName: 'Must stay managed',
-            enabled: false,
-            cookieUpdate: { action: 'KEEP' },
-          })),
-        }),
-      },
+    assert.equal(updatedResponse.status, 200)
+    const encryptedCookieStore = await readFile(
+      join(runtimePath, 'report-source-cookie-secrets.json'),
+      'utf8',
     )
-    assert.equal(changedDefinitionResponse.status, 400)
-    assert.equal(
-      (await changedDefinitionResponse.json()).code,
-      'LUOPAN_REPORT_SOURCE_ENABLED_ONLY',
-    )
+    assert.match(encryptedCookieStore, /"ciphertext"/)
+    assert.doesNotMatch(encryptedCookieStore, /synthetic_luopan_cookie/)
 
     await stopReviewApi(first.child)
     first = null
@@ -942,7 +1004,14 @@ test('Luopan legacy reports allow enabled-only changes and keep them across rest
     })
     const restartedSources = (await restarted.json()).data
     assert.equal(restartedSources[0].enabled, false)
-    assert.equal(restartedSources[0].enabledToggleOnly, true)
+    assert.equal(restartedSources[0].enabledToggleOnly, false)
+    assert.equal(restartedSources[0].definitionLocked, false)
+    assert.equal(restartedSources[0].displayName, '罗盘本店订单报表')
+    assert.equal(
+      restartedSources[0].endpointUrl,
+      'https://luopan.example.test/reports/orders',
+    )
+    assert.equal(restartedSources[0].cookieConfigured, true)
   } finally {
     if (first) await stopReviewApi(first.child)
     if (second) await stopReviewApi(second.child)

@@ -971,47 +971,6 @@ const cloneReportSourceDefinitions = (
   }))
 }
 
-const reportSourceDefinitionsMatch = (
-  left,
-  right,
-  { ignoreEnabled = false } = {},
-) => {
-  const comparable = (sources) =>
-    cloneReportSourceDefinitions(sources)
-      .map(({
-        requestPayloadJson,
-        validationStatus,
-        rowVersion,
-        enabled,
-        ...source
-      }) => ({
-        ...source,
-        requestPayloadJson,
-        ...(ignoreEnabled ? {} : { enabled }),
-      }))
-      .sort((first, second) =>
-        first.sourceId.localeCompare(second.sourceId))
-  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
-}
-
-const reportSourceEnabledToggleOnlyMatch = (left, right) => {
-  const comparable = (sources) =>
-    sources
-      .map((source) => ({
-        sourceId: source.sourceId,
-        displayName: source.displayName,
-        endpointUrl: source.endpointUrl,
-        reportType: source.reportType,
-        calculationRole: source.calculationRole,
-        pollIntervalMinutes: source.pollIntervalMinutes,
-        credentialAlias: source.credentialAlias,
-        requestPayloadJson: source.requestPayloadJson,
-      }))
-      .sort((first, second) =>
-        first.sourceId.localeCompare(second.sourceId))
-  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
-}
-
 const ensurePrimaryReportSourceTemplate = () => {
   const primary = primaryReportSourceHotel()
   if (!primary) throw new Error('REPORT_SOURCE_TEMPLATE_HOTEL_NOT_FOUND')
@@ -1024,25 +983,16 @@ const ensurePrimaryReportSourceTemplate = () => {
   }
 }
 
-const synchronizeReportSourcesFromPrimary = () => {
+const ensureReportSourcesForEveryHotel = () => {
   const { primary, sources } = ensurePrimaryReportSourceTemplate()
   for (const hotel of hotels) {
     if (hotel.hotelId === primary.hotelId) continue
-    if (
-      hotel.pmsSystemCode === 'LUOPAN_CLOUD'
-      && !reportSourcesByHotel.has(hotel.hotelId)
-    ) {
-      continue
-    }
+    if (reportSourcesByHotel.has(hotel.hotelId)) continue
     reportSourcesByHotel.set(
       hotel.hotelId,
-      cloneReportSourceDefinitions(
-        sources,
-        reportSourcesByHotel.get(hotel.hotelId),
-        {
-          preserveEnabled: hotel.pmsSystemCode === 'LUOPAN_CLOUD',
-        },
-      ),
+      hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+        ? cloneReportSourceDefinitions(sources)
+        : [],
     )
   }
 }
@@ -1186,7 +1136,6 @@ const secretsForHotel = (hotelId) =>
 
 const decorateReportSources = (hotelId, sources) => {
   const secrets = secretsForHotel(hotelId)
-  const primary = primaryReportSourceHotel()
   const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
   return sources.map((source) => {
     const secret = secrets[source.sourceId]
@@ -1194,10 +1143,10 @@ const decorateReportSources = (hotelId, sources) => {
       ...source,
       cookieConfigured: Boolean(secret),
       cookieUpdatedAt: secret?.updatedAt ?? null,
-      definitionLocked: hotelId !== primary.hotelId,
+      definitionLocked: false,
       definitionTemplateHotelCode:
-        `${primary.tenantCode}/${primary.hotelCode}`,
-      enabledToggleOnly: hotel?.pmsSystemCode === 'LUOPAN_CLOUD',
+        `${hotel?.tenantCode ?? ''}/${hotel?.hotelCode ?? ''}`,
+      enabledToggleOnly: false,
     }
   })
 }
@@ -1925,7 +1874,7 @@ if (dataPath && existsSync(dataPath)) {
   }
 }
 
-synchronizeReportSourcesFromPrimary()
+ensureReportSourcesForEveryHotel()
 persistReportSources()
 
 if (existsSync(cookieSecretsPath)) {
@@ -4631,6 +4580,9 @@ const collectLiveFor = async (
 
   const operation = (async () => {
     const hotel = selectedHotel(hotelId)
+    if (hotel.pmsSystemCode === 'OTHER') {
+      throw new Error('PMS_ADAPTER_NOT_READY')
+    }
     if (trustedDeviceLegacyCollectionBlocked(hotel)) {
       throw new Error('TRUSTED_DEVICE_COLLECTION_REQUIRED')
     }
@@ -4644,7 +4596,7 @@ const collectLiveFor = async (
     }
     const businessDayControl = businessDayControlFor(hotelId)
     if (!reportSourcesByHotel.has(hotelId)) {
-      synchronizeReportSourcesFromPrimary()
+      ensureReportSourcesForEveryHotel()
     }
     const sources = reportSourcesByHotel.get(hotelId)
     const encryptedSecrets = secretsForHotel(hotelId)
@@ -5801,7 +5753,7 @@ const validateAndReplaceBieyanghongReportCookies = async (
       throw new Error('BIEYANGHONG_REPAIR_PILOT_SCOPE_INVALID')
     }
     if (!reportSourcesByHotel.has(hotelId)) {
-      synchronizeReportSourcesFromPrimary()
+      ensureReportSourcesForEveryHotel()
     }
     const sources = reportSourcesByHotel.get(hotelId) ?? []
     const secretsBeforeValidation = secretsForHotel(hotelId)
@@ -7975,7 +7927,7 @@ const trustedDeviceConfigMaterial = (hotel) => {
     throw new Error('TRUSTED_DEVICE_DISABLED')
   }
   if (!reportSourcesByHotel.has(hotel.hotelId)) {
-    synchronizeReportSourcesFromPrimary()
+    ensureReportSourcesForEveryHotel()
   }
   const sources = (reportSourcesByHotel.get(hotel.hotelId) ?? []).map((source) => ({
     sourceId: source.sourceId,
@@ -9555,11 +9507,7 @@ const server = createServer(async (request, response) => {
           return
         }
         if (!reportSourcesByHotel.has(hotelId)) {
-          if (selected.pmsSystemCode === 'LUOPAN_CLOUD') {
-            reportSourcesByHotel.set(hotelId, [])
-          } else {
-            synchronizeReportSourcesFromPrimary()
-          }
+          ensureReportSourcesForEveryHotel()
         }
         json(response, 200, {
           data: decorateReportSources(
@@ -9597,51 +9545,8 @@ const server = createServer(async (request, response) => {
           throw new Error('REASON_CODE_INVALID')
         }
         const normalizedSources = normalizeReportSources(body.sources)
-        if (selected.pmsSystemCode === 'LUOPAN_CLOUD') {
-          const existingSources = reportSourcesByHotel.get(hotelId) ?? []
-          const cookieUpdateRequested = body.sources.some((source) =>
-            (source?.cookieUpdate?.action ?? 'KEEP') !== 'KEEP')
-          if (
-            cookieUpdateRequested
-            || !reportSourceEnabledToggleOnlyMatch(
-              normalizedSources,
-              existingSources,
-            )
-          ) {
-            throw new Error('LUOPAN_REPORT_SOURCE_ENABLED_ONLY')
-          }
-          reportSourcesByHotel.set(hotelId, normalizedSources)
-          persistReportSources()
-          json(response, 200, {
-            data: {
-              commandId: randomUUID(),
-              resourceId: hotelId,
-              resultingRowVersion: Math.max(
-                1,
-                ...normalizedSources.map((source) => source.rowVersion),
-              ),
-              replayed: false,
-            },
-          })
-          return
-        }
-        const { primary, sources: templateSources } =
-          ensurePrimaryReportSourceTemplate()
-        let savedSources
-        if (hotelId === primary.hotelId) {
-          reportSourcesByHotel.set(hotelId, normalizedSources)
-          synchronizeReportSourcesFromPrimary()
-          savedSources = normalizedSources
-        } else {
-          if (!reportSourceDefinitionsMatch(normalizedSources, templateSources)) {
-            throw new Error('REPORT_SOURCE_DEFINITION_MANAGED')
-          }
-          savedSources = cloneReportSourceDefinitions(
-            templateSources,
-            normalizedSources,
-          )
-          reportSourcesByHotel.set(hotelId, savedSources)
-        }
+        const savedSources = normalizedSources
+        reportSourcesByHotel.set(hotelId, savedSources)
         applyCookieUpdates(hotelId, body.sources)
         persistCookieSecrets()
         persistReportSources()
@@ -10509,6 +10414,7 @@ const server = createServer(async (request, response) => {
                 : typeof error?.message === 'string'
                   && (
                     error.message.startsWith('SIMULATION_')
+                    || error.message === 'PMS_ADAPTER_NOT_READY'
                     || error.message.startsWith('PMS_LOGIN_')
                     || error.message.startsWith('PMS_BUSINESS_DATE_')
                     || error.message.startsWith('PMS_COOKIE_')

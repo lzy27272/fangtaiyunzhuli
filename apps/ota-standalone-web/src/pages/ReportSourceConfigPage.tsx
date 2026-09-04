@@ -93,7 +93,7 @@ const createEmptySource = (): ReportSourceView => ({
   cookieConfigured: false,
   cookieUpdatedAt: null,
   definitionLocked: false,
-  definitionTemplateHotelCode: '001/001',
+  definitionTemplateHotelCode: '',
   enabledToggleOnly: false,
   enabled: false,
   validationStatus: 'NOT_TESTED',
@@ -102,14 +102,6 @@ const createEmptySource = (): ReportSourceView => ({
 
 const sourceCardId = (sourceId: string) =>
   `report-source-${sourceId.replace(/[^A-Za-z0-9_-]/g, '-')}`
-
-const isMeituanPmsSource = (source: ReportSourceView) => {
-  try {
-    return new URL(source.endpointUrl).hostname === 'pms.meituan.com'
-  } catch {
-    return false
-  }
-}
 
 export function ReportSourceConfigPage({
   context,
@@ -144,7 +136,6 @@ export function ReportSourceConfigPage({
   const [pmsCookieValidation, setPmsCookieValidation] =
     useState<PmsCookieValidationView | null>(null)
   const [overviewVersion, setOverviewVersion] = useState(0)
-  const pmsReportSources = sources.filter(isMeituanPmsSource)
 
   useEffect(() => {
     if (!context) {
@@ -223,10 +214,6 @@ export function ReportSourceConfigPage({
     })),
     [sources],
   )
-  const definitionsLocked = sources.some((source) => source.definitionLocked)
-  const enabledToggleOnly = sources.some((source) => source.enabledToggleOnly)
-  const definitionTemplateHotelCode =
-    sources[0]?.definitionTemplateHotelCode ?? '001/001'
   const attentionBySourceId = useMemo(
     () => new Map(
       attentionItems.map((attention) => [attention.sourceId, attention]),
@@ -360,10 +347,10 @@ export function ReportSourceConfigPage({
       setSources(savedSources)
       setCookieDrafts({})
       setCookieClears({})
-      if (enabledToggleOnly) {
+      if (pmsSystemCode === 'OTHER') {
         setOverviewVersion((current) => current + 1)
         setNotice(
-          '罗盘酒店系统的报表启用状态已保存；未启用的报表不会参与采集。',
+          '当前门店的接口名称、地址和登录凭据已独立保存；厂家适配完成前不会启动采集或播报。',
         )
         return
       }
@@ -381,9 +368,7 @@ export function ReportSourceConfigPage({
       }
       setOverviewVersion((current) => current + 1)
       setNotice(
-        (definitionsLocked
-          ? `当前门店登录凭据及请求内容已保存；其他接口设置继续由${definitionTemplateHotelCode}门店统一同步。`
-          : '报表接口及当前门店登录凭据已保存；接口设置已同步到全部门店，登录凭据不会被复制或覆盖。')
+        '当前门店的接口名称、地址和登录凭据已独立保存，不会同步或覆盖其他门店。'
         + collectionNotice,
       )
     } catch (cause) {
@@ -519,48 +504,52 @@ export function ReportSourceConfigPage({
           </> : null}
 
           {collectionSection === 'pms' ? <>
-            {pmsSystemCode === 'MEITUAN_BIEYANGHONG'
-            && hotelCode === '001' ? (
-              <article className="report-source-card pms-endpoint-card">
-                <header>
-                  <div>
-                    <span>001 门店 PMS 配置</span>
-                    <strong>PMS 数据接口地址</strong>
-                  </div>
-                  <span className="mode-chip">{pmsReportSources.length} 个接口</span>
-                </header>
-                <p>
-                  当前 001 门店采集使用的只读接口如下。这里直接显示完整地址；
-                  修改接口定义时进入高级报表，Cookie 仍按门店加密隔离。
-                </p>
-                <div className="pms-endpoint-list">
-                  {pmsReportSources.length > 0 ? pmsReportSources.map((source) => (
-                    <div className="pms-endpoint-row" key={source.sourceId}>
-                      <div>
-                        <strong>{source.displayName}</strong>
-                        <span>{REPORT_TYPE_LABELS[source.reportType]}</span>
-                      </div>
-                      <code title={source.endpointUrl}>{source.endpointUrl}</code>
+            <article className="report-source-card pms-endpoint-card">
+              <header>
+                <div>
+                  <span>{hotelCode} 门店 PMS 配置</span>
+                  <strong>PMS 接口与 Cookie</strong>
+                </div>
+                <span className="mode-chip">本店独立 · {sources.length} 个接口</span>
+              </header>
+              <p>
+                当前门店的报表名称、接口地址和 Cookie 均独立保存，不会同步或覆盖其他门店。
+                不同 PMS 厂家可按实际报表名称和接口地址分别配置。
+              </p>
+              <div className="pms-endpoint-list">
+                {sources.length > 0 ? sources.map((source) => (
+                  <div className="pms-endpoint-row" key={source.sourceId}>
+                    <div>
+                      <strong>{source.displayName}</strong>
+                      <span>{REPORT_TYPE_LABELS[source.reportType]}</span>
+                    </div>
+                    <code title={source.endpointUrl}>{source.endpointUrl}</code>
+                    <div className="pms-endpoint-states">
                       <span className={`endpoint-state ${source.enabled ? 'enabled' : 'disabled'}`}>
                         {source.enabled ? '已启用' : '已停用'}
                       </span>
+                      <span className={`endpoint-state ${source.cookieConfigured ? 'enabled' : 'disabled'}`}>
+                        {source.cookieConfigured ? 'Cookie 已配置' : 'Cookie 未配置'}
+                      </span>
                     </div>
-                  )) : (
-                    <div className="state-panel">尚未配置 PMS 数据接口。</div>
-                  )}
-                </div>
-                <footer>
-                  <span>接口地址不含 Cookie、令牌或账号密码。</span>
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => setCollectionSection('reports')}
-                  >
-                    修改接口地址
-                  </button>
-                </footer>
-              </article>
-            ) : null}
+                  </div>
+                )) : (
+                  <div className="state-panel">
+                    本店尚未配置 PMS 数据接口，可进入配置后按厂家实际报表新增。
+                  </div>
+                )}
+              </div>
+              <footer>
+                <span>页面只显示 Cookie 配置状态，不回显 Cookie、令牌或账号密码。</span>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => setCollectionSection('reports')}
+                >
+                  {sources.length > 0 ? '修改接口与 Cookie' : '新增接口与 Cookie'}
+                </button>
+              </footer>
+            </article>
             {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
               <TrustedDevicePanel
                 canRevokeDevice={canConfigure}
@@ -773,19 +762,9 @@ export function ReportSourceConfigPage({
           <div className="security-note report-source-note">
             高级报表只在新增或更换采集接口时使用。登录凭据会按门店加密保存，保存后不再显示原文。
           </div>
-          {definitionsLocked ? (
-            <div className="security-note report-source-note" role="status">
-              报表接口由
-              {definitionTemplateHotelCode}
-              门店统一配置并自动同步；当前门店只需单独填写登录凭据和请求内容，
-              接口地址及其他设置无需重复填写。
-            </div>
-          ) : (
-            <div className="security-note report-source-note" role="status">
-              当前门店是报表接口模板。保存接口定义后会自动同步到现有及后续新增的全部评审门店；
-              各门店登录凭据始终独立，不会被同步或覆盖。
-            </div>
-          )}
+          <div className="security-note report-source-note" role="status">
+            当前门店独立配置：报表名称、接口地址、请求内容和 Cookie 均不会同步或覆盖其他门店。
+          </div>
 
           {attentionRows.length > 0 ? (
             <section
@@ -839,31 +818,22 @@ export function ReportSourceConfigPage({
             </section>
           ) : null}
 
-          {enabledToggleOnly ? (
-            <div className="state-panel">
-              当前为罗盘PMS门店，无须配置美团报表接口。可取消报表右上角的“启用”并保存；
-              停用后不要求登录凭据或请求内容，也不会参与定时采集。
-            </div>
-          ) : (
-            <>
-              <h3>计算覆盖</h3>
-              <div className="coverage-grid">
-                {coverage.map((item) => (
-                  <article
-                    className={item.configured ? 'coverage-ready' : 'coverage-missing'}
-                    key={item.type}
-                  >
-                    <strong>{item.label}</strong>
-                    <span>
-                      {item.configured
-                        ? '已配置'
-                        : item.required ? '缺少主数据' : '可选'}
-                    </span>
-                  </article>
-                ))}
-              </div>
-            </>
-          )}
+          <h3>计算覆盖</h3>
+          <div className="coverage-grid">
+            {coverage.map((item) => (
+              <article
+                className={item.configured ? 'coverage-ready' : 'coverage-missing'}
+                key={item.type}
+              >
+                <strong>{item.label}</strong>
+                <span>
+                  {item.configured
+                    ? '已配置'
+                    : item.required ? '缺少主数据' : '可选'}
+                </span>
+              </article>
+            ))}
+          </div>
 
           <div className="report-source-list" id="report-source-list">
             {sources.map((source, index) => {
@@ -897,10 +867,7 @@ export function ReportSourceConfigPage({
                     <label className="inline-toggle">
                       <input
                         checked={source.enabled}
-                        disabled={
-                          !canConfigure
-                          || (source.definitionLocked && !source.enabledToggleOnly)
-                        }
+                        disabled={!canConfigure}
                         type="checkbox"
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -923,7 +890,7 @@ export function ReportSourceConfigPage({
                     <label>
                       报表名称
                       <input
-                        disabled={!canConfigure || source.definitionLocked}
+                        disabled={!canConfigure}
                         value={source.displayName}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -934,7 +901,7 @@ export function ReportSourceConfigPage({
                     <label>
                       报表用途
                       <select
-                        disabled={!canConfigure || source.definitionLocked}
+                        disabled={!canConfigure}
                         value={source.reportType}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -949,7 +916,7 @@ export function ReportSourceConfigPage({
                     <label>
                       计算角色
                       <select
-                        disabled={!canConfigure || source.definitionLocked}
+                        disabled={!canConfigure}
                         value={source.calculationRole}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -964,7 +931,7 @@ export function ReportSourceConfigPage({
                     <label>
                       轮询间隔
                       <select
-                        disabled={!canConfigure || source.definitionLocked}
+                        disabled={!canConfigure}
                         value={source.pollIntervalMinutes}
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -981,7 +948,7 @@ export function ReportSourceConfigPage({
                     <label className="wide-field">
                       数据接口地址
                       <input
-                        disabled={!canConfigure || source.definitionLocked}
+                        disabled={!canConfigure}
                         placeholder="https://example.com/report/api"
                         value={source.endpointUrl}
                         onChange={(event) =>
@@ -996,7 +963,7 @@ export function ReportSourceConfigPage({
                     <label>
                       授权名称（可选）
                       <input
-                        disabled={!canConfigure || source.definitionLocked}
+                        disabled={!canConfigure}
                         placeholder="例如：每日经营报表"
                         value={source.credentialAlias}
                         onChange={(event) =>
@@ -1008,7 +975,7 @@ export function ReportSourceConfigPage({
                     <label className="wide-field">
                       请求内容（可选）
                       <textarea
-                        disabled={!canConfigure || source.enabledToggleOnly}
+                        disabled={!canConfigure}
                         maxLength={20_000}
                         placeholder="留空表示使用默认查询条件"
                         rows={6}
@@ -1027,7 +994,7 @@ export function ReportSourceConfigPage({
                       该接口专用登录凭据（可选）
                       <input
                         autoComplete="off"
-                        disabled={!canConfigure || source.enabledToggleOnly}
+                        disabled={!canConfigure}
                         maxLength={16 * 1024}
                         placeholder={
                           source.cookieConfigured
@@ -1065,7 +1032,6 @@ export function ReportSourceConfigPage({
                           checked={Boolean(cookieClears[source.sourceId])}
                           disabled={
                             !canConfigure
-                            || source.enabledToggleOnly
                             || Boolean(cookieDrafts[source.sourceId])
                           }
                           type="checkbox"
@@ -1086,11 +1052,9 @@ export function ReportSourceConfigPage({
                         ? '地址格式已校验'
                         : '尚未执行真实连通测试'}
                       {' · '}
-                      {source.enabledToggleOnly && !source.enabled
-                        ? '已停用，不参与采集'
-                        : source.cookieConfigured ? '登录凭据已配置' : '登录凭据未配置'}
+                      {source.cookieConfigured ? '登录凭据已配置' : '登录凭据未配置'}
                     </span>
-                    {canConfigure && !source.definitionLocked ? (
+                    {canConfigure ? (
                       <button
                         className="danger-link"
                         type="button"
@@ -1111,26 +1075,22 @@ export function ReportSourceConfigPage({
 
           {canConfigure ? (
             <div className="report-source-actions">
-              {!definitionsLocked ? (
-                <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => setSources((current) => [
-                      ...current,
-                      createEmptySource(),
-                    ])}
-                  >
-                    新增报表接口
-                  </button>
-              ) : null}
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => setSources((current) => [
+                  ...current,
+                  createEmptySource(),
+                ])}
+              >
+                新增报表接口
+              </button>
               <button disabled={saving} type="button" onClick={save}>
                 {saving
-                  ? enabledToggleOnly ? '正在保存…' : '正在保存并采集…'
-                  : enabledToggleOnly
-                    ? '保存报表启用状态'
-                    : definitionsLocked
-                    ? '保存当前门店配置并自动采集一次'
-                    : '保存同步接口并自动采集一次'}
+                  ? pmsSystemCode === 'OTHER' ? '正在保存…' : '正在保存并采集…'
+                  : pmsSystemCode === 'OTHER'
+                    ? '保存本店配置'
+                    : '保存本店配置并自动采集一次'}
               </button>
             </div>
           ) : null}
