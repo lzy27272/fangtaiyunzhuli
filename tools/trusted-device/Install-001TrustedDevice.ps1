@@ -133,17 +133,18 @@ $taskAction = New-ScheduledTaskAction `
 $taskTrigger = New-ScheduledTaskTrigger `
   -Once `
   -At (Get-Date).AddMinutes(1) `
-  -RepetitionInterval (New-TimeSpan -Minutes 5)
+  -RepetitionInterval (New-TimeSpan -Minutes 1)
 $taskSettings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `
   -AllowStartIfOnBatteries `
-  -DontStopIfGoingOnBatteries
+  -DontStopIfGoingOnBatteries `
+  -MultipleInstances IgnoreNew
 Register-ScheduledTask `
   -TaskName $taskName `
   -Action $taskAction `
   -Trigger $taskTrigger `
   -Settings $taskSettings `
-  -Description "Sifangguan $HotelCode trusted-device collector. Checks the active collection window every 5 minutes." `
+  -Description "Sifangguan $HotelCode trusted-device collector. Checks the active collection window every minute and retries safely inside the slot." `
   -Force | Out-Null
 
 $protocolCode = $HotelCode.ToLowerInvariant().Replace('_', '-')

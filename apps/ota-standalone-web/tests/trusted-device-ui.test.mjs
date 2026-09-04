@@ -72,6 +72,11 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(installer, /-Execute \$resolvedNodePath/u)
   assert.match(installer, /Register-ScheduledTask/u)
   assert.match(installer, /collect-if-due/u)
+  assert.match(
+    installer,
+    /-RepetitionInterval \(New-TimeSpan -Minutes 1\)/u,
+  )
+  assert.match(installer, /-MultipleInstances IgnoreNew/u)
   assert.doesNotMatch(installer, /schtasks\.exe/u)
   assert.match(installer, /trusted-device-agent\.mjs' status/u)
   assert.match(installer, /Keeping its device key and browser session/u)
@@ -94,6 +99,15 @@ test('Bieyanghong configuration page uses per-store trusted device mode and neve
   assert.match(agent, /pseudonymKey\.fill\(0\)/u)
   assert.match(agent, /process\.exit\(0\)/u)
   assert.match(agent, /process\.exit\(1\)/u)
+  const collectOnce = agent.slice(
+    agent.indexOf('const collectOnce = async'),
+    agent.indexOf('const repair = async'),
+  )
+  assert.match(collectOnce, /officialBrowserFor\(state\)/u)
+  assert.doesNotMatch(collectOnce, /connectToOfficialBrowser\(state\)/u)
+  assert.match(agent, /lastCollectionAttemptStatus: 'RUNNING'/u)
+  assert.match(agent, /lastCollectionAttemptStatus: 'SUCCEEDED'/u)
+  assert.match(agent, /lastCollectionAttemptStatus: 'FAILED'/u)
   assert.match(agent, /else if \(command === 'repair'\) await repair\(\)/u)
   assert.match(agent, /waitForOfficialLogin/u)
   assert.match(agent, /Get-CimInstance Win32_Process/u)

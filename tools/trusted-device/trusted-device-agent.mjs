@@ -107,7 +107,13 @@ const loadState = () => {
 const mergeCurrentDeviceState = (state, patch, { abandonOnChange = false } = {}) => {
   const allowedKeys = new Set([
     'browserDebuggingPort',
+    'consecutiveCollectionFailures',
+    'lastCollectionAttemptAt',
+    'lastCollectionAttemptSlot',
+    'lastCollectionAttemptStatus',
     'lastCollectionSlot',
+    'lastCollectionSuccessAt',
+    'lastCollectionErrorCode',
     'pseudonymKey',
   ])
   if (Object.keys(patch).some((key) => !allowedKeys.has(key))) {
@@ -495,7 +501,10 @@ const scopedCollectionConfig = async (state, cookies) => {
 
 const collectOnce = async () => {
   const state = loadState()
-  const { context } = await connectToOfficialBrowser(state)
+  // Scheduled collection must recover from a closed or crashed dedicated
+  // Chrome process. The same isolated profile is reopened locally; credentials
+  // and cookies never leave this computer.
+  const { context } = await officialBrowserFor(state)
   const cookies = await context.cookies('https://pms.meituan.com')
   const config = await scopedCollectionConfig(state, cookies)
   let scopeReceipt = config.scopeReceipt
@@ -624,12 +633,47 @@ const collectIfDue = async () => {
   const state = loadState()
   const slot = collectionSlotFor()
   if (!slot || state.lastCollectionSlot === slot.slotKey) return
-  const result = await collectOnce()
-  mergeCurrentDeviceState(
-    { ...state, deviceId: result.trustedDeviceId },
-    { lastCollectionSlot: slot.slotKey },
-    { abandonOnChange: true },
-  )
+  const recordAttempt = (patch) => {
+    const current = loadState()
+    if (current.deviceId !== state.deviceId) return null
+    return mergeCurrentDeviceState(current, patch, { abandonOnChange: true })
+  }
+  recordAttempt({
+    lastCollectionAttemptAt: new Date().toISOString(),
+    lastCollectionAttemptSlot: slot.slotKey,
+    lastCollectionAttemptStatus: 'RUNNING',
+    lastCollectionErrorCode: null,
+  })
+  try {
+    const result = await collectOnce()
+    const completedAt = new Date().toISOString()
+    recordAttempt({
+      consecutiveCollectionFailures: 0,
+      lastCollectionAttemptAt: completedAt,
+      lastCollectionAttemptSlot: slot.slotKey,
+      lastCollectionAttemptStatus: 'SUCCEEDED',
+      lastCollectionErrorCode: null,
+      lastCollectionSlot: slot.slotKey,
+      lastCollectionSuccessAt: completedAt,
+    })
+    return result
+  } catch (error) {
+    const current = loadState()
+    const errorCode = error instanceof Error
+      ? error.message.replace(/[^A-Z0-9_:-]/giu, '_').slice(0, 160)
+      : 'TRUSTED_DEVICE_FAILED'
+    recordAttempt({
+      consecutiveCollectionFailures:
+        (Number.isInteger(current.consecutiveCollectionFailures)
+          ? current.consecutiveCollectionFailures
+          : 0) + 1,
+      lastCollectionAttemptAt: new Date().toISOString(),
+      lastCollectionAttemptSlot: slot.slotKey,
+      lastCollectionAttemptStatus: 'FAILED',
+      lastCollectionErrorCode: errorCode,
+    })
+    throw error
+  }
 }
 
 const status = async () => {

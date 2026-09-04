@@ -120,6 +120,27 @@ test('trusted device local state serializes concurrent field merges and rejects 
     assert.equal(olderEnrollment.updated, false)
     assert.equal(store.read().deviceId, 'device-b')
     assert.doesNotMatch(await readFile(path, 'utf8'), /stale-slot/u)
+
+    const beforeRunStatus = store.read()
+    const runStatus = store.mergeForDevice({
+      deviceId: beforeRunStatus.deviceId,
+      expectedStateVersion: beforeRunStatus.stateVersion,
+      patch: {
+        consecutiveCollectionFailures: 1,
+        lastCollectionAttemptAt: '2026-09-01T01:02:00.000Z',
+        lastCollectionAttemptSlot: '2026-09-01T09:00',
+        lastCollectionAttemptStatus: 'FAILED',
+        lastCollectionErrorCode: 'TRUSTED_DEVICE_OFFICIAL_BROWSER_NOT_RUNNING',
+      },
+    })
+    assert.equal(runStatus.updated, true)
+    assert.equal(runStatus.state.consecutiveCollectionFailures, 1)
+    assert.equal(runStatus.state.lastCollectionAttemptStatus, 'FAILED')
+    assert.equal(
+      runStatus.state.lastCollectionErrorCode,
+      'TRUSTED_DEVICE_OFFICIAL_BROWSER_NOT_RUNNING',
+    )
+    assert.equal(runStatus.state.privateKeyPem, 'synthetic-private-device-b')
   } finally {
     await rm(root, { recursive: true, force: true })
   }
