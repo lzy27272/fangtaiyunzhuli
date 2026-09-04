@@ -25,7 +25,7 @@ const availablePort = async () => {
   return port
 }
 
-test('a new runtime defaults to the current Meituan business overview source', async () => {
+test('a new runtime exposes current Meituan defaults without startup persistence', async () => {
   const runtimePath = await mkdtemp(join(tmpdir(), 'report-source-migration-'))
   const configPath = join(runtimePath, 'report-sources.json')
   const revenueSourceId = '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0'
@@ -73,6 +73,30 @@ test('a new runtime defaults to the current Meituan business overview source', a
       'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview',
     )
     assert.equal(revenue.displayName, '经营概览（房费/ADR/RevPAR）')
+    await assert.rejects(
+      readFile(configPath, 'utf8'),
+      (error) => error?.code === 'ENOENT',
+    )
+    const saved = await fetch(
+      `http://127.0.0.1:${port}/api/v1/ota/tenants/${tenantId}`
+      + `/hotels/${hotelId}/report-sources`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'report-source-migration-save-001',
+        },
+        body: JSON.stringify({
+          reasonCode: 'REPORT_SOURCE_CONFIG',
+          sources: body.data.map((source) => ({
+            ...source,
+            cookieUpdate: { action: 'KEEP' },
+          })),
+        }),
+      },
+    )
+    assert.equal(saved.status, 200)
     const persisted = JSON.parse(await readFile(configPath, 'utf8'))
     assert.equal(
       persisted[hotelId].find((source) => source.sourceId === revenueSourceId)

@@ -1875,7 +1875,6 @@ if (dataPath && existsSync(dataPath)) {
 }
 
 ensureReportSourcesForEveryHotel()
-persistReportSources()
 
 if (existsSync(cookieSecretsPath)) {
   try {
