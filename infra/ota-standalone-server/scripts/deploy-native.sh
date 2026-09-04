@@ -13,6 +13,7 @@ release_root=/opt/sifangguan-ota/releases
 current_link=/opt/sifangguan-ota/current
 backup_root=/var/backups/sifangguan-ota/code-releases
 runtime_env=/etc/sifangguan-ota/runtime.env
+scheduler_pause_path=/run/sifangguan-ota/deployment-scheduler.pause
 incoming_dir=""
 listing_file=""
 
@@ -54,6 +55,7 @@ if [[ -d /var/lib/sifangguan-ota ]]; then
 fi
 
 cleanup_temporary_files() {
+  rm -f -- "${scheduler_pause_path}"
   if [[ -n ${listing_file} && -f ${listing_file} ]]; then
     rm -f -- "${listing_file}"
   fi
@@ -225,6 +227,7 @@ rollback_release() {
     ln -sfn "${previous_release}" "${rollback_link}"
     mv -Tf "${rollback_link}" "${current_link}"
   fi
+  rm -f -- "${scheduler_pause_path}"
   systemctl restart sifangguan-ota-api.service
   systemctl restart sifangguan-ota-web.service
   if ! wait_for_health; then
@@ -263,6 +266,19 @@ fi
 
 before_fingerprint="$(protected_fingerprint)"
 
+install -d -m 0755 "$(dirname "${scheduler_pause_path}")"
+if [[ -L ${scheduler_pause_path} \
+  || ( -e ${scheduler_pause_path} && ! -f ${scheduler_pause_path} ) ]]; then
+  echo "SCHEDULER_PAUSE_PATH_UNSAFE" >&2
+  exit 1
+fi
+scheduler_pause_tmp="${scheduler_pause_path}.$$"
+(
+  umask 077
+  printf 'deployment\n' > "${scheduler_pause_tmp}"
+)
+mv -Tf "${scheduler_pause_tmp}" "${scheduler_pause_path}"
+
 next_link="${current_link}.next"
 ln -sfn "${release_dir}" "${next_link}"
 mv -Tf "${next_link}" "${current_link}"
@@ -289,6 +305,8 @@ if [[ "$(readlink -f "${current_link}")" != "${release_dir}" ]]; then
   rollback_release || true
   exit 1
 fi
+
+rm -f -- "${scheduler_pause_path}"
 
 if ! bash \
   "${release_dir}/infra/ota-standalone-server/scripts/configure-phase1-runtime.sh"; then

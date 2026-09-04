@@ -549,6 +549,8 @@ let weComRepairBotRuntime = null
 const lastDailyBriefingAuditKeyByHotel = new Map()
 const lastDailyBriefingRepairKeyByHotel = new Map()
 const schedulerStartedAt = new Date()
+const deploymentSchedulerPausePath =
+  '/run/sifangguan-ota/deployment-scheduler.pause'
 const REPORT_POLL_INTERVAL_MINUTES = 30
 const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
 const BRIEFING_HEALTH_AUDIT_RETENTION_MS = 366 * 24 * 60 * 60_000
@@ -10608,7 +10610,8 @@ server.listen(port, host, () => {
       url: `http://${host}:${port}`,
     })}\n`,
   )
-  const scheduler = setInterval(() => {
+  const runScheduledTasks = () => {
+    if (existsSync(deploymentSchedulerPausePath)) return
     void scheduledLuopanRecoveryTick()
     void scheduledCollectionTick()
     void scheduledOtaSourceTick()
@@ -10617,17 +10620,10 @@ server.listen(port, host, () => {
     void scheduledHotSellingSoldOutDeliveryTick()
     void scheduledBriefingAuditTick()
     void scheduledPmsRepairAlertTick()
-  }, 30_000)
+  }
+  const scheduler = setInterval(runScheduledTasks, 30_000)
   scheduler.unref()
-  const initialScheduler = setTimeout(() => {
-    void scheduledLuopanRecoveryTick()
-    void scheduledCollectionTick()
-    void scheduledWeComDeliveryTick()
-    void scheduledFutureBookingDeliveryTick()
-    void scheduledHotSellingSoldOutDeliveryTick()
-    void scheduledBriefingAuditTick()
-    void scheduledPmsRepairAlertTick()
-  }, 2_000)
+  const initialScheduler = setTimeout(runScheduledTasks, 2_000)
   initialScheduler.unref()
 })
 

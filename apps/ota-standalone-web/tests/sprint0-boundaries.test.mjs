@@ -232,6 +232,20 @@ test('phase-one public entry keeps the OTA runtime isolated behind an HTTPS subp
   assert.match(nativeDeploySource, /configure-phase1-runtime\.sh/)
   assert.match(nativeDeploySource, /configure-public-entry\.sh/)
   assert.match(nativeDeploySource, /initialize_phase_one_refresh_state/)
+  assert.match(reviewApiSource, /deployment-scheduler\.pause/u)
+  assert.match(nativeDeploySource, /scheduler_pause_path=/u)
+  assert.match(nativeDeploySource, /SCHEDULER_PAUSE_PATH_UNSAFE/u)
+  assert.ok(
+    nativeDeploySource.indexOf('scheduler_pause_tmp=')
+      < nativeDeploySource.indexOf(
+        'systemctl restart sifangguan-ota-api.service',
+        nativeDeploySource.indexOf('next_link='),
+      ),
+  )
+  assert.ok(
+    nativeDeploySource.lastIndexOf('rm -f -- "${scheduler_pause_path}"')
+      > nativeDeploySource.indexOf('after_fingerprint='),
+  )
   assert.ok(
     nativeDeploySource.indexOf('initialize_phase_one_refresh_state; then')
       < nativeDeploySource.indexOf('before_fingerprint='),
