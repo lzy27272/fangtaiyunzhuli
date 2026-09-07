@@ -8,6 +8,7 @@ import {
   saveWeComConfig,
   sendWeComTestSuite,
   type BriefView,
+  type BroadcastIntervalHours,
   type HotelContext,
   type IncidentView,
   type OutboxPreview,
@@ -46,6 +47,31 @@ const TEMPLATE_LABELS: Record<string, string> = {
 const templateLabel = (code: string) =>
   TEMPLATE_LABELS[code] ?? businessCodeLabel(code, '其他业务消息')
 
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  label: `${String(hour).padStart(2, '0')}:00`,
+  value: hour,
+}))
+
+const BROADCAST_INTERVAL_OPTIONS: Array<{
+  label: string
+  value: BroadcastIntervalHours
+}> = [
+  { label: '每小时播报', value: 1 },
+  { label: '每2小时播报', value: 2 },
+  { label: '每3小时播报', value: 3 },
+  { label: '每4小时播报', value: 4 },
+  { label: '暂停播报', value: 0 },
+]
+
+const broadcastIntervalLabel = (value: BroadcastIntervalHours) =>
+  BROADCAST_INTERVAL_OPTIONS.find((option) => option.value === value)?.label
+  ?? '暂停播报'
+
+const configuredBroadcastInterval = (
+  config: WeComConfigView,
+): BroadcastIntervalHours =>
+  config.broadcastIntervalHours ?? (config.enabled ? 1 : 0)
+
 const createManualReplayOperationKey = (): string => {
   const randomPart = globalThis.crypto?.randomUUID?.().toUpperCase()
     ?? `${Date.now()}_${Math.random().toString(16).slice(2)}`.toUpperCase()
@@ -58,7 +84,11 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
   const [outbox, setOutbox] = useState<OutboxPreview[]>([])
   const [weComConfig, setWeComConfig] =
     useState<WeComConfigView | null>(null)
-  const [weComEnabled, setWeComEnabled] = useState(false)
+  const [groupRepairLinkEnabled, setGroupRepairLinkEnabled] = useState(false)
+  const [broadcastStartHour, setBroadcastStartHour] = useState(9)
+  const [broadcastQuietHour, setBroadcastQuietHour] = useState(2)
+  const [broadcastIntervalHours, setBroadcastIntervalHours] =
+    useState<BroadcastIntervalHours>(0)
   const [webhookDraft, setWebhookDraft] = useState('')
   const [clearWebhook, setClearWebhook] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -96,7 +126,10 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
       setIncidents(incidentRows)
       setOutbox(outboxRows)
       setWeComConfig(config)
-      setWeComEnabled(config.enabled)
+      setGroupRepairLinkEnabled(config.groupRepairLinkEnabled ?? false)
+      setBroadcastStartHour(config.broadcastStartHour ?? 9)
+      setBroadcastQuietHour(config.broadcastQuietHour ?? 2)
+      setBroadcastIntervalHours(configuredBroadcastInterval(config))
     } catch (cause) {
       if (sequence !== refreshSequenceRef.current) return
       setError(businessErrorMessage(cause, '读取历史失败'))
@@ -125,6 +158,11 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
 
   async function saveAutomation() {
     if (!context) return
+    if (broadcastStartHour === broadcastQuietHour) {
+      setNotice('')
+      setError('每日播报开始时间与静默时间不能相同。')
+      return
+    }
     setSavingWeCom(true)
     setError('')
     setNotice('')
@@ -136,17 +174,29 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
           : { action: 'KEEP' as const }
       const saved = await saveWeComConfig(
         context,
-        weComEnabled,
-        webhookUpdate,
+        {
+          groupRepairLinkEnabled,
+          broadcastStartHour,
+          broadcastQuietHour,
+          broadcastIntervalHours,
+          webhookUpdate,
+        },
       )
       setWeComConfig(saved)
-      setWeComEnabled(saved.enabled)
+      const savedInterval = configuredBroadcastInterval(saved)
+      const savedStartHour = saved.broadcastStartHour ?? 9
+      const savedQuietHour = saved.broadcastQuietHour ?? 2
+      const savedRepairLinkEnabled = saved.groupRepairLinkEnabled ?? false
+      setGroupRepairLinkEnabled(savedRepairLinkEnabled)
+      setBroadcastStartHour(savedStartHour)
+      setBroadcastQuietHour(savedQuietHour)
+      setBroadcastIntervalHours(savedInterval)
       setWebhookDraft('')
       setClearWebhook(false)
       setNotice(
-        saved.enabled
-          ? '企微自动推送已启用：系统按旺季/节假日与普通日期的动态时段采集，采集后按既定顺序发送并@所有人。'
-          : '企微自动推送当前关闭；自动采集不受影响。',
+        savedInterval > 0
+          ? `播报设置已保存：每日 ${String(savedStartHour).padStart(2, '0')}:00 开始、${String(savedQuietHour).padStart(2, '0')}:00 静默，${broadcastIntervalLabel(savedInterval)}；群内修复链接${savedRepairLinkEnabled ? '已开启' : '已停止'}。`
+          : `门店播报已暂停；群内修复链接${savedRepairLinkEnabled ? '仍保持开启' : '已停止'}。PMS 数据仍每小时采集一次。`,
       )
     } catch (cause) {
       setError(businessErrorMessage(cause, '保存企微配置失败'))
@@ -205,6 +255,14 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
     && !latestBrief.simulationMode
     ? latestBrief
     : null
+  const savedBroadcastInterval = weComConfig
+    ? configuredBroadcastInterval(weComConfig)
+    : 0
+  const savedBroadcastStartHour = weComConfig?.broadcastStartHour ?? 9
+  const savedBroadcastQuietHour = weComConfig?.broadcastQuietHour ?? 2
+  const legacyBroadcastSchedule = Boolean(weComConfig)
+    && (weComConfig?.broadcastScheduleMode ?? 'LEGACY_DYNAMIC')
+      === 'LEGACY_DYNAMIC'
 
   async function replayLatestBrief() {
     if (
@@ -297,29 +355,86 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
                 <p className="eyebrow">企业微信自动播报</p>
                 <h3>企业微信群机器人自动推送</h3>
                 <p>
-                  旺季及节假日08:00起每小时采集，普通日期09/11/13点及14:00后每小时采集；采集后约06分推送今日经营、约08分推送远期房态，末班01:00；
-                  热销房型可靠售罄时，在两类简报送达后约09分单独预警。固定
-                  @所有人，消息正文仅保留经营数据与建议。
-                  每个模板压缩为1条高密度消息，在企微安全长度内保留核心经营数据。
-                  启用后会按时间顺序补发已保存但尚未发送的整点简报。
-                  全模板测试会先重新采集，再发送当日经营和当日+未来14天房态；
-                  仅在D+15至D+90存在真实风险时发送P1远期需求模板。
+                  每家门店可独立设置每日开始、静默时间和播报频率；选择暂停播报后仅停止群消息，
+                  PMS 数据仍按每小时一次采集。群内修复链接使用独立开关，关闭后不影响已绑定管理员私聊接手。
+                  今日经营、远期房态和热销房型提醒仍按既定模板顺序发送并固定 @所有人。
                 </p>
               </div>
-              <b className={weComConfig?.enabled ? 'source-complete' : 'source-partial'}>
-                {weComConfig?.enabled ? '自动推送已启用' : '自动推送未启用'}
+              <b className={savedBroadcastInterval > 0 ? 'source-complete' : 'source-partial'}>
+                {savedBroadcastInterval > 0 ? '自动推送已启用' : '自动推送已暂停'}
               </b>
             </div>
 
+            {legacyBroadcastSchedule ? (
+              <div className="wecom-schedule-note" role="status">
+                当前沿用原播报时段，保存后按本页设置执行。
+              </div>
+            ) : null}
+
             <div className="wecom-config-grid">
-              <label className="inline-toggle">
-                <input
-                  checked={weComEnabled}
+              <label>
+                播报频率
+                <select
                   disabled={!canConfigure || savingWeCom}
-                  type="checkbox"
-                  onChange={(event) => setWeComEnabled(event.target.checked)}
-                />
-                启用企微自动推送
+                  value={broadcastIntervalHours}
+                  onChange={(event) => setBroadcastIntervalHours(
+                    Number(event.target.value) as BroadcastIntervalHours,
+                  )}
+                >
+                  {BROADCAST_INTERVAL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <small>暂停播报不影响 PMS 每小时采集。</small>
+              </label>
+              <label>
+                每日播报开始时间（北京时间）
+                <select
+                  disabled={!canConfigure || savingWeCom}
+                  value={broadcastStartHour}
+                  onChange={(event) => setBroadcastStartHour(
+                    Number(event.target.value),
+                  )}
+                >
+                  {HOUR_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                每日静默时间（北京时间，暂停）
+                <select
+                  disabled={!canConfigure || savingWeCom}
+                  value={broadcastQuietHour}
+                  onChange={(event) => setBroadcastQuietHour(
+                    Number(event.target.value),
+                  )}
+                >
+                  {HOUR_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <small>静默时间早于开始时间时，表示次日进入静默。</small>
+              </label>
+              <label className="wecom-toggle-field">
+                <span className="inline-toggle">
+                  <input
+                    checked={groupRepairLinkEnabled}
+                    disabled={!canConfigure || savingWeCom || clearWebhook}
+                    type="checkbox"
+                    onChange={(event) => setGroupRepairLinkEnabled(
+                      event.target.checked,
+                    )}
+                  />
+                  群内推送修复链接
+                </span>
+                <small>关闭后只停止门店群内修复地址，管理员私聊和正常播报不受影响。</small>
               </label>
               <label className="wide-field">
                 企业微信群机器人地址
@@ -348,7 +463,8 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
                     setClearWebhook(event.target.checked)
                     if (event.target.checked) {
                       setWebhookDraft('')
-                      setWeComEnabled(false)
+                      setBroadcastIntervalHours(0)
+                      setGroupRepairLinkEnabled(false)
                     }
                   }}
                 />
@@ -360,7 +476,13 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
               <span>
                 机器人地址｜{weComConfig?.webhookConfigured ? '已配置' : '未配置'}
               </span>
-              <span>发送时间｜今日06分 · 远期08分 · 售罄预警09分</span>
+              <span>
+                播报时段｜{String(savedBroadcastStartHour).padStart(2, '0')}:00 开始 · {String(savedBroadcastQuietHour).padStart(2, '0')}:00 静默
+              </span>
+              <span>播报频率｜{broadcastIntervalLabel(savedBroadcastInterval)}</span>
+              <span>
+                修复链接｜{weComConfig?.groupRepairLinkEnabled ? '群内已开启' : '群内已停止'}
+              </span>
               <span>
                 指纹｜
                 {weComConfig?.endpointSha256

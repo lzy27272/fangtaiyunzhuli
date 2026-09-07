@@ -85,7 +85,7 @@ const createEmptySource = (): ReportSourceView => ({
   endpointUrl: '',
   reportType: 'CUSTOM_REPORT',
   calculationRole: 'AUXILIARY_CALCULATION',
-  pollIntervalMinutes: 30,
+  pollIntervalMinutes: 60,
   credentialAlias: '',
   requestPayloadJson: '',
   cookieConfigured: false,
@@ -685,7 +685,7 @@ export function ReportSourceConfigPage({
                             pollIntervalMinutes: Number(event.target.value),
                           })}
                       >
-                        {[30].map((minutes) => (
+                        {[60].map((minutes) => (
                           <option key={minutes} value={minutes}>
                             {minutes}分钟
                           </option>

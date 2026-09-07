@@ -17,6 +17,15 @@ const hotel = {
 const snapshot = {
   observedAt: '2026-08-04T01:00:10+08:00',
 }
+const customSchedule = (overrides = {}) => ({
+  enabled: true,
+  webhookConfigured: true,
+  broadcastScheduleMode: 'CUSTOM_V1',
+  broadcastStartHour: 9,
+  broadcastQuietHour: 2,
+  broadcastIntervalHours: 3,
+  ...overrides,
+})
 const delivery = (deliveryType, overrides = {}) => ({
   hotelId: hotel.hotelId,
   cutoffAt: snapshot.observedAt,
@@ -40,6 +49,105 @@ test('daily audit runs once in the 01:20 grace window', () => {
   assert.equal(
     dailyBriefingAuditSlot(new Date('2026-08-03T17:26:00Z')),
     null,
+  )
+})
+
+test('custom schedule audits its final due broadcast hour instead of 01:00', () => {
+  const config = customSchedule()
+  assert.equal(
+    dailyBriefingAuditSlot(
+      new Date('2026-09-10T16:20:00Z'),
+      config,
+    ).snapshotHourKey,
+    '2026-09-11T00',
+  )
+  assert.equal(
+    dailyBriefingAuditSlot(
+      new Date('2026-09-10T17:20:00Z'),
+      config,
+    ),
+    null,
+  )
+
+  const customSnapshot = {
+    observedAt: '2026-09-11T00:00:10+08:00',
+  }
+  const result = auditBriefingStore({
+    hotel,
+    weComConfig: config,
+    snapshots: [customSnapshot],
+    deliveries: [
+      delivery('TODAY_REVENUE', { cutoffAt: customSnapshot.observedAt }),
+      delivery('FUTURE_14D', { cutoffAt: customSnapshot.observedAt }),
+    ],
+    date: new Date('2026-09-10T16:20:00Z'),
+    snapshotHourKey: '2026-09-11T00',
+  })
+  assert.equal(result.status, 'HEALTHY')
+  assert.equal(result.snapshotObservedAt, customSnapshot.observedAt)
+})
+
+test('custom repair maps 07:30 to the latest completed schedule audit', () => {
+  const sameDay = dailyBriefingRepairSlot(
+    new Date('2026-09-10T23:30:00Z'),
+    customSchedule(),
+  )
+  assert.equal(sameDay.auditKey, '2026-09-11:00:20')
+  assert.equal(sameDay.snapshotHourKey, '2026-09-11T00')
+
+  const previousDay = dailyBriefingRepairSlot(
+    new Date('2026-09-10T23:30:00Z'),
+    customSchedule({
+      broadcastQuietHour: 22,
+      broadcastIntervalHours: 4,
+    }),
+  )
+  assert.equal(previousDay.auditKey, '2026-09-10:21:20')
+  assert.equal(previousDay.snapshotHourKey, '2026-09-10T21')
+})
+
+test('an intentionally paused custom schedule needs no delivery repair', () => {
+  const paused = customSchedule({
+    enabled: false,
+    broadcastIntervalHours: 0,
+  })
+  assert.equal(
+    auditBriefingStore({
+      hotel,
+      weComConfig: paused,
+      snapshots: [],
+      deliveries: [],
+      date: new Date('2026-09-10T17:20:00Z'),
+    }).status,
+    'NOT_REQUIRED',
+  )
+})
+
+test('a newly saved custom schedule does not audit a pre-effective slot', () => {
+  const input = {
+    hotel,
+    snapshots: [],
+    deliveries: [],
+    date: new Date('2026-09-10T16:20:00Z'),
+    snapshotHourKey: '2026-09-11T00',
+  }
+  assert.equal(
+    auditBriefingStore({
+      ...input,
+      weComConfig: customSchedule({
+        broadcastScheduleEffectiveAt: '2026-09-11T00:03:00+08:00',
+      }),
+    }).status,
+    'NOT_REQUIRED',
+  )
+  assert.equal(
+    auditBriefingStore({
+      ...input,
+      weComConfig: customSchedule({
+        broadcastScheduleEffectiveAt: '2026-09-11T00:00:00+08:00',
+      }),
+    }).status,
+    'COLLECTION_MISSING',
   )
 })
 

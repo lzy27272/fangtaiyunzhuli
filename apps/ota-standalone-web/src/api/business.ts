@@ -211,7 +211,7 @@ export interface LuopanBrowserConfigView {
   profileRef: string
   hotelFingerprintConfigured: boolean
   scopeStatus: 'NOT_VALIDATED' | 'SINGLE_HOTEL_CONFIRMED'
-  pollIntervalMinutes: 30
+  pollIntervalMinutes: 60
   lastValidatedAt: string | null
   lastBusinessDate: string | null
   lastCollectionStatus: 'NEVER' | 'COMPLETE' | 'PARTIAL' | 'FAILED'
@@ -730,8 +730,16 @@ export interface WeComManualReplayView {
   failedTemplates: WeComTestSuiteTemplateResult[]
 }
 
+export type BroadcastIntervalHours = 0 | 1 | 2 | 3 | 4
+
 export interface WeComConfigView {
   enabled: boolean
+  groupRepairLinkEnabled: boolean
+  broadcastStartHour: number
+  broadcastQuietHour: number
+  broadcastIntervalHours: BroadcastIntervalHours
+  broadcastScheduleMode: 'LEGACY_DYNAMIC' | 'CUSTOM_V1'
+  broadcastScheduleEffectiveAt: string | null
   sendMinute: 6
   futureBriefSendMinute: 8
   hotSellingSoldOutAlertSendMinute: 9
@@ -801,6 +809,14 @@ export type WeComWebhookUpdate =
   | { action: 'KEEP' }
   | { action: 'CLEAR' }
   | { action: 'REPLACE'; value: string }
+
+export interface WeComConfigUpdate {
+  groupRepairLinkEnabled: boolean
+  broadcastStartHour: number
+  broadcastQuietHour: number
+  broadcastIntervalHours: BroadcastIntervalHours
+  webhookUpdate: WeComWebhookUpdate
+}
 
 export interface TenantView {
   tenantId: string
@@ -1647,14 +1663,13 @@ export function startWeComRepairBotPairing(
 
 export function saveWeComConfig(
   context: HotelContext,
-  enabled: boolean,
-  webhookUpdate: WeComWebhookUpdate,
+  input: WeComConfigUpdate,
 ): Promise<WeComConfigView> {
   return postCommand<WeComConfigView>(
     scopedPath(context, '/wecom-config'),
     {
-      enabled,
-      webhookUpdate,
+      ...input,
+      enabled: input.broadcastIntervalHours > 0,
       reasonCode: 'UPDATE_WECOM_UAT_AUTOMATION',
     },
   )

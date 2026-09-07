@@ -10,6 +10,7 @@ import { dirname } from 'node:path'
 import {
   briefingCycleStart,
   isScheduledBriefSnapshot,
+  pmsCollectionSlotFor,
   reportScheduleFor,
 } from './report-schedule.mjs'
 import { createDailyOrderSummary } from './daily-order-summary.mjs'
@@ -830,6 +831,12 @@ const isMorningFirstBriefSnapshot = (snapshot) => {
   return schedule.hour === schedule.startHour && schedule.minute <= 5
 }
 
+const isHourlyPmsSnapshot = (snapshot) => {
+  const observedAt = new Date(snapshot?.observedAt ?? '')
+  return !Number.isNaN(observedAt.getTime())
+    && pmsCollectionSlotFor(observedAt) !== null
+}
+
 const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
   const hourlyCandidates = previousSnapshots
     .filter(
@@ -837,7 +844,7 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
         candidate.businessDate === snapshot.businessDate
         && sameSnapshotSource(candidate, snapshot)
         && Array.isArray(candidate.orders)
-        && isScheduledBriefSnapshot(candidate),
+        && isHourlyPmsSnapshot(candidate),
     )
     .map((candidate) => ({
       candidate,
@@ -873,6 +880,7 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
     .sort((left, right) => left.distance - right.distance)
   const pauseWindow =
     isMorningFirstBriefSnapshot(snapshot)
+    && hourlyCandidates.length === 0
     && pauseCandidates.length > 0
   const previous = pauseWindow
     ? pauseCandidates[0].candidate
@@ -999,7 +1007,7 @@ const closestScheduledFutureBaseline = (
       (candidate) =>
         Array.isArray(candidate?.futureDaily)
         && sameSnapshotSource(candidate, snapshot)
-        && isScheduledBriefSnapshot(candidate)
+        && isHourlyPmsSnapshot(candidate)
         && Number.isFinite(new Date(candidate.observedAt).getTime()),
     )
     .map((candidate) => ({

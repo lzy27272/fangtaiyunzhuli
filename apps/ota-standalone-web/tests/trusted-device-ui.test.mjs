@@ -62,11 +62,22 @@ test('Bieyanghong defaults to scoped server-Cookie repair while retaining an exp
   assert.match(api, /!bieyanghongServerCookieModeEnabled/u)
   assert.match(api, /'\/pms-cookie-validation'/u)
   assert.match(api, /'\/live-collection-runs'/u)
+  const repairWriteSuffixes = api.slice(
+    api.indexOf('const REPAIR_WRITE_SUFFIXES'),
+    api.indexOf('const assignableReviewRoles'),
+  )
+  assert.doesNotMatch(repairWriteSuffixes, /pms-cookie-validation/u)
+  assert.doesNotMatch(repairWriteSuffixes, /live-collection-runs/u)
   assert.doesNotMatch(
     api,
     /REPORT_SOURCE_DEFINITION_MANAGED|LUOPAN_REPORT_SOURCE_ENABLED_ONLY/u,
   )
   assert.match(api, /suffix === '\/pms-cookie-validation'/u)
+  const cookieValidationHandler = api.slice(
+    api.indexOf("suffix === '/pms-cookie-validation'"),
+    api.indexOf("suffix === '/report-sources'", api.indexOf("suffix === '/pms-cookie-validation'")),
+  )
+  assert.match(cookieValidationHandler, /canConfigureHotels\(requestPrincipal\)/u)
   const validationOperation = api.slice(
     api.indexOf('const validateAndReplaceBieyanghongReportCookies'),
     api.indexOf('const finishBieyanghongRepair'),
@@ -112,6 +123,7 @@ test('Bieyanghong defaults to scoped server-Cookie repair while retaining an exp
   assert.match(agent, /spawn\(browserExecutable/u)
   assert.match(agent, /connectOverCDP/u)
   assert.match(agent, /trustedDeviceScopeProof/u)
+  assert.match(agent, /pmsCollectionSlotFor/u)
   assert.match(agent, /pmsLoginHotelIdFromCookies/u)
   assert.match(agent, /scopeReceipt/u)
   assert.match(panel, /已核对，批准本门店/u)
