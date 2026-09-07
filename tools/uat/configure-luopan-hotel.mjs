@@ -66,7 +66,7 @@ configs[hotelId] = {
   profileRef: validation.profileRef,
   expectedHotelFingerprint: validation.hotelFingerprint,
   scopeStatus: validation.scopeStatus,
-  pollIntervalMinutes: 30,
+  pollIntervalMinutes: 60,
   lastValidatedAt: validation.validatedAt,
   lastBusinessDate: validation.businessDate,
   lastCollectionStatus:

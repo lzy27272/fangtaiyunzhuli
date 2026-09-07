@@ -25,7 +25,7 @@ export interface TrustedDeviceView {
 
 export interface TrustedDeviceStatus {
   eligible: boolean
-  mode: 'STORE_TRUSTED_DEVICE' | 'NOT_APPLICABLE'
+  mode: 'STORE_TRUSTED_DEVICE' | 'SERVER_COOKIE' | 'NOT_APPLICABLE'
   hotelCode: string
   hotelName: string
   enrollmentTtlMinutes: number

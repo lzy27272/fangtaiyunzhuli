@@ -49,6 +49,7 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 21).toString('base64url'),
       OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 22).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
+      OTA_REVIEW_BIEYANGHONG_COLLECTION_MODE: 'STORE_TRUSTED_DEVICE',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   })

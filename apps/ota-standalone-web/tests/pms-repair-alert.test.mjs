@@ -130,6 +130,30 @@ test('repair notice includes a login-gated store repair link and no heartbeat la
   assert.doesNotMatch(content, /心跳|离线/u)
 })
 
+test('Bieyanghong repair notice directs the store to server Cookie recovery', () => {
+  const hotel = {
+    hotelId: 'hotel-003',
+    hotelCode: '003',
+    hotelName: '测试别样红酒店',
+    pmsSystemCode: 'MEITUAN_BIEYANGHONG',
+  }
+  const incident = pmsRepairIncidentFor({
+    hotel,
+    monitor: monitor({ ageMs: PMS_REPAIR_STALE_AFTER_MS + 1 }),
+    trustedDeviceStatus: { eligible: false, device: null },
+    now,
+  })
+  const content = pmsRepairNoticeContent({
+    hotel,
+    incident,
+    publicOrigin: 'https://www.sfgzt.cn',
+  })
+
+  assert.match(content, /粘贴并验证本门店最新 Cookie/u)
+  assert.match(content, /服务器会立即恢复采集/u)
+  assert.doesNotMatch(content, /安装|重新绑定|可信设备/u)
+})
+
 test('Luopan stale-data notice explains when no captcha is needed', () => {
   const hotel = {
     hotelId: 'hotel-007',

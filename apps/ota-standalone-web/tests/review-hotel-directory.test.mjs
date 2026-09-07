@@ -211,7 +211,7 @@ test('created review hotels are returned by the directory and survive restart', 
     const templateReportBody = await templateReportResponse.json()
     assert.equal(
       templateReportBody.data.every(
-        (source) => source.pollIntervalMinutes === 30,
+        (source) => source.pollIntervalMinutes === 60,
       ),
       true,
     )
@@ -628,7 +628,7 @@ test('created review hotels are returned by the directory and survive restart', 
         (source) =>
           source.cookieConfigured === false
           && source.cookieUpdatedAt === null
-          && source.pollIntervalMinutes === 30
+          && source.pollIntervalMinutes === 60
           && source.requestPayloadJson === ''
           && source.definitionLocked === false
           && source.definitionTemplateHotelCode === '002/003'
@@ -661,7 +661,7 @@ test('created review hotels are returned by the directory and survive restart', 
       data: {
         configured: false,
         updatedAt: null,
-        loginMode: 'STORE_TRUSTED_DEVICE',
+        loginMode: 'SERVER_COOKIE',
         loginExecutionEnabled: false,
       },
     })
@@ -975,6 +975,7 @@ test('Luopan report names, addresses and Cookies are hotel-specific across resta
     assert.equal(loadedSources[0].enabled, true)
     assert.equal(loadedSources[0].enabledToggleOnly, false)
     assert.equal(loadedSources[0].definitionLocked, false)
+    assert.equal(loadedSources[0].pollIntervalMinutes, 60)
 
     const updatedResponse = await fetch(`${scopedPath}/report-sources`, {
       method: 'POST',
@@ -1036,6 +1037,7 @@ test('Luopan report names, addresses and Cookies are hotel-specific across resta
       'https://luopan.example.test/reports/orders',
     )
     assert.equal(restartedSources[0].cookieConfigured, true)
+    assert.equal(restartedSources[0].pollIntervalMinutes, 60)
   } finally {
     if (first) await stopReviewApi(first.child)
     if (second) await stopReviewApi(second.child)

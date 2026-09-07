@@ -182,6 +182,10 @@ export const pmsRepairNoticeContent = ({
   const guidance = hotel.pmsSystemCode === 'LUOPAN_CLOUD'
     ? luopanPmsRepairGuidance(providerLastErrorCode)
     : null
+  const bieyanghongCookieGuidance =
+    hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+      ? '处理：打开修复后台，粘贴并验证本门店最新 Cookie；验证通过后服务器会立即恢复采集。'
+      : null
   return [
     '【PMS需要修复处理】',
     `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
@@ -190,7 +194,10 @@ export const pmsRepairNoticeContent = ({
       `诊断：${guidance.diagnosis}`,
       `验证码：${guidance.captchaText}`,
       `处理：${guidance.action}`,
-    ] : ['处理：点击修复后台，登录后按页面指引操作。']),
+    ] : [
+      bieyanghongCookieGuidance
+        ?? '处理：点击修复后台，登录后按页面指引操作。',
+    ]),
     `修复后台：${buildStoreRepairConsoleUrl({
       publicOrigin,
       hotelCode: hotel.hotelCode,

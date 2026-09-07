@@ -121,11 +121,11 @@ import {
 } from './trusted-device-intake.mjs'
 import { renderTrustedDeviceBootstrapCommand } from './trusted-device-bootstrap.mjs'
 import {
-  briefingCycleSnapshots,
+  briefingCycleSnapshotsForConfig,
   briefingSnapshotsObservedAfter,
-  collectionSlotFor,
-  isBriefDeliveryTime,
-  isBroadcastWindowOpen,
+  isBriefDeliveryTimeForConfig,
+  isBroadcastWindowOpenForConfig,
+  pmsCollectionSlotFor,
   shanghaiScheduleParts,
 } from './report-schedule.mjs'
 import {
@@ -166,6 +166,13 @@ import {
   safeManualReplayFailureReason,
   selectLatestAuthoritativeCompleteSnapshot,
 } from './wecom-manual-replay.mjs'
+import {
+  P1_MANUAL_REPLAY_OPERATION_KEY,
+  normalizeP1ManualReplayRequest,
+  p1ManualReplayDeliveryDecision,
+  p1ManualReplayDeliveryView,
+  p1ManualReplayMessageKey,
+} from './wecom-p1-manual-replay.mjs'
 import {
   auditBriefingStore,
   dailyBriefingAuditSlot,
@@ -256,6 +263,13 @@ const bieyanghongWebRepairReady =
 const trustedDeviceEnabled =
   process.env.OTA_REVIEW_TRUSTED_DEVICE_ENABLED !== 'false'
   && process.env.OTA_REVIEW_TRUSTED_DEVICE_001_ENABLED !== 'false'
+const bieyanghongCollectionMode =
+  process.env.OTA_REVIEW_BIEYANGHONG_COLLECTION_MODE
+    === 'STORE_TRUSTED_DEVICE'
+    ? 'STORE_TRUSTED_DEVICE'
+    : 'SERVER_COOKIE'
+const bieyanghongServerCookieModeEnabled =
+  bieyanghongCollectionMode === 'SERVER_COOKIE'
 const trustedDeviceFixedHotelCodes = new Set(['001', '003', '013'])
 const trustedDeviceAllowedHotelCodes = new Set(
   String(
@@ -527,9 +541,11 @@ const weComSecretsByHotel = new Map()
 const weComDeliveriesByKey = new Map()
 const weComDeliveryLocks = new Map()
 const weComManualReplayLocks = new Map()
+const futureDemandRiskDeliveryQueues = new Map()
 const futureDemandRiskStates = {}
 const briefingHealthAudits = []
 const lastScheduledCollectionSlotByHotel = new Map()
+let scheduledCollectionRunning = false
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
 const bieyanghongRepairChallengeStore =
@@ -554,7 +570,7 @@ const lastDailyBriefingRepairKeyByHotel = new Map()
 const schedulerStartedAt = new Date()
 const deploymentSchedulerPausePath =
   '/run/sifangguan-ota/deployment-scheduler.pause'
-const REPORT_POLL_INTERVAL_MINUTES = 30
+const REPORT_POLL_INTERVAL_MINUTES = 60
 const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
 const BRIEFING_HEALTH_AUDIT_RETENTION_MS = 366 * 24 * 60 * 60_000
 const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
@@ -800,6 +816,7 @@ if (simulationHotelPath && existsSync(simulationHotelPath)) {
 
 const trustedDeviceEligible = (hotel) =>
   trustedDeviceEnabled
+  && !bieyanghongServerCookieModeEnabled
   && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
   && trustedDeviceAllowedHotelCodes.has(hotel.hotelCode)
   && hotels.filter((candidate) =>
@@ -878,7 +895,11 @@ const trustedDeviceHotelForCode = (hotelCode) => {
 }
 const trustedDeviceNotApplicableStatus = (hotel) => ({
   eligible: false,
-  mode: 'NOT_APPLICABLE',
+  mode:
+    hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+    && bieyanghongServerCookieModeEnabled
+      ? 'SERVER_COOKIE'
+      : 'NOT_APPLICABLE',
   hotelCode: hotel?.hotelCode ?? '',
   hotelName: hotel?.hotelName ?? '',
   enrollmentTtlMinutes: 15,
@@ -1242,20 +1263,40 @@ const normalizePmsLoginCredentials = (credentials) => {
 const pmsLoginConfigFor = (hotelId) => {
   const record = pmsLoginSecretsByHotel.get(hotelId)
   const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
+  const serverCookieMode =
+    hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+    && bieyanghongServerCookieModeEnabled
   const bieyanghongPilot =
     hotel?.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
     && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
   const trustedDeviceMode = trustedDeviceEligible(hotel)
+  const cookieRecords = Object.values(secretsForHotel(hotelId))
+  const cookieUpdatedAt = cookieRecords
+    .map((candidate) => candidate?.updatedAt)
+    .filter((candidate) => typeof candidate === 'string')
+    .sort()
+    .at(-1) ?? null
   return {
-    configured: trustedDeviceMode ? false : Boolean(record),
-    updatedAt: trustedDeviceMode ? null : record?.updatedAt ?? null,
-    loginMode: trustedDeviceMode
-      ? 'STORE_TRUSTED_DEVICE'
-      : bieyanghongPilot
-      ? 'CONTROLLED_BROWSER_CREDENTIALS_THEN_SMS_AUTHORIZATION'
-      : 'CONTROLLED_BROWSER',
+    configured: serverCookieMode
+      ? cookieRecords.length > 0
+      : trustedDeviceMode
+        ? false
+        : Boolean(record),
+    updatedAt: serverCookieMode
+      ? cookieUpdatedAt
+      : trustedDeviceMode
+        ? null
+        : record?.updatedAt ?? null,
+    loginMode: serverCookieMode
+      ? 'SERVER_COOKIE'
+      : trustedDeviceMode
+        ? 'STORE_TRUSTED_DEVICE'
+        : bieyanghongPilot
+          ? 'CONTROLLED_BROWSER_CREDENTIALS_THEN_SMS_AUTHORIZATION'
+          : 'CONTROLLED_BROWSER',
     loginExecutionEnabled:
-      !trustedDeviceMode
+      !serverCookieMode
+      && !trustedDeviceMode
       && bieyanghongPilot
       && bieyanghongAssistedRepairEnabled,
   }
@@ -2685,20 +2726,77 @@ const roomTypeConfigurationFor = (hotelId) => {
 
 const weComSecretScope = (hotelId) => `wecom-webhook:${hotelId}`
 
-const weComConfigFor = (hotelId) => {
-  const config = weComConfigsByHotel.get(hotelId) ?? {
-    enabled: false,
+const DEFAULT_BROADCAST_START_HOUR = 9
+const DEFAULT_BROADCAST_QUIET_HOUR = 2
+const BROADCAST_INTERVAL_OPTIONS = new Set([0, 1, 2, 3, 4])
+const GROUP_REPAIR_LINK_DELIVERY_TYPES = new Set([
+  'PMS_REPAIR_REQUIRED',
+  'LUOPAN_REPAIR_REQUIRED',
+  'LUOPAN_REPAIR_FAILED',
+  'DAILY_MORNING_REPAIR_FAILED',
+])
+const GROUP_REPAIR_WORKFLOW_DELIVERY_TYPES = new Set([
+  ...GROUP_REPAIR_LINK_DELIVERY_TYPES,
+  'LUOPAN_REPAIR_COMPLETE',
+  'DAILY_MORNING_REPAIR_COMPLETE',
+])
+
+const validBroadcastHour = (value) =>
+  Number.isInteger(value) && value >= 0 && value <= 23
+
+const storedWeComConfig = (config = {}) => {
+  const enabled = config.enabled === true
+  const intervalHours = BROADCAST_INTERVAL_OPTIONS.has(
+    config.broadcastIntervalHours,
+  )
+    ? config.broadcastIntervalHours
+    : enabled
+      ? 1
+      : 0
+  return {
+    enabled: intervalHours > 0,
+    groupRepairLinkEnabled: config.groupRepairLinkEnabled === true,
+    broadcastScheduleMode:
+      config.broadcastScheduleMode === 'CUSTOM_V1'
+        ? 'CUSTOM_V1'
+        : 'LEGACY_DYNAMIC',
+    broadcastStartHour: validBroadcastHour(config.broadcastStartHour)
+      ? config.broadcastStartHour
+      : DEFAULT_BROADCAST_START_HOUR,
+    broadcastQuietHour: validBroadcastHour(config.broadcastQuietHour)
+      ? config.broadcastQuietHour
+      : DEFAULT_BROADCAST_QUIET_HOUR,
+    broadcastIntervalHours: intervalHours,
+    broadcastScheduleEffectiveAt:
+      typeof config.broadcastScheduleEffectiveAt === 'string'
+        ? config.broadcastScheduleEffectiveAt
+        : null,
     sendMinute: 6,
-    endpointSha256: null,
-    updatedAt: null,
+    endpointSha256:
+      typeof config.endpointSha256 === 'string'
+      && /^[a-f0-9]{64}$/i.test(config.endpointSha256)
+        ? config.endpointSha256.toLowerCase()
+        : null,
+    updatedAt:
+      typeof config.updatedAt === 'string' ? config.updatedAt : null,
   }
+}
+
+const weComConfigFor = (hotelId) => {
+  const config = storedWeComConfig(weComConfigsByHotel.get(hotelId))
   const secret = weComSecretsByHotel.get(hotelId)
   const deliveries = [...weComDeliveriesByKey.values()]
     .filter((delivery) => delivery.hotelId === hotelId)
     .sort((left, right) =>
       String(right.attemptedAt).localeCompare(String(left.attemptedAt)))
   return {
-    enabled: config.enabled === true,
+    enabled: config.enabled,
+    groupRepairLinkEnabled: config.groupRepairLinkEnabled,
+    broadcastScheduleMode: config.broadcastScheduleMode,
+    broadcastStartHour: config.broadcastStartHour,
+    broadcastQuietHour: config.broadcastQuietHour,
+    broadcastIntervalHours: config.broadcastIntervalHours,
+    broadcastScheduleEffectiveAt: config.broadcastScheduleEffectiveAt,
     sendMinute: 6,
     futureBriefSendMinute: 8,
     hotSellingSoldOutAlertSendMinute: 9,
@@ -3257,17 +3355,7 @@ if (weComConfigPath && existsSync(weComConfigPath)) {
       ) {
         continue
       }
-      weComConfigsByHotel.set(hotelId, {
-        enabled: config.enabled === true,
-        sendMinute: 6,
-        endpointSha256:
-          typeof config.endpointSha256 === 'string'
-          && /^[a-f0-9]{64}$/i.test(config.endpointSha256)
-            ? config.endpointSha256.toLowerCase()
-            : null,
-        updatedAt:
-          typeof config.updatedAt === 'string' ? config.updatedAt : null,
-      })
+      weComConfigsByHotel.set(hotelId, storedWeComConfig(config))
     }
   } catch {
     process.stderr.write('REVIEW_WECOM_CONFIG_STORE_IGNORED\n')
@@ -3291,11 +3379,7 @@ if (weComSecretPath && existsSync(weComSecretPath)) {
       }
       weComSecretsByHotel.set(hotelId, record)
       weComConfigsByHotel.set(hotelId, {
-        ...(config ?? {
-          enabled: false,
-          sendMinute: 6,
-          updatedAt: null,
-        }),
+        ...storedWeComConfig(config),
         endpointSha256: fingerprint,
       })
     }
@@ -4694,10 +4778,10 @@ const collectLiveFor = async (
       sources,
       cookiesBySourceId,
       previousSnapshots: liveSnapshotStore[hotelId] ?? [],
-      secretKey: trustedDeviceEligible(hotel)
+      secretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? trustedDevicePseudonymKeyFor(hotel)
         : cookieSecretKey,
-      legacySecretKey: trustedDeviceEligible(hotel)
+      legacySecretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? cookieSecretKey
         : null,
       target: null,
@@ -4705,7 +4789,7 @@ const collectLiveFor = async (
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
       reportDate: businessDayControl.businessDate,
     })
-    if (trustedDeviceEligible(hotel)) {
+    if (hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG') {
       migrateTrustedPseudonymAliases(hotel, result.snapshot)
       result.monitor = monitorFromSnapshot(
         result.snapshot,
@@ -4760,6 +4844,7 @@ const collectLiveFor = async (
       error?.message === 'PMS_SESSION_REAUTH_REQUIRED'
       && hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
       && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+      && !bieyanghongServerCookieModeEnabled
       && !isNightlyRepairDeferred()
     ) {
       void startBieyanghongRepairChallenge(
@@ -4778,67 +4863,70 @@ const collectLiveFor = async (
 }
 
 const scheduledCollectionTick = async () => {
-  if (!automaticHourlyCollectionEnabled) return
-  const slot = collectionSlotFor()
+  if (!automaticHourlyCollectionEnabled || scheduledCollectionRunning) return
+  const slot = pmsCollectionSlotFor()
   if (!slot) return
-  for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
-    if (trustedDeviceCutoverReady(hotel)) {
-      continue
-    }
-    const luopanConfig = luopanBrowserConfigRecordFor(hotel.hotelId)
-    if (
-      Object.keys(secretsForHotel(hotel.hotelId)).length === 0
-      && !luopanConfig.enabled
-    ) {
-      continue
-    }
-    if (
-      lastScheduledCollectionSlotByHotel.get(hotel.hotelId) === slot.slotKey
-    ) {
-      continue
-    }
-    const latest = (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
-    if (
-      latest?.observedAt?.startsWith(slot.slotKey)
-    ) {
+  scheduledCollectionRunning = true
+  try {
+    for (const hotel of hotels.filter((item) => item.collectionEnabled)) {
+      if (trustedDeviceCutoverReady(hotel)) {
+        continue
+      }
+      const luopanConfig = luopanBrowserConfigRecordFor(hotel.hotelId)
+      if (
+        Object.keys(secretsForHotel(hotel.hotelId)).length === 0
+        && !luopanConfig.enabled
+      ) {
+        continue
+      }
+      if (
+        lastScheduledCollectionSlotByHotel.get(hotel.hotelId) === slot.slotKey
+      ) {
+        continue
+      }
+      const latest = (liveSnapshotStore[hotel.hotelId] ?? []).at(-1)
+      if (latest?.observedAt?.startsWith(slot.slotKey)) {
+        lastScheduledCollectionSlotByHotel.set(hotel.hotelId, slot.slotKey)
+        continue
+      }
       lastScheduledCollectionSlotByHotel.set(hotel.hotelId, slot.slotKey)
-      continue
-    }
-    lastScheduledCollectionSlotByHotel.set(hotel.hotelId, slot.slotKey)
-    try {
-      const result = await collectLiveFor(
-        hotel.hotelId,
-        { otaRefreshDueOnly: true },
-      )
       try {
-        await deliverFutureDemandRisks(hotel.hotelId, result.snapshot)
-      } catch (error) {
+        const result = await collectLiveFor(
+          hotel.hotelId,
+          { otaRefreshDueOnly: true },
+        )
+        try {
+          await deliverFutureDemandRisks(hotel.hotelId, result.snapshot)
+        } catch (error) {
+          process.stderr.write(
+            `${JSON.stringify({
+              event: 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+              hotelId: hotel.hotelId,
+              collectionRunId: result.snapshot.collectionRunId,
+              reasonCode:
+                error?.message ?? 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+            })}\n`,
+          )
+        }
+        process.stdout.write(
+          `${JSON.stringify({
+            event: 'SCHEDULED_COLLECTION_COMPLETED',
+            hotelId: hotel.hotelId,
+            collectionSlot: slot.slotKey,
+          })}\n`,
+        )
+      } catch {
         process.stderr.write(
           `${JSON.stringify({
-            event: 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+            event: 'SCHEDULED_COLLECTION_FAILED',
             hotelId: hotel.hotelId,
-            collectionRunId: result.snapshot.collectionRunId,
-            reasonCode:
-              error?.message ?? 'FUTURE_DEMAND_P1_EVALUATION_FAILED',
+            collectionSlot: slot.slotKey,
           })}\n`,
         )
       }
-      process.stdout.write(
-        `${JSON.stringify({
-          event: 'SCHEDULED_COLLECTION_COMPLETED',
-          hotelId: hotel.hotelId,
-          collectionSlot: slot.slotKey,
-        })}\n`,
-      )
-    } catch {
-      process.stderr.write(
-        `${JSON.stringify({
-          event: 'SCHEDULED_COLLECTION_FAILED',
-          hotelId: hotel.hotelId,
-          collectionSlot: slot.slotKey,
-        })}\n`,
-      )
     }
+  } finally {
+    scheduledCollectionRunning = false
   }
 }
 
@@ -4916,7 +5004,8 @@ const deliverWeComSnapshot = async ({
               messagePrefix,
               snapshot,
               briefId: snapshot.collectionRunId,
-              orderDataRedacted: trustedDeviceEligible(hotel),
+              orderDataRedacted:
+                hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG',
             },
           )
     const messageSha256 = sha256(
@@ -5037,8 +5126,13 @@ const deliverWeComAuditNotice = async ({
   const operation = (async () => {
     const config = weComConfigFor(hotelId)
     const encryptedSecret = weComSecretsByHotel.get(hotelId)
+    const deliveryEnabled = GROUP_REPAIR_LINK_DELIVERY_TYPES.has(deliveryType)
+      ? config.groupRepairLinkEnabled
+      : GROUP_REPAIR_WORKFLOW_DELIVERY_TYPES.has(deliveryType)
+        ? config.enabled || config.groupRepairLinkEnabled
+        : config.enabled
     if (
-      !config.enabled
+      !deliveryEnabled
       || !encryptedSecret
       || !config.endpointSha256
     ) {
@@ -5296,33 +5390,36 @@ const finishLuopanRepair = async ({
     })
     persistLuopanBrowserConfigs()
     const collection = await collectLiveFor(hotelId)
-    const today = await deliverWeComSnapshot({
-      hotelId,
-      snapshot: collection.snapshot,
-      messageKey:
-        `${hotelId}:RECOVERY:${collection.snapshot.collectionRunId}:TODAY`,
-      messagePrefix: '会话修复后补发简报',
-      deliveryType: 'TODAY_REVENUE',
-    })
-    const future = await deliverWeComSnapshot({
-      hotelId,
-      snapshot: collection.snapshot,
-      messageKey:
-        `${hotelId}:RECOVERY:${collection.snapshot.collectionRunId}:FUTURE_14D_V1`,
-      messagePrefix: '会话修复后补发远期房态',
-      deliveryType: 'FUTURE_14D',
-      payloadFactory: ({ hotel: selected, snapshot: current }) =>
-        futureBookingPayloads({
-          hotel: selected,
-          snapshot: current,
-          messagePrefix: '会话修复后补发远期房态',
-        }),
-    })
-    if (
-      today.deliveryStatus !== 'DELIVERED'
-      || future.deliveryStatus !== 'DELIVERED'
-    ) {
-      throw new Error('LUOPAN_REPAIR_DELIVERY_NOT_CONFIRMED')
+    const weComConfig = weComConfigFor(hotelId)
+    if (weComConfig.enabled && weComConfig.webhookConfigured) {
+      const today = await deliverWeComSnapshot({
+        hotelId,
+        snapshot: collection.snapshot,
+        messageKey:
+          `${hotelId}:RECOVERY:${collection.snapshot.collectionRunId}:TODAY`,
+        messagePrefix: '会话修复后补发简报',
+        deliveryType: 'TODAY_REVENUE',
+      })
+      const future = await deliverWeComSnapshot({
+        hotelId,
+        snapshot: collection.snapshot,
+        messageKey:
+          `${hotelId}:RECOVERY:${collection.snapshot.collectionRunId}:FUTURE_14D_V1`,
+        messagePrefix: '会话修复后补发远期房态',
+        deliveryType: 'FUTURE_14D',
+        payloadFactory: ({ hotel: selected, snapshot: current }) =>
+          futureBookingPayloads({
+            hotel: selected,
+            snapshot: current,
+            messagePrefix: '会话修复后补发远期房态',
+          }),
+      })
+      if (
+        today.deliveryStatus !== 'DELIVERED'
+        || future.deliveryStatus !== 'DELIVERED'
+      ) {
+        throw new Error('LUOPAN_REPAIR_DELIVERY_NOT_CONFIRMED')
+      }
     }
     luopanRepairChallengeStore.complete(tokenSha256)
     updateLatestPendingBriefingHealthAudit(hotelId, {
@@ -5339,12 +5436,13 @@ const finishLuopanRepair = async ({
       content: [
         '【罗盘简报自动修复完成】',
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-        '结果：重新登录、采集和两类简报补发均已完成。',
-        '送达：已取得企业微信 DELIVERED 记录。',
+        weComConfig.enabled && weComConfig.webhookConfigured
+          ? '结果：重新登录、采集和两类简报补发均已完成。'
+          : '结果：重新登录和数据采集已完成；本店播报处于暂停状态，未补发群简报。',
       ].join('\n'),
       bodyPreview:
         `罗盘简报自动修复完成 · ${hotel.hotelCode} · ${hotel.hotelName}`,
-    })
+    }).catch(() => {})
     if (handle.channel === 'WECOM_LONG_CONNECTION') {
       await deliverWeComRepairBotDirectMessage({
         hotelId,
@@ -5354,7 +5452,9 @@ const finishLuopanRepair = async ({
         content: [
           '### 罗盘简报修复完成',
           `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-          '重新登录、采集及两类简报补发均已完成。',
+          weComConfig.enabled && weComConfig.webhookConfigured
+            ? '重新登录、采集及两类简报补发均已完成。'
+            : '重新登录和数据采集已完成；本店播报已暂停，未补发群简报。',
         ].join('\n'),
       }).catch(() => {})
     }
@@ -5410,18 +5510,26 @@ const startLuopanRepairChallenge = async (
   const hotel = selectedHotel(hotelId)
   const config = luopanBrowserConfigRecordFor(hotelId)
   const weComConfig = weComConfigFor(hotelId)
-  const repairChannel = weComRepairBotReady()
+  const managerRepairReady =
+    weComRepairBotReady()
+    && weComRepairBotRecipientsForHotel(
+      weComRepairBotCredentials ?? {},
+      hotelId,
+    ).length > 0
+  const repairChannel = managerRepairReady
     ? 'WECOM_LONG_CONNECTION'
     : luopanWebRepairReady
       ? 'WECOM_SECURE_LINK'
       : null
+  const groupRepairLinkReady =
+    weComConfig.groupRepairLinkEnabled
+    && weComConfig.webhookConfigured
   if (
     !repairChannel
     ||
     hotel.pmsSystemCode !== 'LUOPAN_CLOUD'
     || !config.enabled
-    || !weComConfig.enabled
-    || !weComConfig.webhookConfigured
+    || (!managerRepairReady && !groupRepairLinkReady)
   ) {
     return null
   }
@@ -5474,32 +5582,34 @@ const startLuopanRepairChallenge = async (
         ].join('\n'),
       }))
     }
-    deliveryTasks.push(deliverWeComAuditNotice({
-      hotelId,
-      messageKey: repairChannel === 'WECOM_LONG_CONNECTION'
-        ? `${repairMessageKey}:WECOM_GROUP_WEBHOOK`
-        : repairMessageKey,
-      deliveryType: 'LUOPAN_REPAIR_REQUIRED',
-      content: repairChannel === 'WECOM_LONG_CONNECTION'
-        ? [
-          '【罗盘简报需要人工验证】',
-          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-          '原因：罗盘登录会话已失效，自动简报已暂停。',
-          '处理：验证码已私聊本店修复管理员；其他授权人员可登录后台按指引处理。',
-          `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
-        ].join('\n')
-        : [
-          '【罗盘简报需要人工验证码】',
-          `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
-          '原因：罗盘登录会话已失效，自动简报已暂停。',
-          '处理：点击一次性链接填写验证码，或登录后台查看修复指引。',
-          '有效期：10分钟，最多提交3次。',
-          luopanRepairLink(luopanRepairPublicBaseUrl, created.token),
-          `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
-        ].join('\n'),
-      bodyPreview:
-        `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
-    }))
+    if (groupRepairLinkReady) {
+      deliveryTasks.push(deliverWeComAuditNotice({
+        hotelId,
+        messageKey: repairChannel === 'WECOM_LONG_CONNECTION'
+          ? `${repairMessageKey}:WECOM_GROUP_WEBHOOK`
+          : repairMessageKey,
+        deliveryType: 'LUOPAN_REPAIR_REQUIRED',
+        content: repairChannel === 'WECOM_LONG_CONNECTION'
+          ? [
+            '【罗盘简报需要人工验证】',
+            `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+            '原因：罗盘登录会话已失效，自动简报已暂停。',
+            '处理：验证码已私聊本店修复管理员；其他授权人员可登录后台按指引处理。',
+            `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
+          ].join('\n')
+          : [
+            '【罗盘简报需要人工验证码】',
+            `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+            '原因：罗盘登录会话已失效，自动简报已暂停。',
+            '处理：点击一次性链接填写验证码，或登录后台查看修复指引。',
+            '有效期：10分钟，最多提交3次。',
+            luopanRepairLink(luopanRepairPublicBaseUrl, created.token),
+            `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
+          ].join('\n'),
+        bodyPreview:
+          `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
+      }))
+    }
     const deliveryOutcomes = await Promise.allSettled(deliveryTasks)
     const deliveredPartCount = deliveryOutcomes.reduce(
       (total, outcome) => total + (
@@ -5831,10 +5941,10 @@ const validateAndReplaceBieyanghongReportCookies = async (
       sources,
       cookieHeader: normalizedCookieHeader,
       expectedHotelId,
-      secretKey: trustedDeviceEligible(hotel)
+      secretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? trustedDevicePseudonymKeyFor(hotel)
         : cookieSecretKey,
-      legacySecretKey: trustedDeviceEligible(hotel)
+      legacySecretKey: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
         ? cookieSecretKey
         : null,
       reportDate: businessDayControl.businessDate,
@@ -5970,6 +6080,9 @@ const startBieyanghongRepairChallenge = async (
     includeWorkspaceUrl = false,
   } = {},
 ) => {
+  if (bieyanghongServerCookieModeEnabled) {
+    throw new Error('BIEYANGHONG_SERVER_COOKIE_MODE')
+  }
   if (trustedDeviceEnabled) {
     throw new Error('BIEYANGHONG_TRUSTED_DEVICE_MODE')
   }
@@ -6843,14 +6956,16 @@ const expireLuopanRepairSessions = async () => {
   }
 }
 
-const briefingHealthAuditFor = (hotel, date) => auditBriefingStore({
-  hotel,
-  luopanConfig: luopanBrowserConfigRecordFor(hotel.hotelId),
-  weComConfig: weComConfigFor(hotel.hotelId),
-  snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
-  deliveries: [...weComDeliveriesByKey.values()],
-  date,
-})
+const briefingHealthAuditFor = (hotel, date, snapshotHourKey = null) =>
+  auditBriefingStore({
+    hotel,
+    luopanConfig: luopanBrowserConfigRecordFor(hotel.hotelId),
+    weComConfig: weComConfigFor(hotel.hotelId),
+    snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
+    deliveries: [...weComDeliveriesByKey.values()],
+    date,
+    snapshotHourKey,
+  })
 
 const recordNightlyBriefingHealthAudit = ({ hotel, slot, date }) => {
   const auditId = `${hotel.hotelId}:${slot.auditKey}`
@@ -6858,7 +6973,7 @@ const recordNightlyBriefingHealthAudit = ({ hotel, slot, date }) => {
     (candidate) => candidate.auditId === auditId,
   )
   if (existing) return existing
-  const audit = briefingHealthAuditFor(hotel, date)
+  const audit = briefingHealthAuditFor(hotel, date, slot.snapshotHourKey)
   const record = upsertBriefingHealthAudit({
     auditId,
     auditKey: slot.auditKey,
@@ -6871,7 +6986,9 @@ const recordNightlyBriefingHealthAudit = ({ hotel, slot, date }) => {
     future14dDelivered: audit.future14dDelivered ?? false,
     auditedAt: date.toISOString(),
     resolutionStatus:
-      audit.status === 'HEALTHY' ? 'NOT_REQUIRED' : 'PENDING',
+      ['HEALTHY', 'NOT_REQUIRED'].includes(audit.status)
+        ? 'NOT_REQUIRED'
+        : 'PENDING',
     repairKey: null,
     repairStartedAt: null,
     resolvedAt: null,
@@ -6902,7 +7019,7 @@ const repairNoticeChannelsFor = (hotel) => {
   return selectWeComRepairNoticeChannels({
     repairBotReady,
     recipientCount,
-    groupWebhookEnabled: config.enabled,
+    groupWebhookEnabled: config.groupRepairLinkEnabled,
     groupWebhookConfigured: config.webhookConfigured,
   })
 }
@@ -7028,6 +7145,16 @@ const repairNightlyBriefingHealthAudit = async ({
   })
   try {
     if (auditRecord.status === 'REAUTH_REQUIRED') {
+      if (
+        hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+        && bieyanghongServerCookieModeEnabled
+      ) {
+        updateBriefingHealthAudit(auditRecord.auditId, {
+          resolutionStatus: 'WAITING_COOKIE_UPDATE',
+          reasonCode: 'BIEYANGHONG_COOKIE_UPDATE_REQUIRED',
+        })
+        return
+      }
       const bieyanghongPilot =
         hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
         && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
@@ -7144,9 +7271,12 @@ const repairNightlyBriefingHealthAudit = async ({
 const scheduledBriefingAuditTick = async () => {
   await expireLuopanRepairSessions()
   const now = new Date()
-  const auditSlot = dailyBriefingAuditSlot(now)
-  if (auditSlot) {
-    for (const hotel of hotels) {
+  for (const hotel of hotels) {
+    const auditSlot = dailyBriefingAuditSlot(
+      now,
+      weComConfigFor(hotel.hotelId),
+    )
+    if (auditSlot) {
       if (
         lastDailyBriefingAuditKeyByHotel.get(hotel.hotelId)
         === auditSlot.auditKey
@@ -7156,9 +7286,12 @@ const scheduledBriefingAuditTick = async () => {
     }
   }
 
-  const repairSlot = dailyBriefingRepairSlot(now)
-  if (!repairSlot) return
   for (const hotel of hotels) {
+    const repairSlot = dailyBriefingRepairSlot(
+      now,
+      weComConfigFor(hotel.hotelId),
+    )
+    if (!repairSlot) continue
     if (
       lastDailyBriefingRepairKeyByHotel.get(hotel.hotelId)
       === repairSlot.repairKey
@@ -7169,6 +7302,7 @@ const scheduledBriefingAuditTick = async () => {
       slot: {
         ...repairSlot,
         auditKey: repairSlot.auditKey,
+        dateKey: repairSlot.auditDateKey,
       },
       date: now,
     })
@@ -7534,7 +7668,7 @@ const runBieyanghongTargetedRecovery = async (body) => {
     const operationResult = {
       operationKey: request.operationKey,
       requestedHotelCodes: request.hotelCodes,
-      excludedHotelCodes: [BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE],
+      excludedHotelCodes: [],
       startedAt: new Date().toISOString(),
       completedAt: null,
       status: 'RUNNING',
@@ -7675,7 +7809,7 @@ const runBieyanghongTargetedRecovery = async (body) => {
       event: 'BIEYANGHONG_TARGETED_RECOVERY_COMPLETED',
       operationKey: request.operationKey,
       requestedHotelCodes: request.hotelCodes,
-      excludedHotelCodes: [BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE],
+      excludedHotelCodes: [],
       status: operationResult.status,
     })}\n`)
     return operationResult
@@ -7688,15 +7822,37 @@ const runBieyanghongTargetedRecovery = async (body) => {
   }
 }
 
-const deliverFutureDemandRisks = async (hotelId, snapshot) => {
-  if (!isBroadcastWindowOpen()) return []
+const queueFutureDemandRiskDelivery = async (hotelId, task) => {
+  const previous = futureDemandRiskDeliveryQueues.get(hotelId)
+    ?? Promise.resolve()
+  const operation = previous.catch(() => undefined).then(task)
+  futureDemandRiskDeliveryQueues.set(hotelId, operation)
+  try {
+    return await operation
+  } finally {
+    if (futureDemandRiskDeliveryQueues.get(hotelId) === operation) {
+      futureDemandRiskDeliveryQueues.delete(hotelId)
+    }
+  }
+}
+
+const deliverFutureDemandRisks = async (
+  hotelId,
+  snapshot,
+  { messageKey = null } = {},
+) => queueFutureDemandRiskDelivery(hotelId, async () => {
+  const config = weComConfigFor(hotelId)
+  const observedAt = new Date(snapshot?.observedAt ?? '')
+  const scheduleTime = Number.isNaN(observedAt.getTime())
+    ? new Date()
+    : observedAt
+  if (!isBroadcastWindowOpenForConfig(scheduleTime, config)) return []
   const stateChanged = reconcileFutureDemandRiskStates({
     hotelId,
     snapshot,
     riskStates: futureDemandRiskStates,
   })
   if (stateChanged) persistFutureDemandRiskStates()
-  const config = weComConfigFor(hotelId)
   if (!config.enabled || !config.webhookConfigured) return []
 
   const candidates = selectFutureDemandRiskCandidates({
@@ -7708,8 +7864,8 @@ const deliverFutureDemandRisks = async (hotelId, snapshot) => {
   const delivery = await deliverWeComSnapshot({
     hotelId,
     snapshot,
-    messageKey:
-      `${hotelId}:P1_FUTURE_DEMAND:${snapshot.collectionRunId}`,
+    messageKey: messageKey
+      ?? `${hotelId}:P1_FUTURE_DEMAND:${snapshot.collectionRunId}`,
     deliveryType: 'P1_FUTURE_DEMAND',
     payloadFactory: ({ hotel: selected, snapshot: current }) =>
       createFutureDemandP1WeComPayloads(selected, current, candidates),
@@ -7722,6 +7878,102 @@ const deliverFutureDemandRisks = async (hotelId, snapshot) => {
     persistFutureDemandRiskStates()
   }
   return [delivery]
+})
+
+const p1ManualReplayFailureForDecision = (decision) => {
+  if (decision === 'MANUAL_RECONCILIATION_REQUIRED') {
+    return 'WECOM_P1_MANUAL_REPLAY_MANUAL_RECONCILIATION_REQUIRED'
+  }
+  if (decision === 'OPERATION_SCOPE_CONFLICT') {
+    return 'WECOM_P1_MANUAL_REPLAY_OPERATION_SCOPE_CONFLICT'
+  }
+  return 'WECOM_P1_MANUAL_REPLAY_REJECTED_NO_AUTOMATIC_RETRY'
+}
+
+const runP1ManualReplay001 = async (body) => {
+  const request = normalizeP1ManualReplayRequest(body)
+  const matches = hotels.filter((hotel) => hotel.hotelCode === '001')
+  if (matches.length !== 1) {
+    throw new Error('WECOM_P1_MANUAL_REPLAY_FIXED_HOTEL_UNAVAILABLE')
+  }
+  const hotel = matches[0]
+  const snapshot = selectLatestAuthoritativeCompleteSnapshot({
+    snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
+    expectedCollectionRunId: request.expectedCollectionRunId,
+    trustedDeviceStatus: trustedDeviceEligible(hotel)
+      ? trustedDeviceStoreFor(hotel).status()
+      : null,
+  })
+  const config = weComConfigFor(hotel.hotelId)
+  const observedAt = new Date(snapshot.observedAt)
+  if (!isBroadcastWindowOpenForConfig(observedAt, config)) {
+    throw new Error('WECOM_P1_MANUAL_REPLAY_BROADCAST_WINDOW_CLOSED')
+  }
+  if (!config.enabled || !config.webhookConfigured) {
+    throw new Error('WECOM_DELIVERY_NOT_CONFIGURED')
+  }
+
+  const messageKey = p1ManualReplayMessageKey({ hotelId: hotel.hotelId })
+  const existingBefore = weComDeliveriesByKey.get(messageKey) ?? null
+  const existingDecision = p1ManualReplayDeliveryDecision({
+    delivery: existingBefore,
+    hotelId: hotel.hotelId,
+    snapshot,
+  })
+  if (existingBefore) {
+    const alreadyDelivered = existingDecision === 'ALREADY_DELIVERED'
+    return {
+      operationKey: P1_MANUAL_REPLAY_OPERATION_KEY,
+      collectionRunId: snapshot.collectionRunId,
+      cutoffAt: snapshot.observedAt,
+      replayed: true,
+      overallStatus: alreadyDelivered ? 'COMPLETE' : 'BLOCKED',
+      delivery: p1ManualReplayDeliveryView(existingBefore),
+      skippedReasonCode: null,
+      failedReasonCode: alreadyDelivered
+        ? null
+        : p1ManualReplayFailureForDecision(existingDecision),
+    }
+  }
+
+  const deliveries = await deliverFutureDemandRisks(
+    hotel.hotelId,
+    snapshot,
+    { messageKey },
+  )
+  const delivery = deliveries[0]
+    ?? weComDeliveriesByKey.get(messageKey)
+    ?? null
+  if (!delivery) {
+    return {
+      operationKey: P1_MANUAL_REPLAY_OPERATION_KEY,
+      collectionRunId: snapshot.collectionRunId,
+      cutoffAt: snapshot.observedAt,
+      replayed: false,
+      overallStatus: 'SKIPPED',
+      delivery: null,
+      skippedReasonCode: 'WECOM_P1_MANUAL_REPLAY_NO_CURRENT_RISK',
+      failedReasonCode: null,
+    }
+  }
+  const decision = p1ManualReplayDeliveryDecision({
+    delivery,
+    hotelId: hotel.hotelId,
+    snapshot,
+  })
+  const delivered = decision === 'ALREADY_DELIVERED'
+  return {
+    operationKey: P1_MANUAL_REPLAY_OPERATION_KEY,
+    collectionRunId: snapshot.collectionRunId,
+    cutoffAt: snapshot.observedAt,
+    replayed: false,
+    overallStatus: delivered ? 'COMPLETE' : 'BLOCKED',
+    delivery: p1ManualReplayDeliveryView(delivery),
+    skippedReasonCode: null,
+    failedReasonCode: delivered
+      ? null
+      : p1ManualReplayFailureForDecision(decision),
+  }
 }
 
 const postStartupBriefingSnapshots = (snapshots) =>
@@ -7729,17 +7981,20 @@ const postStartupBriefingSnapshots = (snapshots) =>
 
 const scheduledWeComDeliveryTick = async () => {
   const now = new Date()
-  if (!isBriefDeliveryTime(now, 6)) return
   const { hourKey } = shanghaiScheduleParts(now)
   for (const hotel of hotels) {
     const config = weComConfigFor(hotel.hotelId)
-    if (!config.enabled || !config.webhookConfigured) continue
+    if (
+      !config.webhookConfigured
+      || !isBriefDeliveryTimeForConfig(now, 6, config)
+    ) continue
     const candidates = selectHourlyDeliveryCandidates({
       hotelId: hotel.hotelId,
       snapshots: postStartupBriefingSnapshots(
-        briefingCycleSnapshots(
+        briefingCycleSnapshotsForConfig(
           liveSnapshotStore[hotel.hotelId] ?? [],
           now,
+          config,
         ),
       ),
       deliveredMessageKeys: new Set(weComDeliveriesByKey.keys()),
@@ -7772,17 +8027,20 @@ const scheduledWeComDeliveryTick = async () => {
 
 const scheduledFutureBookingDeliveryTick = async () => {
   const now = new Date()
-  if (!isBriefDeliveryTime(now, 8)) return
   const { hourKey } = shanghaiScheduleParts(now)
   for (const hotel of hotels) {
     const config = weComConfigFor(hotel.hotelId)
-    if (!config.enabled || !config.webhookConfigured) continue
+    if (
+      !config.webhookConfigured
+      || !isBriefDeliveryTimeForConfig(now, 8, config)
+    ) continue
     const candidates = selectHourlyDeliveryCandidates({
       hotelId: hotel.hotelId,
       snapshots: postStartupBriefingSnapshots(
-        briefingCycleSnapshots(
+        briefingCycleSnapshotsForConfig(
           liveSnapshotStore[hotel.hotelId] ?? [],
           now,
+          config,
         ),
       ).filter(
         (snapshot) =>
@@ -7828,17 +8086,20 @@ const scheduledFutureBookingDeliveryTick = async () => {
 
 const scheduledHotSellingSoldOutDeliveryTick = async () => {
   const now = new Date()
-  if (!isBriefDeliveryTime(now, 9)) return
   const { hourKey } = shanghaiScheduleParts(now)
   for (const hotel of hotels) {
     const config = weComConfigFor(hotel.hotelId)
-    if (!config.enabled || !config.webhookConfigured) continue
+    if (
+      !config.webhookConfigured
+      || !isBriefDeliveryTimeForConfig(now, 9, config)
+    ) continue
     const candidates = selectHourlyDeliveryCandidates({
       hotelId: hotel.hotelId,
       snapshots: postStartupBriefingSnapshots(
-        briefingCycleSnapshots(
+        briefingCycleSnapshotsForConfig(
           liveSnapshotStore[hotel.hotelId] ?? [],
           now,
+          config,
         ),
       ).filter((snapshot) => {
         const monitor = monitorFromSnapshot(
@@ -7912,7 +8173,7 @@ const briefFor = (hotelId) => {
   const payloads = createReportMonitorWeComPayloads(monitor, {
     snapshot,
     briefId: snapshot.collectionRunId,
-    orderDataRedacted: trustedDeviceEligible(hotel),
+    orderDataRedacted: hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG',
   })
   const delivery = [...weComDeliveriesByKey.values()]
     .filter(
@@ -8029,7 +8290,7 @@ const trustedDeviceConfigMaterial = (hotel) => {
     pseudonymKey: trustedDevicePseudonymKeyFor(hotel),
     hotSellingRoomTypeCodes:
       hotSellingRoomTypesFor(hotel.hotelId).roomTypeCodes,
-    schedule: 'DYNAMIC_SHANGHAI_V1',
+    schedule: 'PMS_HOURLY_V1',
   }
   const encryptedSecrets = secretsForHotel(hotel.hotelId)
   const credentialEpochs = sources.map((source) => ({
@@ -8402,7 +8663,9 @@ const server = createServer(async (request, response) => {
         automaticHourlyCollectionEnabled,
         outboundDeliveryEnabled:
           [...weComConfigsByHotel.values()]
-            .some((config) => config.enabled === true),
+            .some((config) =>
+              config.enabled === true
+              || config.groupRepairLinkEnabled === true),
         aiAdvice: futureBookingAiStatus,
         luopanAssistedRepair: {
           enabled: luopanAssistedRepairEnabled,
@@ -8413,12 +8676,19 @@ const server = createServer(async (request, response) => {
         },
         bieyanghongAssistedRepair: {
           enabled:
-            bieyanghongAssistedRepairEnabled && !trustedDeviceEnabled,
+            bieyanghongAssistedRepairEnabled
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
           ready:
-            bieyanghongAssistedRepairReady() && !trustedDeviceEnabled,
-          reasonCode: trustedDeviceEnabled
-            ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
-            : bieyanghongRepairReasonCode(),
+            bieyanghongAssistedRepairReady()
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
+          reasonCode: bieyanghongServerCookieModeEnabled
+            ? 'BIEYANGHONG_SERVER_COOKIE_MODE'
+            : trustedDeviceEnabled
+              ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
+              : bieyanghongRepairReasonCode(),
+          collectionMode: bieyanghongCollectionMode,
           pilotHotelCode: BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE,
           credentialInputMode: bieyanghongRemoteDesktopConfig.enabled
             ? 'REMOTE_NATIVE_OFFICIAL_LOGIN'
@@ -8432,9 +8702,13 @@ const server = createServer(async (request, response) => {
             },
           },
           webLinkReady:
-            bieyanghongWebRepairReady && !trustedDeviceEnabled,
+            bieyanghongWebRepairReady
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
           adminWorkspaceReady:
-            bieyanghongAssistedRepairReady() && !trustedDeviceEnabled,
+            bieyanghongAssistedRepairReady()
+            && !trustedDeviceEnabled
+            && !bieyanghongServerCookieModeEnabled,
           adminWorkspaceTtlMinutes:
             BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
           activeChallengeCount: activeBieyanghongRepairsByHotel.size,
@@ -8899,6 +9173,31 @@ const server = createServer(async (request, response) => {
       json(response, result.status === 'PENDING' ? 202 : 200, {
         data: result,
       })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/internal/p1-future-demand-replay-001'
+    ) {
+      if (!loopbackPilotTriggerAuthorized(request)) {
+        json(response, 404, { code: 'REVIEW_ROUTE_NOT_FOUND' })
+        return
+      }
+      const result = await runP1ManualReplay001(await readBody(request))
+      auditSecurityEvent({
+        action: 'WECOM_P1_MANUAL_REPLAY',
+        outcome: result.overallStatus === 'BLOCKED'
+          ? 'BLOCKED'
+          : 'SUCCEEDED',
+        request,
+        hotelId: '20000000-0000-4000-8000-000000000001',
+        reasonCode:
+          result.failedReasonCode
+          ?? result.skippedReasonCode
+          ?? 'WECOM_P1_MANUAL_REPLAY_DELIVERED',
+      })
+      json(response, 200, { data: result })
       return
     }
 
@@ -9496,6 +9795,8 @@ const server = createServer(async (request, response) => {
         && suffix === '/bieyanghong-workspace'
       ) {
         const eligible =
+          !bieyanghongServerCookieModeEnabled
+          &&
           !trustedDeviceEnabled
           &&
           selected.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
@@ -9506,11 +9807,13 @@ const server = createServer(async (request, response) => {
             ready: eligible && bieyanghongAssistedRepairReady(),
             hotelCode: selected.hotelCode,
             hotelName: selected.hotelName,
-            reasonCode: trustedDeviceEnabled
-              ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
-              : eligible
-                ? bieyanghongRepairReasonCode()
-                : 'BIEYANGHONG_WORKSPACE_HOTEL_NOT_ELIGIBLE',
+            reasonCode: bieyanghongServerCookieModeEnabled
+              ? 'BIEYANGHONG_SERVER_COOKIE_MODE'
+              : trustedDeviceEnabled
+                ? 'BIEYANGHONG_TRUSTED_DEVICE_MODE'
+                : eligible
+                  ? bieyanghongRepairReasonCode()
+                  : 'BIEYANGHONG_WORKSPACE_HOTEL_NOT_ELIGIBLE',
             workspaceTtlMinutes:
               BIEYANGHONG_ADMIN_WORKSPACE_TTL_MS / 60_000,
           },
@@ -9522,6 +9825,9 @@ const server = createServer(async (request, response) => {
         request.method === 'POST'
         && suffix === '/bieyanghong-workspace'
       ) {
+        if (bieyanghongServerCookieModeEnabled) {
+          throw new Error('BIEYANGHONG_SERVER_COOKIE_MODE')
+        }
         if (trustedDeviceEnabled) {
           throw new Error('BIEYANGHONG_TRUSTED_DEVICE_MODE')
         }
@@ -9934,7 +10240,7 @@ const server = createServer(async (request, response) => {
           return
         }
         if (
-          trustedDeviceEligible(selected)
+          selected.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
           && credentialUpdate.action === 'REPLACE'
         ) {
           throw new Error('TRUSTED_DEVICE_CREDENTIAL_UPLOAD_REJECTED')
@@ -10146,6 +10452,14 @@ const server = createServer(async (request, response) => {
           body.webhookUpdate ?? { action: 'KEEP' }
         if (
           typeof body.enabled !== 'boolean'
+          || typeof body.groupRepairLinkEnabled !== 'boolean'
+          || !validBroadcastHour(body.broadcastStartHour)
+          || !validBroadcastHour(body.broadcastQuietHour)
+          || body.broadcastStartHour === body.broadcastQuietHour
+          || !BROADCAST_INTERVAL_OPTIONS.has(
+            body.broadcastIntervalHours,
+          )
+          || body.enabled !== (body.broadcastIntervalHours > 0)
           || typeof body.reasonCode !== 'string'
           || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(body.reasonCode)
           || !webhookUpdate
@@ -10170,13 +10484,28 @@ const server = createServer(async (request, response) => {
           weComSecretsByHotel.delete(hotelId)
           endpointSha256 = null
         }
-        const enabled =
-          webhookUpdate.action === 'CLEAR' ? false : body.enabled
-        if (enabled && !weComSecretsByHotel.has(hotelId)) {
+        const webhookCleared = webhookUpdate.action === 'CLEAR'
+        const enabled = webhookCleared ? false : body.enabled
+        const groupRepairLinkEnabled = webhookCleared
+          ? false
+          : body.groupRepairLinkEnabled
+        const broadcastIntervalHours = webhookCleared
+          ? 0
+          : body.broadcastIntervalHours
+        if (
+          (enabled || groupRepairLinkEnabled)
+          && !weComSecretsByHotel.has(hotelId)
+        ) {
           throw new Error('WECOM_WEBHOOK_REQUIRED')
         }
         weComConfigsByHotel.set(hotelId, {
           enabled,
+          groupRepairLinkEnabled,
+          broadcastScheduleMode: 'CUSTOM_V1',
+          broadcastStartHour: body.broadcastStartHour,
+          broadcastQuietHour: body.broadcastQuietHour,
+          broadcastIntervalHours,
+          broadcastScheduleEffectiveAt: new Date().toISOString(),
           sendMinute: 6,
           endpointSha256,
           updatedAt: new Date().toISOString(),

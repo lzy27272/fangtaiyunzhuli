@@ -120,6 +120,12 @@ test('repair notices can independently reach the scoped manager and broadcast gr
   }), ['WECOM_GROUP_WEBHOOK'])
   assert.deepEqual(selectWeComRepairNoticeChannels({
     repairBotReady: true,
+    recipientCount: 1,
+    groupWebhookEnabled: false,
+    groupWebhookConfigured: true,
+  }), ['WECOM_LONG_CONNECTION'])
+  assert.deepEqual(selectWeComRepairNoticeChannels({
+    repairBotReady: true,
     recipientCount: 0,
     groupWebhookEnabled: false,
     groupWebhookConfigured: false,

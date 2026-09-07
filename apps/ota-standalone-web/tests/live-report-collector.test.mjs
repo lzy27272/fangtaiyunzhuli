@@ -506,7 +506,7 @@ test('08:00 first brief summarizes changes since the final 01:00 snapshot', asyn
   })
 })
 
-test('ordinary morning briefs compare against the previous two-hour slot', async () => {
+test('ordinary hourly collection uses the immediately preceding PMS snapshot', async () => {
   const nineOClock = await collectLiveReports({
     hotel,
     sources,
@@ -516,11 +516,20 @@ test('ordinary morning briefs compare against the previous two-hour slot', async
     now: new Date('2026-09-10T01:00:00Z'),
     fetchImpl: fetchFor(1, []),
   })
-  const elevenOClock = await collectLiveReports({
+  const tenOClock = await collectLiveReports({
     hotel,
     sources,
     cookiesBySourceId,
     previousSnapshots: [nineOClock.snapshot],
+    secretKey: 'unit-test-hmac-key',
+    now: new Date('2026-09-10T02:00:00Z'),
+    fetchImpl: fetchFor(2, []),
+  })
+  const elevenOClock = await collectLiveReports({
+    hotel,
+    sources,
+    cookiesBySourceId,
+    previousSnapshots: [nineOClock.snapshot, tenOClock.snapshot],
     secretKey: 'unit-test-hmac-key',
     now: new Date('2026-09-10T03:00:00Z'),
     fetchImpl: fetchFor(2, []),
@@ -532,11 +541,11 @@ test('ordinary morning briefs compare against the previous two-hour slot', async
   )
   assert.equal(
     elevenOClock.monitor.hourlyDelta.aggregationWindow,
-    'TWO_HOUR',
+    'HOURLY',
   )
   assert.equal(
     elevenOClock.monitor.hourlyDelta.intervalStartAt,
-    '2026-09-10T09:00:00+08:00',
+    '2026-09-10T10:00:00+08:00',
   )
   assert.equal(
     elevenOClock.monitor.hourlyDelta.intervalEndAt,

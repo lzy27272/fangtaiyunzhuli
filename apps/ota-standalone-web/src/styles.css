@@ -252,15 +252,32 @@ button:disabled { cursor: not-allowed; opacity: .62; }
   font-size: .74rem;
   font-weight: 800;
 }
-.wecom-config-grid input[type="password"] {
+.wecom-config-grid input[type="password"],
+.wecom-config-grid select {
   width: 100%;
   min-width: 0;
   border: 1px solid #b9c9c3;
   border-radius: .65rem;
   padding: .68rem .75rem;
+  color: #17231f;
   background: #fff;
 }
 .wecom-config-grid small { color: #68736f; }
+.wecom-toggle-field { align-content: start; }
+.wecom-toggle-field .inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+.wecom-schedule-note {
+  padding: .7rem .8rem;
+  border: 1px solid #e1c883;
+  border-radius: .7rem;
+  color: #6d5210;
+  background: #fff9e8;
+  font-size: .76rem;
+  font-weight: 800;
+}
 .wecom-status-row {
   display: flex;
   flex-wrap: wrap;

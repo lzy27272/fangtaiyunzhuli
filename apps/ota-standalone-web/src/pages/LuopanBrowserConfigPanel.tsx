@@ -219,7 +219,7 @@ export function LuopanBrowserConfigPanel({
         <div>
           <span>罗盘酒店系统</span>
           <strong>罗盘云单门店受控采集</strong>
-          <small>按旺季/节假日与普通日期的动态时段采集；末班01:00</small>
+          <small>PMS 数据全天每小时采集一次</small>
         </div>
         <span className="mode-chip">
           {config?.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
@@ -261,8 +261,8 @@ export function LuopanBrowserConfigPanel({
         </label>
         <label>
           轮询间隔
-          <select disabled value={30}>
-            <option value={30}>30分钟</option>
+          <select disabled value={60}>
+            <option value={60}>60分钟</option>
           </select>
         </label>
         <label className="inline-toggle">

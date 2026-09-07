@@ -5,6 +5,7 @@ const FINAL_COLLECTION_HOUR = 1
 const END_HOUR_DELIVERY_CUTOFF_MINUTE = 15
 const PEAK_MONTHS = new Set([7, 8])
 const STANDARD_COLLECTION_HOURS = new Set([9, 11, 13])
+const CUSTOM_BROADCAST_INTERVALS = new Set([1, 2, 3, 4])
 
 // 2026 dates are sourced from the State Council General Office notice
 // 国办发明电〔2025〕7号. Later annual calendars can replace this built-in
@@ -152,6 +153,16 @@ export const collectionSlotFor = (
   }
 }
 
+export const pmsCollectionSlotFor = (date = new Date()) => {
+  const parts = shanghaiScheduleParts(date)
+  if (parts.minute < 0 || parts.minute > 5) return null
+  return {
+    ...parts,
+    slotMinute: 0,
+    slotKey: `${parts.hourKey}:00`,
+  }
+}
+
 export const isBroadcastWindowOpen = (
   date = new Date(),
   holidayDates = publicHolidayDates,
@@ -170,6 +181,49 @@ export const isBriefDeliveryTime = (
 ) => {
   const { minute } = shanghaiScheduleParts(date)
   return isBroadcastWindowOpen(date, holidayDates) && minute >= sendMinute
+}
+
+const validCustomBroadcastSchedule = (config) =>
+  config?.broadcastScheduleMode === 'CUSTOM_V1'
+  && Number.isInteger(config.broadcastStartHour)
+  && config.broadcastStartHour >= 0
+  && config.broadcastStartHour <= 23
+  && Number.isInteger(config.broadcastQuietHour)
+  && config.broadcastQuietHour >= 0
+  && config.broadcastQuietHour <= 23
+  && config.broadcastStartHour !== config.broadcastQuietHour
+  && CUSTOM_BROADCAST_INTERVALS.has(config.broadcastIntervalHours)
+
+const customBroadcastHourDue = (hour, config) => {
+  if (!validCustomBroadcastSchedule(config)) return false
+  const activeWindowHours =
+    (config.broadcastQuietHour - config.broadcastStartHour + 24) % 24
+  const offset = (hour - config.broadcastStartHour + 24) % 24
+  return offset < activeWindowHours
+    && offset % config.broadcastIntervalHours === 0
+}
+
+export const isBroadcastWindowOpenForConfig = (
+  date = new Date(),
+  config = {},
+  holidayDates = publicHolidayDates,
+) => {
+  if (config.enabled !== true) return false
+  if (config.broadcastScheduleMode !== 'CUSTOM_V1') {
+    return isBroadcastWindowOpen(date, holidayDates)
+  }
+  return customBroadcastHourDue(shanghaiScheduleParts(date).hour, config)
+}
+
+export const isBriefDeliveryTimeForConfig = (
+  date,
+  sendMinute,
+  config = {},
+  holidayDates = publicHolidayDates,
+) => {
+  const { minute } = shanghaiScheduleParts(date)
+  return minute >= sendMinute
+    && isBroadcastWindowOpenForConfig(date, config, holidayDates)
 }
 
 export const briefingCycleStart = (
@@ -201,6 +255,44 @@ export const briefingCycleSnapshots = (
     if (!isScheduledBriefSnapshot(snapshot, holidayDates)) return false
     const observedAt = new Date(snapshot.observedAt).getTime()
     return Number.isFinite(observedAt) && observedAt >= cycleStartedAt
+  })
+}
+
+const customBriefingCycleStart = (date, config) => {
+  const parts = shanghaiScheduleParts(date)
+  const crossesMidnight =
+    config.broadcastStartHour > config.broadcastQuietHour
+  const scheduleDate = crossesMidnight && parts.hour < config.broadcastQuietHour
+    ? dateKeyBefore(parts.dateKey)
+    : parts.dateKey
+  return `${scheduleDate}T${String(config.broadcastStartHour).padStart(2, '0')}:00:00+08:00`
+}
+
+export const briefingCycleSnapshotsForConfig = (
+  snapshots,
+  date = new Date(),
+  config = {},
+  holidayDates = publicHolidayDates,
+) => {
+  if (config.enabled !== true) return []
+  if (config.broadcastScheduleMode !== 'CUSTOM_V1') {
+    return briefingCycleSnapshots(snapshots, date, holidayDates)
+  }
+  if (!validCustomBroadcastSchedule(config)) return []
+  const cycleStartedAt = new Date(
+    customBriefingCycleStart(date, config),
+  ).getTime()
+  const effectiveAt = new Date(
+    config.broadcastScheduleEffectiveAt ?? '',
+  ).getTime()
+  return snapshots.filter((snapshot) => {
+    const observedAt = new Date(snapshot?.observedAt ?? '')
+    const observedAtTime = observedAt.getTime()
+    if (!Number.isFinite(observedAtTime)) return false
+    if (observedAtTime < cycleStartedAt) return false
+    if (Number.isFinite(effectiveAt) && observedAtTime < effectiveAt) return false
+    const slot = pmsCollectionSlotFor(observedAt)
+    return slot !== null && customBroadcastHourDue(slot.hour, config)
   })
 }
 

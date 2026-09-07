@@ -133,6 +133,10 @@ export function DataAccessOverviewPanel({
   const isLuopan = pmsSystemCode === 'LUOPAN_CLOUD'
   const isYilian = pmsSystemCode === 'YILIAN_CLOUD'
   const isOtherPms = pmsSystemCode === 'OTHER'
+  const isBieyanghong = pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+  const serverCookieReady =
+    reportStatus.enabledCount > 0
+    && reportStatus.cookieCount === reportStatus.enabledCount
 
   return (
     <section className="data-access-overview" id="data-access-overview">
@@ -190,7 +194,13 @@ export function DataAccessOverviewPanel({
                 ? dataFormed
                   ? '云端授权与采集已验证'
                   : '等待云端登录验证'
-              : pmsLoginConfigured ? '登录与采集已配置' : '请检查可信设备'}
+              : isBieyanghong
+                ? serverCookieReady
+                  ? '云端 Cookie 直采已配置'
+                  : '需要更新 PMS Cookie'
+                : pmsLoginConfigured
+                  ? '登录与采集已配置'
+                  : '登录尚未配置'}
           </strong>
           <small>
             {isOtherPms
@@ -199,7 +209,9 @@ export function DataAccessOverviewPanel({
               ? <>最近采集 {businessCodeLabel(luopan?.lastCollectionStatus, '尚未采集')} · 营业日 {luopan?.lastBusinessDate ?? '—'}{luopan?.lastErrorCode ? ' · 需要检查' : ''}</>
               : isYilian
                 ? '授权令牌按门店加密保存；失效后重新完成一次云端官网登录即可更新'
-              : '通过门店可信设备安全采集，登录状态按门店隔离'}
+              : isBieyanghong
+                ? '服务器按门店加密保存 Cookie，无需安装门店软件；失效时在修复页更新'
+                : '登录状态按门店隔离'}
           </small>
         </article>
 

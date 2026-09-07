@@ -399,7 +399,7 @@ export function MonitorPage({
           <span>{run.runId}</span>
           <span>来源 {run.successfulSourceCount}/{run.sourceCount}</span>
           <span>营业日候选 {run.businessDate}</span>
-          <b>本次仅采集；企微按动态时段在采集完成后约06分推送</b>
+          <b>本次仅采集；企微按本店设置的时段与频率推送</b>
         </div>
       ) : null}
 
@@ -738,7 +738,7 @@ export function MonitorPage({
       {!context ? (
         <div className="state-panel">请先在顶部载入租户和门店。</div>
       ) : (
-        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="系统会按旺季/节假日与普通日期的动态时段采集；也可以点击“重新采集已配置报表”。">
+        <StatePanel loading={loading} error={error} empty={!monitor} emptyText="系统每小时自动采集一次 PMS 数据；也可以点击“重新采集已配置报表”。">
           {monitor ? (
             <>
               <div className="monitor-summary">

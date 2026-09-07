@@ -20,7 +20,7 @@ import {
   collectLiveReports,
   loadSnapshotStore,
 } from '../uat/live-report-collector.mjs'
-import { collectionSlotFor } from '../uat/report-schedule.mjs'
+import { pmsCollectionSlotFor } from '../uat/report-schedule.mjs'
 import {
   trustedDeviceCanonicalMessage,
   trustedDeviceScopeProof,
@@ -631,7 +631,7 @@ const repair = async () => {
 
 const collectIfDue = async () => {
   const state = loadState()
-  const slot = collectionSlotFor()
+  const slot = pmsCollectionSlotFor()
   if (!slot || state.lastCollectionSlot === slot.slotKey) return
   const recordAttempt = (patch) => {
     const current = loadState()

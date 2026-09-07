@@ -115,7 +115,7 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.doesNotMatch(monitorSource, /loadBusinessDayControl|saveBusinessDayControl/)
   assert.doesNotMatch(monitorSource, /type="date"/)
   assert.doesNotMatch(monitorSource, /collectNow\('automatic'\)/)
-  assert.match(monitorSource, /系统会按旺季\/节假日与普通日期的动态时段采集/)
+  assert.match(monitorSource, /系统每小时自动采集一次 PMS 数据/)
   assert.match(monitorSource, /重新采集已配置报表/)
   assert.match(monitorSource, /进入报表接口核对配置/)
   assert.match(storeConsoleSource, /const connectionTab(?:: StoreTab)? = canConfigure \? 'collection' : 'repair'/)
@@ -133,7 +133,7 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.match(stylesSource, /\.report-source-attention-panel/)
   assert.match(
     monitorSource,
-    /本次仅采集；企微按动态时段在采集完成后约06分推送/,
+    /本次仅采集；企微按本店设置的时段与频率推送/,
   )
   assert.match(historySource, /type="password"/)
   assert.match(historySource, /saveWeComConfig/)
@@ -146,7 +146,14 @@ test('operations console exposes store, exception, people and scoped store-detai
     /当前页面只能为此门店新增修复管理员/,
   )
   assert.match(weComRepairBotPanelSource, /门店播报与PMS修复助手/)
-  assert.match(weComRepairBotPanelSource, /同步在群内提醒并附带登录修复入口/)
+  assert.match(weComRepairBotPanelSource, /播报设置中独立开启或停止/)
+  assert.match(historySource, /群内推送修复链接/)
+  assert.match(historySource, /每日播报开始时间/)
+  assert.match(historySource, /每日静默时间/)
+  assert.match(historySource, /暂停播报/)
+  assert.match(reviewApiSource, /groupWebhookEnabled: config\.groupRepairLinkEnabled/)
+  assert.match(reviewApiSource, /pmsCollectionSlotFor\(\)/)
+  assert.match(reviewApiSource, /otaRefreshDueOnly: true/)
   assert.doesNotMatch(weComRepairBotPanelSource, /当前门店未配置罗盘 PMS/)
   assert.doesNotMatch(weComRepairBotPanelSource, /<select/)
   assert.match(

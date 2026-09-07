@@ -167,6 +167,7 @@ test('001 trusted device API enrolls, verifies and accepts a scoped snapshot', a
       OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 19).toString('base64url'),
       OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
       OTA_REVIEW_TRUSTED_DEVICE_001_ENABLED: 'true',
+      OTA_REVIEW_BIEYANGHONG_COLLECTION_MODE: 'STORE_TRUSTED_DEVICE',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   })

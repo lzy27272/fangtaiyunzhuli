@@ -20,13 +20,22 @@ const readyHotel = (overrides = {}) => ({
   ...overrides,
 })
 
-test('targeted recovery excludes 001 before resolving any target', () => {
-  assert.throws(
-    () => normalizeBieyanghongRecoveryRequest({
-      operationKey: 'COOKIE_RECOVERY_20260829_003_013',
-      hotelCodes: ['003', '001', '013'],
-    }),
-    /BIEYANGHONG_RECOVERY_PILOT_001_EXCLUDED/u,
+test('targeted recovery includes all three server-Cookie hotels', () => {
+  const request = normalizeBieyanghongRecoveryRequest({
+    operationKey: 'COOKIE_RECOVERY_20260904_001_003_013',
+    hotelCodes: ['003', '001', '013'],
+  })
+  assert.deepEqual(request.hotelCodes, ['001', '003', '013'])
+  assert.deepEqual(
+    resolveBieyanghongRecoveryTargets({
+      hotels: [
+        readyHotel({ hotelId: 'hotel-001', hotelCode: '001' }),
+        readyHotel(),
+        readyHotel({ hotelId: 'hotel-013', hotelCode: '013' }),
+      ],
+      hotelCodes: request.hotelCodes,
+    }).map((hotel) => hotel.hotelCode),
+    ['001', '003', '013'],
   )
 })
 
