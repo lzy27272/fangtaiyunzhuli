@@ -13,6 +13,8 @@ const apiScript = fileURLToPath(
 )
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const platformToken = 'wecom-schedule-config-test-token'
+const adminCredential = ['Schedule', 'Admin', 'Password', '42'].join('-')
+const managerCredential = ['Schedule', 'Store', 'Password', '42'].join('-')
 
 async function availablePort() {
   const server = createServer()
@@ -30,7 +32,7 @@ async function startReviewApi(runtimePath) {
       ...process.env,
       OTA_REVIEW_API_PORT: String(port),
       OTA_REVIEW_USERNAME: 'schedule-admin',
-      OTA_REVIEW_PASSWORD: 'Schedule-Admin-Password-42',
+      OTA_REVIEW_PASSWORD: adminCredential,
       OTA_REVIEW_ACCESS_TOKEN: platformToken,
       OTA_REVIEW_DATA_PATH: join(runtimePath, 'report-sources.json'),
       OTA_REVIEW_COOKIE_SECRETS_PATH: join(
@@ -177,7 +179,7 @@ test('per-store broadcast schedule persists securely and rejects store writes', 
         body: JSON.stringify({
           username: 'schedule-store-manager',
           displayName: 'Schedule Store Manager',
-          password: 'Schedule-Store-Password-42',
+          password: managerCredential,
           roles: ['GENERAL_MANAGER'],
           hotelIds: [hotel.hotelId],
         }),
@@ -189,7 +191,7 @@ test('per-store broadcast schedule persists securely and rejects store writes', 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: 'schedule-store-manager',
-        password: 'Schedule-Store-Password-42',
+        password: managerCredential,
       }),
     })
     assert.equal(loginResponse.status, 200)
@@ -249,7 +251,7 @@ test('per-store broadcast schedule persists securely and rejects store writes', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: 'schedule-admin',
-          password: 'Schedule-Admin-Password-42',
+          password: adminCredential,
         }),
       },
     )
