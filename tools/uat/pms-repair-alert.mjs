@@ -3,6 +3,19 @@ import { createHash } from 'node:crypto'
 export const PMS_REPAIR_STALE_AFTER_MS = 90 * 60 * 1000
 
 const LUOPAN_REPAIR_GUIDANCE_VERSION = 'LUOPAN_GUIDANCE_V1'
+const YILIAN_REPAIR_GUIDANCE_VERSION = 'YILIAN_GUIDANCE_V1'
+const YILIAN_AUTOMATIC_GUIDANCE_ERRORS = new Set([
+  'YILIAN_SESSION_REAUTH_REQUIRED',
+  'YILIAN_LOGIN_TIMEOUT',
+  'YILIAN_BROWSER_LOGIN_FAILED',
+  'YILIAN_REQUEST_TIMEOUT',
+  'YILIAN_REQUEST_FAILED',
+  'YILIAN_HTTP_ERROR',
+  'YILIAN_EMPTY_RESPONSE',
+  'YILIAN_RESPONSE_JSON_INVALID',
+  'YILIAN_SHADOW_VALIDATION_FAILED',
+  'YILIAN_TOKEN_PERSIST_FAILED',
+])
 
 const luopanFailureLabel = (errorCode) => {
   switch (errorCode) {
@@ -47,17 +60,77 @@ export const luopanPmsRepairGuidance = (lastErrorCode) => {
   }
 }
 
+export const yilianPmsRepairGuidance = (lastErrorCode) => {
+  const normalized = typeof lastErrorCode === 'string'
+    ? lastErrorCode.trim()
+    : ''
+  if ([
+    'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
+    'YILIAN_RISK_CONTROL_REQUIRED',
+    'YILIAN_AUTHENTICATION_NOT_COMPLETED',
+  ].includes(normalized)) {
+    return {
+      diagnosis: '驿联云要求验证码或额外安全确认',
+      action:
+        '系统已停止自动重试；请在驿联云官网完成人工验证，再到修复后台手动重试。',
+    }
+  }
+  if ([
+    'YILIAN_CREDENTIALS_REJECTED',
+    'YILIAN_CREDENTIALS_REQUIRED',
+    'YILIAN_CREDENTIALS_INVALID',
+  ].includes(normalized)) {
+    return {
+      diagnosis: '驿联云后台登录凭据需要更新',
+      action:
+        '请在修复后台更新本门店账号密码；凭据只会加密保存，不会在页面回显。',
+    }
+  }
+  if (
+    normalized
+    && !YILIAN_AUTOMATIC_GUIDANCE_ERRORS.has(normalized)
+  ) {
+    return {
+      diagnosis: '驿联云自动恢复条件需要人工检查',
+      action:
+        '自动重试已暂停；请在修复后台检查浏览器运行环境、官网页面和三个接口配置。',
+    }
+  }
+  return {
+    diagnosis: '驿联云采集会话需要云端恢复',
+    action:
+      '系统会使用后台加密凭据自动重登，并在三个接口只读验证全部通过后恢复采集；无需人工提供验证码。',
+  }
+}
+
 export const pmsRepairNoticeMessageKey = ({
   hotel,
   incident,
   providerLastErrorCode = null,
 }) => {
   const base = `${hotel.hotelId}:PMS_REPAIR_REQUIRED:${incident.incidentId}`
-  if (hotel.pmsSystemCode !== 'LUOPAN_CLOUD') return base
-  const mode = providerLastErrorCode === 'LUOPAN_REAUTH_REQUIRED'
-    ? 'REAUTH'
-    : 'NONAUTH'
-  return `${base}:${LUOPAN_REPAIR_GUIDANCE_VERSION}:${mode}`
+  if (hotel.pmsSystemCode === 'LUOPAN_CLOUD') {
+    const mode = providerLastErrorCode === 'LUOPAN_REAUTH_REQUIRED'
+      ? 'REAUTH'
+      : 'NONAUTH'
+    return `${base}:${LUOPAN_REPAIR_GUIDANCE_VERSION}:${mode}`
+  }
+  if (hotel.pmsSystemCode === 'YILIAN_CLOUD') {
+    const mode = [
+      'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
+      'YILIAN_RISK_CONTROL_REQUIRED',
+    ].includes(providerLastErrorCode)
+      ? 'HUMAN'
+      : [
+        'YILIAN_CREDENTIALS_REJECTED',
+        'YILIAN_CREDENTIALS_REQUIRED',
+        'YILIAN_CREDENTIALS_INVALID',
+      ].includes(providerLastErrorCode)
+        ? 'CREDENTIALS'
+        : 'AUTOMATIC'
+    return `${base}:${YILIAN_REPAIR_GUIDANCE_VERSION}:${mode}`
+  }
+  return base
 }
 
 export const buildStoreRepairConsoleUrl = ({ publicOrigin, hotelCode }) => {
@@ -181,7 +254,9 @@ export const pmsRepairNoticeContent = ({
     .filter(Boolean)
   const guidance = hotel.pmsSystemCode === 'LUOPAN_CLOUD'
     ? luopanPmsRepairGuidance(providerLastErrorCode)
-    : null
+    : hotel.pmsSystemCode === 'YILIAN_CLOUD'
+      ? yilianPmsRepairGuidance(providerLastErrorCode)
+      : null
   const bieyanghongCookieGuidance =
     hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
       ? '处理：打开修复后台，粘贴并验证本门店最新 Cookie；验证通过后服务器会立即恢复采集。'
@@ -192,7 +267,9 @@ export const pmsRepairNoticeContent = ({
     `原因：${reasons.join('；') || 'PMS状态异常'}`,
     ...(guidance ? [
       `诊断：${guidance.diagnosis}`,
-      `验证码：${guidance.captchaText}`,
+      ...(guidance.captchaText
+        ? [`验证码：${guidance.captchaText}`]
+        : []),
       `处理：${guidance.action}`,
     ] : [
       bieyanghongCookieGuidance

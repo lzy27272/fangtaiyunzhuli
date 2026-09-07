@@ -196,6 +196,18 @@ test('Yilian adapter fails closed for expired sessions and non-approved hosts', 
     }),
   }), /YILIAN_SESSION_REAUTH_REQUIRED/u)
 
+  for (const status of [302, 401, 403]) {
+    await assert.rejects(validateYilianAccessToken({
+      sources,
+      accessToken: token,
+      now: new Date('2026-09-07T02:00:00Z'),
+      fetchImpl: async (_url, options) => {
+        assert.equal(options.redirect, 'manual')
+        return new Response(null, { status })
+      },
+    }), /YILIAN_SESSION_REAUTH_REQUIRED/u)
+  }
+
   let called = false
   await assert.rejects(validateYilianAccessToken({
     sources: sources.map((source, index) => index === 0

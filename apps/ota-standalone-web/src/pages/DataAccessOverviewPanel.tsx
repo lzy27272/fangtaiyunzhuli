@@ -169,12 +169,12 @@ export function DataAccessOverviewPanel({
               : '尚未启用'}
           </strong>
           <small>
-            登录凭据 {reportStatus.cookieCount}/{reportStatus.enabledCount}
+            {isYilian ? '接口授权' : '登录凭据'} {reportStatus.cookieCount}/{reportStatus.enabledCount}
             {' · '}
             格式有效 {reportStatus.validCount}/{reportStatus.enabledCount}
             {' · '}
             {isYilian
-              ? `云端授权${reportStatus.cookieCount === reportStatus.enabledCount && reportStatus.enabledCount > 0 ? '已配置' : '未配置'}`
+              ? `自动重登账号密码${pmsLoginConfigured ? '已配置' : '未配置'}`
               : `PMS登录${pmsLoginConfigured ? '已配置' : '未配置'}`}
           </small>
         </article>
@@ -208,7 +208,7 @@ export function DataAccessOverviewPanel({
               : isLuopan
               ? <>最近采集 {businessCodeLabel(luopan?.lastCollectionStatus, '尚未采集')} · 营业日 {luopan?.lastBusinessDate ?? '—'}{luopan?.lastErrorCode ? ' · 需要检查' : ''}</>
               : isYilian
-                ? '授权令牌按门店加密保存；失效后重新完成一次云端官网登录即可更新'
+                ? '授权令牌与重登凭据按门店分别加密保存；令牌失效后自动登录并经三个接口验证再更新'
               : isBieyanghong
                 ? '服务器按门店加密保存 Cookie，无需安装门店软件；失效时在修复页更新'
                 : '登录状态按门店隔离'}

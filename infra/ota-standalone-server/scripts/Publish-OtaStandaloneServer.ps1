@@ -90,6 +90,7 @@ $runtimeSourcePaths = @(
     'tools/uat/bieyanghong-cookie-validation.mjs',
     'tools/uat/bieyanghong_websockify_auth.py',
     'tools/uat/yilian-cloud-collector.mjs',
+    'tools/uat/yilian-assisted-login.mjs',
     'tools/uat/capture-yilian-cloud-session.mjs',
     'tools/uat/activate-yilian-cloud-collection.mjs',
     'tools/uat/live-report-collector.mjs',

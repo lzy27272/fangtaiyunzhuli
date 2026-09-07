@@ -108,6 +108,10 @@ import {
   collectYilianCloudReports,
 } from './yilian-cloud-collector.mjs'
 import {
+  startYilianPasswordLogin,
+  YILIAN_LOGIN_URL,
+} from './yilian-assisted-login.mjs'
+import {
   buildStoreRepairConsoleUrl,
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
@@ -211,6 +215,12 @@ const runtimeMode =
   process.env.OTA_REVIEW_RUNTIME_MODE === 'LOCAL_LIVE_LONG_RUNNING'
     ? 'LOCAL_LIVE_LONG_RUNNING'
     : 'LOCAL_LIVE_PILOT'
+const yilianAssistedRepairEnabled =
+  process.env.OTA_REVIEW_YILIAN_ASSISTED_REAUTH_ENABLED === 'true'
+  || (
+    process.env.OTA_REVIEW_YILIAN_ASSISTED_REAUTH_ENABLED === undefined
+    && runtimeMode === 'LOCAL_LIVE_LONG_RUNNING'
+  )
 const futureBookingAiConfig = futureBookingAiConfigFromEnv(process.env)
 const futureBookingAiStatus =
   futureBookingAiPublicStatus(futureBookingAiConfig)
@@ -297,6 +307,9 @@ const simulationHotelPath = dataPath
   : null
 const pmsLoginSecretPath = dataPath
   ? join(dirname(dataPath), 'pms-login-secrets.json')
+  : null
+const yilianRepairStatusPath = dataPath
+  ? join(dirname(dataPath), 'yilian-cloud-repair-statuses.json')
   : null
 const otaSourceConfigPath = dataPath
   ? join(dirname(dataPath), 'ota-source-configs.json')
@@ -548,6 +561,8 @@ const lastScheduledCollectionSlotByHotel = new Map()
 let scheduledCollectionRunning = false
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
+const yilianRepairStatusesByHotel = new Map()
+const activeYilianRepairsByHotel = new Map()
 const bieyanghongRepairChallengeStore =
   createBieyanghongRepairChallengeStore()
 const activeBieyanghongRepairsByHotel = new Map()
@@ -555,6 +570,8 @@ const weComRepairBotPairingStore = createWeComRepairBotPairingStore()
 const seenWeComRepairBotMessageHashes = new Map()
 const lastScheduledLuopanRecoveryAtByHotel = new Map()
 let scheduledLuopanRecoveryRunning = false
+const lastScheduledYilianRecoveryAtByHotel = new Map()
+let scheduledYilianRecoveryRunning = false
 let weComRepairBotConfig = {
   enabled: false,
   botIdSha256: null,
@@ -574,6 +591,7 @@ const REPORT_POLL_INTERVAL_MINUTES = 60
 const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
 const BRIEFING_HEALTH_AUDIT_RETENTION_MS = 366 * 24 * 60 * 60_000
 const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
+const YILIAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
 const LUOPAN_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 const BIEYANGHONG_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 const BIEYANGHONG_VNC_COOKIE = 'sfg_bieyanghong_vnc'
@@ -753,7 +771,7 @@ const normalizeSimulationHotelInput = (body) => {
     return null
   }
   let pmsCredentials = null
-  if (pmsSystemCode === 'LUOPAN_CLOUD') {
+  if (['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(pmsSystemCode)) {
     try {
       pmsCredentials = normalizePmsLoginCredentials({
         username: body.pmsUsername,
@@ -1269,6 +1287,7 @@ const pmsLoginConfigFor = (hotelId) => {
   const bieyanghongPilot =
     hotel?.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
     && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+  const yilianCloudMode = hotel?.pmsSystemCode === 'YILIAN_CLOUD'
   const trustedDeviceMode = trustedDeviceEligible(hotel)
   const cookieRecords = Object.values(secretsForHotel(hotelId))
   const cookieUpdatedAt = cookieRecords
@@ -1291,14 +1310,18 @@ const pmsLoginConfigFor = (hotelId) => {
       ? 'SERVER_COOKIE'
       : trustedDeviceMode
         ? 'STORE_TRUSTED_DEVICE'
+        : yilianCloudMode
+          ? 'CLOUD_PASSWORD_AUTO_REAUTH'
         : bieyanghongPilot
           ? 'CONTROLLED_BROWSER_CREDENTIALS_THEN_SMS_AUTHORIZATION'
           : 'CONTROLLED_BROWSER',
     loginExecutionEnabled:
-      !serverCookieMode
-      && !trustedDeviceMode
-      && bieyanghongPilot
-      && bieyanghongAssistedRepairEnabled,
+      yilianCloudMode
+        ? yilianAssistedRepairEnabled
+        : !serverCookieMode
+          && !trustedDeviceMode
+          && bieyanghongPilot
+          && bieyanghongAssistedRepairEnabled,
   }
 }
 
@@ -1323,6 +1346,147 @@ const persistPmsLoginSecrets = () => {
     { encoding: 'utf8', mode: 0o600 },
   )
   renameSync(temporaryPath, pmsLoginSecretPath)
+}
+
+const YILIAN_REPAIR_STATES = new Set([
+  'IDLE',
+  'RUNNING',
+  'SUCCEEDED',
+  'HUMAN_AUTHORIZATION_REQUIRED',
+  'FAILED',
+])
+
+const defaultYilianRepairStatus = () => ({
+  state: 'IDLE',
+  trigger: null,
+  lastAttemptAt: null,
+  lastValidatedAt: null,
+  lastSucceededAt: null,
+  lastBusinessDate: null,
+  lastErrorCode: null,
+  sourceCount: 0,
+  successfulSourceCount: 0,
+  outboundDeliveryAttempted: false,
+})
+
+const normalizeYilianRepairStatus = (candidate) => {
+  const fallback = defaultYilianRepairStatus()
+  if (!candidate || typeof candidate !== 'object') return fallback
+  const safeTime = (value) => {
+    if (typeof value !== 'string') return null
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+  }
+  const safeDate = typeof candidate.lastBusinessDate === 'string'
+    && /^\d{4}-\d{2}-\d{2}$/u.test(candidate.lastBusinessDate)
+    ? candidate.lastBusinessDate
+    : null
+  const safeReason = typeof candidate.lastErrorCode === 'string'
+    && /^YILIAN_[A-Z0-9_]{2,80}$/u.test(candidate.lastErrorCode)
+    ? candidate.lastErrorCode
+    : null
+  return {
+    state: YILIAN_REPAIR_STATES.has(candidate.state)
+      ? candidate.state
+      : 'IDLE',
+    trigger: typeof candidate.trigger === 'string'
+      && /^[A-Z0-9][A-Z0-9_-]{1,63}$/u.test(candidate.trigger)
+      ? candidate.trigger
+      : null,
+    lastAttemptAt: safeTime(candidate.lastAttemptAt),
+    lastValidatedAt: safeTime(candidate.lastValidatedAt),
+    lastSucceededAt: safeTime(candidate.lastSucceededAt),
+    lastBusinessDate: safeDate,
+    lastErrorCode: safeReason,
+    sourceCount: Number.isInteger(candidate.sourceCount)
+      ? Math.max(0, Math.min(20, candidate.sourceCount))
+      : 0,
+    successfulSourceCount: Number.isInteger(candidate.successfulSourceCount)
+      ? Math.max(0, Math.min(20, candidate.successfulSourceCount))
+      : 0,
+    outboundDeliveryAttempted: false,
+  }
+}
+
+const yilianRepairStatusRecordFor = (hotelId) =>
+  yilianRepairStatusesByHotel.get(hotelId) ?? defaultYilianRepairStatus()
+
+const persistYilianRepairStatuses = () => {
+  if (!yilianRepairStatusPath) return
+  mkdirSync(dirname(yilianRepairStatusPath), { recursive: true })
+  const temporaryPath = `${yilianRepairStatusPath}.${process.pid}.tmp`
+  writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      Object.fromEntries(yilianRepairStatusesByHotel),
+      null,
+      2,
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  renameSync(temporaryPath, yilianRepairStatusPath)
+}
+
+const updateYilianRepairStatus = (hotelId, patch) => {
+  const next = normalizeYilianRepairStatus({
+    ...yilianRepairStatusRecordFor(hotelId),
+    ...patch,
+  })
+  yilianRepairStatusesByHotel.set(hotelId, next)
+  persistYilianRepairStatuses()
+  return next
+}
+
+const yilianRepairStatusFor = (hotelId) => {
+  const record = yilianRepairStatusRecordFor(hotelId)
+  const credentialsConfigured = pmsLoginSecretsByHotel.has(hotelId)
+  const active = activeYilianRepairsByHotel.has(hotelId)
+  return {
+    providerCode: 'YILIAN_CLOUD',
+    portalUrl: YILIAN_LOGIN_URL,
+    automationEnabled: yilianAssistedRepairEnabled,
+    credentialsConfigured,
+    active,
+    state: !yilianAssistedRepairEnabled
+      ? 'DISABLED'
+      : !credentialsConfigured
+        ? 'CREDENTIALS_REQUIRED'
+        : active
+          ? 'RUNNING'
+          : record.state,
+    lastAttemptAt: record.lastAttemptAt,
+    lastValidatedAt: record.lastValidatedAt,
+    lastSucceededAt: record.lastSucceededAt,
+    lastBusinessDate: record.lastBusinessDate,
+    lastErrorCode: record.lastErrorCode,
+    sourceCount: record.sourceCount,
+    successfulSourceCount: record.successfulSourceCount,
+    outboundDeliveryAttempted: false,
+  }
+}
+
+const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set([
+  'YILIAN_SESSION_REAUTH_REQUIRED',
+  'YILIAN_LOGIN_TIMEOUT',
+  'YILIAN_BROWSER_LOGIN_FAILED',
+  'YILIAN_REQUEST_TIMEOUT',
+  'YILIAN_REQUEST_FAILED',
+  'YILIAN_HTTP_ERROR',
+  'YILIAN_EMPTY_RESPONSE',
+  'YILIAN_RESPONSE_JSON_INVALID',
+  'YILIAN_SHADOW_VALIDATION_FAILED',
+  'YILIAN_TOKEN_PERSIST_FAILED',
+])
+
+const yilianRepairRetryAllowed = (record) =>
+  !record.lastErrorCode
+  || YILIAN_AUTOMATIC_RETRYABLE_ERRORS.has(record.lastErrorCode)
+
+const yilianAutomaticRecoveryDue = (record, now = Date.now()) => {
+  if (!yilianRepairRetryAllowed(record)) return false
+  const lastAttemptAt = Date.parse(record.lastAttemptAt ?? '')
+  return !Number.isFinite(lastAttemptAt)
+    || now - lastAttemptAt >= YILIAN_AUTO_RECOVERY_RETRY_MS
 }
 
 const LUOPAN_PROFILE_REF = /^[a-z0-9][a-z0-9_-]{0,39}$/
@@ -1994,6 +2158,31 @@ if (pmsLoginSecretPath && existsSync(pmsLoginSecretPath)) {
     }
   } catch {
     process.stderr.write('REVIEW_PMS_LOGIN_SECRET_STORE_IGNORED\n')
+  }
+}
+
+if (yilianRepairStatusPath && existsSync(yilianRepairStatusPath)) {
+  try {
+    const persistedStatuses = JSON.parse(
+      readFileSync(yilianRepairStatusPath, 'utf8'),
+    )
+    if (
+      persistedStatuses
+      && typeof persistedStatuses === 'object'
+      && !Array.isArray(persistedStatuses)
+    ) {
+      for (const [hotelId, status] of Object.entries(persistedStatuses)) {
+        const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
+        if (hotel?.pmsSystemCode !== 'YILIAN_CLOUD') continue
+        const normalized = normalizeYilianRepairStatus(status)
+        yilianRepairStatusesByHotel.set(hotelId, {
+          ...normalized,
+          state: normalized.state === 'RUNNING' ? 'IDLE' : normalized.state,
+        })
+      }
+    }
+  } catch {
+    process.stderr.write('REVIEW_YILIAN_REPAIR_STATUS_STORE_IGNORED\n')
   }
 }
 
@@ -4676,6 +4865,9 @@ const collectLiveFor = async (
   if (activeBieyanghongRepairsByHotel.has(hotelId)) {
     throw new Error('BIEYANGHONG_REAUTH_IN_PROGRESS')
   }
+  if (activeYilianRepairsByHotel.has(hotelId)) {
+    throw new Error('YILIAN_REAUTH_IN_PROGRESS')
+  }
   const running = liveCollectionLocks.get(hotelId)
   if (running) return running
 
@@ -4851,6 +5043,24 @@ const collectLiveFor = async (
         hotelId,
         'SCHEDULED_COLLECTION_FAILURE',
       ).catch(() => {})
+    }
+    if (
+      error?.message === 'YILIAN_SESSION_REAUTH_REQUIRED'
+      && hotel.pmsSystemCode === 'YILIAN_CLOUD'
+    ) {
+      const previousStatus = yilianRepairStatusRecordFor(hotelId)
+      if (yilianRepairRetryAllowed(previousStatus)) {
+        updateYilianRepairStatus(hotelId, {
+          state: 'FAILED',
+          lastErrorCode: 'YILIAN_SESSION_REAUTH_REQUIRED',
+        })
+        if (yilianAssistedRepairEnabled && !isNightlyRepairDeferred()) {
+          void startYilianCloudRecovery(
+            hotelId,
+            'SCHEDULED_COLLECTION_FAILURE',
+          ).catch(() => {})
+        }
+      }
     }
     throw error
   })
@@ -5701,6 +5911,300 @@ const scheduledLuopanRecoveryTick = async () => {
     }
   } finally {
     scheduledLuopanRecoveryRunning = false
+  }
+}
+
+const safeYilianRepairReason = (error) => {
+  const reasonCode = typeof error?.message === 'string' ? error.message : ''
+  if (reasonCode.startsWith('YILIAN_')) return reasonCode
+  if (reasonCode === 'PMS_LOGIN_CREDENTIALS_MISSING') {
+    return 'YILIAN_CREDENTIALS_REQUIRED'
+  }
+  if (reasonCode.startsWith('PMS_LOGIN_')) {
+    return 'YILIAN_CREDENTIALS_INVALID'
+  }
+  return 'YILIAN_AUTO_REAUTH_FAILED'
+}
+
+const yilianHumanAuthorizationRequired = (reasonCode) => [
+  'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
+  'YILIAN_RISK_CONTROL_REQUIRED',
+  'YILIAN_AUTHENTICATION_NOT_COMPLETED',
+].includes(reasonCode)
+
+const replaceYilianAccessToken = (hotelId, sources, accessToken) => {
+  const previous = { ...secretsForHotel(hotelId) }
+  const next = { ...previous }
+  for (const source of sources.filter((candidate) => candidate.enabled)) {
+    next[source.sourceId] = encryptCookie(
+      accessToken,
+      cookieSecretKey,
+      cookieScope(hotelId, source.sourceId),
+    )
+  }
+  cookieSecretsByHotel.set(hotelId, next)
+  try {
+    persistCookieSecrets()
+  } catch {
+    cookieSecretsByHotel.set(hotelId, previous)
+    throw new Error('YILIAN_TOKEN_PERSIST_FAILED')
+  }
+  return previous
+}
+
+const notifyYilianRepairRequired = async (hotelId, reasonCode) => {
+  const hotel = selectedHotel(hotelId)
+  const attemptHour = (
+    yilianRepairStatusRecordFor(hotelId).lastAttemptAt
+    ?? new Date().toISOString()
+  ).slice(0, 13)
+  await deliverWeComAuditNotice({
+    hotelId,
+    messageKey:
+      `${hotelId}:YILIAN_REPAIR_REQUIRED:${reasonCode}:${attemptHour}`,
+    deliveryType: 'YILIAN_REPAIR_REQUIRED',
+    content: [
+      '【驿联云登录需要人工处理】',
+      `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+      reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
+        ? '原因：厂家拒绝了当前账号或密码，系统已停止自动重试。'
+        : reasonCode === 'YILIAN_AUTHENTICATION_NOT_COMPLETED'
+          ? '原因：厂家官网未建立有效会话，可能出现了新的验证步骤；系统已停止自动重试。'
+          : '原因：厂家要求短信、验证码或额外安全确认，系统已停止自动重试。',
+      '处理：请在驿联云官网完成验证，或在门店后台更新登录凭据后手动重试。',
+      `驿联云官网：${YILIAN_LOGIN_URL}`,
+      `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
+    ].join('\n'),
+    bodyPreview:
+      `驿联云登录需要人工处理 · ${hotel.hotelCode} · ${reasonCode}`,
+  }).catch(() => {})
+}
+
+const startYilianCloudRecovery = async (
+  hotelId,
+  trigger = 'MANUAL_REPAIR',
+) => {
+  if (!yilianAssistedRepairEnabled) {
+    throw new Error('YILIAN_AUTO_REAUTH_DISABLED')
+  }
+  if (
+    trigger !== 'MANUAL_REPAIR'
+    && !yilianAutomaticRecoveryDue(yilianRepairStatusRecordFor(hotelId))
+  ) return yilianRepairStatusFor(hotelId)
+  const active = activeYilianRepairsByHotel.get(hotelId)
+  if (active) {
+    await active
+    return yilianRepairStatusFor(hotelId)
+  }
+  const hotel = selectedHotel(hotelId)
+  if (hotel.pmsSystemCode !== 'YILIAN_CLOUD') {
+    throw new Error('YILIAN_PMS_SCOPE_INVALID')
+  }
+
+  const operation = (async () => {
+    const attemptedAt = new Date().toISOString()
+    updateYilianRepairStatus(hotelId, {
+      state: 'RUNNING',
+      trigger,
+      lastAttemptAt: attemptedAt,
+      lastErrorCode: null,
+      sourceCount: 0,
+      successfulSourceCount: 0,
+    })
+    let credentials = null
+    let login = null
+    let accessTokensBySourceId = null
+    let previousSecrets = null
+    let tokenCommitted = false
+    let activationCommitted = false
+    const hadBusinessDayControl = businessDayControlsByHotel.has(hotelId)
+    const previousBusinessDayControl = hadBusinessDayControl
+      ? { ...businessDayControlsByHotel.get(hotelId) }
+      : null
+    const previousCollectionEnabled = hotel.collectionEnabled
+    const previousHotelRowVersion = hotel.rowVersion
+    try {
+      credentials = pmsLoginCredentialsFor(hotelId)
+      const sources = reportSourcesByHotel.get(hotelId) ?? []
+      const enabledSources = sources.filter((source) => source.enabled)
+      if (enabledSources.length !== 3) {
+        throw new Error('YILIAN_SOURCE_CONTRACT_INVALID')
+      }
+      login = await startYilianPasswordLogin({ credentials })
+      accessTokensBySourceId = Object.fromEntries(
+        enabledSources.map((source) => [source.sourceId, login.accessToken]),
+      )
+      const businessDayControl = businessDayControlFor(hotelId)
+      const shadow = await collectYilianCloudReports({
+        hotel,
+        sources,
+        accessTokensBySourceId,
+        previousSnapshots: liveSnapshotStore[hotelId] ?? [],
+        secretKey: pseudonymSecretKey,
+        target: null,
+        hotSellingRoomTypeCodes:
+          hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+        configuredReportDate: businessDayControl.businessDate,
+      })
+      if (
+        shadow.run.status !== 'SUCCEEDED'
+        || shadow.run.sourceCount !== 3
+        || shadow.run.successfulSourceCount !== 3
+        || shadow.snapshot.completeness !== 'COMPLETE'
+        || shadow.run.outboundDeliveryAttempted !== false
+      ) throw new Error('YILIAN_SHADOW_VALIDATION_FAILED')
+
+      previousSecrets = replaceYilianAccessToken(
+        hotelId,
+        enabledSources,
+        login.accessToken,
+      )
+      tokenCommitted = true
+      const updatedAt = new Date().toISOString()
+      businessDayControlsByHotel.set(hotelId, {
+        businessDate: shadow.snapshot.businessDate,
+        mode: 'PMS_CONFIRMED',
+        source: 'YILIAN_RATE_CALENDAR',
+        businessDateStartedAt: null,
+        updatedAt,
+      })
+      persistBusinessDayControls()
+      if (!hotel.collectionEnabled) {
+        hotel.collectionEnabled = true
+        hotel.rowVersion += 1
+        persistSimulationHotels()
+      }
+      activationCommitted = true
+      updateYilianRepairStatus(hotelId, {
+        state: 'SUCCEEDED',
+        lastValidatedAt: updatedAt,
+        lastSucceededAt: updatedAt,
+        lastBusinessDate: shadow.snapshot.businessDate,
+        lastErrorCode: null,
+        sourceCount: shadow.run.sourceCount,
+        successfulSourceCount: shadow.run.successfulSourceCount,
+      })
+      process.stdout.write(`${JSON.stringify({
+        event: 'YILIAN_AUTO_REAUTH_COMPLETED',
+        hotelId,
+        trigger,
+        sourceCount: shadow.run.sourceCount,
+        successfulSourceCount: shadow.run.successfulSourceCount,
+        businessDate: shadow.snapshot.businessDate,
+        outboundDeliveryAttempted: false,
+      })}\n`)
+      return null
+    } catch (error) {
+      if (tokenCommitted && !activationCommitted && previousSecrets) {
+        cookieSecretsByHotel.set(hotelId, previousSecrets)
+        try {
+          persistCookieSecrets()
+        } catch {
+          process.stderr.write(`${JSON.stringify({
+            event: 'YILIAN_TOKEN_ROLLBACK_FAILED',
+            hotelId,
+          })}\n`)
+        }
+        if (hadBusinessDayControl) {
+          businessDayControlsByHotel.set(
+            hotelId,
+            previousBusinessDayControl,
+          )
+        } else {
+          businessDayControlsByHotel.delete(hotelId)
+        }
+        hotel.collectionEnabled = previousCollectionEnabled
+        hotel.rowVersion = previousHotelRowVersion
+        try {
+          persistBusinessDayControls()
+          persistSimulationHotels()
+        } catch {
+          process.stderr.write(`${JSON.stringify({
+            event: 'YILIAN_ACTIVATION_ROLLBACK_FAILED',
+            hotelId,
+          })}\n`)
+        }
+      }
+      const reasonCode = safeYilianRepairReason(error)
+      const state = yilianHumanAuthorizationRequired(reasonCode)
+        ? 'HUMAN_AUTHORIZATION_REQUIRED'
+        : 'FAILED'
+      updateYilianRepairStatus(hotelId, {
+        state,
+        lastErrorCode: reasonCode,
+      })
+      if (
+        yilianHumanAuthorizationRequired(reasonCode)
+        || reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
+      ) void notifyYilianRepairRequired(hotelId, reasonCode)
+      process.stderr.write(`${JSON.stringify({
+        event: 'YILIAN_AUTO_REAUTH_FAILED',
+        hotelId,
+        trigger,
+        reasonCode,
+      })}\n`)
+      return null
+    } finally {
+      if (credentials) {
+        credentials.username = ''
+        credentials.password = ''
+      }
+      if (login) login.accessToken = ''
+      if (accessTokensBySourceId) {
+        for (const sourceId of Object.keys(accessTokensBySourceId)) {
+          accessTokensBySourceId[sourceId] = ''
+        }
+      }
+    }
+  })()
+  activeYilianRepairsByHotel.set(hotelId, operation)
+  try {
+    await operation
+  } finally {
+    activeYilianRepairsByHotel.delete(hotelId)
+  }
+  return yilianRepairStatusFor(hotelId)
+}
+
+const scheduledYilianRecoveryTick = async () => {
+  if (
+    !automaticHourlyCollectionEnabled
+    || !yilianAssistedRepairEnabled
+    || scheduledYilianRecoveryRunning
+    || isNightlyRepairDeferred()
+  ) return
+  scheduledYilianRecoveryRunning = true
+  try {
+    const now = Date.now()
+    for (const hotel of hotels.filter(
+      (candidate) => candidate.pmsSystemCode === 'YILIAN_CLOUD',
+    )) {
+      if (!hotel.collectionEnabled || !pmsLoginSecretsByHotel.has(hotel.hotelId)) {
+        continue
+      }
+      const status = yilianRepairStatusRecordFor(hotel.hotelId)
+      if (
+        !status.lastErrorCode
+        || status.state === 'SUCCEEDED'
+        || !yilianRepairRetryAllowed(status)
+      ) continue
+      const statusLastAttemptAt = Date.parse(status.lastAttemptAt ?? '')
+      const lastAttemptAt = Math.max(
+        lastScheduledYilianRecoveryAtByHotel.get(hotel.hotelId) ?? 0,
+        Number.isFinite(statusLastAttemptAt) ? statusLastAttemptAt : 0,
+      )
+      if (
+        !yilianAutomaticRecoveryDue(status, now)
+        || now - lastAttemptAt < YILIAN_AUTO_RECOVERY_RETRY_MS
+      ) continue
+      lastScheduledYilianRecoveryAtByHotel.set(hotel.hotelId, now)
+      await startYilianCloudRecovery(
+        hotel.hotelId,
+        'SCHEDULED_STALE_SESSION_RECOVERY',
+      )
+    }
+  } finally {
+    scheduledYilianRecoveryRunning = false
   }
 }
 
@@ -7085,7 +7589,9 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
     if (!incident) return null
     const providerLastErrorCode = hotel.pmsSystemCode === 'LUOPAN_CLOUD'
       ? luopanBrowserConfigRecordFor(hotel.hotelId).lastErrorCode
-      : null
+      : hotel.pmsSystemCode === 'YILIAN_CLOUD'
+        ? yilianRepairStatusRecordFor(hotel.hotelId).lastErrorCode
+        : null
     const messageKey = pmsRepairNoticeMessageKey({
       hotel,
       incident,
@@ -7155,32 +7661,54 @@ const repairNightlyBriefingHealthAudit = async ({
         })
         return
       }
-      const bieyanghongPilot =
-        hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
-        && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
-      const challenge = bieyanghongPilot
-        ? await startBieyanghongRepairChallenge(
+      if (hotel.pmsSystemCode === 'YILIAN_CLOUD') {
+        const recovery = await startYilianCloudRecovery(
           hotel.hotelId,
           'DAILY_07_30_REPAIR',
         )
-        : await startLuopanRepairChallenge(
-          hotel.hotelId,
-          'DAILY_07_30_REPAIR',
-        )
-      if (!challenge) {
-        throw new Error(
-          bieyanghongPilot
-            ? 'BIEYANGHONG_REPAIR_NOT_STARTED'
-            : 'LUOPAN_REPAIR_NOT_STARTED',
-        )
+        if (recovery.state === 'HUMAN_AUTHORIZATION_REQUIRED') {
+          updateBriefingHealthAudit(auditRecord.auditId, {
+            resolutionStatus: 'WAITING_CAPTCHA',
+            reasonCode: 'YILIAN_REPAIR_WAITING_HUMAN_AUTHORIZATION',
+          })
+          return
+        }
+        if (recovery.state !== 'SUCCEEDED') {
+          throw new Error(
+            recovery.lastErrorCode ?? 'YILIAN_AUTO_REAUTH_FAILED',
+          )
+        }
+        // The cloud repair never broadcasts. Continue into the normal
+        // collection-and-delivery path so the morning audit is only marked
+        // resolved after both briefings are confirmed delivered.
+      } else {
+        const bieyanghongPilot =
+          hotel.hotelCode === BIEYANGHONG_REPAIR_PILOT_HOTEL_CODE
+          && hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
+        const challenge = bieyanghongPilot
+          ? await startBieyanghongRepairChallenge(
+            hotel.hotelId,
+            'DAILY_07_30_REPAIR',
+          )
+          : await startLuopanRepairChallenge(
+            hotel.hotelId,
+            'DAILY_07_30_REPAIR',
+          )
+        if (!challenge) {
+          throw new Error(
+            bieyanghongPilot
+              ? 'BIEYANGHONG_REPAIR_NOT_STARTED'
+              : 'LUOPAN_REPAIR_NOT_STARTED',
+          )
+        }
+        updateBriefingHealthAudit(auditRecord.auditId, {
+          resolutionStatus: 'WAITING_CAPTCHA',
+          reasonCode: bieyanghongPilot
+            ? 'BIEYANGHONG_REPAIR_WAITING_MANAGER_AUTHORIZATION'
+            : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
+        })
+        return
       }
-      updateBriefingHealthAudit(auditRecord.auditId, {
-        resolutionStatus: 'WAITING_CAPTCHA',
-        reasonCode: bieyanghongPilot
-          ? 'BIEYANGHONG_REPAIR_WAITING_MANAGER_AUTHORIZATION'
-          : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
-      })
-      return
     }
     if (
       auditRecord.status === 'COLLECTION_DISABLED'
@@ -7238,16 +7766,27 @@ const repairNightlyBriefingHealthAudit = async ({
     if (
       activeLuopanRepairsByHotel.has(hotel.hotelId)
       || activeBieyanghongRepairsByHotel.has(hotel.hotelId)
+      || activeYilianRepairsByHotel.has(hotel.hotelId)
     ) {
       updateBriefingHealthAudit(auditRecord.auditId, {
         resolutionStatus: 'WAITING_CAPTCHA',
-        reasonCode: activeBieyanghongRepairsByHotel.has(hotel.hotelId)
-          ? 'BIEYANGHONG_REPAIR_WAITING_MANAGER_AUTHORIZATION'
-          : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
+        reasonCode: activeYilianRepairsByHotel.has(hotel.hotelId)
+          ? 'YILIAN_REPAIR_IN_PROGRESS'
+          : activeBieyanghongRepairsByHotel.has(hotel.hotelId)
+            ? 'BIEYANGHONG_REPAIR_WAITING_MANAGER_AUTHORIZATION'
+            : 'LUOPAN_REPAIR_WAITING_CAPTCHA',
       })
       return
     }
     const reasonCode = safeLuopanRepairReason(error)
+    const yilianRepairStatus = hotel.pmsSystemCode === 'YILIAN_CLOUD'
+      ? yilianRepairStatusRecordFor(hotel.hotelId)
+      : null
+    const retryMessage = yilianRepairStatus
+      ? yilianRepairRetryAllowed(yilianRepairStatus)
+        ? '驿联云会按冷却策略自动重试；重复失败或厂家要求验证时会转人工处理。'
+        : '系统已停止自动重试，请先完成人工验证或更新后台登录凭据。'
+      : '请由OTA运营人员进入后台处理；系统不会重复登录。'
     updateBriefingHealthAudit(auditRecord.auditId, {
       resolutionStatus: 'FAILED',
       reasonCode,
@@ -7261,7 +7800,7 @@ const repairNightlyBriefingHealthAudit = async ({
         `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
         `凌晨状态：${auditRecord.status}`,
         `状态码：${reasonCode}`,
-        '请由OTA运营人员进入后台处理；系统不会重复登录。',
+        retryMessage,
         `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
       ].join('\n'),
     }).catch(() => {})
@@ -8635,6 +9174,7 @@ const REPAIR_WRITE_SUFFIXES = new Set([
   '/ota-controlled-login-verifications',
   '/luopan-browser-session-validations',
   '/pms-login-config',
+  '/yilian-cloud-repair',
   '/trusted-device/bootstrap',
   '/trusted-device/enrollment',
   '/trusted-device/scope-approval',
@@ -8673,6 +9213,17 @@ const server = createServer(async (request, response) => {
           reasonCode: luopanRepairReasonCode(),
           webLinkReady: luopanWebRepairReady,
           weComRepairBot: weComRepairBotPublicStatus(),
+        },
+        yilianAssistedRepair: {
+          enabled: yilianAssistedRepairEnabled,
+          activeRepairCount: activeYilianRepairsByHotel.size,
+          configuredHotelCount: hotels.filter((hotel) =>
+            hotel.pmsSystemCode === 'YILIAN_CLOUD'
+            && pmsLoginSecretsByHotel.has(hotel.hotelId)).length,
+          humanAuthorizationRequiredCount: hotels.filter((hotel) =>
+            hotel.pmsSystemCode === 'YILIAN_CLOUD'
+            && yilianRepairStatusRecordFor(hotel.hotelId).state
+              === 'HUMAN_AUTHORIZATION_REQUIRED').length,
         },
         bieyanghongAssistedRepair: {
           enabled:
@@ -9597,7 +10148,7 @@ const server = createServer(async (request, response) => {
       reportSourcesByHotel.set(created.hotelId, clonedSources)
       otaSourcesByHotel.set(created.hotelId, [])
       otaSourceSecretsByHotel.set(created.hotelId, {})
-      if (input.pmsSystemCode === 'LUOPAN_CLOUD') {
+      if (['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(input.pmsSystemCode)) {
         pmsLoginSecretsByHotel.set(
           created.hotelId,
           encryptCookie(
@@ -9606,14 +10157,22 @@ const server = createServer(async (request, response) => {
             pmsLoginScope(created.hotelId),
           ),
         )
-        luopanBrowserConfigsByHotel.set(
-          created.hotelId,
-          defaultLuopanBrowserConfig(),
-        )
+        if (input.pmsSystemCode === 'LUOPAN_CLOUD') {
+          luopanBrowserConfigsByHotel.set(
+            created.hotelId,
+            defaultLuopanBrowserConfig(),
+          )
+        } else {
+          yilianRepairStatusesByHotel.set(
+            created.hotelId,
+            defaultYilianRepairStatus(),
+          )
+        }
       }
       persistSimulationHotels()
       persistReportSources()
       persistPmsLoginSecrets()
+      persistYilianRepairStatuses()
       persistLuopanBrowserConfigs()
       persistOtaSources()
       persistOtaSecrets()
@@ -9626,7 +10185,7 @@ const server = createServer(async (request, response) => {
           copiedReportSourceCount: clonedSources.length,
           pmsSystemCode: input.pmsSystemCode,
           pmsCredentialsConfigured:
-            input.pmsSystemCode === 'LUOPAN_CLOUD',
+            ['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(input.pmsSystemCode),
           otaConfigurationRequired: true,
         },
       })
@@ -9926,6 +10485,16 @@ const server = createServer(async (request, response) => {
         applyCookieUpdates(hotelId, body.sources)
         persistCookieSecrets()
         persistReportSources()
+        if (selected.pmsSystemCode === 'YILIAN_CLOUD') {
+          updateYilianRepairStatus(hotelId, {
+            state: 'IDLE',
+            trigger: 'SOURCE_CONFIG_UPDATED',
+            lastAttemptAt: null,
+            lastErrorCode: null,
+            sourceCount: savedSources.filter((source) => source.enabled).length,
+            successfulSourceCount: 0,
+          })
+        }
         json(response, 200, {
           data: {
             commandId: randomUUID(),
@@ -10217,6 +10786,28 @@ const server = createServer(async (request, response) => {
         json(response, 200, { data: pmsLoginConfigFor(hotelId) })
         return
       }
+      if (request.method === 'GET' && suffix === '/yilian-cloud-repair') {
+        if (selected.pmsSystemCode !== 'YILIAN_CLOUD') {
+          throw new Error('YILIAN_PMS_SCOPE_INVALID')
+        }
+        json(response, 200, { data: yilianRepairStatusFor(hotelId) })
+        return
+      }
+      if (request.method === 'POST' && suffix === '/yilian-cloud-repair') {
+        if (selected.pmsSystemCode !== 'YILIAN_CLOUD') {
+          throw new Error('YILIAN_PMS_SCOPE_INVALID')
+        }
+        const body = await readBody(request)
+        if (body.reasonCode !== 'TRIGGER_YILIAN_CLOUD_REAUTH') {
+          throw new Error('REASON_CODE_INVALID')
+        }
+        const status = await startYilianCloudRecovery(
+          hotelId,
+          'MANUAL_REPAIR',
+        )
+        json(response, 200, { data: status })
+        return
+      }
       if (request.method === 'POST' && suffix === '/pms-login-config') {
         const body = await readBody(request)
         const credentialUpdate = body.credentialUpdate ?? { action: 'KEEP' }
@@ -10259,6 +10850,17 @@ const server = createServer(async (request, response) => {
           pmsLoginSecretsByHotel.delete(hotelId)
         }
         persistPmsLoginSecrets()
+        if (
+          selected.pmsSystemCode === 'YILIAN_CLOUD'
+          && credentialUpdate.action !== 'KEEP'
+        ) {
+          updateYilianRepairStatus(hotelId, {
+            state: 'IDLE',
+            trigger: 'CREDENTIALS_UPDATED',
+            lastAttemptAt: null,
+            lastErrorCode: null,
+          })
+        }
         json(response, 200, { data: pmsLoginConfigFor(hotelId) })
         return
       }
@@ -11012,6 +11614,7 @@ server.listen(port, host, () => {
   const runScheduledTasks = () => {
     if (existsSync(deploymentSchedulerPausePath)) return
     void scheduledLuopanRecoveryTick()
+    void scheduledYilianRecoveryTick()
     void scheduledCollectionTick()
     void scheduledOtaSourceTick()
     void scheduledWeComDeliveryTick()

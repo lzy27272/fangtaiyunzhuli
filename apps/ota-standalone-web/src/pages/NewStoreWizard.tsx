@@ -70,7 +70,7 @@ export function NewStoreWizard({
 
   const canNext = useMemo(() => {
     if (step === 0) return Boolean(draft.hotelDisplayName.trim())
-    if (step === 1 && draft.pmsSystemCode === 'LUOPAN_CLOUD') return Boolean(draft.pmsUsername.trim() && draft.pmsPassword)
+    if (step === 1 && ['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(draft.pmsSystemCode)) return Boolean(draft.pmsUsername.trim() && draft.pmsPassword)
     if (step === 1 && draft.pmsSystemCode === 'OTHER') return Boolean(draft.pmsSystemName.trim())
     return true
   }, [draft, step])
@@ -109,7 +109,7 @@ export function NewStoreWizard({
           : {}),
         timezone: draft.timezone,
         reasonCode: 'CREATE_STORE_FROM_CONSOLE_WIZARD',
-        ...(draft.pmsSystemCode === 'LUOPAN_CLOUD'
+        ...(['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(draft.pmsSystemCode)
           ? { pmsUsername: draft.pmsUsername.trim(), pmsPassword: draft.pmsPassword }
           : {}),
       })
@@ -209,7 +209,7 @@ export function NewStoreWizard({
             <div className="choice-list">
               {PMS_OPTIONS.map((option) => <button type="button" className={draft.pmsSystemCode === option.code ? 'selected' : ''} key={option.code} onClick={() => setDraft({ ...draft, pmsSystemCode: option.code, pmsUsername: '', pmsPassword: '' })}><span className="choice-radio" /><span><strong>{option.name}</strong><small>{option.detail}</small></span><Status tone={option.code === 'MEITUAN_BIEYANGHONG' ? 'ok' : option.code === 'OTHER' ? 'warning' : 'info'}>{option.code === 'MEITUAN_BIEYANGHONG' ? 'Cookie 直采' : option.code === 'OTHER' ? '可登记 · 待适配' : '已支持'}</Status></button>)}
             </div>
-            {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? <div className="form-grid two compact-form"><label>罗盘登录账号<input autoComplete="off" value={draft.pmsUsername} onChange={(event) => setDraft({ ...draft, pmsUsername: event.target.value })} /></label><label>罗盘登录密码<input autoComplete="new-password" type="password" value={draft.pmsPassword} onChange={(event) => setDraft({ ...draft, pmsPassword: event.target.value })} /></label><p className="form-note">登录资料仅提交至受控服务端配置，不在页面回显。</p></div> : draft.pmsSystemCode === 'OTHER' ? <div className="form-grid two compact-form"><label>PMS 厂家名称<input maxLength={80} placeholder="请输入酒店正在使用的 PMS 厂家" value={draft.pmsSystemName} onChange={(event) => setDraft({ ...draft, pmsSystemName: event.target.value })} /></label><p className="form-note">厂家会保存到门店档案；完成适配前采集保持关闭，不会生成虚假经营数据。</p></div> : draft.pmsSystemCode === 'YILIAN_CLOUD' ? <div className="privacy-note"><Icon name="shield" /><span><strong>驿联云采用云端官方登录授权</strong><small>登录成功后系统只提取授权令牌并加密保存；令牌不在页面回显。</small></span></div> : <div className="privacy-note"><Icon name="shield" /><span><strong>别样红采用云端 Cookie 直采</strong><small>建店后在本店“Cookie 修复”页粘贴并验证 Cookie，无需安装门店软件。</small></span></div>}
+            {['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(draft.pmsSystemCode) ? <div className="form-grid two compact-form"><label>{draft.pmsSystemCode === 'YILIAN_CLOUD' ? '驿联云登录账号' : '罗盘登录账号'}<input autoComplete="off" value={draft.pmsUsername} onChange={(event) => setDraft({ ...draft, pmsUsername: event.target.value })} /></label><label>{draft.pmsSystemCode === 'YILIAN_CLOUD' ? '驿联云登录密码' : '罗盘登录密码'}<input autoComplete="new-password" type="password" value={draft.pmsPassword} onChange={(event) => setDraft({ ...draft, pmsPassword: event.target.value })} /></label><p className="form-note">登录资料仅加密提交至受控服务端，不在页面回显；驿联云令牌失效时会用本店凭据自动重登。</p></div> : draft.pmsSystemCode === 'OTHER' ? <div className="form-grid two compact-form"><label>PMS 厂家名称<input maxLength={80} placeholder="请输入酒店正在使用的 PMS 厂家" value={draft.pmsSystemName} onChange={(event) => setDraft({ ...draft, pmsSystemName: event.target.value })} /></label><p className="form-note">厂家会保存到门店档案；完成适配前采集保持关闭，不会生成虚假经营数据。</p></div> : <div className="privacy-note"><Icon name="shield" /><span><strong>别样红采用云端 Cookie 直采</strong><small>建店后在本店“Cookie 修复”页粘贴并验证 Cookie，无需安装门店软件。</small></span></div>}
           </>
         ) : null}
 

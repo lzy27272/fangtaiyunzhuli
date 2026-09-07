@@ -5,6 +5,7 @@ import {
   buildStoreRepairConsoleUrl,
   evaluatePmsRepair,
   luopanPmsRepairGuidance,
+  yilianPmsRepairGuidance,
   PMS_REPAIR_STALE_AFTER_MS,
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
@@ -203,6 +204,42 @@ test('Luopan reauthentication notice routes the manager to the captcha bot', () 
     providerLastErrorCode: 'LUOPAN_REAUTH_REQUIRED',
   })
   assert.match(key, /:LUOPAN_GUIDANCE_V1:REAUTH$/u)
+})
+
+test('Yilian notice distinguishes automatic recovery from required human authorization', () => {
+  const hotel = {
+    hotelId: 'hotel-015',
+    hotelCode: '015',
+    hotelName: '测试驿联云酒店',
+    pmsSystemCode: 'YILIAN_CLOUD',
+  }
+  const incident = {
+    incidentId: 'incident-yilian',
+    directionCode: 'PMS_DATA_STALE',
+  }
+  const automatic = pmsRepairNoticeContent({
+    hotel,
+    incident,
+    publicOrigin: 'https://www.sfgzt.cn',
+    providerLastErrorCode: 'YILIAN_SESSION_REAUTH_REQUIRED',
+  })
+  assert.match(automatic, /后台加密凭据自动重登/u)
+  assert.match(automatic, /三个接口只读验证全部通过/u)
+  assert.doesNotMatch(automatic, /验证码：/u)
+
+  const human = yilianPmsRepairGuidance(
+    'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
+  )
+  assert.match(human.action, /停止自动重试/u)
+  assert.match(human.action, /人工验证/u)
+  assert.match(
+    pmsRepairNoticeMessageKey({
+      hotel,
+      incident,
+      providerLastErrorCode: 'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
+    }),
+    /:YILIAN_GUIDANCE_V1:HUMAN$/u,
+  )
 })
 
 test('scheduled Luopan repair delivery uses the versioned provider guidance key', () => {

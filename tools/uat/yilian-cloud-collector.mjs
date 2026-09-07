@@ -159,7 +159,7 @@ const fetchRoot = async ({
   try {
     response = await fetchImpl(url, {
       method: 'GET',
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal,
       headers: {
         Accept: 'application/json, text/plain, */*',
@@ -175,6 +175,10 @@ const fetchRoot = async ({
   } finally {
     clearTimeout(timer)
   }
+  if (
+    [401, 403].includes(response.status)
+    || [301, 302, 303, 307, 308].includes(response.status)
+  ) throw new Error('YILIAN_SESSION_REAUTH_REQUIRED')
   if (!response.ok) throw new Error('YILIAN_HTTP_ERROR')
   const root = await readLimitedJson(response)
   const code = Number(root?.code)

@@ -26,6 +26,7 @@ protected_paths=(
   /var/lib/sifangguan-ota/report-sources.json
   /var/lib/sifangguan-ota/report-source-cookie-secrets.json
   /var/lib/sifangguan-ota/pms-login-secrets.json
+  /var/lib/sifangguan-ota/yilian-cloud-repair-statuses.json
   /var/lib/sifangguan-ota/ota-source-configs.json
   /var/lib/sifangguan-ota/ota-source-secrets.json
   /var/lib/sifangguan-ota/luopan-session-secrets.json

@@ -185,7 +185,12 @@ export interface ReportSourceInput {
 export interface PmsLoginConfigView {
   configured: boolean
   updatedAt: string | null
-  loginMode: 'CONTROLLED_BROWSER' | 'STORE_TRUSTED_DEVICE' | 'SERVER_COOKIE'
+  loginMode:
+    | 'CONTROLLED_BROWSER'
+    | 'CONTROLLED_BROWSER_CREDENTIALS_THEN_SMS_AUTHORIZATION'
+    | 'CLOUD_PASSWORD_AUTO_REAUTH'
+    | 'STORE_TRUSTED_DEVICE'
+    | 'SERVER_COOKIE'
   loginExecutionEnabled: boolean
 }
 
@@ -233,6 +238,30 @@ export interface LuopanBrowserRepairView {
   lastCollectionStatus: 'NEVER' | 'COMPLETE' | 'PARTIAL' | 'FAILED'
   lastCollectionAt: string | null
   lastErrorCode: string | null
+}
+
+export interface YilianCloudRepairView {
+  providerCode: 'YILIAN_CLOUD'
+  portalUrl: string
+  automationEnabled: boolean
+  credentialsConfigured: boolean
+  active: boolean
+  state:
+    | 'DISABLED'
+    | 'CREDENTIALS_REQUIRED'
+    | 'IDLE'
+    | 'RUNNING'
+    | 'SUCCEEDED'
+    | 'HUMAN_AUTHORIZATION_REQUIRED'
+    | 'FAILED'
+  lastAttemptAt: string | null
+  lastValidatedAt: string | null
+  lastSucceededAt: string | null
+  lastBusinessDate: string | null
+  lastErrorCode: string | null
+  sourceCount: number
+  successfulSourceCount: number
+  outboundDeliveryAttempted: false
 }
 
 export type OtaPlatformCode =
@@ -1261,6 +1290,20 @@ export function savePmsLoginConfig(
   return postCommand(scopedPath(context, '/pms-login-config'), {
     credentialUpdate,
     reasonCode: 'UPDATE_PMS_LOGIN_CREDENTIALS',
+  })
+}
+
+export function loadYilianCloudRepair(
+  context: HotelContext,
+): Promise<YilianCloudRepairView> {
+  return authenticatedRequest(scopedPath(context, '/yilian-cloud-repair'))
+}
+
+export function triggerYilianCloudRepair(
+  context: HotelContext,
+): Promise<YilianCloudRepairView> {
+  return postCommand(scopedPath(context, '/yilian-cloud-repair'), {
+    reasonCode: 'TRIGGER_YILIAN_CLOUD_REAUTH',
   })
 }
 
