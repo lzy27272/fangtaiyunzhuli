@@ -239,6 +239,8 @@ test('Yilian production release includes encrypted capture and shadow-gated acti
   assert.match(publisher, /tools\/uat\/activate-yilian-cloud-collection\.mjs/u)
   assert.match(capture, /validateYilianAccessToken/u)
   assert.match(capture, /encryptCookie/u)
+  assert.match(capture, /url\.pathname\.startsWith\('\/login\/pms\/'\)/u)
+  assert.match(capture, /process\.exit\(0\)/u)
   assert.match(capture, /outboundDeliveryAttempted: false/u)
   assert.match(activation, /ACTIVATE_AFTER_SHADOW/u)
   assert.match(activation, /YILIAN_SHADOW_VALIDATION_FAILED/u)

@@ -69,7 +69,10 @@ const page = context.pages().find((candidate) => {
     const url = new URL(candidate.url())
     return url.protocol === 'https:'
       && url.hostname === 'pms.ygjpms.com'
-      && url.pathname.startsWith('/saas/')
+      && (
+        url.pathname.startsWith('/saas/')
+        || url.pathname.startsWith('/login/pms/')
+      )
   } catch {
     return false
   }
@@ -116,11 +119,14 @@ writeFileSync(
 )
 renameSync(temporaryPath, secretsPath)
 
-process.stdout.write(`${JSON.stringify({
-  state: 'YILIAN_SESSION_CAPTURED_AND_ENCRYPTED',
-  hotelCode,
-  sourceCount: validation.sourceCount,
-  successfulSourceCount: validation.successfulSourceCount,
-  businessDate: validation.businessDate,
-  outboundDeliveryAttempted: false,
-})}\n`)
+await new Promise((resolve) => {
+  process.stdout.write(`${JSON.stringify({
+    state: 'YILIAN_SESSION_CAPTURED_AND_ENCRYPTED',
+    hotelCode,
+    sourceCount: validation.sourceCount,
+    successfulSourceCount: validation.successfulSourceCount,
+    businessDate: validation.businessDate,
+    outboundDeliveryAttempted: false,
+  })}\n`, resolve)
+})
+process.exit(0)
