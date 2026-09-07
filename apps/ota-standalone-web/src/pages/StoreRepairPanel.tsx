@@ -138,6 +138,29 @@ export function StoreRepairPanel({
     )
   }
 
+  if (pmsSystemCode === 'YILIAN_CLOUD') {
+    return (
+      <div className="repair-access-layout">
+        <section className="content-panel repair-access-intro">
+          <span className="role-icon"><Icon name="shield" /></span>
+          <div>
+            <h2>驿联云云端登录修复</h2>
+            <p>驿联云使用会话授权令牌而不是 Cookie。令牌失效时，在服务器临时云浏览器完成一次官方登录，系统验证本店全部接口后自动加密更新。</p>
+          </div>
+          <Status tone="info">云端授权方式</Status>
+        </section>
+        <section className="content-panel repair-credential-card">
+          <div className="section-heading small">
+            <div>
+              <h2>修复流程</h2>
+              <p>无需在此粘贴令牌或账号密码；授权配置状态及接口地址请到“采集配置”查看。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="repair-access-layout">
       <section className="content-panel repair-access-intro">

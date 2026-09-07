@@ -293,7 +293,7 @@ test('new hotels use an explicit PMS template without copying store secrets or O
   assert.match(hotelContextSource, /pmsUsername/)
   assert.match(hotelContextSource, /type="password"/)
   assert.match(hotelContextSource, /Cookie与POST请求载荷保持为空/)
-  assert.match(hotelContextSource, /两种PMS均不复制OTA配置/)
+  assert.match(hotelContextSource, /所有 PMS 均不复制 OTA 配置/)
   assert.match(reviewApiSource, /MEITUAN_BIEYANGHONG/)
   assert.match(reviewApiSource, /LUOPAN_CLOUD/)
   assert.match(

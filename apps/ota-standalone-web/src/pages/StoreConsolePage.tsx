@@ -69,6 +69,7 @@ type StoreTab = 'overview' | 'repair' | 'collection' | 'operations' | 'broadcast
 const PMS_LABELS = {
   MEITUAN_BIEYANGHONG: '美团别样红 PMS',
   LUOPAN_CLOUD: '罗盘 PMS',
+  YILIAN_CLOUD: '驿联云 PMS',
   OTHER: '其他 PMS',
 } as const
 

@@ -1154,6 +1154,23 @@ const futureBookingChangesFor = (
   }
 }
 
+export const finalizeLiveSnapshot = ({
+  snapshot,
+  previousSnapshots = [],
+  now = new Date(),
+}) => {
+  const observedAtMs = now.getTime()
+  return {
+    ...snapshot,
+    hourlyDelta: hourlyDeltaFor(snapshot, previousSnapshots, observedAtMs),
+    futureBookingChanges: futureBookingChangesFor(
+      snapshot,
+      previousSnapshots,
+      observedAtMs,
+    ),
+  }
+}
+
 const metric = (value, unit) => ({
   value: value === null || value === undefined ? null : rounded(value),
   unit,
@@ -1429,7 +1446,7 @@ export const collectLiveReports = async ({
   const futureDaily = overviewReport?.parsed?.futureDaily?.length
     ? overviewReport.parsed.futureDaily
     : forecastReport?.parsed?.futureDaily ?? []
-  const snapshot = {
+  const baseSnapshot = {
     schemaVersion: 1,
     sourceSystem: 'MEITUAN_BIEYANGHONG',
     collectionRunId,
@@ -1470,16 +1487,11 @@ export const collectLiveReports = async ({
     ),
     roomForecast: forecastCurrent,
   }
-  snapshot.hourlyDelta = hourlyDeltaFor(
-    snapshot,
+  const snapshot = finalizeLiveSnapshot({
+    snapshot: baseSnapshot,
     previousSnapshots,
-    now.getTime(),
-  )
-  snapshot.futureBookingChanges = futureBookingChangesFor(
-    snapshot,
-    previousSnapshots,
-    now.getTime(),
-  )
+    now,
+  })
   return {
     run: {
       runId: collectionRunId,

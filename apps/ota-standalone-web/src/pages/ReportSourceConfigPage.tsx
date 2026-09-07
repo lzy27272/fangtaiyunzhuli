@@ -518,6 +518,7 @@ export function ReportSourceConfigPage({
               </header>
               <p>
                 当前门店的报表名称、接口地址和 Cookie 均独立保存，不会同步或覆盖其他门店。
+                驿联云使用云端登录授权令牌，按相同的门店隔离规则安全保存。
                 不同 PMS 厂家可按实际报表名称和接口地址分别配置。
               </p>
               <div className="pms-endpoint-list">
@@ -533,7 +534,9 @@ export function ReportSourceConfigPage({
                         {source.enabled ? '已启用' : '已停用'}
                       </span>
                       <span className={`endpoint-state ${source.cookieConfigured ? 'enabled' : 'disabled'}`}>
-                        {source.cookieConfigured ? 'Cookie 已配置' : 'Cookie 未配置'}
+                        {source.cookieConfigured
+                          ? pmsSystemCode === 'YILIAN_CLOUD' ? '云端授权已配置' : 'Cookie 已配置'
+                          : pmsSystemCode === 'YILIAN_CLOUD' ? '云端授权未配置' : 'Cookie 未配置'}
                       </span>
                     </div>
                   </div>
@@ -544,13 +547,19 @@ export function ReportSourceConfigPage({
                 )}
               </div>
               <footer>
-                <span>页面只显示 Cookie 配置状态，不回显 Cookie、令牌或账号密码。</span>
+                <span>页面只显示登录授权状态，不回显 Cookie、令牌或账号密码。</span>
                 <button
                   className="secondary"
                   type="button"
                   onClick={() => setCollectionSection('reports')}
                 >
-                  {sources.length > 0 ? '修改接口与 Cookie' : '新增接口与 Cookie'}
+                  {sources.length > 0
+                    ? pmsSystemCode === 'YILIAN_CLOUD'
+                      ? '修改接口与云端授权'
+                      : '修改接口与 Cookie'
+                    : pmsSystemCode === 'YILIAN_CLOUD'
+                      ? '新增接口与云端授权'
+                      : '新增接口与 Cookie'}
                 </button>
               </footer>
             </article>
@@ -567,7 +576,19 @@ export function ReportSourceConfigPage({
                 context={context}
                 onStatusChanged={() =>
                   setOverviewVersion((current) => current + 1)}
-              />
+                />
+            ) : pmsSystemCode === 'YILIAN_CLOUD' ? (
+              <article className="report-source-card">
+                <header>
+                  <div><span>酒店系统厂家</span><strong>驿联云云端授权</strong></div>
+                  <span className="mode-chip">
+                    {sources.length > 0 && sources.filter((source) => source.enabled).every(
+                      (source) => source.cookieConfigured,
+                    ) ? '已加密配置' : '等待登录'}
+                  </span>
+                </header>
+                <p>驿联云不使用 Cookie。管理员在服务器云端浏览器完成官方登录后，系统自动读取当前会话的授权令牌，验证本店全部接口后再加密替换；失败不会覆盖旧授权。</p>
+              </article>
             ) : (
               <article className="report-source-card">
                 <header>
@@ -994,13 +1015,17 @@ export function ReportSourceConfigPage({
                       </small>
                     </label>
                     <label className="wide-field cookie-field">
-                      该接口专用登录凭据（可选）
+                      {pmsSystemCode === 'YILIAN_CLOUD'
+                        ? '云端登录授权（自动维护）'
+                        : '该接口专用登录凭据（可选）'}
                       <input
                         autoComplete="off"
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || pmsSystemCode === 'YILIAN_CLOUD'}
                         maxLength={16 * 1024}
                         placeholder={
-                          source.cookieConfigured
+                          pmsSystemCode === 'YILIAN_CLOUD'
+                            ? '请通过云端官方登录更新，无需手工粘贴'
+                            : source.cookieConfigured
                             ? '已配置；留空表示保持不变'
                             : '粘贴登录凭据原文，系统会加密保存'
                         }
@@ -1020,7 +1045,11 @@ export function ReportSourceConfigPage({
                         }}
                       />
                       <small>
-                        {cookieDrafts[source.sourceId]
+                        {pmsSystemCode === 'YILIAN_CLOUD'
+                          ? source.cookieConfigured
+                            ? '云端授权已加密配置，不在页面回显'
+                            : '尚未完成云端登录验证'
+                          : cookieDrafts[source.sourceId]
                           ? '待替换：保存后立即从页面内存清除'
                           : source.cookieConfigured
                             ? `已安全配置${source.cookieUpdatedAt
@@ -1029,7 +1058,7 @@ export function ReportSourceConfigPage({
                             : '未配置；公开接口可以留空'}
                       </small>
                     </label>
-                    {source.cookieConfigured ? (
+                    {source.cookieConfigured && pmsSystemCode !== 'YILIAN_CLOUD' ? (
                       <label className="cookie-clear-option">
                         <input
                           checked={Boolean(cookieClears[source.sourceId])}

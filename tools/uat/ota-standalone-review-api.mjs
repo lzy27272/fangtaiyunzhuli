@@ -105,6 +105,9 @@ import {
   validateBieyanghongCookieAccess,
 } from './bieyanghong-cookie-validation.mjs'
 import {
+  collectYilianCloudReports,
+} from './yilian-cloud-collector.mjs'
+import {
   buildStoreRepairConsoleUrl,
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
@@ -581,13 +584,21 @@ const SIMULATION_HOTEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-
 const PMS_SYSTEM_CODES = new Set([
   'MEITUAN_BIEYANGHONG',
   'LUOPAN_CLOUD',
+  'YILIAN_CLOUD',
   'OTHER',
 ])
 const HOTEL_OWNERSHIP_TYPES = new Set(['DIRECT', 'NON_DIRECT'])
 const PMS_SYSTEM_NAMES = Object.freeze({
   MEITUAN_BIEYANGHONG: '美团别样红 PMS',
   LUOPAN_CLOUD: '罗盘 PMS',
+  YILIAN_CLOUD: '驿联云 PMS',
 })
+
+const isLegacyYilianPms = (systemCode, systemName) =>
+  systemCode === 'OTHER'
+  && /^(?:驿联云(?:\s*PMS)?|YILIAN(?:\s*CLOUD)?(?:\s*PMS)?)$/iu.test(
+    String(systemName ?? '').trim(),
+  )
 
 const inferredPmsSystemCode = ({ tenantCode, hotelCode }) =>
   tenantCode === '001' && hotelCode === '002'
@@ -611,8 +622,13 @@ const normalizeSimulationHotel = (candidate) => {
   const timezone = typeof candidate.timezone === 'string'
     ? candidate.timezone.trim()
     : ''
-  const pmsSystemCode = PMS_SYSTEM_CODES.has(candidate.pmsSystemCode)
-    ? candidate.pmsSystemCode
+  const pmsSystemCode = isLegacyYilianPms(
+    candidate.pmsSystemCode,
+    candidate.pmsSystemName,
+  )
+    ? 'YILIAN_CLOUD'
+    : PMS_SYSTEM_CODES.has(candidate.pmsSystemCode)
+      ? candidate.pmsSystemCode
     : inferredPmsSystemCode({ tenantCode, hotelCode })
   const pmsSystemName = typeof candidate.pmsSystemName === 'string'
     && candidate.pmsSystemName.trim()
@@ -4594,6 +4610,58 @@ const collectLiveFor = async (
         luopanConfig,
         { otaRefreshDueOnly },
       )
+    }
+    if (hotel.pmsSystemCode === 'YILIAN_CLOUD') {
+      if (!reportSourcesByHotel.has(hotelId)) {
+        ensureReportSourcesForEveryHotel()
+      }
+      const sources = reportSourcesByHotel.get(hotelId) ?? []
+      const encryptedSecrets = secretsForHotel(hotelId)
+      const accessTokensBySourceId = {}
+      for (const source of sources) {
+        const record = encryptedSecrets[source.sourceId]
+        if (!record) continue
+        accessTokensBySourceId[source.sourceId] = decryptCookie(
+          record,
+          cookieSecretKey,
+          cookieScope(hotelId, source.sourceId),
+        )
+      }
+      const businessDayControl = businessDayControlFor(hotelId)
+      const result = await collectYilianCloudReports({
+        hotel,
+        sources,
+        accessTokensBySourceId,
+        previousSnapshots: liveSnapshotStore[hotelId] ?? [],
+        secretKey: pseudonymSecretKey,
+        target: null,
+        hotSellingRoomTypeCodes:
+          hotSellingRoomTypesFor(hotelId).roomTypeCodes,
+        configuredReportDate: businessDayControl.businessDate,
+      })
+      if (
+        businessDayControl.businessDate !== result.snapshot.businessDate
+        || businessDayControl.mode !== 'PMS_CONFIRMED'
+      ) {
+        businessDayControlsByHotel.set(hotelId, {
+          businessDate: result.snapshot.businessDate,
+          mode: 'PMS_CONFIRMED',
+          source: 'YILIAN_RATE_CALENDAR',
+          businessDateStartedAt: null,
+          updatedAt: new Date().toISOString(),
+        })
+        persistBusinessDayControls()
+      }
+      appendAndPersistSnapshot(
+        liveSnapshotStore,
+        liveSnapshotPath,
+        result.snapshot,
+      )
+      const otaRefreshes = await refreshEnabledOtaSourcesFor(
+        hotelId,
+        { dueOnly: otaRefreshDueOnly },
+      )
+      return { ...result, otaRefreshes }
     }
     const businessDayControl = businessDayControlFor(hotelId)
     if (!reportSourcesByHotel.has(hotelId)) {
@@ -9212,9 +9280,12 @@ const server = createServer(async (request, response) => {
         pmsSystemName: input.pmsSystemName,
         timezone: input.timezone,
         lifecycleStatus: 'PILOT',
-        collectionEnabled: input.pmsSystemCode !== 'OTHER',
+        collectionEnabled: !['OTHER', 'YILIAN_CLOUD'].includes(
+          input.pmsSystemCode,
+        ),
         messageEnabled: false,
-        configuredMockConnectors: input.pmsSystemCode === 'OTHER' ? 0 : 2,
+        configuredMockConnectors:
+          ['OTHER', 'YILIAN_CLOUD'].includes(input.pmsSystemCode) ? 0 : 2,
         simulationOnly: true,
         rowVersion: 1,
       }
@@ -10425,6 +10496,7 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('ROOM_TYPE_')
                     || error.message.startsWith('LUOPAN_')
                     || error.message.startsWith('BIEYANGHONG_')
+                    || error.message.startsWith('YILIAN_')
                     || error.message.startsWith('TRUSTED_DEVICE_')
                     || error.message.startsWith('REVIEW_AUTH_')
                   )

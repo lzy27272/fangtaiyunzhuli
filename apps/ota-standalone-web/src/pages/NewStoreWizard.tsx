@@ -23,6 +23,7 @@ const STEPS = ['门店信息', '酒店系统', '渠道平台', '管理人员', '
 const PMS_OPTIONS: Array<{ code: PmsSystemCode; name: string; detail: string }> = [
   { code: 'MEITUAN_BIEYANGHONG', name: '美团别样红 PMS', detail: '门店可信设备采集，登录会话只留在指定电脑' },
   { code: 'LUOPAN_CLOUD', name: '罗盘 PMS', detail: '现有浏览器登录配置与只读采集方式' },
+  { code: 'YILIAN_CLOUD', name: '驿联云 PMS', detail: '云端官方登录后自动提取并加密更新授权令牌' },
   { code: 'OTHER', name: '其他 PMS 厂家', detail: '先登记厂家，完成适配和接口校验后再启用采集' },
 ]
 const OTA_OPTIONS: Array<{ code: OtaPlatformCode; name: string }> = [
@@ -208,7 +209,7 @@ export function NewStoreWizard({
             <div className="choice-list">
               {PMS_OPTIONS.map((option) => <button type="button" className={draft.pmsSystemCode === option.code ? 'selected' : ''} key={option.code} onClick={() => setDraft({ ...draft, pmsSystemCode: option.code, pmsUsername: '', pmsPassword: '' })}><span className="choice-radio" /><span><strong>{option.name}</strong><small>{option.detail}</small></span><Status tone={option.code === 'MEITUAN_BIEYANGHONG' ? 'ok' : option.code === 'OTHER' ? 'warning' : 'info'}>{option.code === 'MEITUAN_BIEYANGHONG' ? '可信设备方式' : option.code === 'OTHER' ? '可登记 · 待适配' : '已支持'}</Status></button>)}
             </div>
-            {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? <div className="form-grid two compact-form"><label>罗盘登录账号<input autoComplete="off" value={draft.pmsUsername} onChange={(event) => setDraft({ ...draft, pmsUsername: event.target.value })} /></label><label>罗盘登录密码<input autoComplete="new-password" type="password" value={draft.pmsPassword} onChange={(event) => setDraft({ ...draft, pmsPassword: event.target.value })} /></label><p className="form-note">登录资料仅提交至受控服务端配置，不在页面回显。</p></div> : draft.pmsSystemCode === 'OTHER' ? <div className="form-grid two compact-form"><label>PMS 厂家名称<input maxLength={80} placeholder="请输入酒店正在使用的 PMS 厂家" value={draft.pmsSystemName} onChange={(event) => setDraft({ ...draft, pmsSystemName: event.target.value })} /></label><p className="form-note">厂家会保存到门店档案；完成适配前采集保持关闭，不会生成虚假经营数据。</p></div> : <div className="privacy-note"><Icon name="shield" /><span><strong>别样红采用门店可信设备登录</strong><small>账号、密码、验证码和浏览器会话不上传云端。</small></span></div>}
+            {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? <div className="form-grid two compact-form"><label>罗盘登录账号<input autoComplete="off" value={draft.pmsUsername} onChange={(event) => setDraft({ ...draft, pmsUsername: event.target.value })} /></label><label>罗盘登录密码<input autoComplete="new-password" type="password" value={draft.pmsPassword} onChange={(event) => setDraft({ ...draft, pmsPassword: event.target.value })} /></label><p className="form-note">登录资料仅提交至受控服务端配置，不在页面回显。</p></div> : draft.pmsSystemCode === 'OTHER' ? <div className="form-grid two compact-form"><label>PMS 厂家名称<input maxLength={80} placeholder="请输入酒店正在使用的 PMS 厂家" value={draft.pmsSystemName} onChange={(event) => setDraft({ ...draft, pmsSystemName: event.target.value })} /></label><p className="form-note">厂家会保存到门店档案；完成适配前采集保持关闭，不会生成虚假经营数据。</p></div> : draft.pmsSystemCode === 'YILIAN_CLOUD' ? <div className="privacy-note"><Icon name="shield" /><span><strong>驿联云采用云端官方登录授权</strong><small>登录成功后系统只提取授权令牌并加密保存；令牌不在页面回显。</small></span></div> : <div className="privacy-note"><Icon name="shield" /><span><strong>别样红采用门店可信设备登录</strong><small>账号、密码、验证码和浏览器会话不上传云端。</small></span></div>}
           </>
         ) : null}
 

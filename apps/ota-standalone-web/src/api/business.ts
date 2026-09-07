@@ -583,7 +583,12 @@ export interface LiveCollectionRunView {
 export interface BusinessDayControlView {
   businessDate: string | null
   mode: 'PMS_CONFIRMED' | 'UNCONFIRMED'
-  source?: 'PMS_NIGHT_AUDIT_API' | 'LUOPAN_CLOUD' | 'MANUAL_SEED' | null
+  source?:
+    | 'PMS_NIGHT_AUDIT_API'
+    | 'LUOPAN_CLOUD'
+    | 'YILIAN_RATE_CALENDAR'
+    | 'MANUAL_SEED'
+    | null
   businessDateStartedAt?: string | null
   updatedAt: string | null
 }
@@ -937,6 +942,7 @@ export type HotelOwnershipType = 'DIRECT' | 'NON_DIRECT'
 export type PmsSystemCode =
   | 'MEITUAN_BIEYANGHONG'
   | 'LUOPAN_CLOUD'
+  | 'YILIAN_CLOUD'
   | 'OTHER'
 
 export interface SimulationHotelDirectory {

@@ -131,6 +131,7 @@ export function DataAccessOverviewPanel({
   const sourceCount = monitor?.sources.length ?? 0
   const luopan = state?.luopan
   const isLuopan = pmsSystemCode === 'LUOPAN_CLOUD'
+  const isYilian = pmsSystemCode === 'YILIAN_CLOUD'
   const isOtherPms = pmsSystemCode === 'OTHER'
 
   return (
@@ -168,12 +169,14 @@ export function DataAccessOverviewPanel({
             {' · '}
             格式有效 {reportStatus.validCount}/{reportStatus.enabledCount}
             {' · '}
-            PMS登录{pmsLoginConfigured ? '已配置' : '未配置'}
+            {isYilian
+              ? `云端授权${reportStatus.cookieCount === reportStatus.enabledCount && reportStatus.enabledCount > 0 ? '已配置' : '未配置'}`
+              : `PMS登录${pmsLoginConfigured ? '已配置' : '未配置'}`}
           </small>
         </article>
 
         <article className={luopan?.lastErrorCode ? 'status-warning' : ''}>
-          <span>{isOtherPms ? '其他 PMS 厂家接入' : isLuopan ? '罗盘酒店系统采集' : '美团别样红采集'}</span>
+          <span>{isOtherPms ? '其他 PMS 厂家接入' : isLuopan ? '罗盘酒店系统采集' : isYilian ? '驿联云酒店系统采集' : '美团别样红采集'}</span>
           <strong>
             {isOtherPms
               ? '厂家已登记，等待适配'
@@ -183,6 +186,10 @@ export function DataAccessOverviewPanel({
                 : luopan?.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
                   ? '单店已验证，尚未启用'
                   : '尚未完成单店验证'
+              : isYilian
+                ? dataFormed
+                  ? '云端授权与采集已验证'
+                  : '等待云端登录验证'
               : pmsLoginConfigured ? '登录与采集已配置' : '请检查可信设备'}
           </strong>
           <small>
@@ -190,6 +197,8 @@ export function DataAccessOverviewPanel({
               ? '完成接口适配和单店数据校验前，采集与播报保持关闭'
               : isLuopan
               ? <>最近采集 {businessCodeLabel(luopan?.lastCollectionStatus, '尚未采集')} · 营业日 {luopan?.lastBusinessDate ?? '—'}{luopan?.lastErrorCode ? ' · 需要检查' : ''}</>
+              : isYilian
+                ? '授权令牌按门店加密保存；失效后重新完成一次云端官网登录即可更新'
               : '通过门店可信设备安全采集，登录状态按门店隔离'}
           </small>
         </article>

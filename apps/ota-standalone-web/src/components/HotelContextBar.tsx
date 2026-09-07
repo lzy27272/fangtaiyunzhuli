@@ -15,7 +15,13 @@ interface Props {
 }
 
 const pmsSystemLabel = (code: PmsSystemCode, name: string) =>
-  code === 'OTHER' ? name : code === 'LUOPAN_CLOUD' ? '罗盘PMS' : '美团别样红'
+  code === 'OTHER'
+    ? name
+    : code === 'LUOPAN_CLOUD'
+      ? '罗盘PMS'
+      : code === 'YILIAN_CLOUD'
+        ? '驿联云PMS'
+        : '美团别样红'
 
 function hotelDisplayCode(
   hotels: SimulationHotelView[],
@@ -247,6 +253,7 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
               >
                 <option value="MEITUAN_BIEYANGHONG">美团别样红</option>
                 <option value="LUOPAN_CLOUD">罗盘PMS</option>
+                <option value="YILIAN_CLOUD">驿联云PMS</option>
                 <option value="OTHER">其他 PMS 厂家</option>
               </select>
             </label>
@@ -302,8 +309,10 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
                 ? '美团别样红：按01/03门店的4个报表模板自动生成接口地址；Cookie与POST请求载荷保持为空，建店后逐项填写。'
                 : draft.pmsSystemCode === 'LUOPAN_CLOUD'
                   ? '罗盘PMS：初始化与02门店相同的罗盘入口和采集路径，账号密码按新门店加密保存；首次采集前仍需验证一次该门店的受控浏览器会话。'
+                  : draft.pmsSystemCode === 'YILIAN_CLOUD'
+                    ? '驿联云PMS：先配置本店接口，再通过云端官方登录验证写入加密授权；不会要求粘贴Cookie。'
                   : '其他PMS：先保存厂家名称和门店档案；完成厂家适配及接口校验前，采集和播报保持关闭。'}
-              {' '}两种PMS均不复制OTA配置，建店后请单独配置该门店的OTA平台。
+              {' '}所有 PMS 均不复制 OTA 配置，建店后请单独配置该门店的 OTA 平台。
             </p>
           </div>
         </details>
