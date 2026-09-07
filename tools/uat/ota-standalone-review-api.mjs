@@ -164,6 +164,13 @@ import {
   selectLatestAuthoritativeCompleteSnapshot,
 } from './wecom-manual-replay.mjs'
 import {
+  P1_MANUAL_REPLAY_OPERATION_KEY,
+  normalizeP1ManualReplayRequest,
+  p1ManualReplayDeliveryDecision,
+  p1ManualReplayDeliveryView,
+  p1ManualReplayMessageKey,
+} from './wecom-p1-manual-replay.mjs'
+import {
   auditBriefingStore,
   dailyBriefingAuditSlot,
   dailyBriefingRepairSlot,
@@ -531,6 +538,7 @@ const weComSecretsByHotel = new Map()
 const weComDeliveriesByKey = new Map()
 const weComDeliveryLocks = new Map()
 const weComManualReplayLocks = new Map()
+const futureDemandRiskDeliveryQueues = new Map()
 const futureDemandRiskStates = {}
 const briefingHealthAudits = []
 const lastScheduledCollectionSlotByHotel = new Map()
@@ -7746,7 +7754,25 @@ const runBieyanghongTargetedRecovery = async (body) => {
   }
 }
 
-const deliverFutureDemandRisks = async (hotelId, snapshot) => {
+const queueFutureDemandRiskDelivery = async (hotelId, task) => {
+  const previous = futureDemandRiskDeliveryQueues.get(hotelId)
+    ?? Promise.resolve()
+  const operation = previous.catch(() => undefined).then(task)
+  futureDemandRiskDeliveryQueues.set(hotelId, operation)
+  try {
+    return await operation
+  } finally {
+    if (futureDemandRiskDeliveryQueues.get(hotelId) === operation) {
+      futureDemandRiskDeliveryQueues.delete(hotelId)
+    }
+  }
+}
+
+const deliverFutureDemandRisks = async (
+  hotelId,
+  snapshot,
+  { messageKey = null } = {},
+) => queueFutureDemandRiskDelivery(hotelId, async () => {
   const config = weComConfigFor(hotelId)
   const observedAt = new Date(snapshot?.observedAt ?? '')
   const scheduleTime = Number.isNaN(observedAt.getTime())
@@ -7770,8 +7796,8 @@ const deliverFutureDemandRisks = async (hotelId, snapshot) => {
   const delivery = await deliverWeComSnapshot({
     hotelId,
     snapshot,
-    messageKey:
-      `${hotelId}:P1_FUTURE_DEMAND:${snapshot.collectionRunId}`,
+    messageKey: messageKey
+      ?? `${hotelId}:P1_FUTURE_DEMAND:${snapshot.collectionRunId}`,
     deliveryType: 'P1_FUTURE_DEMAND',
     payloadFactory: ({ hotel: selected, snapshot: current }) =>
       createFutureDemandP1WeComPayloads(selected, current, candidates),
@@ -7784,6 +7810,102 @@ const deliverFutureDemandRisks = async (hotelId, snapshot) => {
     persistFutureDemandRiskStates()
   }
   return [delivery]
+})
+
+const p1ManualReplayFailureForDecision = (decision) => {
+  if (decision === 'MANUAL_RECONCILIATION_REQUIRED') {
+    return 'WECOM_P1_MANUAL_REPLAY_MANUAL_RECONCILIATION_REQUIRED'
+  }
+  if (decision === 'OPERATION_SCOPE_CONFLICT') {
+    return 'WECOM_P1_MANUAL_REPLAY_OPERATION_SCOPE_CONFLICT'
+  }
+  return 'WECOM_P1_MANUAL_REPLAY_REJECTED_NO_AUTOMATIC_RETRY'
+}
+
+const runP1ManualReplay001 = async (body) => {
+  const request = normalizeP1ManualReplayRequest(body)
+  const matches = hotels.filter((hotel) => hotel.hotelCode === '001')
+  if (matches.length !== 1) {
+    throw new Error('WECOM_P1_MANUAL_REPLAY_FIXED_HOTEL_UNAVAILABLE')
+  }
+  const hotel = matches[0]
+  const snapshot = selectLatestAuthoritativeCompleteSnapshot({
+    snapshots: liveSnapshotStore[hotel.hotelId] ?? [],
+    expectedCollectionRunId: request.expectedCollectionRunId,
+    trustedDeviceStatus: trustedDeviceEligible(hotel)
+      ? trustedDeviceStoreFor(hotel).status()
+      : null,
+  })
+  const config = weComConfigFor(hotel.hotelId)
+  const observedAt = new Date(snapshot.observedAt)
+  if (!isBroadcastWindowOpenForConfig(observedAt, config)) {
+    throw new Error('WECOM_P1_MANUAL_REPLAY_BROADCAST_WINDOW_CLOSED')
+  }
+  if (!config.enabled || !config.webhookConfigured) {
+    throw new Error('WECOM_DELIVERY_NOT_CONFIGURED')
+  }
+
+  const messageKey = p1ManualReplayMessageKey({ hotelId: hotel.hotelId })
+  const existingBefore = weComDeliveriesByKey.get(messageKey) ?? null
+  const existingDecision = p1ManualReplayDeliveryDecision({
+    delivery: existingBefore,
+    hotelId: hotel.hotelId,
+    snapshot,
+  })
+  if (existingBefore) {
+    const alreadyDelivered = existingDecision === 'ALREADY_DELIVERED'
+    return {
+      operationKey: P1_MANUAL_REPLAY_OPERATION_KEY,
+      collectionRunId: snapshot.collectionRunId,
+      cutoffAt: snapshot.observedAt,
+      replayed: true,
+      overallStatus: alreadyDelivered ? 'COMPLETE' : 'BLOCKED',
+      delivery: p1ManualReplayDeliveryView(existingBefore),
+      skippedReasonCode: null,
+      failedReasonCode: alreadyDelivered
+        ? null
+        : p1ManualReplayFailureForDecision(existingDecision),
+    }
+  }
+
+  const deliveries = await deliverFutureDemandRisks(
+    hotel.hotelId,
+    snapshot,
+    { messageKey },
+  )
+  const delivery = deliveries[0]
+    ?? weComDeliveriesByKey.get(messageKey)
+    ?? null
+  if (!delivery) {
+    return {
+      operationKey: P1_MANUAL_REPLAY_OPERATION_KEY,
+      collectionRunId: snapshot.collectionRunId,
+      cutoffAt: snapshot.observedAt,
+      replayed: false,
+      overallStatus: 'SKIPPED',
+      delivery: null,
+      skippedReasonCode: 'WECOM_P1_MANUAL_REPLAY_NO_CURRENT_RISK',
+      failedReasonCode: null,
+    }
+  }
+  const decision = p1ManualReplayDeliveryDecision({
+    delivery,
+    hotelId: hotel.hotelId,
+    snapshot,
+  })
+  const delivered = decision === 'ALREADY_DELIVERED'
+  return {
+    operationKey: P1_MANUAL_REPLAY_OPERATION_KEY,
+    collectionRunId: snapshot.collectionRunId,
+    cutoffAt: snapshot.observedAt,
+    replayed: false,
+    overallStatus: delivered ? 'COMPLETE' : 'BLOCKED',
+    delivery: p1ManualReplayDeliveryView(delivery),
+    skippedReasonCode: null,
+    failedReasonCode: delivered
+      ? null
+      : p1ManualReplayFailureForDecision(decision),
+  }
 }
 
 const postStartupBriefingSnapshots = (snapshots) =>
@@ -8983,6 +9105,31 @@ const server = createServer(async (request, response) => {
       json(response, result.status === 'PENDING' ? 202 : 200, {
         data: result,
       })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/internal/p1-future-demand-replay-001'
+    ) {
+      if (!loopbackPilotTriggerAuthorized(request)) {
+        json(response, 404, { code: 'REVIEW_ROUTE_NOT_FOUND' })
+        return
+      }
+      const result = await runP1ManualReplay001(await readBody(request))
+      auditSecurityEvent({
+        action: 'WECOM_P1_MANUAL_REPLAY',
+        outcome: result.overallStatus === 'BLOCKED'
+          ? 'BLOCKED'
+          : 'SUCCEEDED',
+        request,
+        hotelId: '20000000-0000-4000-8000-000000000001',
+        reasonCode:
+          result.failedReasonCode
+          ?? result.skippedReasonCode
+          ?? 'WECOM_P1_MANUAL_REPLAY_DELIVERED',
+      })
+      json(response, 200, { data: result })
       return
     }
 
