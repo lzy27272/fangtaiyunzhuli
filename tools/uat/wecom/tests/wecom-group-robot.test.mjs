@@ -5,6 +5,7 @@ import {
   SafeWeComError,
   sendWeComGroupRobotMessage,
 } from '../src/wecom-group-robot.mjs'
+import { createFutureDemandP1WeComPayloads } from '../src/future-demand-risk.mjs'
 
 const webhook =
   'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=00000000-0000-0000-0000-000000000000'
@@ -110,6 +111,64 @@ test('combined operations brief is an approved operational template', async () =
   })
   assert.equal(result.deliveryStatus, 'DELIVERED')
   assert.deepEqual(JSON.parse(captured.init.body), combinedPayload)
+})
+
+test('P1 future demand alert is an approved operational template', async () => {
+  const [p1Payload] = createFutureDemandP1WeComPayloads(
+    { hotelName: '测试酒店' },
+    { observedAt: '2026-09-07T14:00:00+08:00' },
+    [{
+      stayDate: '2026-10-01',
+      dayOffset: 24,
+      reasons: ['CROSS_20_PERCENT'],
+      row: {
+        bookedRoomNights: 6,
+        availableRooms: 14,
+        roomCount: 20,
+        occupancyPercent: 30,
+        hourlyNetRoomNights: 3,
+      },
+    }],
+  )
+  let captured
+  const result = await sendWeComGroupRobotMessage({
+    rawWebhook: webhook,
+    payload: p1Payload,
+    expectedEndpointSha256: endpointSha256,
+    networkAuthorized: true,
+    fetchImpl: async (url, init) => {
+      captured = { url, init }
+      return response({ errcode: 0, errmsg: 'ok' })
+    },
+  })
+  assert.equal(result.deliveryStatus, 'DELIVERED')
+  assert.deepEqual(JSON.parse(captured.init.body), p1Payload)
+})
+
+test('P1 allowlist still rejects a lookalike unregistered heading', async () => {
+  let attempts = 0
+  await assert.rejects(
+    sendWeComGroupRobotMessage({
+      rawWebhook: webhook,
+      payload: {
+        ...operationalPayload,
+        text: {
+          ...operationalPayload.text,
+          content: '🚨P1远期需求异动测试\n任意内容',
+        },
+      },
+      expectedEndpointSha256: endpointSha256,
+      networkAuthorized: true,
+      fetchImpl: async () => {
+        attempts += 1
+        return response({ errcode: 0 })
+      },
+    }),
+    (error) =>
+      error instanceof SafeWeComError
+      && error.reasonCode === 'WECOM_TEMPLATE_POLICY_REQUIRED',
+  )
+  assert.equal(attempts, 0)
 })
 
 test('registered repair lifecycle notices are approved without group mentions', async () => {
