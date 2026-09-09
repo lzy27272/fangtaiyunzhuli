@@ -6,9 +6,11 @@ const require = createRequire(import.meta.url)
 
 export const YILIAN_LOGIN_URL = 'https://pms.ygjpms.com/saas/#/login'
 
+const passwordInputSelector = 'input[placeholder="登录密码"]'
+
 export const yilianLoginSelectors = Object.freeze({
   username: 'input[placeholder="登录账号或绑定手机号"]',
-  password: 'input[placeholder="登录密码"]',
+  password: passwordInputSelector,
   submit: 'button.top-login-btn',
   message: '.el-message__content, .el-message, [role="alert"]',
   humanVerification:
