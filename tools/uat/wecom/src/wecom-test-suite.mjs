@@ -4,7 +4,7 @@ import {
   selectFutureDemandRiskCandidates,
 } from './future-demand-risk.mjs'
 
-const messagePrefix = '手动全模板测试'
+const messagePrefix = '手动安全模板测试'
 
 export const createWeComTestSuitePlan = ({ hotelId, snapshot }) => {
   if (
@@ -51,12 +51,13 @@ export const createWeComTestSuitePlan = ({ hotelId, snapshot }) => {
     templates.push({
       templateCode: 'P1_FUTURE_DEMAND',
       deliveryType: 'P1_FUTURE_DEMAND_TEST',
-      messagePrefix: null,
+      messagePrefix,
       payloadFactory: ({ hotel: selected, snapshot: current }) =>
         createFutureDemandP1WeComPayloads(
           selected,
           current,
           futureDemandCandidates,
+          { testMode: true },
         ),
     })
   } else {

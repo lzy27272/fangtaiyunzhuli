@@ -136,10 +136,10 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
       return
     }
     if (
-      draft.pmsSystemCode === 'LUOPAN_CLOUD'
+      ['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(draft.pmsSystemCode)
       && (!draft.pmsUsername.trim() || !draft.pmsPassword)
     ) {
-      setError('选择罗盘PMS时，必须填写该门店的PMS账号和密码。')
+      setError('选择罗盘PMS或驿联云PMS时，必须填写该门店的PMS账号和密码。')
       return
     }
     setCreating(true)
@@ -154,9 +154,9 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
           : {}),
         timezone: draft.timezone,
         reasonCode: draft.reasonCode,
-        ...(draft.pmsSystemCode === 'LUOPAN_CLOUD'
+        ...(['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(draft.pmsSystemCode)
           ? {
-              pmsUsername: draft.pmsUsername,
+              pmsUsername: draft.pmsUsername.trim(),
               pmsPassword: draft.pmsPassword,
             }
           : {}),
@@ -266,10 +266,10 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
                 />
               </label>
             ) : null}
-            {draft.pmsSystemCode === 'LUOPAN_CLOUD' ? (
+            {['LUOPAN_CLOUD', 'YILIAN_CLOUD'].includes(draft.pmsSystemCode) ? (
               <>
                 <label>
-                  罗盘PMS账号
+                  {draft.pmsSystemCode === 'YILIAN_CLOUD' ? '驿联云PMS账号' : '罗盘PMS账号'}
                   <input
                     autoComplete="off"
                     value={draft.pmsUsername}
@@ -277,7 +277,7 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
                   />
                 </label>
                 <label>
-                  罗盘PMS密码
+                  {draft.pmsSystemCode === 'YILIAN_CLOUD' ? '驿联云PMS密码' : '罗盘PMS密码'}
                   <input
                     autoComplete="new-password"
                     type="password"
@@ -310,7 +310,7 @@ export function HotelContextBar({ context, canCreate, onApply }: Props) {
                 : draft.pmsSystemCode === 'LUOPAN_CLOUD'
                   ? '罗盘PMS：初始化与02门店相同的罗盘入口和采集路径，账号密码按新门店加密保存；首次采集前仍需验证一次该门店的受控浏览器会话。'
                   : draft.pmsSystemCode === 'YILIAN_CLOUD'
-                    ? '驿联云PMS：先配置本店接口，再通过云端官方登录验证写入加密授权；不会要求粘贴Cookie。'
+                    ? '驿联云PMS：自动生成三个已验证的只读接口，并通过云端官方登录验证写入加密授权；不会要求粘贴Cookie。'
                   : '其他PMS：先保存厂家名称和门店档案；完成厂家适配及接口校验前，采集和播报保持关闭。'}
               {' '}所有 PMS 均不复制 OTA 配置，建店后请单独配置该门店的 OTA 平台。
             </p>

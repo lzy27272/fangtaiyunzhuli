@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +27,10 @@ const availablePort = async () => {
   return address.port
 }
 
-const startApi = async (runtimePath) => {
+const startApi = async (
+  runtimePath,
+  { automaticCollectionEnabled = false } = {},
+) => {
   const port = await availablePort()
   const child = spawn(process.execPath, [apiScript], {
     cwd: repoRoot,
@@ -44,12 +47,14 @@ const startApi = async (runtimePath) => {
       ),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 21).toString('base64url'),
       OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 22).toString('base64url'),
-      OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false',
+      OTA_REVIEW_AUTO_COLLECTION_ENABLED: String(automaticCollectionEnabled),
       OTA_REVIEW_YILIAN_ASSISTED_REAUTH_ENABLED: 'true',
     },
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
+  let stdout = ''
   let stderr = ''
+  child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8') })
   child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8') })
   for (let attempt = 0; attempt < 40; attempt += 1) {
     if (child.exitCode !== null) {
@@ -57,7 +62,7 @@ const startApi = async (runtimePath) => {
     }
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`)
-      if (response.ok) return { child, port }
+      if (response.ok) return { child, port, stdout: () => stdout }
     } catch {
       // Retry while the local API starts.
     }
@@ -115,6 +120,21 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
     /const previousStatus = yilianRepairStatusRecordFor\(hotelId\)[\s\S]{0,180}yilianRepairRetryAllowed\(previousStatus\)/u,
   )
   assert.match(api, /void scheduledYilianRecoveryTick\(\)/u)
+  const scheduledRecovery = api.slice(
+    api.indexOf('const scheduledYilianRecoveryTick'),
+    api.indexOf('const processSubmittedLuopanRepair'),
+  )
+  assert.match(
+    scheduledRecovery,
+    /const activationPending = yilianInitialActivationPending\(hotel, status\)/u,
+  )
+  assert.match(api, /const YILIAN_INITIAL_ACTIVATION_TRIGGER/u)
+  assert.match(api, /const YILIAN_ACTIVATION_INTENT_TRIGGERS/u)
+  assert.match(scheduledRecovery, /SCHEDULED_INITIAL_ACTIVATION/u)
+  assert.doesNotMatch(
+    scheduledRecovery,
+    /!hotel\.collectionEnabled \|\| !pmsLoginSecretsByHotel/u,
+  )
   const morningRepair = api.slice(
     api.indexOf('const repairNightlyBriefingHealthAudit'),
     api.indexOf('const scheduledBriefingAuditTick'),
@@ -130,10 +150,11 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
 })
 
 test('Yilian repair UI stores credentials without echo and exposes explicit cloud retry status', async () => {
-  const [panel, client, wizard] = await Promise.all([
+  const [panel, client, wizard, contextBar] = await Promise.all([
     readSource('../src/pages/StoreRepairPanel.tsx'),
     readSource('../src/api/business.ts'),
     readSource('../src/pages/NewStoreWizard.tsx'),
+    readSource('../src/components/HotelContextBar.tsx'),
   ])
   assert.match(panel, /云端自动登录凭据/u)
   assert.match(panel, /type="password"/u)
@@ -144,6 +165,12 @@ test('Yilian repair UI stores credentials without echo and exposes explicit clou
   assert.match(client, /TRIGGER_YILIAN_CLOUD_REAUTH/u)
   assert.match(wizard, /\['LUOPAN_CLOUD', 'YILIAN_CLOUD'\]\.includes\(draft\.pmsSystemCode\)/u)
   assert.match(wizard, /驿联云令牌失效时会用本店凭据自动重登/u)
+  assert.match(
+    contextBar,
+    /\['LUOPAN_CLOUD', 'YILIAN_CLOUD'\]\.includes\(draft\.pmsSystemCode\)/u,
+  )
+  assert.match(contextBar, /pmsUsername: draft\.pmsUsername\.trim\(\)/u)
+  assert.match(contextBar, /驿联云PMS账号/u)
 })
 
 test('Yilian recovery runtime and status state are included in release and rollback protection', async () => {
@@ -158,12 +185,15 @@ test('Yilian recovery runtime and status state are included in release and rollb
   assert.match(runtimeExample, /YILIAN_BROWSER_EXECUTABLE/u)
 })
 
-test('new Yilian stores persist encrypted credentials and expose no secret in repair status', { timeout: 15_000 }, async () => {
+test('new Yilian stores persist credentials and safely recover legacy source stores', { timeout: 30_000 }, async () => {
   const runtimePath = await mkdtemp(join(tmpdir(), 'yilian-auto-recovery-'))
   let first = null
   let second = null
+  let third = null
+  let fourth = null
+  let fifth = null
   const username = 'synthetic-yilian-user'
-  const password = 'synthetic-Yilian-Password-42'
+  const syntheticPmsCredential = 'synthetic-Yilian-Password-42'
   try {
     first = await startApi(runtimePath)
     const create = await fetch(
@@ -180,7 +210,7 @@ test('new Yilian stores persist encrypted credentials and expose no secret in re
           ownershipType: 'DIRECT',
           pmsSystemCode: 'YILIAN_CLOUD',
           pmsUsername: username,
-          pmsPassword: password,
+          pmsPassword: syntheticPmsCredential,
           timezone: 'Asia/Shanghai',
           reasonCode: 'CREATE_STORE_FROM_CONSOLE_WIZARD',
         }),
@@ -189,6 +219,7 @@ test('new Yilian stores persist encrypted credentials and expose no secret in re
     assert.equal(create.status, 201)
     const receipt = (await create.json()).data
     assert.equal(receipt.pmsCredentialsConfigured, true)
+    assert.equal(receipt.copiedReportSourceCount, 3)
 
     const directoryResponse = await fetch(
       `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
@@ -207,6 +238,22 @@ test('new Yilian stores persist encrypted credentials and expose no secret in re
     assert.equal(loginView.loginMode, 'CLOUD_PASSWORD_AUTO_REAUTH')
     assert.equal(loginView.loginExecutionEnabled, true)
 
+    const sourceResponse = await fetch(`${base}/report-sources`, {
+      headers: { Authorization: `Bearer ${apiToken}` },
+    })
+    assert.equal(sourceResponse.status, 200)
+    const sources = (await sourceResponse.json()).data
+    assert.equal(sources.length, 3)
+    assert.deepEqual(
+      sources.map((source) => new URL(source.endpointUrl).pathname).sort(),
+      [
+        '/newPms/forwardRoomState/nowRoomState',
+        '/newPms/orderManage/selectAll',
+        '/newPms/reportAPP/rateCalendarReport',
+      ].sort(),
+    )
+    assert.equal(sources.every((source) => source.enabled), true)
+
     const repairResponse = await fetch(`${base}/yilian-cloud-repair`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     })
@@ -215,18 +262,55 @@ test('new Yilian stores persist encrypted credentials and expose no secret in re
     assert.equal(repairView.state, 'IDLE')
     assert.equal(repairView.credentialsConfigured, true)
     assert.equal(JSON.stringify(repairView).includes(username), false)
-    assert.equal(JSON.stringify(repairView).includes(password), false)
+    assert.equal(JSON.stringify(repairView).includes(syntheticPmsCredential), false)
 
     const persistedSecrets = await readFile(
       join(runtimePath, 'pms-login-secrets.json'),
       'utf8',
     )
     assert.equal(persistedSecrets.includes(username), false)
-    assert.equal(persistedSecrets.includes(password), false)
+    assert.equal(persistedSecrets.includes(syntheticPmsCredential), false)
 
     await stopApi(first.child)
     first = null
+    const reportSourcePath = join(runtimePath, 'report-sources.json')
+    const persistedReportSources = JSON.parse(
+      await readFile(reportSourcePath, 'utf8'),
+    )
+    persistedReportSources[hotel.hotelId] = []
+    await writeFile(
+      reportSourcePath,
+      `${JSON.stringify(persistedReportSources, null, 2)}\n`,
+      'utf8',
+    )
+    const repairStatusPath = join(
+      runtimePath,
+      'yilian-cloud-repair-statuses.json',
+    )
+    const persistedRepairStatuses = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )
+    assert.equal(
+      persistedRepairStatuses[hotel.hotelId].trigger,
+      'INITIAL_ACTIVATION_PENDING',
+    )
+    persistedRepairStatuses[hotel.hotelId] = {
+      ...persistedRepairStatuses[hotel.hotelId],
+      state: 'FAILED',
+      trigger: 'MANUAL_REPAIR',
+      lastAttemptAt: '2026-09-11T03:00:00.000Z',
+      lastErrorCode: 'YILIAN_SOURCE_CONTRACT_INVALID',
+      sourceCount: 0,
+      successfulSourceCount: 0,
+    }
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(persistedRepairStatuses, null, 2)}\n`,
+      'utf8',
+    )
     second = await startApi(runtimePath)
+    assert.match(second.stdout(), /YILIAN_SOURCE_CONTRACT_MIGRATED/u)
+    assert.match(second.stdout(), new RegExp(hotel.hotelId, 'u'))
     const restartedLogin = await fetch(
       `http://127.0.0.1:${second.port}/api/v1/auth/login`,
       {
@@ -249,6 +333,305 @@ test('new Yilian stores persist encrypted credentials and expose no secret in re
     const restartedView = (await restartedRepair.json()).data
     assert.equal(restartedView.credentialsConfigured, true)
     assert.equal(restartedView.state, 'IDLE')
+    assert.equal(restartedView.lastErrorCode, null)
+    const restartedSourcesResponse = await fetch(
+      `${restartedBase}/report-sources`,
+      { headers: { Authorization: `Bearer ${restartedAccessToken}` } },
+    )
+    assert.equal(restartedSourcesResponse.status, 200)
+    const restartedSources = (await restartedSourcesResponse.json()).data
+    assert.equal(restartedSources.length, 3)
+    assert.equal(restartedSources.every((source) => source.enabled), true)
+
+    const migratedReportSources = JSON.parse(
+      await readFile(reportSourcePath, 'utf8'),
+    )
+    assert.equal(migratedReportSources[hotel.hotelId].length, 3)
+    const migratedRepairStatuses = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )
+    assert.equal(migratedRepairStatuses[hotel.hotelId].state, 'IDLE')
+    assert.equal(
+      migratedRepairStatuses[hotel.hotelId].trigger,
+      'STARTUP_SOURCE_CONTRACT_MIGRATION',
+    )
+    assert.equal(migratedRepairStatuses[hotel.hotelId].lastErrorCode, null)
+
+    await stopApi(second.child)
+    second = null
+    delete migratedReportSources[hotel.hotelId]
+    migratedRepairStatuses[hotel.hotelId] = {
+      ...migratedRepairStatuses[hotel.hotelId],
+      state: 'FAILED',
+      trigger: 'MANUAL_REPAIR',
+      lastAttemptAt: '2026-09-11T03:30:00.000Z',
+      lastErrorCode: 'YILIAN_SOURCE_CONTRACT_INVALID',
+      sourceCount: 0,
+      successfulSourceCount: 0,
+    }
+    await writeFile(
+      reportSourcePath,
+      `${JSON.stringify(migratedReportSources, null, 2)}\n`,
+      'utf8',
+    )
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(migratedRepairStatuses, null, 2)}\n`,
+      'utf8',
+    )
+    third = await startApi(runtimePath)
+    assert.match(third.stdout(), /YILIAN_SOURCE_CONTRACT_MIGRATED/u)
+    const missingKeySources = JSON.parse(
+      await readFile(reportSourcePath, 'utf8'),
+    )
+    const missingKeyStatuses = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )
+    assert.equal(missingKeySources[hotel.hotelId].length, 3)
+    assert.equal(missingKeyStatuses[hotel.hotelId].state, 'IDLE')
+    assert.equal(missingKeyStatuses[hotel.hotelId].lastErrorCode, null)
+
+    await stopApi(third.child)
+    third = null
+    await writeFile(reportSourcePath, '{broken-json', 'utf8')
+    missingKeyStatuses[hotel.hotelId] = {
+      ...missingKeyStatuses[hotel.hotelId],
+      state: 'FAILED',
+      trigger: 'MANUAL_REPAIR',
+      lastAttemptAt: '2026-09-11T04:00:00.000Z',
+      lastErrorCode: 'YILIAN_SOURCE_CONTRACT_INVALID',
+      sourceCount: 0,
+      successfulSourceCount: 0,
+    }
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(missingKeyStatuses, null, 2)}\n`,
+      'utf8',
+    )
+    await assert.rejects(
+      startApi(runtimePath),
+      /REPORT_SOURCE_STORE_INVALID/u,
+    )
+    assert.equal(await readFile(reportSourcePath, 'utf8'), '{broken-json')
+    const unchangedRepairStatuses = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )
+    assert.equal(unchangedRepairStatuses[hotel.hotelId].state, 'FAILED')
+    assert.equal(
+      unchangedRepairStatuses[hotel.hotelId].lastErrorCode,
+      'YILIAN_SOURCE_CONTRACT_INVALID',
+    )
+
+    missingKeySources[hotel.hotelId] = []
+    await writeFile(
+      reportSourcePath,
+      `${JSON.stringify(missingKeySources, null, 2)}\n`,
+      'utf8',
+    )
+    await writeFile(repairStatusPath, '{broken-json', 'utf8')
+    await assert.rejects(
+      startApi(runtimePath),
+      /YILIAN_REPAIR_STATUS_STORE_INVALID/u,
+    )
+    assert.equal(await readFile(repairStatusPath, 'utf8'), '{broken-json')
+
+    migratedRepairStatuses[hotel.hotelId] = {
+      ...missingKeyStatuses[hotel.hotelId],
+      state: 'IDLE',
+      trigger: 'SOURCE_CONFIG_UPDATED',
+      lastAttemptAt: null,
+      lastErrorCode: null,
+      sourceCount: 0,
+      successfulSourceCount: 0,
+    }
+    await writeFile(
+      reportSourcePath,
+      `${JSON.stringify(missingKeySources, null, 2)}\n`,
+      'utf8',
+    )
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(migratedRepairStatuses, null, 2)}\n`,
+      'utf8',
+    )
+    fifth = await startApi(runtimePath, {
+      automaticCollectionEnabled: true,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 2_300))
+    assert.doesNotMatch(fifth.stdout(), /YILIAN_SOURCE_CONTRACT_MIGRATED/u)
+    const thirdLogin = await fetch(
+      `http://127.0.0.1:${fifth.port}/api/v1/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'review-test',
+          password: 'example-Review-Test-Password-42',
+        }),
+      },
+    )
+    assert.equal(thirdLogin.status, 200)
+    const thirdAccessToken = (await thirdLogin.json()).accessToken
+    const intentionalDisabledRepair = await fetch(
+      `http://127.0.0.1:${fifth.port}/api/v1/ota/tenants/`
+        + `${hotel.tenantId}/hotels/${hotel.hotelId}/yilian-cloud-repair`,
+      { headers: { Authorization: `Bearer ${thirdAccessToken}` } },
+    )
+    assert.equal(intentionalDisabledRepair.status, 200)
+    const intentionalDisabledView =
+      (await intentionalDisabledRepair.json()).data
+    assert.equal(intentionalDisabledView.state, 'IDLE')
+    assert.equal(intentionalDisabledView.lastErrorCode, null)
+    const intentionalEmptyResponse = await fetch(
+      `http://127.0.0.1:${fifth.port}/api/v1/ota/tenants/`
+        + `${hotel.tenantId}/hotels/${hotel.hotelId}/report-sources`,
+      { headers: { Authorization: `Bearer ${thirdAccessToken}` } },
+    )
+    assert.equal(intentionalEmptyResponse.status, 200)
+    assert.deepEqual((await intentionalEmptyResponse.json()).data, [])
+  } finally {
+    if (first) await stopApi(first.child)
+    if (second) await stopApi(second.child)
+    if (third) await stopApi(third.child)
+    if (fourth) await stopApi(fourth.child)
+    if (fifth) await stopApi(fifth.child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
+test('015 source migration leaves a non-migrating 016 source key absent', { timeout: 30_000 }, async () => {
+  const runtimePath = await mkdtemp(join(tmpdir(), 'yilian-store-isolation-'))
+  let first = null
+  let second = null
+  try {
+    first = await startApi(runtimePath)
+    const createStore = async (hotelCode) => {
+      const response = await fetch(
+        `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `create-yilian-isolation-${hotelCode}`,
+          },
+          body: JSON.stringify({
+            hotelCode,
+            hotelDisplayName: `${hotelCode} Yilian Isolation Test Hotel`,
+            ownershipType: 'DIRECT',
+            pmsSystemCode: 'YILIAN_CLOUD',
+            pmsUsername: `synthetic-yilian-${hotelCode}`,
+            pmsPassword: `synthetic-Yilian-Password-${hotelCode}-42`,
+            timezone: 'Asia/Shanghai',
+            reasonCode: 'CREATE_STORE_FROM_CONSOLE_WIZARD',
+          }),
+        },
+      )
+      assert.equal(response.status, 201)
+      return (await response.json()).data
+    }
+    const receipt015 = await createStore('015')
+    const receipt016 = await createStore('016')
+    const directoryResponse = await fetch(
+      `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+      { headers: { Authorization: `Bearer ${apiToken}` } },
+    )
+    assert.equal(directoryResponse.status, 200)
+    const createdHotels = (await directoryResponse.json()).data.hotels
+    const hotel015 = createdHotels.find(
+      (candidate) => candidate.hotelId === receipt015.resourceId,
+    )
+    const hotel016 = createdHotels.find(
+      (candidate) => candidate.hotelId === receipt016.resourceId,
+    )
+    assert.equal(hotel015.hotelCode, '015')
+    assert.equal(hotel016.hotelCode, '016')
+
+    await stopApi(first.child)
+    first = null
+    const reportSourcePath = join(runtimePath, 'report-sources.json')
+    const repairStatusPath = join(
+      runtimePath,
+      'yilian-cloud-repair-statuses.json',
+    )
+    const persistedSources = JSON.parse(await readFile(reportSourcePath, 'utf8'))
+    const persistedStatuses = JSON.parse(await readFile(repairStatusPath, 'utf8'))
+    delete persistedSources[hotel015.hotelId]
+    delete persistedSources[hotel016.hotelId]
+    persistedStatuses[hotel015.hotelId] = {
+      ...persistedStatuses[hotel015.hotelId],
+      state: 'FAILED',
+      trigger: 'MANUAL_REPAIR',
+      lastAttemptAt: '2026-09-11T03:00:00.000Z',
+      lastErrorCode: 'YILIAN_SOURCE_CONTRACT_INVALID',
+      sourceCount: 0,
+      successfulSourceCount: 0,
+    }
+    persistedStatuses[hotel016.hotelId] = {
+      ...persistedStatuses[hotel016.hotelId],
+      state: 'IDLE',
+      trigger: 'SOURCE_CONFIG_UPDATED',
+      lastAttemptAt: null,
+      lastErrorCode: null,
+      sourceCount: 0,
+      successfulSourceCount: 0,
+    }
+    await writeFile(
+      reportSourcePath,
+      `${JSON.stringify(persistedSources, null, 2)}\n`,
+      'utf8',
+    )
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(persistedStatuses, null, 2)}\n`,
+      'utf8',
+    )
+
+    second = await startApi(runtimePath)
+    assert.match(second.stdout(), new RegExp(hotel015.hotelId, 'u'))
+    assert.doesNotMatch(second.stdout(), new RegExp(hotel016.hotelId, 'u'))
+
+    const migratedSources = JSON.parse(await readFile(reportSourcePath, 'utf8'))
+    const migratedStatuses = JSON.parse(await readFile(repairStatusPath, 'utf8'))
+    assert.equal(migratedSources[hotel015.hotelId].length, 3)
+    assert.equal(Object.hasOwn(migratedSources, hotel016.hotelId), false)
+    assert.equal(
+      migratedStatuses[hotel015.hotelId].trigger,
+      'STARTUP_SOURCE_CONTRACT_MIGRATION',
+    )
+    assert.equal(
+      migratedStatuses[hotel016.hotelId].trigger,
+      'SOURCE_CONFIG_UPDATED',
+    )
+
+    const loginResponse = await fetch(
+      `http://127.0.0.1:${second.port}/api/v1/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'review-test',
+          password: 'example-Review-Test-Password-42',
+        }),
+      },
+    )
+    assert.equal(loginResponse.status, 200)
+    const accessToken = (await loginResponse.json()).accessToken
+
+    for (const [hotel, expectedSourceCount] of [
+      [hotel015, 3],
+      [hotel016, 0],
+    ]) {
+      const response = await fetch(
+        `http://127.0.0.1:${second.port}/api/v1/ota/tenants/`
+          + `${hotel.tenantId}/hotels/${hotel.hotelId}/report-sources`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      )
+      assert.equal(response.status, 200)
+      assert.equal((await response.json()).data.length, expectedSourceCount)
+    }
+    const afterReads = JSON.parse(await readFile(reportSourcePath, 'utf8'))
+    assert.equal(Object.hasOwn(afterReads, hotel016.hotelId), false)
   } finally {
     if (first) await stopApi(first.child)
     if (second) await stopApi(second.child)

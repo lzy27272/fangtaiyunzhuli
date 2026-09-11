@@ -161,7 +161,12 @@ test('operations console exposes store, exception, people and scoped store-detai
     /scopedPath\(context, '\/wecom-repair-bot-pairing'\)/,
   )
   assert.match(historySource, /sendWeComTestSuite/)
-  assert.match(historySource, /采集并发送全部适用模板/)
+  assert.match(historySource, /采集并发送安全测试模板/)
+  assert.match(historySource, /@所有人 模板不会从此入口发送/)
+  assert.match(
+    historySource,
+    /HOT_SELLING_RETRY_\$\{deliveryId\.replaceAll\('-', ''\)/u,
+  )
   assert.match(historySource, /@所有人/)
   assert.match(reviewApiSource, /\/wecom-test-suite-deliveries/)
   assert.match(reviewApiSource, /createWeComTestSuitePlan/)
@@ -241,7 +246,7 @@ test('phase-one public entry keeps the OTA runtime isolated behind an HTTPS subp
   assert.match(nativeDeploySource, /initialize_phase_one_refresh_state/)
   assert.match(reviewApiSource, /deployment-scheduler\.pause/u)
   assert.match(nativeDeploySource, /scheduler_pause_path=/u)
-  assert.match(nativeDeploySource, /SCHEDULER_PAUSE_PATH_UNSAFE/u)
+  assert.match(nativeDeploySource, /SCHEDULER_PAUSE_ALREADY_PRESENT/u)
   assert.ok(
     nativeDeploySource.indexOf('scheduler_pause_tmp=')
       < nativeDeploySource.indexOf(
@@ -249,8 +254,12 @@ test('phase-one public entry keeps the OTA runtime isolated behind an HTTPS subp
         nativeDeploySource.indexOf('next_link='),
       ),
   )
+  assert.match(
+    nativeDeploySource,
+    /release_owned_scheduler_pause\(\)[\s\S]*rm -f -- "\$\{scheduler_pause_path\}"/u,
+  )
   assert.ok(
-    nativeDeploySource.lastIndexOf('rm -f -- "${scheduler_pause_path}"')
+    nativeDeploySource.lastIndexOf('release_owned_scheduler_pause')
       > nativeDeploySource.indexOf('after_fingerprint='),
   )
   assert.ok(
@@ -261,7 +270,8 @@ test('phase-one public entry keeps the OTA runtime isolated behind an HTTPS subp
     nativeDeploySource.indexOf('configure-phase1-runtime.sh')
       < nativeDeploySource.indexOf('configure-public-entry.sh'),
   )
-  assert.match(nativeDeploySource, /rollback_release \|\| true/)
+  assert.match(nativeDeploySource, /trap deployment_error_trap ERR/)
+  assert.match(nativeDeploySource, /DEPLOYMENT_COMMAND_FAILED_ROLLING_BACK/)
   assert.doesNotMatch(
     publicEntryScriptSource,
     /systemctl reload sifangguan-ota-web\.service/,

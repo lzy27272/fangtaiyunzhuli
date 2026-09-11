@@ -35,6 +35,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$securityModulePath = Join-Path `
+    -Path $PSHOME `
+    -ChildPath 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1'
+Import-Module -Name $securityModulePath -Force -ErrorAction Stop
+
 $unsafeChildEnvironmentVariables = @(
     'NODE_OPTIONS',
     'NODE_PATH',
@@ -63,9 +68,6 @@ foreach ($variableName in $unsafeChildEnvironmentVariables) {
         'Process'
     )
 }
-# The child is launched by absolute path and does not spawn other programs.
-$env:PATH = ''
-
 $cliPath = Join-Path -Path $PSScriptRoot -ChildPath 'Send-OtaJsonToWeCom.mjs'
 $fingerprintCliPath = Join-Path `
     -Path $PSScriptRoot `
@@ -140,7 +142,8 @@ while (
     $ancestor = $ancestor.Parent
 }
 $nodeExecutable = $resolvedNodePath
-$nodeSignature = Get-AuthenticodeSignature -LiteralPath $nodeExecutable
+$nodeSignature = Microsoft.PowerShell.Security\Get-AuthenticodeSignature `
+    -LiteralPath $nodeExecutable
 if (
     $nodeSignature.Status -ne 'Valid' -or
     $null -eq $nodeSignature.SignerCertificate -or
@@ -149,6 +152,11 @@ if (
 ) {
     throw 'TRUSTED_NODE_SIGNATURE_INVALID'
 }
+# Resolve and verify the trusted executable before clearing PATH. Clearing it
+# earlier prevents Windows PowerShell from loading the signature provider on
+# clean hosts. The child still receives an empty PATH and launches by its
+# verified absolute path.
+$env:PATH = ''
 
 $exitCode = 2
 [Environment]::SetEnvironmentVariable(

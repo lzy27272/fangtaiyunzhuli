@@ -5,6 +5,7 @@ import {
   loadOutboxPreview,
   loadWeComConfig,
   replayLatestWeComBrief,
+  retryHotSellingSoldOutAlert,
   saveWeComConfig,
   sendWeComTestSuite,
   type BriefView,
@@ -21,6 +22,7 @@ import {
   businessErrorMessage,
   formatBusinessTime,
   safeBusinessText,
+  weComDeliveryDiagnostic,
 } from '../ui/businessDisplay'
 import { WeComRepairBotConfigPanel } from './WeComRepairBotConfigPanel'
 
@@ -78,6 +80,9 @@ const createManualReplayOperationKey = (): string => {
   return `MANUAL_REPLAY_${randomPart}`
 }
 
+const createHotSellingRetryOperationKey = (deliveryId: string): string =>
+  `HOT_SELLING_RETRY_${deliveryId.replaceAll('-', '').toUpperCase()}`
+
 export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
   const [briefs, setBriefs] = useState<BriefView[]>([])
   const [incidents, setIncidents] = useState<IncidentView[]>([])
@@ -95,6 +100,9 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
   const [savingWeCom, setSavingWeCom] = useState(false)
   const [sendingTest, setSendingTest] = useState(false)
   const [replaying, setReplaying] = useState(false)
+  const [retryingDeliveryId, setRetryingDeliveryId] = useState<string | null>(
+    null,
+  )
   const [replayResult, setReplayResult] =
     useState<WeComManualReplayView | null>(null)
   const [notice, setNotice] = useState('')
@@ -149,6 +157,7 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
     replayAttemptRef.current += 1
     replayOperationRef.current = null
     setReplaying(false)
+    setRetryingDeliveryId(null)
     setReplayResult(null)
     setNotice('')
     return () => {
@@ -206,12 +215,19 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
   }
 
   async function sendTest() {
-    if (!context) return
+    if (!context || !weComConfig?.endpointSha256) return
+    if (!window.confirm(
+      '将向当前门店企微群发送带“测试消息”标识的非全员提醒模板。'
+      + '售罄预警等 @所有人 模板不会从此入口发送。是否继续？',
+    )) return
     setSendingTest(true)
     setError('')
     setNotice('')
     try {
-      const result = await sendWeComTestSuite(context)
+      const result = await sendWeComTestSuite(
+        context,
+        weComConfig.endpointSha256,
+      )
       const deliveredCount = result.deliveries.filter(
         (delivery) => delivery.deliveryStatus === 'DELIVERED',
       ).length
@@ -233,17 +249,65 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
         .join('、')
       setNotice(
         `已重新采集 ${result.collectionRun.successfulSourceCount}/`
-        + `${result.collectionRun.sourceCount} 个报表；企微模板送达 `
+        + `${result.collectionRun.sourceCount} 个报表；安全测试模板送达 `
         + `${deliveredCount}/${result.deliveries.length}`
         + `${skipped ? `；无适用数据跳过：${skipped}` : ''}`
         + `${failed ? `；生成或发送失败：${failed}` : ''}`
-        + `${rejected ? `；未送达：${rejected}` : ''}。`,
+        + `${rejected ? `；未送达：${rejected}` : ''}`
+        + '；售罄预警等 @所有人 告警模板未从测试入口发送。',
       )
       await refresh()
     } catch (cause) {
       setError(businessErrorMessage(cause, '企微测试发送失败'))
     } finally {
       setSendingTest(false)
+    }
+  }
+
+  async function retryHotSellingAlert(message: OutboxPreview) {
+    if (
+      !context
+      || !canConfigure
+      || !message.retryEligible
+      || retryingDeliveryId
+      || !weComConfig?.enabled
+      || !weComConfig.webhookConfigured
+    ) return
+    const confirmed = window.confirm(
+      '系统将重新采集当前门店库存；只有热销房型仍可靠售罄时，才会向企业微信群发送新的预警并@所有人。是否继续？',
+    )
+    if (!confirmed) return
+    setRetryingDeliveryId(message.eventId)
+    setError('')
+    setNotice('')
+    try {
+      const result = await retryHotSellingSoldOutAlert(
+        context,
+        message.eventId,
+        createHotSellingRetryOperationKey(message.eventId),
+      )
+      if (result.overallStatus === 'SKIPPED') {
+        setNotice(
+          result.skippedReasonCode === 'HOT_SELLING_SOLD_OUT_NONE'
+            ? '已重新采集：当前没有可靠售罄的热销房型，本次未发送预警。'
+            : `${businessCodeLabel(result.skippedReasonCode, '当前预警无需再次发送')}，本次未重复发送。`,
+        )
+      } else if (result.delivery?.deliveryStatus === 'DELIVERED') {
+        setNotice('已重新采集并发送热销房型售罄预警，企业微信确认接收。')
+      } else {
+        setError(
+          result.delivery
+            ? weComDeliveryDiagnostic(result.delivery)
+            : '预警重试未完成，请刷新后查看发送记录。',
+        )
+      }
+      await refresh()
+      onStatusChanged?.()
+    } catch (cause) {
+      setError(businessErrorMessage(cause, '热销房型预警重试失败'))
+      await refresh()
+    } finally {
+      setRetryingDeliveryId(null)
     }
   }
 
@@ -275,7 +339,7 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
     ) return
     const confirmed = window.confirm(
       `将按最新完整数据（截止${formatBusinessTime(latestCompleteBrief.cutoffAt)}）`
-      + '补发正式播报到企业微信群，并@所有人。请确认群内尚未收到同一播报，是否继续？',
+      + '补发正式播报到企业微信群。请确认群内尚未收到同一播报，是否继续？',
     )
     if (!confirmed) return
 
@@ -357,7 +421,7 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
                 <p>
                   每家门店可独立设置每日开始、静默时间和播报频率；选择暂停播报后仅停止群消息，
                   PMS 数据仍按每小时一次采集。群内修复链接使用独立开关，关闭后不影响已绑定管理员私聊接手。
-                  今日经营、远期房态和热销房型提醒仍按既定模板顺序发送并固定 @所有人。
+                  今日经营、远期房态和热销房型提醒仍按既定模板顺序发送；热销房型售罄预警固定 @所有人，例行简报不触发全员提醒。
                 </p>
               </div>
               <b className={savedBroadcastInterval > 0 ? 'source-complete' : 'source-partial'}>
@@ -514,10 +578,14 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
                 onClick={sendTest}
               >
                 {sendingTest
-                  ? '正在采集并发送全部模板…'
-                  : '采集并发送全部适用模板'}
+                  ? '正在采集并发送安全测试模板…'
+                  : '采集并发送安全测试模板'}
               </button>
             </div>
+            <p className="form-note">
+              测试消息带有醒目标识且不提醒全员；售罄预警、经营综合简报等
+              @所有人 模板不会由此按钮发送。
+            </p>
           </section>
 
           {canConfigure ? (
@@ -528,7 +596,7 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
                   <h3>补发最新正式播报</h3>
                   <p>
                     手工采集仅更新数据，不自动群发。此操作使用最新完整数据补发正式播报，
-                    提交前会再次确认，并@企业微信群所有人。
+                    提交前会再次确认，避免产生重复播报。
                   </p>
                 </div>
                 <button
@@ -660,7 +728,9 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
 
           <section className="outbox-section">
             <h3>企业微信发送记录</h3>
-            <p>系统会自动避免重复发送；结果待确认时不会自动重试。</p>
+            <p>
+              系统会自动避免重复发送；结果待确认或已有部分送达时不会重试。明确失败可由管理员重新采集当前库存后重试一次。
+            </p>
             {outbox.map((message) => (
               <article className="outbox-card" key={message.messageKey}>
                 <header>
@@ -677,9 +747,34 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
                 <small>
                   {formatBusinessTime(message.createdAt)}
                   {message.messageType.endsWith('_TEST')
-                    ? '｜全模板测试'
+                    ? '｜安全模板测试'
+                    : ''}
+                  {message.partCount > 1
+                    ? `｜分段送达 ${message.deliveredPartCount}/${message.partCount}`
                     : ''}
                 </small>
+                {message.deliveryStatus !== 'DELIVERED' ? (
+                  <div className="outbox-diagnostic" role="status">
+                    <b>{businessCodeLabel(message.reasonCode, '原因待确认')}</b>
+                    <span>{weComDeliveryDiagnostic(message)}</span>
+                    {message.retryEligible && canConfigure ? (
+                      <button
+                        className="secondary"
+                        disabled={
+                          retryingDeliveryId !== null
+                          || !weComConfig?.enabled
+                          || !weComConfig.webhookConfigured
+                        }
+                        type="button"
+                        onClick={() => void retryHotSellingAlert(message)}
+                      >
+                        {retryingDeliveryId === message.eventId
+                          ? '正在重新采集并重试…'
+                          : '重新采集并重试此预警'}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <details className="technical-details"><summary>查看消息编号</summary><code>{message.messageKey}</code></details>
               </article>
             ))}

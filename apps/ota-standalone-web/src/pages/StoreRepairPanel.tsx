@@ -15,7 +15,11 @@ import { loadTrustedDeviceStatus } from '../api/trustedDevice'
 import { Icon, LoadingState, Status } from '../components/ConsoleUi'
 import { TrustedDevicePanel } from './TrustedDevicePanel'
 import { BieyanghongCookieRepairPanel } from './BieyanghongCookieRepairPanel'
-import { businessErrorMessage } from '../ui/businessDisplay'
+import {
+  businessCodeLabel,
+  businessErrorMessage,
+  businessReadFailureSummary,
+} from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
@@ -86,12 +90,33 @@ export function StoreRepairPanel({
     )
     setLuopan(luopanResult.status === 'fulfilled' ? luopanResult.value : null)
     setYilian(yilianResult.status === 'fulfilled' ? yilianResult.value : null)
-    if (
-      (trustedResult.status === 'rejected' && pmsResult.status === 'rejected')
-      || (pmsSystemCode === 'YILIAN_CLOUD'
-        && yilianResult.status === 'rejected')
+    const requestedResults = [
+      trustedResult,
+      pmsResult,
+      ...(pmsSystemCode === 'LUOPAN_CLOUD' ? [luopanResult] : []),
+      ...(pmsSystemCode === 'YILIAN_CLOUD' ? [yilianResult] : []),
+    ]
+    const failures = requestedResults.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [])
+    if (failures.length) {
+      const reason = businessReadFailureSummary(
+        failures,
+        '请刷新后重试；若持续出现，请联系管理员查看服务状态',
+      )
+      setError(
+        failures.length === requestedResults.length
+          ? `登录修复状态无法读取：${reason}。`
+          : `部分登录修复状态读取失败：${reason}。`,
+      )
+    } else if (
+      yilianResult.status === 'fulfilled'
+      && yilianResult.value
+      && ['FAILED', 'HUMAN_AUTHORIZATION_REQUIRED'].includes(yilianResult.value.state)
     ) {
-      setError('登录修复状态暂时不可用，请刷新后重试。')
+      setError(`最近一次云端登录修复未完成：${businessCodeLabel(
+        yilianResult.value.lastErrorCode,
+        '请重新检查驿联云登录与接口配置',
+      )}。`)
     }
     setLoading(false)
   }, [context, pmsSystemCode])
@@ -238,6 +263,7 @@ export function StoreRepairPanel({
             <div><dt>最近通过</dt><dd>{formatTime(yilian?.lastSucceededAt ?? null)}</dd></div>
             <div><dt>营业日</dt><dd>{yilian?.lastBusinessDate ?? '尚未确认'}</dd></div>
             <div><dt>接口校验</dt><dd>{yilian ? `${yilian.successfulSourceCount}/${yilian.sourceCount || 3}` : '尚未完成'}</dd></div>
+            <div><dt>最近结果</dt><dd>{businessCodeLabel(yilian?.lastErrorCode, yilian?.state === 'SUCCEEDED' ? '三个接口均已通过' : '尚未完成首次验证')}</dd></div>
           </dl>
           <div className="button-row">
             <a className="button-link secondary" href={yilian?.portalUrl ?? 'https://pms.ygjpms.com/saas/#/login'} rel="noreferrer" target="_blank">打开驿联云官网</a>

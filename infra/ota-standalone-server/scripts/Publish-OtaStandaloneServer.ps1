@@ -10,6 +10,10 @@ param(
             '.ssh\sifangguan_tencent_ota_ed25519')
     ),
 
+    [string]$KnownHostsFile = (
+        (Join-Path $env:USERPROFILE '.ssh\known_hosts')
+    ),
+
     [string]$GitRemote = 'ota-yunying',
 
     [string]$GitBranch = 'main',
@@ -50,8 +54,13 @@ $publicApiBaseUrl = '/api/v1/ota-console'
 $deployScriptRelative = (
     'infra/ota-standalone-server/scripts/deploy-native.sh'
 )
+$yilianMigrationVerifierRelative = (
+    'infra/ota-standalone-server/scripts/' +
+    'verify-yilian-source-contract-migration.mjs'
+)
 $runtimeSourcePaths = @(
     $deployScriptRelative,
+    $yilianMigrationVerifierRelative,
     'infra/ota-standalone-server/Caddyfile.native',
     'infra/ota-standalone-server/caddy/ota-console-public.caddy',
     'infra/ota-standalone-server/scripts/configure-public-entry.sh',
@@ -60,6 +69,7 @@ $runtimeSourcePaths = @(
     'infra/ota-standalone-server/scripts/configure-ai-runtime.sh',
     'tools/uat/ota-standalone-review-api.mjs',
     'tools/uat/wecom-manual-replay.mjs',
+    'tools/uat/wecom-hot-selling-retry.mjs',
     'tools/uat/wecom-p1-manual-replay.mjs',
     'tools/uat/pms-repair-alert.mjs',
     'tools/uat/report-source-cookie-crypto.mjs',
@@ -104,8 +114,8 @@ $runtimeSourcePaths = @(
     'tools/trusted-device/trusted-device-agent.mjs',
     'tools/trusted-device/trusted-device-local-state.mjs',
     'tools/trusted-device/package.json',
-    'tools/uat/send-combined-operations-test.mjs',
     'tools/uat/wecom/src/combined-operations-brief.mjs',
+    'tools/uat/wecom/src/delivery-state.mjs',
     'tools/uat/wecom/src/delivery-claim.mjs',
     'tools/uat/wecom/src/future-booking-ai-advice.mjs',
     'tools/uat/wecom/src/future-booking-brief.mjs',
@@ -264,12 +274,11 @@ function Invoke-SshScript {
     $encoded = [Convert]::ToBase64String(
         [Text.Encoding]::UTF8.GetBytes($normalizedScript)
     )
-    & $script:sshPath `
-        -i $IdentityFile `
-        -o BatchMode=yes `
-        -o StrictHostKeyChecking=accept-new `
-        $RemoteHost `
+    $arguments = $script:sshConnectionArguments + @(
+        $RemoteHost,
         "echo $encoded | base64 -d | sh"
+    )
+    & $script:sshPath @arguments
     if ($LASTEXITCODE -ne 0) {
         throw "SSH_SCRIPT_FAILED:EXIT_$LASTEXITCODE"
     }
@@ -317,14 +326,10 @@ function Ensure-ServerUiTunnel([int]$Port) {
     if (Test-LocalPortListening -Port $Port) {
         throw 'LOCAL_TUNNEL_PORT_OCCUPIED_BUT_UNHEALTHY'
     }
-    $arguments = @(
+    $arguments = $script:sshConnectionArguments + @(
         '-N',
-        '-i',
-        $IdentityFile,
         '-L',
         "${Port}:127.0.0.1:5180",
-        '-o',
-        'BatchMode=yes',
         '-o',
         'ExitOnForwardFailure=yes',
         '-o',
@@ -357,6 +362,7 @@ $bundledNodeModules = Resolve-BundledNodeModules
 $tarPath = Resolve-RequiredCommand 'tar.exe'
 $script:sshPath = Resolve-RequiredCommand 'ssh.exe'
 $scpPath = Resolve-RequiredCommand 'scp.exe'
+$sshKeygenPath = Resolve-RequiredCommand 'ssh-keygen.exe'
 
 if (-not (Test-Path -LiteralPath $scannerPath -PathType Leaf)) {
     throw 'SENSITIVE_SCANNER_NOT_FOUND'
@@ -373,14 +379,17 @@ if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') {
     throw 'GIT_COMMIT_INVALID'
 }
 $branch = (& $gitPath @gitCommonArguments branch --show-current).Trim()
-$dirtyTracked = @(
-    & $gitPath @gitCommonArguments status --porcelain --untracked-files=no
+$dirtyWorktree = @(
+    & $gitPath @gitCommonArguments status --porcelain
 )
+if ($LASTEXITCODE -ne 0) {
+    throw 'GIT_STATUS_FAILED'
+}
 if (
-    $dirtyTracked.Count -gt 0 -and
+    $dirtyWorktree.Count -gt 0 -and
     -not ($Mode -eq 'Plan' -and $AllowDirtyPlan)
 ) {
-    throw 'TRACKED_WORKTREE_NOT_CLEAN'
+    throw 'WORKTREE_NOT_CLEAN'
 }
 
 $configuredRemoteUrl = (
@@ -410,7 +419,7 @@ $plan = [ordered]@{
     gitRemote = $GitRemote
     gitBranch = $GitBranch
     remoteHost = $RemoteHost
-    trackedWorktreeClean = ($dirtyTracked.Count -eq 0)
+    worktreeClean = ($dirtyWorktree.Count -eq 0)
     runtimeSourceFileCount = $runtimeSourcePaths.Count
     persistentRuntimeExcluded = $true
     webBasePath = $webBasePath
@@ -425,15 +434,24 @@ if (-not (Test-Path -LiteralPath $distRoot -PathType Container)) {
     New-Item -ItemType Directory -Path $distRoot -Force | Out-Null
 }
 if (-not $SkipTests) {
-    $testFiles = @(
-        Get-ChildItem `
-            -LiteralPath (Join-Path $webRoot 'tests') `
-            -Filter '*.test.mjs' `
-            -File |
-            ForEach-Object { $_.FullName }
+    $testRoots = @(
+        (Join-Path $webRoot 'tests'),
+        (Join-Path $repoRoot 'tools\uat\wecom\tests')
     )
+    $testFiles = @(
+        foreach ($testRoot in $testRoots) {
+            if (-not (Test-Path -LiteralPath $testRoot -PathType Container)) {
+                throw "RELEASE_TEST_ROOT_NOT_FOUND:$testRoot"
+            }
+            Get-ChildItem `
+                -LiteralPath $testRoot `
+                -Filter '*.test.mjs' `
+                -File |
+                ForEach-Object { $_.FullName }
+        }
+    ) | Select-Object -Unique
     if ($testFiles.Count -lt 1) {
-        throw 'WEB_TEST_FILES_NOT_FOUND'
+        throw 'RELEASE_TEST_FILES_NOT_FOUND'
     }
     $previousNodePath = $env:NODE_PATH
     $runtimeNodeModules = Join-Path (
@@ -603,6 +621,40 @@ if ($Mode -eq 'Package') {
 if (-not (Test-Path -LiteralPath $IdentityFile -PathType Leaf)) {
     throw 'SSH_IDENTITY_FILE_NOT_FOUND'
 }
+if (
+    -not (Test-Path -LiteralPath $KnownHostsFile -PathType Leaf) -or
+    ((Get-Item -LiteralPath $KnownHostsFile).Attributes -band
+        [IO.FileAttributes]::ReparsePoint)
+) {
+    throw 'SSH_KNOWN_HOSTS_FILE_UNSAFE_OR_MISSING'
+}
+if (
+    $RemoteHost -notmatch
+        '^[A-Za-z_][A-Za-z0-9._-]{0,63}@(?<host>[A-Za-z0-9][A-Za-z0-9.-]{0,252})$'
+) {
+    throw 'SSH_REMOTE_HOST_INVALID'
+}
+$remoteHostName = $Matches.host
+$knownHostMatches = @(
+    & $sshKeygenPath -F $remoteHostName -f $KnownHostsFile 2>$null
+)
+if ($LASTEXITCODE -ne 0 -or $knownHostMatches.Count -lt 1) {
+    throw 'SSH_REMOTE_HOST_KEY_NOT_PINNED'
+}
+$script:sshConnectionArguments = @(
+    '-i',
+    $IdentityFile,
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    'StrictHostKeyChecking=yes',
+    '-o',
+    "UserKnownHostsFile=$KnownHostsFile",
+    '-o',
+    'GlobalKnownHostsFile=none',
+    '-o',
+    'UpdateHostKeys=no'
+)
 
 if (-not $SkipGitPush) {
     Invoke-CheckedCommand `
@@ -662,22 +714,22 @@ install -d -m 700 '$remoteStage'
 "@
 Invoke-SshScript -Script $prepareScript
 
-& $scpPath `
-    -i $IdentityFile `
-    -o BatchMode=yes `
-    $releaseArchive `
+$archiveUploadArguments = $script:sshConnectionArguments + @(
+    $releaseArchive,
     "${RemoteHost}:${remoteArchive}"
+)
+& $scpPath @archiveUploadArguments
 if ($LASTEXITCODE -ne 0) {
     throw "RELEASE_UPLOAD_FAILED:EXIT_$LASTEXITCODE"
 }
 $localDeployScript = Join-Path $stageRoot (
     $deployScriptRelative.Replace('/', '\')
 )
-& $scpPath `
-    -i $IdentityFile `
-    -o BatchMode=yes `
-    $localDeployScript `
+$deployUploadArguments = $script:sshConnectionArguments + @(
+    $localDeployScript,
     "${RemoteHost}:${remoteDeployScript}"
+)
+& $scpPath @deployUploadArguments
 if ($LASTEXITCODE -ne 0) {
     throw "DEPLOY_SCRIPT_UPLOAD_FAILED:EXIT_$LASTEXITCODE"
 }

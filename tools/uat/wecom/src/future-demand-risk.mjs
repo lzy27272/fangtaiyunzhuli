@@ -145,6 +145,7 @@ export const createFutureDemandP1WeComPayloads = (
   hotel,
   snapshot,
   candidateInput,
+  options = {},
 ) => {
   const candidates = Array.isArray(candidateInput)
     ? candidateInput
@@ -177,8 +178,9 @@ export const createFutureDemandP1WeComPayloads = (
   const reasons = [...new Set(
     candidates.flatMap((candidate) => candidate.reasons),
   )]
+  const testMode = options?.testMode === true
   const contentFor = (limit) => [
-    '🚨P1远期需求异动',
+    testMode ? '🧪测试消息｜P1远期需求异动' : '🚨P1远期需求异动',
     `${hotel.hotelName.trim().slice(0, 40)}｜触发${candidates.length}个入住日`,
     `⏰发现时间｜${cutoff(snapshot.observedAt)}`,
     `触发｜${reasonText(reasons)}`,

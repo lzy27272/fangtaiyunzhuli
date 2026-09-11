@@ -19,7 +19,7 @@ const futureRow = (stayDate, overrides = {}) => ({
   ...overrides,
 })
 
-test('all applicable WeCom templates include future room status and real P1 risk', () => {
+test('safe WeCom test templates include future room status and a marked P1 risk', () => {
   const snapshot = {
     collectionRunId: 'run-001',
     businessDate: '2026-07-28',
@@ -55,6 +55,10 @@ test('all applicable WeCom templates include future room status and real P1 risk
     const payloads = template.payloadFactory({ hotel, snapshot })
     assert.equal(payloads.length, 1)
     assert.deepEqual(payloads[0].text.mentioned_list, [])
+    if (template.templateCode === 'P1_FUTURE_DEMAND') {
+      assert.match(payloads[0].text.content, /^🧪测试消息｜P1远期需求异动\n/u)
+      assert.doesNotMatch(payloads[0].text.content, /^🚨P1远期需求异动\n/u)
+    }
   }
 })
 

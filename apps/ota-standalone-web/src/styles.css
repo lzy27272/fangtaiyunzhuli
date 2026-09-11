@@ -316,6 +316,21 @@ details.history-card { display: block; }
 .outbox-section > p { color: #68736f; }
 .outbox-card .blocked { color: #805b15; }
 .outbox-card .unsafe { color: #9a3027; }
+.outbox-diagnostic {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: .35rem 1rem;
+  padding: .75rem;
+  border: 1px solid #efc1bb;
+  border-radius: .65rem;
+  color: #743029;
+  background: #fff3f1;
+}
+.outbox-diagnostic b,
+.outbox-diagnostic span { grid-column: 1; }
+.outbox-diagnostic span { font-size: .75rem; line-height: 1.55; }
+.outbox-diagnostic button { grid-column: 2; grid-row: 1 / 3; }
 
 .report-pipeline {
   display: flex;
@@ -1336,4 +1351,10 @@ details.history-card { display: block; }
   .account-management-heading, .managed-account-card > header { align-items: flex-start; flex-direction: column; }
   .mapping-list article, .inventory-list header, .inventory-list article > div { grid-template-columns: 1fr; }
   .save-row { grid-template-columns: 1fr; }
+  .outbox-diagnostic { grid-template-columns: 1fr; }
+  .outbox-diagnostic button {
+    grid-column: 1;
+    grid-row: auto;
+    width: 100%;
+  }
 }

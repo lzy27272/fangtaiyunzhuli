@@ -45,6 +45,12 @@ ssh -i "$env:USERPROFILE\.ssh\sifangguan_tencent_ota_ed25519" `
   ubuntu@43.136.184.38
 ```
 
+一键发布器还要求本机默认私钥
+`%USERPROFILE%\.ssh\sifangguan_tencent_ota_ed25519`存在，并且目标服务器的
+SSH 主机公钥已写入`%USERPROFILE%\.ssh\known_hosts`。首次登记前必须通过腾讯云
+控制台或另一条可信运维通道核对主机公钥指纹；不能仅凭当前网络扫描结果建立信任。
+私钥或已核验指纹缺失时，发布器会在上传任何内容前停止。
+
 首次部署由本机上传完整发布包后，在服务器执行：
 
 ```bash

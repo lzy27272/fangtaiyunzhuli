@@ -44,6 +44,7 @@ import {
 import {
   businessCodeLabel,
   businessErrorMessage,
+  businessReadFailureSummary,
   metricLabel,
   unitLabel,
 } from '../ui/businessDisplay'
@@ -400,21 +401,35 @@ export function StoreDetailPage({
       loadOutboxPreview(context),
     ])
     if (sequence !== refreshSequenceRef.current) return
-    setData({
-      configuration: results[0].status === 'fulfilled' ? results[0].value : null,
-      monitor: results[1].status === 'fulfilled' ? results[1].value : null,
-      otaSources: results[2].status === 'fulfilled' ? results[2].value : [],
-      wecom: results[3].status === 'fulfilled' ? results[3].value : null,
-      briefs: results[4].status === 'fulfilled' ? results[4].value : [],
-      incidents: results[5].status === 'fulfilled' ? results[5].value : [],
-      roomTypes: results[6].status === 'fulfilled' ? results[6].value : null,
-      trustedDeviceStatus: results[7].status === 'fulfilled' ? results[7].value : null,
-      outbox: results[8].status === 'fulfilled' ? results[8].value : [],
-    })
-    const unavailable = results.every((result) => result.status === 'rejected')
+    setData((current) => ({
+      configuration: results[0].status === 'fulfilled' ? results[0].value : current.configuration,
+      monitor: results[1].status === 'fulfilled' ? results[1].value : current.monitor,
+      otaSources: results[2].status === 'fulfilled' ? results[2].value : current.otaSources,
+      wecom: results[3].status === 'fulfilled' ? results[3].value : current.wecom,
+      briefs: results[4].status === 'fulfilled' ? results[4].value : current.briefs,
+      incidents: results[5].status === 'fulfilled' ? results[5].value : current.incidents,
+      roomTypes: results[6].status === 'fulfilled' ? results[6].value : current.roomTypes,
+      trustedDeviceStatus: results[7].status === 'fulfilled' ? results[7].value : current.trustedDeviceStatus,
+      outbox: results[8].status === 'fulfilled' ? results[8].value : current.outbox,
+    }))
+    // Non-admins intentionally skip configuration. Exclude that synthetic
+    // fulfilled result so a complete failure of their eight real reads is not
+    // incorrectly reported as success.
+    const requestedResults = canConfigure ? results : results.slice(1)
+    const failures = requestedResults.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [])
+    const unavailable = failures.length === requestedResults.length
     setDataUnavailable(unavailable)
-    if (unavailable) {
-      setError('门店数据暂时不可用，请检查连接状态。')
+    if (failures.length) {
+      const reason = businessReadFailureSummary(
+        failures,
+        '请检查网络后重试；若持续出现，请联系管理员查看服务状态',
+      )
+      setError(
+        unavailable
+          ? `门店数据无法读取：${reason}。`
+          : `部分门店数据读取失败（${failures.length}/${requestedResults.length}）：${reason}。`,
+      )
     }
     setLoading(false)
   }, [canConfigure, context])

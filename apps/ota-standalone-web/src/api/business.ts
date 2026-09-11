@@ -697,7 +697,20 @@ export interface OutboxPreview {
   messageType: string
   createdAt: string
   deliveryBlocked: boolean
-  deliveryStatus: string
+  deliveryStatus:
+    | 'SENDING'
+    | 'DELIVERED'
+    | 'REJECTED'
+    | 'AMBIGUOUS'
+    | 'PARTIAL'
+    | 'FAILED'
+  reasonCode: string
+  httpStatus: number | null
+  weComCode: number | null
+  networkAttempted: boolean | null
+  partCount: number
+  deliveredPartCount: number
+  retryEligible: boolean
   bodyPreview: string
 }
 
@@ -710,13 +723,20 @@ export interface WeComDeliveryView {
   cutoffAt: string
   attemptedAt: string
   completedAt: string | null
-  deliveryStatus: 'SENDING' | 'DELIVERED' | 'REJECTED' | 'AMBIGUOUS'
+  deliveryStatus:
+    | 'SENDING'
+    | 'DELIVERED'
+    | 'REJECTED'
+    | 'AMBIGUOUS'
+    | 'PARTIAL'
+    | 'FAILED'
   reasonCode: string
   endpointSha256: string
   messageSha256: string
   httpStatus: number | null
   weComCode: number | null
-  automaticRetryAttempted: false
+  automaticRetryAttempted: boolean
+  networkAttempted?: boolean | null
   partCount?: number
   deliveredPartCount?: number
   parts?: Array<{
@@ -726,6 +746,7 @@ export interface WeComDeliveryView {
     reasonCode: string
     httpStatus: number | null
     weComCode: number | null
+    networkAttempted?: boolean | null
   }>
   bodyPreview: string
 }
@@ -764,6 +785,41 @@ export interface WeComManualReplayView {
   failedTemplates: WeComTestSuiteTemplateResult[]
 }
 
+export interface WeComHotSellingRetryView {
+  operationKey: string
+  sourceDeliveryId: string
+  collectionRunId: string | null
+  cutoffAt: string
+  replayed: boolean
+  overallStatus:
+    | 'SENDING'
+    | 'DELIVERED'
+    | 'REJECTED'
+    | 'AMBIGUOUS'
+    | 'PARTIAL'
+    | 'FAILED'
+    | 'SKIPPED'
+  skippedReasonCode: string | null
+  delivery: Pick<
+    WeComDeliveryView,
+    | 'deliveryId'
+    | 'messageKey'
+    | 'deliveryType'
+    | 'hotelId'
+    | 'businessDate'
+    | 'cutoffAt'
+    | 'attemptedAt'
+    | 'completedAt'
+    | 'deliveryStatus'
+    | 'reasonCode'
+    | 'httpStatus'
+    | 'weComCode'
+    | 'networkAttempted'
+    | 'partCount'
+    | 'deliveredPartCount'
+  > | null
+}
+
 export type BroadcastIntervalHours = 0 | 1 | 2 | 3 | 4
 
 export interface WeComConfigView {
@@ -778,6 +834,8 @@ export interface WeComConfigView {
   futureBriefSendMinute: 8
   hotSellingSoldOutAlertSendMinute: 9
   deliveryMode: 'UAT_SANITIZED_AT_ALL'
+  deliveryLedgerReady: boolean
+  deliveryLedgerReasonCode: string | null
   webhookConfigured: boolean
   endpointSha256: string | null
   updatedAt: string | null
@@ -1726,10 +1784,15 @@ export function saveWeComConfig(
 
 export function sendWeComTestSuite(
   context: HotelContext,
+  expectedEndpointSha256: string,
 ): Promise<WeComTestSuiteView> {
   return postCommand<WeComTestSuiteView>(
     scopedPath(context, '/wecom-test-suite-deliveries'),
-    { reasonCode: 'SEND_WECOM_UAT_TEST_SUITE' },
+    {
+      confirmRealWeComSend: true,
+      expectedEndpointSha256,
+      reasonCode: 'SEND_WECOM_UAT_TEST_SUITE',
+    },
   )
 }
 
@@ -1744,6 +1807,21 @@ export function replayLatestWeComBrief(
       expectedCollectionRunId,
       operationKey,
       reasonCode: 'MANUAL_REPLAY_LATEST_COMPLETE',
+    },
+  )
+}
+
+export function retryHotSellingSoldOutAlert(
+  context: HotelContext,
+  expectedDeliveryId: string,
+  operationKey: string,
+): Promise<WeComHotSellingRetryView> {
+  return postCommand<WeComHotSellingRetryView>(
+    scopedPath(context, '/wecom-hot-selling-retry-deliveries'),
+    {
+      expectedDeliveryId,
+      operationKey,
+      reasonCode: 'RETRY_HOT_SELLING_SOLD_OUT',
     },
   )
 }

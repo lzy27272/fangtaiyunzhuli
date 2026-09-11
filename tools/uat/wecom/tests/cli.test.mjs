@@ -294,7 +294,7 @@ test(
         },
       },
     )
-    assert.equal(result.status, 0)
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     const output = JSON.parse(result.stdout)
     assert.equal(output.status, 'DRY_RUN_OK')
     assert.equal(output.networkCalled, false)
@@ -336,6 +336,7 @@ test(
         'WECOM_UAT_SEND_GATE_DISABLED',
       ),
       true,
+      `${result.stdout}\n${result.stderr}`,
     )
   },
 )

@@ -53,7 +53,7 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   PMS_SESSION_REAUTH_REQUIRED: '酒店系统需要重新登录',
   YILIAN_ACCESS_TOKEN_REQUIRED: '驿联云需要重新完成云端登录授权',
   YILIAN_SESSION_REAUTH_REQUIRED: '驿联云登录授权已失效，请重新云端登录',
-  YILIAN_SOURCE_CONTRACT_INVALID: '驿联云需要且仅支持已验证的三个数据接口',
+  YILIAN_SOURCE_CONTRACT_INVALID: '驿联云数据接口配置不完整，请在采集配置中启用并验证固定的三个接口',
   YILIAN_REPORT_DATA_INVALID: '驿联云返回的数据结构与已验证口径不一致',
   YILIAN_AUTO_REAUTH_DISABLED: '驿联云云端自动重登已停用',
   YILIAN_BROWSER_RUNTIME_UNAVAILABLE: '服务器缺少云端浏览器运行环境',
@@ -89,6 +89,36 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   WECOM_REPAIR_BOT_PAIRING_REQUIRED: '当前门店尚未绑定修复管理员',
   WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED: '当前门店修复管理员已达上限',
   WECOM_REPAIR_BOT_PAIRING_HOTEL_INVALID: '当前门店暂时无法绑定修复管理员',
+  WECOM_PAYLOAD_INVALID: '企微消息格式校验失败',
+  WECOM_HTTP_REJECTED: '企微接口拒绝请求',
+  WECOM_BUSINESS_REJECTED: '企微平台拒绝发送',
+  WECOM_NETWORK_RESULT_UNKNOWN: '发送结果待确认',
+  WECOM_RESPONSE_UNREADABLE: '发送结果待确认',
+  WECOM_RESPONSE_SCHEMA_INVALID: '发送结果待确认',
+  WECOM_HTTP_RESULT_UNKNOWN: '发送结果待确认',
+  WECOM_PROCESS_INTERRUPTED_RESULT_UNKNOWN: '服务重启前的发送结果待确认',
+  WECOM_DELIVERY_LEDGER_UNAVAILABLE: '企微发送账本不可用，系统已暂停全部推送，请联系管理员恢复账本后重启服务',
+  WECOM_DELIVERY_LEDGER_MISSING: '企微发送账本丢失，系统已暂停全部推送，请联系管理员恢复账本后重启服务',
+  WECOM_DELIVERY_MESSAGE_KEY_ALREADY_CLAIMED: '同一批次已由另一服务进入发送流程；为避免重复群发，本次发送已阻止',
+  WECOM_DELIVERY_MESSAGE_KEY_CLAIM_FAILED: '无法取得企微发送互斥凭据，系统已阻止本次发送',
+  WECOM_DELIVERY_MESSAGE_KEY_CLAIM_UPDATE_FAILED: '企微发送互斥状态无法安全保存，系统已阻止本次发送',
+  WECOM_LEGACY_TEST_ENDPOINT_DISABLED: '旧版企微测试通道已停用，请使用安全模板测试',
+  WECOM_HOT_SELLING_RETRY_DELIVERY_NOT_FOUND: '原发送记录不存在或不属于当前门店',
+  WECOM_HOT_SELLING_RETRY_ALREADY_ATTEMPTED: '该失败记录已经执行过重试，请刷新发送记录',
+  WECOM_HOT_SELLING_RETRY_IN_PROGRESS: '当前门店正在处理另一条售罄预警，请稍后刷新',
+  WECOM_HOT_SELLING_RETRY_NOT_CONFIGURED: '请先启用门店播报并配置企业微信机器人',
+  WECOM_HOT_SELLING_RETRY_SLOT_INVALID: '当前采集时间无法生成安全的重试批次',
+  WECOM_HOT_SELLING_ALREADY_DELIVERED: '该预警已经发送成功，无需重试',
+  WECOM_HOT_SELLING_MANUAL_RECONCILIATION_REQUIRED: '发送结果尚未确认，请先在群内核对',
+  WECOM_HOT_SELLING_PARTIAL_DELIVERY_RECONCILIATION_REQUIRED: '已有部分内容送达，请先在群内核对',
+  WECOM_HOT_SELLING_DELIVERY_TYPE_NOT_SUPPORTED: '该消息类型不支持此重试操作',
+  WECOM_HOT_SELLING_RETRY_BLOCKED: '当前发送记录不能重试',
+  HOT_SELLING_SOLD_OUT_NONE: '当前没有可靠售罄的热销房型',
+  HOT_SELLING_CURRENT_HOUR_ALREADY_ATTEMPTED: '本小时已有一条售罄预警进入发送流程',
+  REVIEW_HOTEL_NOT_FOUND: '当前账号无法读取该门店，请返回门店总览重新选择，或联系管理员检查门店权限',
+  REVIEW_ACCOUNT_SCOPE_FORBIDDEN: '当前账号无权读取或操作该门店，请联系管理员检查门店权限',
+  REVIEW_SESSION_REQUIRED: '登录状态已失效，请重新登录',
+  REVIEW_AUTH_REFRESH_INVALID: '登录状态已失效，请重新登录',
   LUOPAN_ORDER_DETAIL_NOT_CONFIGURED: '罗盘订单明细尚未配置',
   VERIFICATION_REQUIRED: '需要验证码',
   EXTERNAL_VERIFICATION_REQUIRED: '需要在官网完成验证',
@@ -188,4 +218,105 @@ export function businessErrorMessage(cause: unknown, fallback: string) {
     return businessCodeLabel(message, fallback)
   }
   return safeBusinessText(message, fallback)
+}
+
+interface WeComDeliveryDiagnosticInput {
+  deliveryStatus: string
+  reasonCode?: string | null
+  httpStatus?: number | null
+  weComCode?: number | null
+  networkAttempted?: boolean | null
+  deliveredPartCount?: number
+  partCount?: number
+}
+
+export function weComDeliveryDiagnostic(
+  delivery: WeComDeliveryDiagnosticInput,
+): string {
+  if (delivery.deliveryStatus === 'DELIVERED') return '企业微信已确认接收。'
+  if (
+    delivery.deliveryStatus === 'AMBIGUOUS'
+    || delivery.deliveryStatus === 'SENDING'
+  ) {
+    return '发送结果无法确认；为避免群内重复消息，系统不会自动重发，请先在群内核对。'
+  }
+  if (
+    Number.isInteger(delivery.deliveredPartCount)
+    && Number.isInteger(delivery.partCount)
+    && Number(delivery.deliveredPartCount) > 0
+  ) {
+    return `已有 ${delivery.deliveredPartCount}/${delivery.partCount} 段送达；请先在群内核对，系统不会重发。`
+  }
+  if (delivery.reasonCode === 'WECOM_PAYLOAD_INVALID') {
+    return '消息在本系统格式校验阶段被拦截，尚未请求企业微信；可重新采集当前库存后重试。'
+  }
+  if (delivery.reasonCode === 'WECOM_BUSINESS_REJECTED') {
+    if (delivery.weComCode === 45009) {
+      return '企业微信机器人当前发送频率受限；系统不会自动重发，请稍后重新采集并由管理员确认重试。'
+    }
+    const code = Number.isInteger(delivery.weComCode)
+      ? `（错误码 ${delivery.weComCode}）`
+      : ''
+    return `企业微信拒绝了机器人消息${code}；请确认机器人仍在目标群且未停用，必要时更新 Webhook 后重试。`
+  }
+  if (delivery.reasonCode === 'WECOM_HTTP_REJECTED') {
+    const status = Number.isInteger(delivery.httpStatus)
+      ? `（HTTP ${delivery.httpStatus}）`
+      : ''
+    return `企业微信接口拒绝了请求${status}；请核对机器人 Webhook 后重试。`
+  }
+  if (delivery.networkAttempted === false) {
+    return '消息在请求企业微信前失败；修正配置后可重新采集当前库存并重试。'
+  }
+  return `${businessCodeLabel(delivery.reasonCode, '企业微信未确认接收消息')}；请核对机器人配置后重试。`
+}
+
+const SAFE_READ_ERROR_MESSAGES: Record<string, string> = {
+  '会话已失效，请重新登录': '登录状态已失效，请重新登录',
+  '请求已被安全策略拒绝': '当前账号无权读取该门店，请联系管理员检查门店权限',
+  '服务响应缺少data字段': '后台返回的数据格式异常，请刷新后重试',
+}
+
+function errorStatus(cause: unknown): number | null {
+  if (!cause || typeof cause !== 'object' || !('status' in cause)) return null
+  const status = (cause as { status?: unknown }).status
+  return typeof status === 'number' && Number.isInteger(status) ? status : null
+}
+
+/**
+ * Converts read failures into an allow-listed operator message. Unlike the
+ * general command error formatter, this intentionally never echoes arbitrary
+ * server detail because a fan-out read can cover secret-bearing resources.
+ */
+export function businessReadErrorMessage(cause: unknown, fallback: string) {
+  const message = cause instanceof Error ? cause.message.trim() : ''
+  if (/^[A-Z][A-Z0-9_:-]+$/.test(message)) {
+    const label = businessCodeLabel(message, '')
+    if (label) return label
+  }
+  if (SAFE_READ_ERROR_MESSAGES[message]) return SAFE_READ_ERROR_MESSAGES[message]
+
+  const statusFromMessage = message.match(/^请求失败（(\d{3})）$/u)?.[1]
+  const status = errorStatus(cause) ?? (statusFromMessage ? Number(statusFromMessage) : null)
+  if (status === 401) return '登录状态已失效，请重新登录'
+  if (status === 403) return '当前账号无权读取该门店，请联系管理员检查门店权限'
+  if (status === 404) return '该门店已被移除或不在当前账号权限内，请返回门店总览重新选择'
+  if (status === 429) return '请求过于频繁，请稍后再刷新'
+  if (status !== null && status >= 500) return '后台服务读取失败，请稍后重试'
+  if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
+    return '无法连接后台服务，请检查网络后重试'
+  }
+  return fallback
+}
+
+export function businessReadFailureSummary(
+  causes: unknown[],
+  fallback: string,
+) {
+  const messages = [...new Set(
+    causes
+      .map((cause) => businessReadErrorMessage(cause, ''))
+      .filter(Boolean),
+  )]
+  return messages.length ? messages.slice(0, 3).join('；') : fallback
 }
