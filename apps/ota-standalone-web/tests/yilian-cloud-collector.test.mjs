@@ -191,6 +191,47 @@ test('Yilian validation is read-only and returns only non-secret control metadat
   assert.equal(JSON.stringify(result).includes(token), false)
 })
 
+test('Yilian order pagination retries once when the live total changes', async () => {
+  let orderRequest = 0
+  const result = await collectYilianCloudReports({
+    hotel,
+    sources,
+    accessTokensBySourceId: Object.fromEntries(
+      sources.map((source) => [source.sourceId, token]),
+    ),
+    secretKey: 'synthetic-yilian-pseudonym-key',
+    now: new Date('2026-09-07T02:00:00Z'),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url)
+      if (!parsed.pathname.endsWith('/selectAll')) {
+        return new Response(JSON.stringify(fixtureFor(parsed)), { status: 200 })
+      }
+      orderRequest += 1
+      const secondAttempt = orderRequest > 2
+      const page = Number(parsed.searchParams.get('pageNum'))
+      const total = secondAttempt ? 2 : page === 1 ? 3 : 2
+      return new Response(JSON.stringify({
+        code: 200,
+        data: {
+          total,
+          list: [{
+            orderId: `secret-retry-order-${orderRequest}`,
+            channelName: '携程',
+            recState: 'Expected',
+            createTime: '2026-09-06 10:00:00',
+            etaTime: '2026-09-07 14:00:00',
+            dueOutTime: '2026-09-08 12:00:00',
+            list: [{ roomCount: 1, price: [{ date: '2026-09-07' }] }],
+          }],
+        },
+      }), { status: 200 })
+    },
+  })
+  assert.equal(result.run.status, 'SUCCEEDED')
+  assert.equal(orderRequest, 4)
+  assert.equal(JSON.stringify(result).includes('secret-retry-order-'), false)
+})
+
 test('Yilian adapter fails closed for expired sessions and non-approved hosts', async () => {
   await assert.rejects(validateYilianAccessToken({
     sources,

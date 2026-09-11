@@ -453,7 +453,12 @@ const orderState = (root, reportDate, secretKey) => {
   return [...grouped.values()].sort((left, right) => left.key.localeCompare(right.key))
 }
 
-const fetchAllOrders = async ({ source, accessToken, reportDate, fetchImpl }) => {
+const fetchAllOrdersAttempt = async ({
+  source,
+  accessToken,
+  reportDate,
+  fetchImpl,
+}) => {
   const first = await fetchRoot({ source, accessToken, reportDate, fetchImpl })
   const list = first.root?.data?.list
   if (!Array.isArray(list)) throw new Error('YILIAN_REPORT_DATA_INVALID')
@@ -474,6 +479,7 @@ const fetchAllOrders = async ({ source, accessToken, reportDate, fetchImpl }) =>
     throw new Error('YILIAN_ORDER_PAGINATION_LIMIT')
   }
   const additional = []
+  let totalChanged = false
   for (let pageNumber = 2; pageNumber <= pageCount; pageNumber += 1) {
     const page = await fetchRoot({
       source,
@@ -484,17 +490,40 @@ const fetchAllOrders = async ({ source, accessToken, reportDate, fetchImpl }) =>
     })
     const rows = page.root?.data?.list
     if (!Array.isArray(rows)) throw new Error('YILIAN_REPORT_DATA_INVALID')
+    const pageTotal = finiteNumber(page.root?.data?.total)
+    if (pageTotal !== null && pageTotal !== total) {
+      totalChanged = true
+      break
+    }
     additional.push(...rows)
     if (rows.length < pageSize) break
   }
   const combined = [...list, ...additional]
-  if (combined.length < total) throw new Error('YILIAN_ORDER_PAGINATION_INCOMPLETE')
+  if (totalChanged || combined.length < total) {
+    throw new Error('YILIAN_ORDER_PAGINATION_UNSTABLE')
+  }
   return {
     contract: first.contract,
     root: {
       ...first.root,
       data: { ...first.root.data, list: combined },
     },
+  }
+}
+
+const fetchAllOrders = async (options) => {
+  try {
+    return await fetchAllOrdersAttempt(options)
+  } catch (error) {
+    if (error?.message !== 'YILIAN_ORDER_PAGINATION_UNSTABLE') throw error
+  }
+  try {
+    return await fetchAllOrdersAttempt(options)
+  } catch (error) {
+    if (error?.message === 'YILIAN_ORDER_PAGINATION_UNSTABLE') {
+      throw new Error('YILIAN_ORDER_PAGINATION_INCOMPLETE')
+    }
+    throw error
   }
 }
 
