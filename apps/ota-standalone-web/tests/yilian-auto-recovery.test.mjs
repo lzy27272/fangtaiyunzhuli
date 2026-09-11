@@ -186,7 +186,7 @@ test('Yilian repair UI stores credentials without echo and exposes explicit clou
   ])
   assert.match(panel, /云端自动登录凭据/u)
   assert.match(panel, /type="password"/u)
-  assert.match(panel, /立即尝试云端重登/u)
+  assert.match(panel, /一键快速恢复/u)
   assert.match(panel, /失败保留旧令牌和全部接口配置，不触发播报/u)
   assert.match(client, /loadYilianCloudRepair/u)
   assert.match(client, /triggerYilianCloudRepair/u)

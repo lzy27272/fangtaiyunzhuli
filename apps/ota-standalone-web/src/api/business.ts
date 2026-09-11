@@ -238,6 +238,29 @@ export interface LuopanBrowserRepairView {
   lastCollectionStatus: 'NEVER' | 'COMPLETE' | 'PARTIAL' | 'FAILED'
   lastCollectionAt: string | null
   lastErrorCode: string | null
+  quickRepair: {
+    available: boolean
+    repairRequired: boolean
+    managerNotificationReady: boolean
+    managerRecipientCount: number
+    groupRepairLinkReady: boolean
+    state:
+      | 'IDLE'
+      | 'PREPARING'
+      | 'WAITING_FOR_CAPTCHA'
+      | 'SUBMITTED'
+      | 'VERIFYING'
+      | 'COMPLETE'
+      | 'FAILED'
+      | 'EXPIRED'
+    challengeId: string | null
+    createdAt: string | null
+    updatedAt: string | null
+    expiresAt: string | null
+    attemptsRemaining: number
+    captchaImageDataUrl: string | null
+    reasonCode: string | null
+  }
 }
 
 export interface YilianCloudRepairView {
@@ -245,6 +268,8 @@ export interface YilianCloudRepairView {
   portalUrl: string
   automationEnabled: boolean
   credentialsConfigured: boolean
+  managerNotificationReady: boolean
+  managerRecipientCount: number
   active: boolean
   state:
     | 'DISABLED'
@@ -1426,6 +1451,28 @@ export function validateLuopanBrowserRepair(
     scopedPath(context, '/luopan-browser-session-validations'),
     {
       reasonCode: 'VALIDATE_LUOPAN_BROWSER_SESSION',
+    },
+  )
+}
+
+export function startLuopanQuickRepair(
+  context: HotelContext,
+): Promise<LuopanBrowserRepairView> {
+  return postCommand(
+    scopedPath(context, '/luopan-quick-repair'),
+    { reasonCode: 'START_LUOPAN_QUICK_REPAIR' },
+  )
+}
+
+export function submitLuopanQuickRepairCaptcha(
+  context: HotelContext,
+  captcha: string,
+): Promise<LuopanBrowserRepairView> {
+  return postCommand(
+    scopedPath(context, '/luopan-quick-repair/submissions'),
+    {
+      captcha,
+      reasonCode: 'SUBMIT_LUOPAN_QUICK_REPAIR_CAPTCHA',
     },
   )
 }

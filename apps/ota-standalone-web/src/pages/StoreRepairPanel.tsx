@@ -4,6 +4,8 @@ import {
   loadPmsLoginConfig,
   loadYilianCloudRepair,
   savePmsLoginConfig,
+  startLuopanQuickRepair,
+  submitLuopanQuickRepairCaptcha,
   triggerYilianCloudRepair,
   validateLuopanBrowserRepair,
   type HotelContext,
@@ -42,6 +44,28 @@ const yilianStatusLabel = (state: YilianCloudRepairView['state']): string => ({
   FAILED: '最近修复失败',
 })[state]
 
+const luopanQuickRepairStatusLabel = (
+  state: LuopanBrowserRepairView['quickRepair']['state'],
+): string => ({
+  IDLE: '等待发起',
+  PREPARING: '正在打开罗盘',
+  WAITING_FOR_CAPTCHA: '等待验证码',
+  SUBMITTED: '验证码已提交',
+  VERIFYING: '正在验证并恢复',
+  COMPLETE: '快速修复完成',
+  FAILED: '本次修复未完成',
+  EXPIRED: '验证码已过期',
+})[state]
+
+const luopanQuickRepairActive = (
+  state: LuopanBrowserRepairView['quickRepair']['state'] | undefined,
+) => Boolean(state && [
+  'PREPARING',
+  'WAITING_FOR_CAPTCHA',
+  'SUBMITTED',
+  'VERIFYING',
+].includes(state))
+
 export function StoreRepairPanel({
   context,
   hotelCode,
@@ -58,6 +82,9 @@ export function StoreRepairPanel({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [validating, setValidating] = useState(false)
+  const [quickRepairing, setQuickRepairing] = useState(false)
+  const [submittingCaptcha, setSubmittingCaptcha] = useState(false)
+  const [captcha, setCaptcha] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -124,9 +151,54 @@ export function StoreRepairPanel({
   useEffect(() => {
     setUsername('')
     setPassword('')
+    setCaptcha('')
     setNotice('')
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    if (
+      pmsSystemCode !== 'LUOPAN_CLOUD'
+      || !luopanQuickRepairActive(luopan?.quickRepair.state)
+    ) return undefined
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const pollingContext = {
+      tenantId: context.tenantId,
+      hotelId: context.hotelId,
+    }
+    const poll = async () => {
+      try {
+        const next = await loadLuopanBrowserRepair(pollingContext)
+        if (!cancelled) {
+          setLuopan(next)
+          if (next.quickRepair.state === 'COMPLETE') {
+            setNotice('罗盘登录、采集和恢复流程已完成。')
+          } else if (next.quickRepair.state === 'FAILED') {
+            setError(businessCodeLabel(
+              next.quickRepair.reasonCode,
+              '本次快速修复未完成，请检查后重新发起',
+            ))
+          }
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setError(businessErrorMessage(cause, '刷新快速修复状态失败'))
+        }
+      }
+      if (!cancelled) timer = setTimeout(poll, 2_000)
+    }
+    timer = setTimeout(poll, 2_000)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [
+    context.hotelId,
+    context.tenantId,
+    luopan?.quickRepair.state,
+    pmsSystemCode,
+  ])
 
   async function saveRepairCredentials() {
     const normalizedUsername = username.trim()
@@ -209,6 +281,54 @@ export function StoreRepairPanel({
     }
   }
 
+  async function beginLuopanQuickRepair() {
+    setQuickRepairing(true)
+    setError('')
+    setNotice('')
+    setCaptcha('')
+    try {
+      const next = await startLuopanQuickRepair(context)
+      setLuopan(next)
+      if (next.quickRepair.state === 'WAITING_FOR_CAPTCHA') {
+        setNotice(next.quickRepair.managerNotificationReady
+          ? `验证码已私聊${next.quickRepair.managerRecipientCount}位企业管理员，也可直接在本页填写。`
+          : '验证码已生成，可在本页填写；已配置的群修复链接仍可使用。')
+      } else if (next.quickRepair.state === 'FAILED') {
+        setError(businessCodeLabel(
+          next.quickRepair.reasonCode,
+          '快速修复未能启动，请检查罗盘配置和企业管理员绑定',
+        ))
+      } else {
+        setNotice('快速修复已启动，系统正在检查罗盘登录状态。')
+      }
+    } catch (cause) {
+      setError(businessErrorMessage(cause, '快速修复未能启动'))
+    } finally {
+      setQuickRepairing(false)
+    }
+  }
+
+  async function submitLuopanCaptcha() {
+    const answer = captcha.trim()
+    if (!/^[a-zA-Z0-9]{4,8}$/u.test(answer)) {
+      setError('请输入图片中的4至8位字母或数字。')
+      return
+    }
+    setSubmittingCaptcha(true)
+    setError('')
+    setNotice('')
+    try {
+      const next = await submitLuopanQuickRepairCaptcha(context, answer)
+      setCaptcha('')
+      setLuopan(next)
+      setNotice('验证码已安全提交，系统正在验证、重新采集并恢复简报。')
+    } catch (cause) {
+      setError(businessErrorMessage(cause, '验证码提交失败，请刷新状态后重试'))
+    } finally {
+      setSubmittingCaptcha(false)
+    }
+  }
+
   if (loading) return <LoadingState label="正在读取登录修复状态…" />
 
   if (pmsSystemCode === 'OTHER') {
@@ -264,10 +384,11 @@ export function StoreRepairPanel({
             <div><dt>营业日</dt><dd>{yilian?.lastBusinessDate ?? '尚未确认'}</dd></div>
             <div><dt>接口校验</dt><dd>{yilian ? `${yilian.successfulSourceCount}/${yilian.sourceCount || 3}` : '尚未完成'}</dd></div>
             <div><dt>最近结果</dt><dd>{businessCodeLabel(yilian?.lastErrorCode, yilian?.state === 'SUCCEEDED' ? '三个接口均已通过' : '尚未完成首次验证')}</dd></div>
+            <div><dt>企微管理员</dt><dd>{yilian?.managerNotificationReady ? `已连接 ${yilian.managerRecipientCount} 位；人工处理会立即私聊` : '尚未绑定；请先在播报设置中完成绑定'}</dd></div>
           </dl>
           <div className="button-row">
             <a className="button-link secondary" href={yilian?.portalUrl ?? 'https://pms.ygjpms.com/saas/#/login'} rel="noreferrer" target="_blank">打开驿联云官网</a>
-            <button disabled={validating || yilian?.active || !pmsConfigured || yilian?.automationEnabled === false} type="button" onClick={() => void repairYilianSession()}>{validating || yilian?.active ? '正在登录并校验…' : '立即尝试云端重登'}</button>
+            <button disabled={validating || yilian?.active || !pmsConfigured || yilian?.automationEnabled === false} type="button" onClick={() => void repairYilianSession()}>{validating || yilian?.active ? '正在登录并校验…' : '一键快速恢复'}</button>
           </div>
         </section>
         {notice ? <div className="inline-message success" role="status">{notice}</div> : null}
@@ -327,6 +448,32 @@ export function StoreRepairPanel({
           </div>
         </section>
       )}
+
+      {pmsSystemCode === 'LUOPAN_CLOUD' && luopan ? (
+        <section className="content-panel repair-credential-card quick-repair-card">
+          <div className="section-heading small">
+            <div><h2>罗盘验证码快速修复</h2><p>一键打开罗盘登录并生成当前验证码；系统会私聊本店企业管理员，同时允许在后台填写同一个验证码。</p></div>
+            <Status tone={luopan.quickRepair.state === 'COMPLETE' ? 'ok' : luopan.quickRepair.state === 'FAILED' || luopan.quickRepair.state === 'EXPIRED' ? 'warning' : 'info'}>{luopanQuickRepairStatusLabel(luopan.quickRepair.state)}</Status>
+          </div>
+          <dl className="review-list compact">
+            <div><dt>企微管理员</dt><dd>{luopan.quickRepair.managerNotificationReady ? `已连接 ${luopan.quickRepair.managerRecipientCount} 位` : '尚未绑定或修复助手未连接'}</dd></div>
+            <div><dt>验证码有效期</dt><dd>{luopan.quickRepair.expiresAt ? formatTime(luopan.quickRepair.expiresAt) : '发起后10分钟'}</dd></div>
+            <div><dt>剩余次数</dt><dd>{luopan.quickRepair.state === 'WAITING_FOR_CAPTCHA' ? `${luopan.quickRepair.attemptsRemaining} 次` : '—'}</dd></div>
+            <div><dt>最近结果</dt><dd>{businessCodeLabel(luopan.quickRepair.reasonCode, luopanQuickRepairStatusLabel(luopan.quickRepair.state))}</dd></div>
+          </dl>
+          {luopan.quickRepair.state === 'WAITING_FOR_CAPTCHA' && luopan.quickRepair.captchaImageDataUrl ? (
+            <div className="quick-repair-challenge">
+              <img alt="罗盘当前登录验证码" src={luopan.quickRepair.captchaImageDataUrl} />
+              <label>后台填写验证码<input autoComplete="off" maxLength={8} value={captcha} onChange={(event) => setCaptcha(event.target.value)} placeholder="4至8位字母或数字" /></label>
+              <button disabled={submittingCaptcha || !/^[a-zA-Z0-9]{4,8}$/u.test(captcha.trim())} type="button" onClick={() => void submitLuopanCaptcha()}>{submittingCaptcha ? '正在提交…' : '提交验证码并修复'}</button>
+            </div>
+          ) : null}
+          <div className="button-row">
+            <button disabled={quickRepairing || luopanQuickRepairActive(luopan.quickRepair.state) || !luopan.quickRepair.available} type="button" onClick={() => void beginLuopanQuickRepair()}>{quickRepairing || luopanQuickRepairActive(luopan.quickRepair.state) ? '快速修复进行中…' : luopan.quickRepair.managerNotificationReady ? '一键快速修复（验证码发企微）' : '启动后台验证码修复'}</button>
+          </div>
+          {!luopan.quickRepair.available ? <div className="inline-message warning" role="status">{businessCodeLabel(luopan.quickRepair.reasonCode, '请先完成罗盘配置、登录凭据和企业管理员绑定。')}</div> : null}
+        </section>
+      ) : null}
 
       {pmsSystemCode === 'LUOPAN_CLOUD' && luopan ? (
         <section className="content-panel repair-credential-card">

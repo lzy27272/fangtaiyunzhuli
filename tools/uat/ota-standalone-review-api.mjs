@@ -597,6 +597,7 @@ let scheduledCollectionRunning = false
 let scheduledHotSellingDeliveryWorkflowRunning = false
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
+const latestLuopanRepairChallengeHashByHotel = new Map()
 const yilianRepairStatusesByHotel = new Map()
 let yilianRepairStatusStoreInvalid = false
 const activeYilianRepairsByHotel = new Map()
@@ -1693,11 +1694,18 @@ const yilianRepairStatusFor = (hotelId) => {
   const record = yilianRepairStatusRecordFor(hotelId)
   const credentialsConfigured = pmsLoginSecretsByHotel.has(hotelId)
   const active = activeYilianRepairsByHotel.has(hotelId)
+  const managerRecipientCount = weComRepairBotRecipientsForHotel(
+    weComRepairBotCredentials ?? {},
+    hotelId,
+  ).length
   return {
     providerCode: 'YILIAN_CLOUD',
     portalUrl: YILIAN_LOGIN_URL,
     automationEnabled: yilianAssistedRepairEnabled,
     credentialsConfigured,
+    managerNotificationReady:
+      weComRepairBotReady() && managerRecipientCount > 0,
+    managerRecipientCount,
     active,
     state: !yilianAssistedRepairEnabled
       ? 'DISABLED'
@@ -6190,7 +6198,15 @@ const startLuopanRepairChallenge = async (
   if (!luopanAssistedRepairReady()) return null
   const active = activeLuopanRepairsByHotel.get(hotelId)
   if (active) {
-    return luopanRepairChallengeStore.getInternalByHash(active.tokenSha256)
+    const activeChallenge = luopanRepairChallengeStore.getInternalByHash(
+      active.tokenSha256,
+    )
+    if (
+      activeChallenge
+      && !['COMPLETE', 'FAILED', 'EXPIRED'].includes(activeChallenge.status)
+    ) return activeChallenge
+    await active.login?.close().catch(() => {})
+    activeLuopanRepairsByHotel.delete(hotelId)
   }
   const hotel = selectedHotel(hotelId)
   const config = luopanBrowserConfigRecordFor(hotelId)
@@ -6223,6 +6239,10 @@ const startLuopanRepairChallenge = async (
     hotelCode: hotel.hotelCode,
     hotelName: hotel.hotelName,
   })
+  latestLuopanRepairChallengeHashByHotel.set(
+    hotelId,
+    created.tokenSha256,
+  )
   const handle = {
     hotelId,
     tokenSha256: created.tokenSha256,
@@ -6436,7 +6456,7 @@ const notifyYilianRepairRequired = async (hotelId, reasonCode) => {
     yilianRepairStatusRecordFor(hotelId).lastAttemptAt
     ?? new Date().toISOString()
   ).slice(0, 13)
-  await deliverWeComAuditNotice({
+  const groupNotice = deliverWeComAuditNotice({
     hotelId,
     messageKey:
       `${hotelId}:YILIAN_REPAIR_REQUIRED:${reasonCode}:${attemptHour}`,
@@ -6455,7 +6475,23 @@ const notifyYilianRepairRequired = async (hotelId, reasonCode) => {
     ].join('\n'),
     bodyPreview:
       `驿联云登录需要人工处理 · ${hotel.hotelCode} · ${reasonCode}`,
-  }).catch(() => {})
+  })
+  const managerNotice = deliverWeComRepairBotDirectMessage({
+    hotelId,
+    messageKey:
+      `${hotelId}:YILIAN_REPAIR_BOT_REQUIRED:${reasonCode}:${attemptHour}`,
+    deliveryType: 'YILIAN_REPAIR_REQUIRED',
+    content: [
+      '### 驿联云需要人工修复',
+      `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+      reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
+        ? '当前账号或密码已被厂家拒绝，请在修复后台更新后再次一键恢复。'
+        : '厂家当前要求短信、滑块或手机确认；系统无法代收厂家发送的短信验证码。',
+      `请进入修复后台处理：${storeRepairConsoleUrlFor(hotel)}`,
+      '完成厂家确认后，点击“一键快速恢复”重新校验三个接口。',
+    ].join('\n'),
+  })
+  await Promise.allSettled([groupNotice, managerNotice])
 }
 
 const startYilianCloudRecovery = async (
@@ -6849,6 +6885,83 @@ const processLuopanRepairSubmissionByHash = ({ tokenSha256, captcha }) =>
   processSubmittedLuopanRepair(
     luopanRepairChallengeStore.submitByHash(tokenSha256, captcha),
   )
+
+const luopanQuickRepairFor = (hotelId) => {
+  const hotel = selectedHotel(hotelId)
+  const config = luopanBrowserConfigRecordFor(hotelId)
+  const managerRecipientCount = weComRepairBotRecipientsForHotel(
+    weComRepairBotCredentials ?? {},
+    hotelId,
+  ).length
+  const managerNotificationReady =
+    weComRepairBotReady() && managerRecipientCount > 0
+  const weComConfig = weComConfigFor(hotelId)
+  const groupRepairLinkReady =
+    weComConfig.groupRepairLinkEnabled
+    && weComConfig.webhookConfigured
+    && luopanWebRepairReady
+  const challengeHash =
+    activeLuopanRepairsByHotel.get(hotelId)?.tokenSha256
+    ?? latestLuopanRepairChallengeHashByHotel.get(hotelId)
+    ?? null
+  const challenge = challengeHash
+    ? luopanRepairChallengeStore.getInternalByHash(challengeHash)
+    : null
+  const configured =
+    hotel.pmsSystemCode === 'LUOPAN_CLOUD'
+    && config.enabled
+    && Boolean(config.profileRef)
+    && pmsLoginSecretsByHotel.has(hotelId)
+  const challengeActive = Boolean(
+    challenge
+    && !['COMPLETE', 'FAILED', 'EXPIRED'].includes(challenge.status),
+  )
+  const repairRequired =
+    config.lastErrorCode === 'LUOPAN_REAUTH_REQUIRED'
+    || challengeActive
+  const available =
+    configured
+    && repairRequired
+    && luopanAssistedRepairReady()
+    && (managerNotificationReady || groupRepairLinkReady)
+  const unavailableReasonCode = available
+    ? null
+    : hotel.pmsSystemCode !== 'LUOPAN_CLOUD'
+      ? 'LUOPAN_PMS_SCOPE_INVALID'
+      : !config.enabled || !config.profileRef
+        ? 'LUOPAN_REPAIR_PROFILE_REQUIRED'
+        : !pmsLoginSecretsByHotel.has(hotelId)
+          ? 'PMS_LOGIN_CREDENTIALS_MISSING'
+          : !repairRequired
+            ? 'LUOPAN_QUICK_REPAIR_NOT_REQUIRED'
+            : !managerNotificationReady && !groupRepairLinkReady
+              ? 'WECOM_REPAIR_BOT_PAIRING_REQUIRED'
+              : luopanRepairReasonCode()
+  return {
+    available,
+    repairRequired,
+    managerNotificationReady,
+    managerRecipientCount,
+    groupRepairLinkReady,
+    state: challenge?.status ?? 'IDLE',
+    challengeId: challenge?.challengeId ?? null,
+    createdAt: challenge?.createdAt ?? null,
+    updatedAt: challenge?.updatedAt ?? null,
+    expiresAt: challenge?.expiresAt ?? null,
+    attemptsRemaining: challenge?.attemptsRemaining ?? 0,
+    captchaImageDataUrl:
+      challenge?.status === 'WAITING_FOR_CAPTCHA'
+      && Buffer.isBuffer(challenge.captcha)
+        ? `data:image/png;base64,${challenge.captcha.toString('base64')}`
+        : null,
+    reasonCode: challenge?.reasonCode ?? unavailableReasonCode,
+  }
+}
+
+const luopanBrowserRepairConsoleFor = (hotelId) => ({
+  ...luopanBrowserRepairFor(hotelId),
+  quickRepair: luopanQuickRepairFor(hotelId),
+})
 
 const safeBieyanghongRepairReason = (error) => {
   const candidate = String(error?.message ?? '')
@@ -11732,7 +11845,65 @@ const server = createServer(async (request, response) => {
         && suffix === '/luopan-browser-repair'
       ) {
         json(response, 200, {
-          data: luopanBrowserRepairFor(hotelId),
+          data: luopanBrowserRepairConsoleFor(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/luopan-quick-repair'
+      ) {
+        if (selected.pmsSystemCode !== 'LUOPAN_CLOUD') {
+          throw new Error('LUOPAN_PMS_SCOPE_INVALID')
+        }
+        const body = await readBody(request)
+        if (
+          Object.keys(body ?? {}).sort().join(',') !== 'reasonCode'
+          || body.reasonCode !== 'START_LUOPAN_QUICK_REPAIR'
+        ) {
+          throw new Error('LUOPAN_QUICK_REPAIR_REQUEST_INVALID')
+        }
+        const before = luopanQuickRepairFor(hotelId)
+        if (!before.available) {
+          throw new Error(
+            before.reasonCode ?? 'LUOPAN_REPAIR_NOT_READY',
+          )
+        }
+        await startLuopanRepairChallenge(
+          hotelId,
+          'MANUAL_CONSOLE_QUICK_REPAIR',
+        )
+        json(response, 202, {
+          data: luopanBrowserRepairConsoleFor(hotelId),
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
+        && suffix === '/luopan-quick-repair/submissions'
+      ) {
+        if (selected.pmsSystemCode !== 'LUOPAN_CLOUD') {
+          throw new Error('LUOPAN_PMS_SCOPE_INVALID')
+        }
+        const body = await readBody(request)
+        if (
+          Object.keys(body ?? {}).sort().join(',') !== 'captcha,reasonCode'
+          || body.reasonCode !== 'SUBMIT_LUOPAN_QUICK_REPAIR_CAPTCHA'
+          || typeof body.captcha !== 'string'
+          || !/^[a-zA-Z0-9]{4,8}$/u.test(body.captcha.trim())
+        ) {
+          throw new Error('LUOPAN_QUICK_REPAIR_SUBMISSION_INVALID')
+        }
+        const handle = activeLuopanRepairsByHotel.get(hotelId)
+        if (!handle) {
+          throw new Error('LUOPAN_REPAIR_CHALLENGE_NOT_FOUND')
+        }
+        processLuopanRepairSubmissionByHash({
+          tokenSha256: handle.tokenSha256,
+          captcha: body.captcha,
+        })
+        json(response, 202, {
+          data: luopanBrowserRepairConsoleFor(hotelId),
         })
         return
       }
@@ -11835,7 +12006,7 @@ const server = createServer(async (request, response) => {
           json(response, 200, {
             data: canConfigureHotels(requestPrincipal)
               ? luopanBrowserConfigFor(hotelId)
-              : luopanBrowserRepairFor(hotelId),
+              : luopanBrowserRepairConsoleFor(hotelId),
           })
           return
         } catch (error) {

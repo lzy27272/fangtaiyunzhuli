@@ -288,6 +288,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .repair-access-intro p { margin-top: 5px; color: var(--console-muted); }
 .repair-credential-card .report-source-form { margin-top: 16px; }
 .repair-credential-card .button-row { justify-content: flex-end; margin-top: 16px; }
+.quick-repair-challenge { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto; align-items: end; gap: 14px; margin-top: 16px; padding: 16px; border: 1px solid var(--console-line); border-radius: 8px; background: var(--console-green-soft); }
+.quick-repair-challenge img { width: 180px; min-height: 54px; object-fit: contain; border: 1px solid var(--console-line); border-radius: 7px; background: #fff; }
+.quick-repair-challenge label { display: grid; gap: 7px; color: var(--console-muted); font-size: .72rem; font-weight: 700; }
+.quick-repair-challenge input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--console-line); border-radius: 7px; background: #fff; color: var(--console-text); font: inherit; letter-spacing: .08em; }
+.quick-repair-challenge button { min-height: 42px; }
 
 .collection-step-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 18px 0 22px; }
 .collection-step-nav button { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 10px; min-height: 70px; padding: 12px 14px; border: 1px solid var(--console-line); border-radius: 8px; color: var(--console-text); background: #fff; text-align: left; }
@@ -310,6 +315,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .embedded-legacy-page .compact-heading .secondary { align-self: flex-start; width: auto; }
   .repair-access-intro { grid-template-columns: auto minmax(0, 1fr); }
   .repair-access-intro > .status-label { grid-column: 1 / -1; justify-self: start; }
+  .quick-repair-challenge { grid-template-columns: 1fr; align-items: stretch; }
+  .quick-repair-challenge img { width: 100%; max-width: 240px; }
+  .quick-repair-challenge button { width: 100%; }
   .collection-step-nav { grid-template-columns: 1fr 1fr; }
   .collection-next-actions { display: grid; }
   .collection-next-actions button { width: 100%; }
