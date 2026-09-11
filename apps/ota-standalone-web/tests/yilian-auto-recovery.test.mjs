@@ -108,6 +108,7 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(api, /YILIAN_REAUTH_IN_PROGRESS/u)
   assert.match(api, /YILIAN_SESSION_REAUTH_REQUIRED[\s\S]*startYilianCloudRecovery/u)
   assert.match(api, /const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set/u)
+  assert.match(api, /'YILIAN_ORDER_PAGINATION_INCOMPLETE'/u)
   assert.match(
     api,
     /YILIAN_AUTOMATIC_RETRYABLE_ERRORS[\s\S]{0,500}'YILIAN_REPORT_CODE_REJECTED'/u,
@@ -127,6 +128,10 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
     /const previousStatus = yilianRepairStatusRecordFor\(hotelId\)[\s\S]{0,180}yilianRepairRetryAllowed\(previousStatus\)/u,
   )
   assert.match(api, /void scheduledYilianRecoveryTick\(\)/u)
+  assert.match(
+    api,
+    /isNightlyRepairDeferred\(\)[\s\S]{0,120}status\.trigger !== 'MANUAL_REPAIR'/u,
+  )
   const scheduledRecovery = api.slice(
     api.indexOf('const scheduledYilianRecoveryTick'),
     api.indexOf('const processSubmittedLuopanRepair'),

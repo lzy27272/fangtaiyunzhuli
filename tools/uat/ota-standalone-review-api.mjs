@@ -1732,6 +1732,7 @@ const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set([
   'YILIAN_HTTP_ERROR',
   'YILIAN_EMPTY_RESPONSE',
   'YILIAN_RESPONSE_JSON_INVALID',
+  'YILIAN_ORDER_PAGINATION_INCOMPLETE',
   'YILIAN_SHADOW_VALIDATION_FAILED',
   'YILIAN_TOKEN_PERSIST_FAILED',
 ])
@@ -6650,7 +6651,6 @@ const scheduledYilianRecoveryTick = async () => {
     !automaticHourlyCollectionEnabled
     || !yilianAssistedRepairEnabled
     || scheduledYilianRecoveryRunning
-    || isNightlyRepairDeferred()
   ) return
   scheduledYilianRecoveryRunning = true
   try {
@@ -6662,6 +6662,10 @@ const scheduledYilianRecoveryTick = async () => {
         continue
       }
       const status = yilianRepairStatusRecordFor(hotel.hotelId)
+      if (
+        isNightlyRepairDeferred()
+        && status.trigger !== 'MANUAL_REPAIR'
+      ) continue
       const activationPending = yilianInitialActivationPending(hotel, status)
       const migratedSourceContractPending =
         status.state === 'IDLE'
