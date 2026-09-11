@@ -20,7 +20,7 @@ const PROFILE_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/
 const guidanceFor = (code: string | null | undefined) => {
   switch (code) {
     case 'LUOPAN_REAUTH_REQUIRED':
-      return '门店登录会话已失效。请重新打开隔离浏览器，用该门店账号登录后再次验证。'
+      return '门店登录会话已失效。请到门店“登录修复”页面使用一键快速修复；电脑普通浏览器登录不会同步到服务器会话。'
     case 'LUOPAN_HOTEL_SCOPE_AMBIGUOUS':
       return '当前账号可选择多个门店，已停止采集。请改用只有一个门店权限的账号。'
     case 'LUOPAN_HOTEL_SCOPE_CHANGED':
@@ -313,7 +313,7 @@ export function LuopanBrowserConfigPanel({
           type="button"
           onClick={() => void validate()}
         >
-          验证单门店会话
+          校验服务器受控会话
         </button>
         <button
           disabled={
@@ -334,7 +334,7 @@ export function LuopanBrowserConfigPanel({
             rel="noreferrer"
             target="_blank"
           >
-            打开罗盘云后台
+            查看罗盘云官网（不会同步会话）
           </a>
         ) : null}
       </div>

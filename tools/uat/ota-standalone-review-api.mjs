@@ -1836,6 +1836,20 @@ const normalizeLuopanBrowserConfig = (value) => {
   }
 }
 
+const luopanRepairProfileReady = (config) => Boolean(
+  config?.profileRef
+  && (
+    config.enabled === true
+    || (
+      config.lastErrorCode === 'LUOPAN_REAUTH_REQUIRED'
+      && typeof config.expectedHotelFingerprint === 'string'
+      && LUOPAN_FINGERPRINT.test(config.expectedHotelFingerprint)
+      && typeof config.lastValidatedAt === 'string'
+      && config.lastValidatedAt.length > 0
+    )
+  ),
+)
+
 const luopanBrowserConfigRecordFor = (hotelId) =>
   luopanBrowserConfigsByHotel.get(hotelId)
   ?? defaultLuopanBrowserConfig()
@@ -6229,7 +6243,7 @@ const startLuopanRepairChallenge = async (
     !repairChannel
     ||
     hotel.pmsSystemCode !== 'LUOPAN_CLOUD'
-    || !config.enabled
+    || !luopanRepairProfileReady(config)
     || (!managerRepairReady && !groupRepairLinkReady)
   ) {
     return null
@@ -6909,8 +6923,7 @@ const luopanQuickRepairFor = (hotelId) => {
     : null
   const configured =
     hotel.pmsSystemCode === 'LUOPAN_CLOUD'
-    && config.enabled
-    && Boolean(config.profileRef)
+    && luopanRepairProfileReady(config)
     && pmsLoginSecretsByHotel.has(hotelId)
   const challengeActive = Boolean(
     challenge
@@ -6928,7 +6941,7 @@ const luopanQuickRepairFor = (hotelId) => {
     ? null
     : hotel.pmsSystemCode !== 'LUOPAN_CLOUD'
       ? 'LUOPAN_PMS_SCOPE_INVALID'
-      : !config.enabled || !config.profileRef
+      : !luopanRepairProfileReady(config)
         ? 'LUOPAN_REPAIR_PROFILE_REQUIRED'
         : !pmsLoginSecretsByHotel.has(hotelId)
           ? 'PMS_LOGIN_CREDENTIALS_MISSING'
@@ -12015,10 +12028,19 @@ const server = createServer(async (request, response) => {
             && error.message.startsWith('LUOPAN_')
               ? error.message
               : 'LUOPAN_SESSION_VALIDATION_FAILED'
+          const preserveConfirmedScope =
+            errorCode === 'LUOPAN_REAUTH_REQUIRED'
+            && existing.scopeStatus === 'SINGLE_HOTEL_CONFIRMED'
+            && typeof existing.expectedHotelFingerprint === 'string'
+            && LUOPAN_FINGERPRINT.test(
+              existing.expectedHotelFingerprint,
+            )
           luopanBrowserConfigsByHotel.set(hotelId, {
             ...existing,
             enabled: false,
-            scopeStatus: 'NOT_VALIDATED',
+            scopeStatus: preserveConfirmedScope
+              ? existing.scopeStatus
+              : 'NOT_VALIDATED',
             lastErrorCode: errorCode,
             rowVersion: existing.rowVersion + 1,
           })

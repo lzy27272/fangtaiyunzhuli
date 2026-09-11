@@ -494,7 +494,7 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
 
 test('Luopan controlled browser collection is single-hotel locked and keeps its session private', () => {
   assert.match(reportSourceSource, /LuopanBrowserConfigPanel/)
-  assert.match(luopanBrowserConfigSource, /验证单门店会话/)
+  assert.match(luopanBrowserConfigSource, /校验服务器受控会话/)
   assert.match(luopanBrowserConfigSource, /立即采集并生成简报/)
   assert.match(luopanBrowserConfigSource, /保存并自动采集一次/)
   assert.match(luopanBrowserConfigSource, /订单渠道明细尚未接入/)

@@ -7,7 +7,6 @@ import {
   startLuopanQuickRepair,
   submitLuopanQuickRepairCaptcha,
   triggerYilianCloudRepair,
-  validateLuopanBrowserRepair,
   type HotelContext,
   type LuopanBrowserRepairView,
   type PmsSystemCode,
@@ -232,22 +231,6 @@ export function StoreRepairPanel({
       setError(businessErrorMessage(cause, '修复凭据提交失败'))
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function validateLuopanSession() {
-    setValidating(true)
-    setError('')
-    setNotice('')
-    try {
-      const next = await validateLuopanBrowserRepair(context)
-      setLuopan(next)
-      setNotice(`登录验证通过，PMS营业日为${next.lastBusinessDate ?? '已确认'}。`)
-      onStatusChanged()
-    } catch (cause) {
-      setError(businessErrorMessage(cause, '登录验证失败'))
-    } finally {
-      setValidating(false)
     }
   }
 
@@ -478,7 +461,7 @@ export function StoreRepairPanel({
       {pmsSystemCode === 'LUOPAN_CLOUD' && luopan ? (
         <section className="content-panel repair-credential-card">
           <div className="section-heading small">
-            <div><h2>罗盘官网登录验证</h2><p>在罗盘官方页面完成登录后，返回这里验证当前门店会话。</p></div>
+            <div><h2>罗盘服务器会话状态</h2><p>后台采集使用服务器隔离会话；在电脑普通浏览器登录罗盘官网不会同步到这里。登录失效时请使用上方“一键快速修复”。</p></div>
             <Status tone={luopan.scopeStatus === 'SINGLE_HOTEL_CONFIRMED' ? 'ok' : 'warning'}>{luopan.scopeStatus === 'SINGLE_HOTEL_CONFIRMED' ? '单店会话已确认' : '等待验证'}</Status>
           </div>
           <dl className="review-list compact">
@@ -487,8 +470,7 @@ export function StoreRepairPanel({
             <div><dt>最近采集</dt><dd>{formatTime(luopan.lastCollectionAt)}</dd></div>
           </dl>
           <div className="button-row">
-            <a className="button-link secondary" href={luopan.portalUrl} rel="noreferrer" target="_blank">打开罗盘官网登录</a>
-            <button disabled={validating || !luopan.profileConfigured} type="button" onClick={() => void validateLuopanSession()}>{validating ? '正在验证…' : '登录完成，开始验证'}</button>
+            <a className="button-link secondary" href={luopan.portalUrl} rel="noreferrer" target="_blank">查看罗盘官网（不会同步登录）</a>
           </div>
         </section>
       ) : null}
