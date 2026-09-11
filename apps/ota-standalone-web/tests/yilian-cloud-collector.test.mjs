@@ -54,16 +54,20 @@ const fixtureFor = (url) => {
     return {
       code: 200,
       data: [{
-        roomClassId: 1,
-        roomClassName: '测试大床房',
-        allCount: 10,
-        canSellCount: 7,
-        serviceCount: 0,
-        reserveCount: 2,
-        passNightCount: 1,
-        checkInCount: 2,
-        roomIncome: 750,
-        avgRoomCharge: 250,
+        nowDate: '2026-09-07',
+        hotelName: '测试酒店',
+        list: [{
+          roomClassId: 1,
+          roomClassName: '测试大床房',
+          allCount: 10,
+          canSellCount: 7,
+          serviceCount: 0,
+          reserveCount: 2,
+          passNightCount: 1,
+          checkInCount: 2,
+          roomIncome: 750,
+          avgRoomCharge: 250,
+        }],
       }],
     }
   }

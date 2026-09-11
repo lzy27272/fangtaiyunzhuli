@@ -223,7 +223,9 @@ const safeDisplayName = (value) => {
 
 const realtimeState = (root, reportDate, secretKey) => {
   const rows = Array.isArray(root?.data)
-    ? root.data.filter((row) => row && typeof row === 'object' && !Array.isArray(row))
+    ? root.data.flatMap((group) =>
+        Array.isArray(group?.list) ? group.list : [group])
+      .filter((row) => row && typeof row === 'object' && !Array.isArray(row))
     : []
   if (rows.length < 1) throw new Error('YILIAN_REPORT_DATA_INVALID')
   const physicalInventory = rows.map((row) => {
