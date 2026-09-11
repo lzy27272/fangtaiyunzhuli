@@ -87,18 +87,26 @@ test('Yilian recovery validates a full three-source shadow before atomic token r
   const gateIndex = recovery.indexOf("shadow.run.status !== 'SUCCEEDED'")
   const replaceIndex = recovery.indexOf('replaceYilianAccessToken')
   const activationIndex = recovery.indexOf('activationCommitted = true')
+  const snapshotIndex = recovery.indexOf('appendAndPersistSnapshot')
+  const successIndex = recovery.indexOf("state: 'SUCCEEDED'")
 
   assert.ok(recoveryStart > 0)
   assert.ok(shadowIndex > 0)
   assert.ok(gateIndex > shadowIndex)
   assert.ok(replaceIndex > gateIndex)
   assert.ok(activationIndex > replaceIndex)
+  assert.ok(snapshotIndex > activationIndex)
+  assert.ok(successIndex > snapshotIndex)
   assert.match(recovery, /shadow\.run\.sourceCount !== 3/u)
   assert.match(recovery, /shadow\.run\.successfulSourceCount !== 3/u)
   assert.match(recovery, /shadow\.run\.outboundDeliveryAttempted !== false/u)
   assert.match(recovery, /cookieSecretsByHotel\.set\(hotelId, previousSecrets\)/u)
   assert.match(recovery, /YILIAN_ACTIVATION_ROLLBACK_FAILED/u)
-  assert.doesNotMatch(recovery, /appendAndPersistSnapshot/u)
+  assert.match(
+    recovery,
+    /appendAndPersistSnapshot\([\s\S]{0,160}shadow\.snapshot/u,
+  )
+  assert.match(recovery, /YILIAN_SNAPSHOT_PERSIST_FAILED/u)
   assert.doesNotMatch(recovery, /deliverWeComSnapshot/u)
 })
 
@@ -143,6 +151,14 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(api, /const YILIAN_INITIAL_ACTIVATION_TRIGGER/u)
   assert.match(api, /const YILIAN_ACTIVATION_INTENT_TRIGGERS/u)
   assert.match(scheduledRecovery, /SCHEDULED_INITIAL_ACTIVATION/u)
+  assert.match(
+    scheduledRecovery,
+    /const manualRecoveryPending =[\s\S]{0,240}status\.trigger === 'MANUAL_REPAIR'/u,
+  )
+  assert.match(
+    scheduledRecovery,
+    /manualRecoveryPending[\s\S]{0,120}\? 'MANUAL_REPAIR'/u,
+  )
   assert.doesNotMatch(
     scheduledRecovery,
     /!hotel\.collectionEnabled \|\| !pmsLoginSecretsByHotel/u,

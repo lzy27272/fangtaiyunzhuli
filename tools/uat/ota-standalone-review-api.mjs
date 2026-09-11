@@ -1735,6 +1735,7 @@ const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set([
   'YILIAN_ORDER_PAGINATION_INCOMPLETE',
   'YILIAN_SHADOW_VALIDATION_FAILED',
   'YILIAN_TOKEN_PERSIST_FAILED',
+  'YILIAN_SNAPSHOT_PERSIST_FAILED',
 ])
 
 const yilianRepairRetryAllowed = (record) =>
@@ -6555,6 +6556,15 @@ const startYilianCloudRecovery = async (
         persistSimulationHotels()
       }
       activationCommitted = true
+      try {
+        appendAndPersistSnapshot(
+          liveSnapshotStore,
+          liveSnapshotPath,
+          shadow.snapshot,
+        )
+      } catch {
+        throw new Error('YILIAN_SNAPSHOT_PERSIST_FAILED')
+      }
       updateYilianRepairStatus(hotelId, {
         state: 'SUCCEEDED',
         lastValidatedAt: updatedAt,
@@ -6571,6 +6581,7 @@ const startYilianCloudRecovery = async (
         sourceCount: shadow.run.sourceCount,
         successfulSourceCount: shadow.run.successfulSourceCount,
         businessDate: shadow.snapshot.businessDate,
+        snapshotPersisted: true,
         outboundDeliveryAttempted: false,
       })}\n`)
       return null
@@ -6678,8 +6689,18 @@ const scheduledYilianRecoveryTick = async () => {
           || migratedSourceContractPending
         )
         && status.state !== 'SUCCEEDED'
+      const manualRecoveryPending =
+        hotel.collectionEnabled
+        && status.state === 'IDLE'
+        && status.trigger === 'MANUAL_REPAIR'
+        && status.lastAttemptAt === null
+        && status.lastErrorCode === null
       if (
-        (!activationPending && !staleSessionRecoveryPending)
+        (
+          !activationPending
+          && !staleSessionRecoveryPending
+          && !manualRecoveryPending
+        )
         || !yilianRepairRetryAllowed(status)
       ) continue
       const statusLastAttemptAt = Date.parse(status.lastAttemptAt ?? '')
@@ -6696,7 +6717,9 @@ const scheduledYilianRecoveryTick = async () => {
         hotel.hotelId,
         activationPending
           ? 'SCHEDULED_INITIAL_ACTIVATION'
-          : 'SCHEDULED_STALE_SESSION_RECOVERY',
+          : manualRecoveryPending
+            ? 'MANUAL_REPAIR'
+            : 'SCHEDULED_STALE_SESSION_RECOVERY',
       )
     }
   } finally {
