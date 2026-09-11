@@ -60,6 +60,31 @@ test('real WeCom test sends require exact server-side confirmation', async () =>
   )
 })
 
+test('manager P1 test is isolated from collection and production risk state', async () => {
+  const source = await readFile(apiPath, 'utf8')
+  const route = sourceBetween(
+    source,
+    "suffix === '/wecom-manager-p1-test-deliveries'",
+    "suffix === '/wecom-test-suite-deliveries'",
+  )
+  assert.match(
+    route,
+    /confirmRealWeComSend,expectedBotIdFingerprint,reasonCode/u,
+  )
+  assert.match(route, /SEND_WECOM_MANAGER_P1_TEST/u)
+  assert.match(route, /body\.confirmRealWeComSend !== true/u)
+  assert.match(
+    route,
+    /body\.expectedBotIdFingerprint !== botStatus\.botIdFingerprint/u,
+  )
+  assert.match(route, /deliveryType: 'P1_FUTURE_DEMAND_TEST'/u)
+  assert.match(route, /\{ testMode: true \}/u)
+  assert.match(route, /deliverWeComRepairBotDirectMessage/u)
+  assert.doesNotMatch(route, /collectLiveFor/u)
+  assert.doesNotMatch(route, /persistFutureDemandRiskStates/u)
+  assert.doesNotMatch(route, /deliverWeComSnapshot/u)
+})
+
 test('non-publishing collection cannot append snapshots or refresh OTA', async () => {
   const source = await readFile(apiPath, 'utf8')
   const luopanCollection = sourceBetween(

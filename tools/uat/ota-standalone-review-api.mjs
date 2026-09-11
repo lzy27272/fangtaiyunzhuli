@@ -12486,6 +12486,95 @@ const server = createServer(async (request, response) => {
       }
       if (
         request.method === 'POST'
+        && suffix === '/wecom-manager-p1-test-deliveries'
+      ) {
+        const body = await readBody(request)
+        if (
+          !body
+          || typeof body !== 'object'
+          || Array.isArray(body)
+          || Object.keys(body).sort().join(',')
+            !== 'confirmRealWeComSend,expectedBotIdFingerprint,reasonCode'
+          || body.reasonCode !== 'SEND_WECOM_MANAGER_P1_TEST'
+          || body.confirmRealWeComSend !== true
+        ) {
+          throw new Error('WECOM_MANAGER_P1_TEST_CONFIRMATION_REQUIRED')
+        }
+        const botStatus = weComRepairBotStatusForHotel(hotelId)
+        if (
+          typeof body.expectedBotIdFingerprint !== 'string'
+          || body.expectedBotIdFingerprint !== botStatus.botIdFingerprint
+        ) {
+          throw new Error('WECOM_MANAGER_P1_TEST_BOT_CHANGED')
+        }
+        if (!weComRepairBotReady()) {
+          throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+        }
+        const recipientCount = weComRepairBotRecipientsForHotel(
+          weComRepairBotCredentials ?? {},
+          hotelId,
+        ).length
+        if (recipientCount === 0) {
+          throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
+        }
+        const now = new Date()
+        const { dateKey } = shanghaiScheduleParts(now)
+        const observedAt = new Date(now.getTime() + (8 * 60 * 60 * 1000))
+          .toISOString()
+          .replace('Z', '+08:00')
+        const stayDateValue = new Date(`${dateKey}T00:00:00Z`)
+        stayDateValue.setUTCDate(stayDateValue.getUTCDate() + 15)
+        const stayDate = stayDateValue.toISOString().slice(0, 10)
+        const snapshot = {
+          businessDate: dateKey,
+          observedAt,
+          collectionRunId: `manager-p1-test-${randomUUID()}`,
+        }
+        const candidate = {
+          stateKey: `${hotelId}:${stayDate}`,
+          stayDate,
+          dayOffset: 15,
+          reasons: ['CROSS_20_PERCENT'],
+          row: {
+            stayDate,
+            bookedRoomNights: 12,
+            availableRooms: 18,
+            roomCount: 30,
+            occupancyPercent: 40,
+            hourlyNetRoomNights: 3,
+          },
+        }
+        const [payload] = createFutureDemandP1WeComPayloads(
+          selected,
+          snapshot,
+          candidate,
+          { testMode: true },
+        )
+        const delivery = await deliverWeComRepairBotDirectMessage({
+          hotelId,
+          messageKey:
+            `${hotelId}:P1_FUTURE_DEMAND_TEST:`
+            + `${snapshot.collectionRunId}:WECOM_LONG_CONNECTION`,
+          deliveryType: 'P1_FUTURE_DEMAND_TEST',
+          content: payload.text.content,
+          businessDate: dateKey,
+          cutoffAt: observedAt,
+        })
+        json(response, 200, {
+          data: {
+            deliveryId: delivery.deliveryId,
+            deliveryStatus: delivery.deliveryStatus,
+            reasonCode: delivery.reasonCode,
+            recipientCount: delivery.partCount,
+            deliveredRecipientCount: delivery.deliveredPartCount,
+            attemptedAt: delivery.attemptedAt,
+            completedAt: delivery.completedAt,
+          },
+        })
+        return
+      }
+      if (
+        request.method === 'POST'
         && suffix === '/wecom-test-suite-deliveries'
       ) {
         const body = await readBody(request)

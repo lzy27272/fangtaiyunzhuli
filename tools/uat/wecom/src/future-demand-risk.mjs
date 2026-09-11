@@ -205,6 +205,9 @@ export const createFutureDemandP1WeComPayloads = (
   const testMode = options?.testMode === true
   const contentFor = (limit) => [
     testMode ? '🧪测试消息｜P1远期需求异动' : '🚨P1远期需求异动',
+    testMode
+      ? '说明｜仅用于验证企微通知链路，不代表真实经营异常，不会修改P1状态。'
+      : null,
     `${hotel.hotelName.trim().slice(0, 40)}｜触发${candidates.length}个入住日`,
     `⏰发现时间｜${cutoff(snapshot.observedAt)}`,
     `触发｜${reasonText(reasons)}`,
