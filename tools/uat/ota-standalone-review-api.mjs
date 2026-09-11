@@ -1053,7 +1053,7 @@ const defaultYilianReportSources = () => [
     sourceId: '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0',
     displayName: '订单明细',
     endpointUrl:
-      'https://pms.ygjpms.com/newPms/orderManage/selectAll?pageNum=1&pageSize=1&recState=2',
+      'https://pms.ygjpms.com/newPms/orderManage/selectAll?pageNum=1&pageSize=100&recState=2',
     reportType: 'ORDER_DETAIL',
     calculationRole: 'AUXILIARY_CALCULATION',
     pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
@@ -1593,6 +1593,18 @@ const migrateEmptyYilianReportSources = () => {
           return false
         }
       })
+    const outdatedOrderPagination = Array.isArray(sources)
+      && sources.some((source) => {
+        try {
+          const endpoint = new URL(source.endpointUrl)
+          return endpoint.pathname === '/newPms/orderManage/selectAll'
+            && endpoint.searchParams.get('pageSize') !== '100'
+        } catch {
+          return false
+        }
+      })
+    const outdatedSourceContract =
+      outdatedRealtimeContract || outdatedOrderPagination
     const failedOnMissingContract =
       status.state === 'FAILED'
       && status.lastErrorCode === 'YILIAN_SOURCE_CONTRACT_INVALID'
@@ -1609,7 +1621,7 @@ const migrateEmptyYilianReportSources = () => {
       && status.trigger === YILIAN_SOURCE_CONTRACT_MIGRATION_TRIGGER
       && status.lastErrorCode === null
     if (
-      !outdatedRealtimeContract
+      !outdatedSourceContract
       && (
         !sourceContractUnavailableAtStartup
         || (
@@ -1622,7 +1634,7 @@ const migrateEmptyYilianReportSources = () => {
 
     reportSourcesByHotel.set(
       hotel.hotelId,
-      outdatedRealtimeContract
+      outdatedSourceContract
         ? migratedYilianReportSources(sources)
         : defaultYilianReportSources(),
     )
@@ -1643,6 +1655,8 @@ const migrateEmptyYilianReportSources = () => {
       hotelCode: hotel.hotelCode,
       reason: outdatedRealtimeContract
         ? 'OUTDATED_REALTIME_ENDPOINT'
+        : outdatedOrderPagination
+          ? 'OUTDATED_ORDER_PAGINATION'
         : failedOnMissingContract
         ? 'FAILED_SOURCE_CONTRACT'
         : interruptedMigration
@@ -1668,7 +1682,7 @@ const migrateEmptyYilianReportSources = () => {
   for (const item of migrated) {
     process.stdout.write(`${JSON.stringify({
       event: 'YILIAN_SOURCE_CONTRACT_MIGRATED',
-      migrationVersion: 2,
+      migrationVersion: 3,
       ...item,
       sourceCount: 3,
     })}\n`)

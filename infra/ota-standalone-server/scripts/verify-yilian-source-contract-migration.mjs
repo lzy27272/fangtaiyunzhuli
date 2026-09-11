@@ -141,7 +141,7 @@ export const defaultYilianReportSourcesForMigration = () => [
     sourceId: '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0',
     displayName: '订单明细',
     endpointUrl:
-      'https://pms.ygjpms.com/newPms/orderManage/selectAll?pageNum=1&pageSize=1&recState=2',
+      'https://pms.ygjpms.com/newPms/orderManage/selectAll?pageNum=1&pageSize=100&recState=2',
     reportType: 'ORDER_DETAIL',
     calculationRole: 'AUXILIARY_CALCULATION',
     pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
@@ -560,6 +560,18 @@ export const verifyYilianSourceContractMigration = ({
           return false
         }
       })
+    const outdatedOrderPagination = Array.isArray(hotelSources)
+      && hotelSources.some((source) => {
+        try {
+          const endpoint = new URL(source.endpointUrl)
+          return endpoint.pathname === '/newPms/orderManage/selectAll'
+            && endpoint.searchParams.get('pageSize') !== '100'
+        } catch {
+          return false
+        }
+      })
+    const outdatedSourceContract =
+      outdatedRealtimeContract || outdatedOrderPagination
     const failedOnMissingContract =
       status.state === 'FAILED'
       && status.lastErrorCode === 'YILIAN_SOURCE_CONTRACT_INVALID'
@@ -576,7 +588,7 @@ export const verifyYilianSourceContractMigration = ({
       && status.trigger === MIGRATION_TRIGGER
       && status.lastErrorCode === null
     if (
-      !outdatedRealtimeContract
+      !outdatedSourceContract
       && (
         !sourceContractUnavailable
         || (
@@ -589,7 +601,7 @@ export const verifyYilianSourceContractMigration = ({
 
     sources.set(
       hotel.hotelId,
-      outdatedRealtimeContract
+      outdatedSourceContract
         ? migratedYilianReportSources(hotelSources)
         : defaultYilianReportSourcesForMigration(),
     )

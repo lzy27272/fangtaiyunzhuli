@@ -299,13 +299,50 @@ test('deployment verifier is pinned to the runtime Yilian migration contract', (
     '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0',
     '94c0b6ee-2ee4-421f-a9e8-d1fa38a352a9',
     '/newPms/reportAPP/nowRoomStateReport',
-    '/newPms/orderManage/selectAll?pageNum=1&pageSize=1&recState=2',
+    '/newPms/orderManage/selectAll?pageNum=1&pageSize=100&recState=2',
     '/newPms/reportAPP/rateCalendarReport?startDate=2020-01-01&endDate=2020-01-02',
   ]
   for (const literal of contractLiterals) {
     assert.equal(reviewApiSource.includes(literal), true)
     assert.equal(verifierSource.includes(literal), true)
   }
+})
+
+test('deployment verifier migrates the undersized Yilian order page safely', () => {
+  const legacySources = defaultYilianReportSourcesForMigration().map(
+    (source, index) => ({
+      ...source,
+      endpointUrl: index === 1
+        ? 'https://pms.ygjpms.com/newPms/orderManage/selectAll?pageNum=1&pageSize=1&recState=2'
+        : source.endpointUrl,
+      rowVersion: 20 + index,
+    }),
+  )
+  const migratedSources = defaultYilianReportSourcesForMigration().map(
+    (source, index) => ({ ...source, rowVersion: 21 + index }),
+  )
+  const legacyStatus = {
+    ...failedStatus,
+    lastErrorCode: 'YILIAN_ORDER_PAGINATION_LIMIT',
+    sourceCount: 0,
+    successfulSourceCount: 0,
+  }
+  const expectedStatus = {
+    ...legacyStatus,
+    state: 'IDLE',
+    trigger: 'STARTUP_SOURCE_CONTRACT_MIGRATION',
+    lastAttemptAt: null,
+    lastErrorCode: null,
+    sourceCount: 3,
+    successfulSourceCount: 0,
+  }
+  assert.deepEqual(verifyYilianSourceContractMigration({
+    beforeReportSourcesText: JSON.stringify({ [hotelId]: legacySources }),
+    beforeRepairStatusesText: JSON.stringify({ [hotelId]: legacyStatus }),
+    afterReportSources: { [hotelId]: migratedSources },
+    afterRepairStatuses: { [hotelId]: expectedStatus },
+    hotels,
+  }), { migratedHotelCount: 1 })
 })
 
 test('deployment verifier rejects corrupt stores and preserves opt-out', () => {

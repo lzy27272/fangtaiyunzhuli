@@ -116,7 +116,7 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(api, /const YILIAN_AUTO_RECOVERY_RETRY_MS = 30 \* 60_000/u)
   assert.match(api, /const yilianAutomaticRecoveryDue/u)
   assert.match(api, /OUTDATED_REALTIME_ENDPOINT/u)
-  assert.match(api, /migrationVersion: 2/u)
+  assert.match(api, /migrationVersion: 3/u)
   assert.match(api, /migratedYilianReportSources\(sources\)/u)
   assert.match(
     api,
