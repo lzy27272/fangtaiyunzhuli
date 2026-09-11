@@ -12,6 +12,11 @@ export const yilianLoginSelectors = Object.freeze({
   username: 'input[placeholder="登录账号或绑定手机号"]',
   password: passwordInputSelector,
   submit: 'button.top-login-btn',
+  company: '.company-item',
+  department: '.department-item',
+  shift: '.shift-item',
+  shiftConfirm:
+    '.el-dialog:has-text("请选择您的班次") button:has-text("确定")',
   message: '.el-message__content, .el-message, [role="alert"]',
   humanVerification:
     'input[placeholder*="验证码"]:visible, input[placeholder*="短信"]:visible, [class*="captcha"]:visible, [class*="slide-verify"]:visible, iframe[src*="captcha"]:visible',
@@ -42,7 +47,7 @@ export const isYilianOfficialUrl = (value) => {
       && url.hostname === 'pms.ygjpms.com'
       && (
         url.pathname.startsWith('/saas/')
-        || url.pathname.startsWith('/login/pms/')
+        || url.pathname.startsWith('/login/')
       )
   } catch {
     return false
@@ -102,9 +107,7 @@ const browserExecutableFor = () =>
 
 const clearPageSecrets = async (page) => {
   await page.evaluate(() => {
-    sessionStorage.removeItem('accountNum')
-    sessionStorage.removeItem('password')
-    sessionStorage.removeItem('token')
+    sessionStorage.clear()
     localStorage.clear()
   }).catch(() => {})
   await page.locator(yilianLoginSelectors.username).first().fill('')
@@ -126,8 +129,110 @@ const humanVerificationVisible = async (page) => page
   .isVisible()
   .catch(() => false)
 
+const normalizedSelectionText = (value) =>
+  String(value ?? '').replace(/\s+/gu, '').trim()
+
+const visibleOptions = async (page, selector) => {
+  const locator = page.locator(selector)
+  const options = []
+  const count = await locator.count().catch(() => 0)
+  for (let index = 0; index < count; index += 1) {
+    const option = locator.nth(index)
+    if (!await option.isVisible().catch(() => false)) continue
+    options.push({
+      option,
+      text: normalizedSelectionText(
+        await option.innerText().catch(() => ''),
+      ),
+    })
+  }
+  return options
+}
+
+const waitForSelectionStep = async (
+  page,
+  timeoutMs,
+  candidates = [
+    yilianLoginSelectors.company,
+    yilianLoginSelectors.department,
+    yilianLoginSelectors.shift,
+  ],
+) => {
+  try {
+    return await Promise.any(candidates.map((selector) => page.locator(selector)
+      .first()
+      .waitFor({ state: 'visible', timeout: timeoutMs })
+      .then(() => selector)))
+  } catch {
+    return null
+  }
+}
+
+const chooseCompany = async (page, expectedHotelName) => {
+  const options = await visibleOptions(page, yilianLoginSelectors.company)
+  if (options.length === 0) return false
+  const expected = normalizedSelectionText(expectedHotelName)
+  const matches = expected
+    ? options.filter(({ text }) => text.includes(expected))
+    : []
+  const selected = matches.length === 1
+    ? matches[0]
+    : options.length === 1
+      ? options[0]
+      : null
+  if (!selected) throw new Error('YILIAN_HOTEL_SELECTION_AMBIGUOUS')
+  await selected.option.click()
+  return true
+}
+
+const chooseHotelDepartment = async (page) => {
+  const options = await visibleOptions(page, yilianLoginSelectors.department)
+  if (options.length === 0) return false
+  const hotelOptions = options.filter(({ text }) => /酒店|Hotel|客房/iu.test(text))
+  const selected = hotelOptions.length === 1
+    ? hotelOptions[0]
+    : options.length === 1
+      ? options[0]
+      : null
+  if (!selected) throw new Error('YILIAN_DEPARTMENT_SELECTION_AMBIGUOUS')
+  await selected.option.click()
+  return true
+}
+
+const completeHotelSystemSelection = async ({
+  page,
+  intermediateToken,
+  expectedHotelName,
+  timeoutMs,
+}) => {
+  let step = await waitForSelectionStep(page, timeoutMs)
+  if (step === yilianLoginSelectors.company) {
+    await chooseCompany(page, expectedHotelName)
+    step = await waitForSelectionStep(page, timeoutMs, [
+      yilianLoginSelectors.department,
+      yilianLoginSelectors.shift,
+    ])
+  }
+  if (step === yilianLoginSelectors.department) {
+    await chooseHotelDepartment(page)
+  }
+  await page.locator(yilianLoginSelectors.shift).first()
+    .waitFor({ state: 'visible', timeout: timeoutMs })
+    .catch(() => { throw new Error('YILIAN_SHIFT_SELECTION_UNAVAILABLE') })
+  await page.locator(yilianLoginSelectors.shiftConfirm).first().click()
+  await page.waitForFunction(
+    (previousToken) => {
+      const current = String(sessionStorage.getItem('token') ?? '').trim()
+      return current.length >= 16 && current !== previousToken
+    },
+    intermediateToken,
+    { timeout: timeoutMs },
+  ).catch(() => { throw new Error('YILIAN_CONFIRM_LOGIN_TIMEOUT') })
+}
+
 export const startYilianPasswordLogin = async ({
   credentials,
+  expectedHotelName = '',
   chromium = null,
   executablePath = null,
   executableExists = existsSync,
@@ -212,16 +317,31 @@ export const startYilianPasswordLogin = async ({
     if (!isYilianOfficialUrl(page.url())) {
       throw new Error('YILIAN_LOGIN_ORIGIN_INVALID')
     }
-    const accessToken = await page.evaluate(
+    const intermediateToken = await page.evaluate(
       () => String(sessionStorage.getItem('token') ?? '').trim(),
     )
-    if (!accessToken) {
+    if (!intermediateToken) {
       if (await humanVerificationVisible(page)) {
         throw new Error('YILIAN_HUMAN_AUTHORIZATION_REQUIRED')
       }
       throw new Error(classifyYilianLoginFailure(
         await safeVisibleMessageText(page),
       ))
+    }
+    await completeHotelSystemSelection({
+      page,
+      intermediateToken,
+      expectedHotelName,
+      timeoutMs,
+    })
+    if (!isYilianOfficialUrl(page.url())) {
+      throw new Error('YILIAN_LOGIN_ORIGIN_INVALID')
+    }
+    const accessToken = await page.evaluate(
+      () => String(sessionStorage.getItem('token') ?? '').trim(),
+    )
+    if (!accessToken || accessToken === intermediateToken) {
+      throw new Error('YILIAN_AUTHENTICATION_NOT_COMPLETED')
     }
     return { accessToken }
   } catch (error) {

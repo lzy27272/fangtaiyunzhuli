@@ -1037,7 +1037,7 @@ const defaultYilianReportSources = () => [
     sourceId: '34000000-0000-4000-8000-000000000001',
     displayName: '实时房态',
     endpointUrl:
-      'https://pms.ygjpms.com/newPms/forwardRoomState/nowRoomState?manageHotelCode=',
+      'https://pms.ygjpms.com/newPms/reportAPP/nowRoomStateReport',
     reportType: 'CUSTOM_REPORT',
     calculationRole: 'PRIMARY_CALCULATION',
     pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
@@ -1550,6 +1550,24 @@ const yilianInitialActivationPending = (hotel, status) =>
   !hotel.collectionEnabled
   && YILIAN_ACTIVATION_INTENT_TRIGGERS.has(status.trigger)
 
+const migratedYilianReportSources = (sources) => {
+  const previousBySourceId = new Map(
+    (Array.isArray(sources) ? sources : [])
+      .map((source) => [source.sourceId, source]),
+  )
+  return defaultYilianReportSources().map((source) => {
+    const previous = previousBySourceId.get(source.sourceId)
+    if (!previous) return source
+    return {
+      ...source,
+      enabled: previous.enabled,
+      rowVersion: Number.isInteger(previous.rowVersion)
+        ? previous.rowVersion + 1
+        : source.rowVersion,
+    }
+  })
+}
+
 const migrateEmptyYilianReportSources = () => {
   if (reportSourceStoreInvalid) {
     throw new Error('REPORT_SOURCE_STORE_INVALID')
@@ -1566,6 +1584,15 @@ const migrateEmptyYilianReportSources = () => {
     const sourceContractUnavailableAtStartup =
       !reportSourceHotelIdsRestoredAtStartup.has(hotel.hotelId)
       || (Array.isArray(sources) && sources.length === 0)
+    const outdatedRealtimeContract = Array.isArray(sources)
+      && sources.some((source) => {
+        try {
+          return new URL(source.endpointUrl).pathname
+            === '/newPms/forwardRoomState/nowRoomState'
+        } catch {
+          return false
+        }
+      })
     const failedOnMissingContract =
       status.state === 'FAILED'
       && status.lastErrorCode === 'YILIAN_SOURCE_CONTRACT_INVALID'
@@ -1582,15 +1609,23 @@ const migrateEmptyYilianReportSources = () => {
       && status.trigger === YILIAN_SOURCE_CONTRACT_MIGRATION_TRIGGER
       && status.lastErrorCode === null
     if (
-      !sourceContractUnavailableAtStartup
-      || (
-        !failedOnMissingContract
-        && !legacyInitialActivationPending
-        && !interruptedMigration
+      !outdatedRealtimeContract
+      && (
+        !sourceContractUnavailableAtStartup
+        || (
+          !failedOnMissingContract
+          && !legacyInitialActivationPending
+          && !interruptedMigration
+        )
       )
     ) continue
 
-    reportSourcesByHotel.set(hotel.hotelId, defaultYilianReportSources())
+    reportSourcesByHotel.set(
+      hotel.hotelId,
+      outdatedRealtimeContract
+        ? migratedYilianReportSources(sources)
+        : defaultYilianReportSources(),
+    )
     yilianRepairStatusesByHotel.set(
       hotel.hotelId,
       normalizeYilianRepairStatus({
@@ -1606,7 +1641,9 @@ const migrateEmptyYilianReportSources = () => {
     migrated.push({
       hotelId: hotel.hotelId,
       hotelCode: hotel.hotelCode,
-      reason: failedOnMissingContract
+      reason: outdatedRealtimeContract
+        ? 'OUTDATED_REALTIME_ENDPOINT'
+        : failedOnMissingContract
         ? 'FAILED_SOURCE_CONTRACT'
         : interruptedMigration
           ? 'INTERRUPTED_MIGRATION'
@@ -1631,7 +1668,7 @@ const migrateEmptyYilianReportSources = () => {
   for (const item of migrated) {
     process.stdout.write(`${JSON.stringify({
       event: 'YILIAN_SOURCE_CONTRACT_MIGRATED',
-      migrationVersion: 1,
+      migrationVersion: 2,
       ...item,
       sourceCount: 3,
     })}\n`)
@@ -1674,6 +1711,7 @@ const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set([
   // new responses are classified as YILIAN_SESSION_REAUTH_REQUIRED above.
   'YILIAN_REPORT_CODE_REJECTED',
   'YILIAN_LOGIN_TIMEOUT',
+  'YILIAN_CONFIRM_LOGIN_TIMEOUT',
   'YILIAN_BROWSER_LOGIN_FAILED',
   'YILIAN_REQUEST_TIMEOUT',
   'YILIAN_REQUEST_FAILED',
@@ -6351,6 +6389,9 @@ const yilianHumanAuthorizationRequired = (reasonCode) => [
   'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
   'YILIAN_RISK_CONTROL_REQUIRED',
   'YILIAN_AUTHENTICATION_NOT_COMPLETED',
+  'YILIAN_HOTEL_SELECTION_AMBIGUOUS',
+  'YILIAN_DEPARTMENT_SELECTION_AMBIGUOUS',
+  'YILIAN_SHIFT_SELECTION_UNAVAILABLE',
 ].includes(reasonCode)
 
 const replaceYilianAccessToken = (hotelId, sources, accessToken) => {
@@ -6451,7 +6492,10 @@ const startYilianCloudRecovery = async (
       if (enabledSources.length !== 3) {
         throw new Error('YILIAN_SOURCE_CONTRACT_INVALID')
       }
-      login = await startYilianPasswordLogin({ credentials })
+      login = await startYilianPasswordLogin({
+        credentials,
+        expectedHotelName: hotel.hotelName,
+      })
       accessTokensBySourceId = Object.fromEntries(
         enabledSources.map((source) => [source.sourceId, login.accessToken]),
       )

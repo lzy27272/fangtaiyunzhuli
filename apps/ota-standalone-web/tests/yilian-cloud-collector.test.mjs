@@ -21,7 +21,7 @@ const sources = [
     sourceId: '34000000-0000-4000-8000-000000000001',
     displayName: '实时数据',
     endpointUrl:
-      'https://pms.ygjpms.com/newPms/forwardRoomState/nowRoomState?manageHotelCode=',
+      'https://pms.ygjpms.com/newPms/reportAPP/nowRoomStateReport',
     reportType: 'CUSTOM_REPORT',
     calculationRole: 'PRIMARY_CALCULATION',
     enabled: true,
@@ -50,7 +50,7 @@ const token = 'synthetic-yilian-access-token-000000000000000001'
 
 const fixtureFor = (url) => {
   const parsed = new URL(url)
-  if (parsed.pathname.endsWith('/nowRoomState')) {
+  if (parsed.pathname.endsWith('/nowRoomStateReport')) {
     return {
       code: 200,
       data: [{
@@ -131,6 +131,7 @@ test('Yilian collection uses access_token, refreshes dates, paginates, and persi
       requests.push({ url: parsed, options })
       assert.equal(options.method, 'GET')
       assert.equal(options.headers.access_token, token)
+      assert.equal(options.headers['Content-Type'], 'text/xml')
       assert.equal(Object.hasOwn(options.headers, 'Cookie'), false)
       return new Response(JSON.stringify(fixtureFor(parsed)), {
         status: 200,
@@ -211,7 +212,7 @@ test('Yilian adapter fails closed for expired sessions and non-approved hosts', 
   let called = false
   await assert.rejects(validateYilianAccessToken({
     sources: sources.map((source, index) => index === 0
-      ? { ...source, endpointUrl: 'https://example.test/newPms/forwardRoomState/nowRoomState' }
+      ? { ...source, endpointUrl: 'https://example.test/newPms/reportAPP/nowRoomStateReport' }
       : source),
     accessToken: token,
     fetchImpl: async () => {

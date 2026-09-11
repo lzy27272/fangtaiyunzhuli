@@ -10,7 +10,7 @@ const MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 const MAX_ORDER_PAGES = 50
 const SHANGHAI_OFFSET = '+08:00'
 const CONTRACTS = new Map([
-  ['/newPms/forwardRoomState/nowRoomState', 'REALTIME_OVERVIEW'],
+  ['/newPms/reportAPP/nowRoomStateReport', 'REALTIME_OVERVIEW'],
   ['/newPms/orderManage/selectAll', 'ORDER_DETAIL'],
   ['/newPms/reportAPP/rateCalendarReport', 'ROOM_FORECAST'],
 ])
@@ -164,6 +164,7 @@ const fetchRoot = async ({
       headers: {
         Accept: 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
+        'Content-Type': 'text/xml',
         access_token: accessToken,
         Referer: `${url.origin}/saas/`,
         'User-Agent': 'Sifangguan-ReadOnly-Yilian-Collector/1.0',

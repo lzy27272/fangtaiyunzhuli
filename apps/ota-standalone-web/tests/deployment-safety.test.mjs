@@ -215,6 +215,42 @@ test('deployment verifier accepts only the exact failed-contract migration', () 
   )
 })
 
+test('deployment verifier accepts only the exact outdated Yilian endpoint migration', () => {
+  const legacySources = defaultYilianReportSourcesForMigration().map(
+    (source, index) => ({
+      ...source,
+      endpointUrl: index === 0
+        ? 'https://pms.ygjpms.com/newPms/forwardRoomState/nowRoomState?manageHotelCode='
+        : source.endpointUrl,
+      rowVersion: 10 + index,
+    }),
+  )
+  const migratedSources = defaultYilianReportSourcesForMigration().map(
+    (source, index) => ({ ...source, rowVersion: 11 + index }),
+  )
+  const legacyStatus = {
+    ...failedStatus,
+    lastErrorCode: 'YILIAN_REPORT_CODE_REJECTED',
+    sourceCount: 3,
+  }
+  const expectedStatus = {
+    ...legacyStatus,
+    state: 'IDLE',
+    trigger: 'STARTUP_SOURCE_CONTRACT_MIGRATION',
+    lastAttemptAt: null,
+    lastErrorCode: null,
+    sourceCount: 3,
+    successfulSourceCount: 0,
+  }
+  assert.deepEqual(verifyYilianSourceContractMigration({
+    beforeReportSourcesText: JSON.stringify({ [hotelId]: legacySources }),
+    beforeRepairStatusesText: JSON.stringify({ [hotelId]: legacyStatus }),
+    afterReportSources: { [hotelId]: migratedSources },
+    afterRepairStatuses: { [hotelId]: expectedStatus },
+    hotels,
+  }), { migratedHotelCount: 1 })
+})
+
 test('deployment verifier rejects Yilian defaults synthesized for a non-migrating store', () => {
   const secondHotel = {
     ...hotels[0],
@@ -262,7 +298,7 @@ test('deployment verifier is pinned to the runtime Yilian migration contract', (
     '34000000-0000-4000-8000-000000000001',
     '27f5ead0-11a3-4131-87ce-7ba9d7ff0ce0',
     '94c0b6ee-2ee4-421f-a9e8-d1fa38a352a9',
-    '/newPms/forwardRoomState/nowRoomState?manageHotelCode=',
+    '/newPms/reportAPP/nowRoomStateReport',
     '/newPms/orderManage/selectAll?pageNum=1&pageSize=1&recState=2',
     '/newPms/reportAPP/rateCalendarReport?startDate=2020-01-01&endDate=2020-01-02',
   ]

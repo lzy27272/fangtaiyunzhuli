@@ -115,6 +115,9 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(api, /YILIAN_AUTHENTICATION_NOT_COMPLETED/u)
   assert.match(api, /const YILIAN_AUTO_RECOVERY_RETRY_MS = 30 \* 60_000/u)
   assert.match(api, /const yilianAutomaticRecoveryDue/u)
+  assert.match(api, /OUTDATED_REALTIME_ENDPOINT/u)
+  assert.match(api, /migrationVersion: 2/u)
+  assert.match(api, /migratedYilianReportSources\(sources\)/u)
   assert.match(
     api,
     /trigger !== 'MANUAL_REPAIR'[\s\S]{0,240}!yilianAutomaticRecoveryDue/u,
@@ -251,7 +254,7 @@ test('new Yilian stores persist credentials and safely recover legacy source sto
     assert.deepEqual(
       sources.map((source) => new URL(source.endpointUrl).pathname).sort(),
       [
-        '/newPms/forwardRoomState/nowRoomState',
+        '/newPms/reportAPP/nowRoomStateReport',
         '/newPms/orderManage/selectAll',
         '/newPms/reportAPP/rateCalendarReport',
       ].sort(),

@@ -125,7 +125,7 @@ export const defaultYilianReportSourcesForMigration = () => [
     sourceId: '34000000-0000-4000-8000-000000000001',
     displayName: '实时房态',
     endpointUrl:
-      'https://pms.ygjpms.com/newPms/forwardRoomState/nowRoomState?manageHotelCode=',
+      'https://pms.ygjpms.com/newPms/reportAPP/nowRoomStateReport',
     reportType: 'CUSTOM_REPORT',
     calculationRole: 'PRIMARY_CALCULATION',
     pollIntervalMinutes: REPORT_POLL_INTERVAL_MINUTES,
@@ -301,6 +301,24 @@ const cloneReportSourceDefinitions = (sources) => sources.map((source) => ({
   validationStatus: source.validationStatus,
   rowVersion: source.rowVersion,
 }))
+
+const migratedYilianReportSources = (sources) => {
+  const previousBySourceId = new Map(
+    (Array.isArray(sources) ? sources : [])
+      .map((source) => [source.sourceId, source]),
+  )
+  return defaultYilianReportSourcesForMigration().map((source) => {
+    const previous = previousBySourceId.get(source.sourceId)
+    if (!previous) return source
+    return {
+      ...source,
+      enabled: previous.enabled,
+      rowVersion: Number.isInteger(previous.rowVersion)
+        ? previous.rowVersion + 1
+        : source.rowVersion,
+    }
+  })
+}
 
 const isLegacyYilianPms = (systemCode, systemName) =>
   systemCode === 'OTHER'
@@ -533,6 +551,15 @@ export const verifyYilianSourceContractMigration = ({
     const sourceContractUnavailable =
       !restoredIds.has(hotel.hotelId)
       || (Array.isArray(hotelSources) && hotelSources.length === 0)
+    const outdatedRealtimeContract = Array.isArray(hotelSources)
+      && hotelSources.some((source) => {
+        try {
+          return new URL(source.endpointUrl).pathname
+            === '/newPms/forwardRoomState/nowRoomState'
+        } catch {
+          return false
+        }
+      })
     const failedOnMissingContract =
       status.state === 'FAILED'
       && status.lastErrorCode === 'YILIAN_SOURCE_CONTRACT_INVALID'
@@ -549,15 +576,23 @@ export const verifyYilianSourceContractMigration = ({
       && status.trigger === MIGRATION_TRIGGER
       && status.lastErrorCode === null
     if (
-      !sourceContractUnavailable
-      || (
-        !failedOnMissingContract
-        && !legacyInitialActivationPending
-        && !interruptedMigration
+      !outdatedRealtimeContract
+      && (
+        !sourceContractUnavailable
+        || (
+          !failedOnMissingContract
+          && !legacyInitialActivationPending
+          && !interruptedMigration
+        )
       )
     ) continue
 
-    sources.set(hotel.hotelId, defaultYilianReportSourcesForMigration())
+    sources.set(
+      hotel.hotelId,
+      outdatedRealtimeContract
+        ? migratedYilianReportSources(hotelSources)
+        : defaultYilianReportSourcesForMigration(),
+    )
     statuses.set(
       hotel.hotelId,
       normalizeRepairStatus({
