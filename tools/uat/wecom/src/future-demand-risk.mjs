@@ -1,5 +1,6 @@
 const MAX_MESSAGE_BYTES = 1900
 const OCCUPANCY_THRESHOLD = 20
+const FULL_OCCUPANCY_PERCENT = 100
 const OCCUPANCY_RE_ALERT_STEP = 5
 const HOURLY_NET_RE_ALERT = 3
 
@@ -40,6 +41,23 @@ const cutoff = (value) => {
 }
 
 const stateKey = (hotelId, stayDate) => `${hotelId}:${stayDate}`
+
+export const selectFutureDemandP1DeliveryChannels = ({
+  groupWebhookConfigured = false,
+  managerBotReady = false,
+  managerRecipientCount = 0,
+} = {}) => {
+  const channels = []
+  if (groupWebhookConfigured === true) {
+    channels.push('WECOM_GROUP_WEBHOOK')
+  }
+  if (
+    managerBotReady === true
+    && Number.isInteger(managerRecipientCount)
+    && managerRecipientCount > 0
+  ) channels.push('WECOM_LONG_CONNECTION')
+  return channels
+}
 
 export const reconcileFutureDemandRiskStates = ({
   hotelId,
@@ -95,6 +113,7 @@ export const selectFutureDemandRiskCandidates = ({
       || distance > 90
       || occupancy === null
       || occupancy < OCCUPANCY_THRESHOLD
+      || occupancy >= FULL_OCCUPANCY_PERCENT
     ) {
       continue
     }
@@ -147,18 +166,23 @@ export const createFutureDemandP1WeComPayloads = (
   candidateInput,
   options = {},
 ) => {
-  const candidates = Array.isArray(candidateInput)
+  const candidateSource = Array.isArray(candidateInput)
     ? candidateInput
     : [candidateInput]
   if (
     !hotel
     || typeof hotel.hotelName !== 'string'
     || !snapshot
-    || candidates.length < 1
-    || candidates.some((candidate) => !candidate?.row)
+    || candidateSource.length < 1
+    || candidateSource.some((candidate) => !candidate?.row)
   ) {
     throw new Error('FUTURE_DEMAND_P1_INPUT_INVALID')
   }
+  const candidates = candidateSource.filter((candidate) => {
+    const occupancy = finiteNumber(candidate.row.occupancyPercent)
+    return occupancy === null || occupancy < FULL_OCCUPANCY_PERCENT
+  })
+  if (candidates.length === 0) return []
   const riskLine = (candidate) => {
     const row = candidate.row
     const booked = finiteNumber(row.bookedRoomNights)
@@ -234,6 +258,7 @@ export const futureDemandRiskLimits = Object.freeze({
   monitoredStartDay: 15,
   monitoredEndDay: 90,
   occupancyThresholdPercent: OCCUPANCY_THRESHOLD,
+  fullOccupancyPercent: FULL_OCCUPANCY_PERCENT,
   occupancyReAlertStepPercent: OCCUPANCY_RE_ALERT_STEP,
   hourlyNetReAlertRoomNights: HOURLY_NET_RE_ALERT,
   maxMessageBytes: MAX_MESSAGE_BYTES,

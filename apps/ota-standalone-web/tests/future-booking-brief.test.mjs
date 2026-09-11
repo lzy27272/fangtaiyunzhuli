@@ -9,6 +9,7 @@ import {
   futureDemandRiskLimits,
   futureDemandRiskStateAfterDelivery,
   reconcileFutureDemandRiskStates,
+  selectFutureDemandP1DeliveryChannels,
   selectFutureDemandRiskCandidates,
 } from '../../../tools/uat/wecom/src/future-demand-risk.mjs'
 
@@ -278,4 +279,71 @@ test('future P1 state clears below 20 percent so a later recross can alert', () 
     })[0].reasons,
     ['CROSS_20_PERCENT'],
   )
+})
+
+test('future P1 excludes a full or overbooked date and never builds a full-date message', () => {
+  const full = {
+    ...snapshot,
+    collectionRunId: 'run-full-occupancy',
+    futureBookingChanges: {
+      ...snapshot.futureBookingChanges,
+      daily: [
+        dailyRow(20, 99, 3),
+        dailyRow(21, 100, 3),
+        dailyRow(22, 105, 4),
+      ],
+    },
+  }
+  const candidates = selectFutureDemandRiskCandidates({
+    hotelId: hotel.hotelId,
+    snapshot: full,
+    riskStates: {},
+  })
+  assert.equal(candidates.length, 1)
+  assert.equal(candidates[0].row.occupancyPercent, 99)
+  assert.equal(futureDemandRiskLimits.fullOccupancyPercent, 100)
+
+  const fullOnly = {
+    ...candidates[0],
+    row: dailyRow(21, 100, 3),
+  }
+  assert.deepEqual(
+    createFutureDemandP1WeComPayloads(hotel, full, fullOnly),
+    [],
+  )
+})
+
+test('future P1 runtime fans out to the group and repair-bound hotel managers', async () => {
+  assert.deepEqual(selectFutureDemandP1DeliveryChannels({
+    groupWebhookConfigured: true,
+    managerBotReady: true,
+    managerRecipientCount: 2,
+  }), ['WECOM_GROUP_WEBHOOK', 'WECOM_LONG_CONNECTION'])
+  assert.deepEqual(selectFutureDemandP1DeliveryChannels({
+    managerBotReady: true,
+    managerRecipientCount: 1,
+  }), ['WECOM_LONG_CONNECTION'])
+  assert.deepEqual(selectFutureDemandP1DeliveryChannels({
+    groupWebhookConfigured: true,
+    managerBotReady: true,
+    managerRecipientCount: 0,
+  }), ['WECOM_GROUP_WEBHOOK'])
+
+  const api = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(
+      new URL('../../../tools/uat/ota-standalone-review-api.mjs', import.meta.url),
+      'utf8',
+    ))
+  const start = api.indexOf('const futureDemandP1DeliveryChannelsFor')
+  const end = api.indexOf('const p1ManualReplayFailureForDecision', start)
+  const delivery = api.slice(start, end)
+
+  assert.match(delivery, /config\.webhookConfigured/u)
+  assert.match(delivery, /weComRepairBotRecipientsForHotel/u)
+  assert.match(delivery, /WECOM_LONG_CONNECTION/u)
+  assert.match(delivery, /deliverWeComRepairBotDirectMessage/u)
+  assert.match(delivery, /P1_FUTURE_DEMAND/u)
+  assert.match(delivery, /Promise\.allSettled/u)
+  assert.match(delivery, /WECOM_LONG_CONNECTION`/u)
+  assert.match(delivery, /anyChannelDelivered/u)
 })

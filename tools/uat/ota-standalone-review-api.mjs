@@ -161,6 +161,7 @@ import {
   createFutureDemandP1WeComPayloads,
   futureDemandRiskStateAfterDelivery,
   reconcileFutureDemandRiskStates,
+  selectFutureDemandP1DeliveryChannels,
   selectFutureDemandRiskCandidates,
 } from './wecom/src/future-demand-risk.mjs'
 import {
@@ -5928,6 +5929,8 @@ const deliverWeComRepairBotDirectMessage = async ({
   deliveryType,
   content,
   captcha = null,
+  businessDate = null,
+  cutoffAt = null,
 }) => {
   assertWeComDeliveryLedgerReady()
   const existing = weComDeliveriesByKey.get(messageKey)
@@ -5947,14 +5950,23 @@ const deliverWeComRepairBotDirectMessage = async ({
       throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
     }
     const attemptedAt = new Date().toISOString()
+    const resolvedBusinessDate =
+      /^\d{4}-\d{2}-\d{2}$/u.test(String(businessDate ?? ''))
+        ? businessDate
+        : null
+    const resolvedCutoffAt =
+      typeof cutoffAt === 'string'
+      && !Number.isNaN(new Date(cutoffAt).getTime())
+        ? cutoffAt
+        : attemptedAt
     const messageSha256 = sha256(content)
     const delivery = {
       deliveryId: randomUUID(),
       messageKey,
       deliveryType,
       hotelId,
-      businessDate: null,
-      cutoffAt: attemptedAt,
+      businessDate: resolvedBusinessDate,
+      cutoffAt: resolvedCutoffAt,
       attemptedAt,
       completedAt: null,
       deliveryStatus: 'SENDING',
@@ -9429,6 +9441,18 @@ const queueFutureDemandRiskDelivery = async (hotelId, task) => {
   }
 }
 
+const futureDemandP1DeliveryChannelsFor = (hotelId, config) => {
+  const managerRecipientCount = weComRepairBotRecipientsForHotel(
+    weComRepairBotCredentials ?? {},
+    hotelId,
+  ).length
+  return selectFutureDemandP1DeliveryChannels({
+    groupWebhookConfigured: config.webhookConfigured,
+    managerBotReady: weComRepairBotReady(),
+    managerRecipientCount,
+  })
+}
+
 const deliverFutureDemandRisks = async (
   hotelId,
   snapshot,
@@ -9446,7 +9470,9 @@ const deliverFutureDemandRisks = async (
     riskStates: futureDemandRiskStates,
   })
   if (stateChanged) persistFutureDemandRiskStates()
-  if (!config.enabled || !config.webhookConfigured) return []
+  if (!config.enabled) return []
+  const channels = futureDemandP1DeliveryChannelsFor(hotelId, config)
+  if (channels.length === 0) return []
 
   const candidates = selectFutureDemandRiskCandidates({
     hotelId,
@@ -9454,23 +9480,51 @@ const deliverFutureDemandRisks = async (
     riskStates: futureDemandRiskStates,
   })
   if (candidates.length === 0) return []
-  const delivery = await deliverWeComSnapshot({
-    hotelId,
+  const baseMessageKey = messageKey
+    ?? `${hotelId}:P1_FUTURE_DEMAND:${snapshot.collectionRunId}`
+  const [managerPayload] = createFutureDemandP1WeComPayloads(
+    selectedHotel(hotelId),
     snapshot,
-    messageKey: messageKey
-      ?? `${hotelId}:P1_FUTURE_DEMAND:${snapshot.collectionRunId}`,
-    deliveryType: 'P1_FUTURE_DEMAND',
-    payloadFactory: ({ hotel: selected, snapshot: current }) =>
-      createFutureDemandP1WeComPayloads(selected, current, candidates),
-  })
-  if (delivery.deliveryStatus === 'DELIVERED') {
+    candidates,
+  )
+  const outcomes = await Promise.allSettled(channels.map((channel) =>
+    channel === 'WECOM_GROUP_WEBHOOK'
+      ? deliverWeComSnapshot({
+        hotelId,
+        snapshot,
+        messageKey: baseMessageKey,
+        deliveryType: 'P1_FUTURE_DEMAND',
+        payloadFactory: ({ hotel: selected, snapshot: current }) =>
+          createFutureDemandP1WeComPayloads(
+            selected,
+            current,
+            candidates,
+          ),
+      })
+      : deliverWeComRepairBotDirectMessage({
+        hotelId,
+        messageKey: `${baseMessageKey}:WECOM_LONG_CONNECTION`,
+        deliveryType: 'P1_FUTURE_DEMAND',
+        content: managerPayload.text.content,
+        businessDate: snapshot.businessDate,
+        cutoffAt: snapshot.observedAt,
+      })))
+  const deliveries = outcomes
+    .filter((outcome) => outcome.status === 'fulfilled')
+    .map((outcome) => outcome.value)
+  if (deliveries.length === 0) throw outcomes[0].reason
+  const anyChannelDelivered = deliveries.some((delivery) =>
+    delivery.deliveryStatus === 'DELIVERED'
+    || delivery.deliveryStatus === 'PARTIAL'
+    || Number(delivery.deliveredPartCount ?? 0) > 0)
+  if (anyChannelDelivered) {
     for (const candidate of candidates) {
       futureDemandRiskStates[candidate.stateKey] =
         futureDemandRiskStateAfterDelivery(candidate, snapshot)
     }
     persistFutureDemandRiskStates()
   }
-  return [delivery]
+  return deliveries
 })
 
 const p1ManualReplayFailureForDecision = (decision) => {
