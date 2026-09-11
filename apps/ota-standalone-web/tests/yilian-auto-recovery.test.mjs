@@ -108,6 +108,10 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(api, /YILIAN_REAUTH_IN_PROGRESS/u)
   assert.match(api, /YILIAN_SESSION_REAUTH_REQUIRED[\s\S]*startYilianCloudRecovery/u)
   assert.match(api, /const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set/u)
+  assert.match(
+    api,
+    /YILIAN_AUTOMATIC_RETRYABLE_ERRORS[\s\S]{0,500}'YILIAN_REPORT_CODE_REJECTED'/u,
+  )
   assert.match(api, /YILIAN_AUTHENTICATION_NOT_COMPLETED/u)
   assert.match(api, /const YILIAN_AUTO_RECOVERY_RETRY_MS = 30 \* 60_000/u)
   assert.match(api, /const yilianAutomaticRecoveryDue/u)

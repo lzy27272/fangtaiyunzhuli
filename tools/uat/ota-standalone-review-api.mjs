@@ -1668,6 +1668,11 @@ const yilianRepairStatusFor = (hotelId) => {
 
 const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set([
   'YILIAN_SESSION_REAUTH_REQUIRED',
+  // Releases before the collector distinguished vendor code 202 persisted the
+  // same expired-session response under this generic code. Keep that bounded
+  // historical state eligible for the normal 30-minute reauthentication path;
+  // new responses are classified as YILIAN_SESSION_REAUTH_REQUIRED above.
+  'YILIAN_REPORT_CODE_REJECTED',
   'YILIAN_LOGIN_TIMEOUT',
   'YILIAN_BROWSER_LOGIN_FAILED',
   'YILIAN_REQUEST_TIMEOUT',
