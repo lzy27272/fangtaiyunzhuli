@@ -9447,7 +9447,8 @@ const futureDemandP1DeliveryChannelsFor = (hotelId, config) => {
     hotelId,
   ).length
   return selectFutureDemandP1DeliveryChannels({
-    groupWebhookConfigured: config.webhookConfigured,
+    groupWebhookConfigured:
+      config.enabled === true && config.webhookConfigured === true,
     managerBotReady: weComRepairBotReady(),
     managerRecipientCount,
   })
@@ -9470,7 +9471,6 @@ const deliverFutureDemandRisks = async (
     riskStates: futureDemandRiskStates,
   })
   if (stateChanged) persistFutureDemandRiskStates()
-  if (!config.enabled) return []
   const channels = futureDemandP1DeliveryChannelsFor(hotelId, config)
   if (channels.length === 0) return []
 

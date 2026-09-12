@@ -338,8 +338,12 @@ test('future P1 runtime fans out to the group and repair-bound hotel managers', 
   const end = api.indexOf('const p1ManualReplayFailureForDecision', start)
   const delivery = api.slice(start, end)
 
-  assert.match(delivery, /config\.webhookConfigured/u)
+  assert.match(
+    delivery,
+    /config\.enabled === true && config\.webhookConfigured === true/u,
+  )
   assert.match(delivery, /weComRepairBotRecipientsForHotel/u)
+  assert.doesNotMatch(delivery, /if \(!config\.enabled\) return \[\]/u)
   assert.match(delivery, /WECOM_LONG_CONNECTION/u)
   assert.match(delivery, /deliverWeComRepairBotDirectMessage/u)
   assert.match(delivery, /P1_FUTURE_DEMAND/u)
