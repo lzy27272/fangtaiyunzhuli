@@ -67,6 +67,11 @@ test('manager P1 test is isolated from collection and production risk state', as
     "suffix === '/wecom-manager-p1-test-deliveries'",
     "suffix === '/wecom-test-suite-deliveries'",
   )
+  const delivery = sourceBetween(
+    source,
+    'const deliverWeComManagerP1Test = async',
+    'const p1ManualReplayFailureForDecision =',
+  )
   assert.match(
     route,
     /confirmRealWeComSend,expectedBotIdFingerprint,reasonCode/u,
@@ -77,12 +82,27 @@ test('manager P1 test is isolated from collection and production risk state', as
     route,
     /body\.expectedBotIdFingerprint !== botStatus\.botIdFingerprint/u,
   )
-  assert.match(route, /deliveryType: 'P1_FUTURE_DEMAND_TEST'/u)
-  assert.match(route, /\{ testMode: true \}/u)
-  assert.match(route, /deliverWeComRepairBotDirectMessage/u)
-  assert.doesNotMatch(route, /collectLiveFor/u)
-  assert.doesNotMatch(route, /persistFutureDemandRiskStates/u)
-  assert.doesNotMatch(route, /deliverWeComSnapshot/u)
+  assert.match(route, /deliverWeComManagerP1Test/u)
+  assert.match(delivery, /deliveryType: 'P1_FUTURE_DEMAND_TEST'/u)
+  assert.match(delivery, /\{ testMode: true \}/u)
+  assert.match(delivery, /deliverWeComRepairBotDirectMessage/u)
+  assert.doesNotMatch(delivery, /collectLiveFor/u)
+  assert.doesNotMatch(delivery, /persistFutureDemandRiskStates/u)
+  assert.doesNotMatch(delivery, /deliverWeComSnapshot/u)
+})
+
+test('011 manager P1 test has a loopback-only idempotent maintenance trigger', async () => {
+  const source = await readFile(apiPath, 'utf8')
+  const route = sourceBetween(
+    source,
+    "path === '/api/v1/internal/wecom-manager-p1-test-011'",
+    "path === '/api/v1/auth/login'",
+  )
+  assert.match(route, /if \(!loopbackPilotTriggerAuthorized\(request\)\)/u)
+  assert.match(route, /SEND_WECOM_MANAGER_P1_TEST_011/u)
+  assert.match(route, /hotel\.hotelCode === '011'/u)
+  assert.match(route, /MANAGER_P1_TEST_011_20260912_V1/u)
+  assert.match(route, /deliverWeComManagerP1Test/u)
 })
 
 test('non-publishing collection cannot append snapshots or refresh OTA', async () => {

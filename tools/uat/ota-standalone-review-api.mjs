@@ -9527,6 +9527,75 @@ const deliverFutureDemandRisks = async (
   return deliveries
 })
 
+const deliverWeComManagerP1Test = async ({
+  hotel,
+  messageKeyNonce = randomUUID(),
+}) => {
+  const hotelId = hotel.hotelId
+  if (!weComRepairBotReady()) {
+    throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+  }
+  const recipientCount = weComRepairBotRecipientsForHotel(
+    weComRepairBotCredentials ?? {},
+    hotelId,
+  ).length
+  if (recipientCount === 0) {
+    throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
+  }
+  const now = new Date()
+  const { dateKey } = shanghaiScheduleParts(now)
+  const observedAt = new Date(now.getTime() + (8 * 60 * 60 * 1000))
+    .toISOString()
+    .replace('Z', '+08:00')
+  const stayDateValue = new Date(`${dateKey}T00:00:00Z`)
+  stayDateValue.setUTCDate(stayDateValue.getUTCDate() + 15)
+  const stayDate = stayDateValue.toISOString().slice(0, 10)
+  const snapshot = {
+    businessDate: dateKey,
+    observedAt,
+    collectionRunId: `manager-p1-test-${messageKeyNonce}`,
+  }
+  const candidate = {
+    stateKey: `${hotelId}:${stayDate}`,
+    stayDate,
+    dayOffset: 15,
+    reasons: ['CROSS_20_PERCENT'],
+    row: {
+      stayDate,
+      bookedRoomNights: 12,
+      availableRooms: 18,
+      roomCount: 30,
+      occupancyPercent: 40,
+      hourlyNetRoomNights: 3,
+    },
+  }
+  const [payload] = createFutureDemandP1WeComPayloads(
+    hotel,
+    snapshot,
+    candidate,
+    { testMode: true },
+  )
+  const delivery = await deliverWeComRepairBotDirectMessage({
+    hotelId,
+    messageKey:
+      `${hotelId}:P1_FUTURE_DEMAND_TEST:`
+      + `${snapshot.collectionRunId}:WECOM_LONG_CONNECTION`,
+    deliveryType: 'P1_FUTURE_DEMAND_TEST',
+    content: payload.text.content,
+    businessDate: dateKey,
+    cutoffAt: observedAt,
+  })
+  return {
+    deliveryId: delivery.deliveryId,
+    deliveryStatus: delivery.deliveryStatus,
+    reasonCode: delivery.reasonCode,
+    recipientCount: delivery.partCount,
+    deliveredRecipientCount: delivery.deliveredPartCount,
+    attemptedAt: delivery.attemptedAt,
+    completedAt: delivery.completedAt,
+  }
+}
+
 const p1ManualReplayFailureForDecision = (decision) => {
   if (decision === 'MANUAL_RECONCILIATION_REQUIRED') {
     return 'WECOM_P1_MANUAL_REPLAY_MANUAL_RECONCILIATION_REQUIRED'
@@ -10993,6 +11062,47 @@ const server = createServer(async (request, response) => {
           result.failedReasonCode
           ?? result.skippedReasonCode
           ?? 'WECOM_P1_MANUAL_REPLAY_DELIVERED',
+      })
+      json(response, 200, { data: result })
+      return
+    }
+
+    if (
+      request.method === 'POST'
+      && path === '/api/v1/internal/wecom-manager-p1-test-011'
+    ) {
+      if (!loopbackPilotTriggerAuthorized(request)) {
+        json(response, 404, { code: 'REVIEW_ROUTE_NOT_FOUND' })
+        return
+      }
+      const body = await readBody(request)
+      if (
+        !body
+        || typeof body !== 'object'
+        || Array.isArray(body)
+        || Object.keys(body).sort().join(',')
+          !== 'confirmRealWeComSend,reasonCode'
+        || body.reasonCode !== 'SEND_WECOM_MANAGER_P1_TEST_011'
+        || body.confirmRealWeComSend !== true
+      ) {
+        throw new Error('WECOM_MANAGER_P1_TEST_CONFIRMATION_REQUIRED')
+      }
+      const matches = hotels.filter((hotel) => hotel.hotelCode === '011')
+      if (matches.length !== 1) {
+        throw new Error('WECOM_MANAGER_P1_TEST_FIXED_HOTEL_UNAVAILABLE')
+      }
+      const result = await deliverWeComManagerP1Test({
+        hotel: matches[0],
+        messageKeyNonce: 'MANAGER_P1_TEST_011_20260912_V1',
+      })
+      auditSecurityEvent({
+        action: 'WECOM_MANAGER_P1_TEST',
+        outcome: result.deliveryStatus === 'DELIVERED'
+          ? 'SUCCEEDED'
+          : 'BLOCKED',
+        request,
+        hotelId: matches[0].hotelId,
+        reasonCode: result.reasonCode,
       })
       json(response, 200, { data: result })
       return
@@ -12507,70 +12617,8 @@ const server = createServer(async (request, response) => {
         ) {
           throw new Error('WECOM_MANAGER_P1_TEST_BOT_CHANGED')
         }
-        if (!weComRepairBotReady()) {
-          throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
-        }
-        const recipientCount = weComRepairBotRecipientsForHotel(
-          weComRepairBotCredentials ?? {},
-          hotelId,
-        ).length
-        if (recipientCount === 0) {
-          throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
-        }
-        const now = new Date()
-        const { dateKey } = shanghaiScheduleParts(now)
-        const observedAt = new Date(now.getTime() + (8 * 60 * 60 * 1000))
-          .toISOString()
-          .replace('Z', '+08:00')
-        const stayDateValue = new Date(`${dateKey}T00:00:00Z`)
-        stayDateValue.setUTCDate(stayDateValue.getUTCDate() + 15)
-        const stayDate = stayDateValue.toISOString().slice(0, 10)
-        const snapshot = {
-          businessDate: dateKey,
-          observedAt,
-          collectionRunId: `manager-p1-test-${randomUUID()}`,
-        }
-        const candidate = {
-          stateKey: `${hotelId}:${stayDate}`,
-          stayDate,
-          dayOffset: 15,
-          reasons: ['CROSS_20_PERCENT'],
-          row: {
-            stayDate,
-            bookedRoomNights: 12,
-            availableRooms: 18,
-            roomCount: 30,
-            occupancyPercent: 40,
-            hourlyNetRoomNights: 3,
-          },
-        }
-        const [payload] = createFutureDemandP1WeComPayloads(
-          selected,
-          snapshot,
-          candidate,
-          { testMode: true },
-        )
-        const delivery = await deliverWeComRepairBotDirectMessage({
-          hotelId,
-          messageKey:
-            `${hotelId}:P1_FUTURE_DEMAND_TEST:`
-            + `${snapshot.collectionRunId}:WECOM_LONG_CONNECTION`,
-          deliveryType: 'P1_FUTURE_DEMAND_TEST',
-          content: payload.text.content,
-          businessDate: dateKey,
-          cutoffAt: observedAt,
-        })
-        json(response, 200, {
-          data: {
-            deliveryId: delivery.deliveryId,
-            deliveryStatus: delivery.deliveryStatus,
-            reasonCode: delivery.reasonCode,
-            recipientCount: delivery.partCount,
-            deliveredRecipientCount: delivery.deliveredPartCount,
-            attemptedAt: delivery.attemptedAt,
-            completedAt: delivery.completedAt,
-          },
-        })
+        const result = await deliverWeComManagerP1Test({ hotel: selected })
+        json(response, 200, { data: result })
         return
       }
       if (
