@@ -212,3 +212,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
 - `/etc/sifangguan-ota/runtime.env`：解密密钥与后台登录秘密。
 
 两者必须一起备份并加密保存；缺少 `runtime.env` 时，历史加密凭据不可恢复。
+
+经营分析使用独立的 `/var/lib/sifangguan-ota/analytics-retention`：实时采集只追加
+本地持久队列，systemd 每 5 分钟批量、幂等导入 PostgreSQL 的
+`ota_analytics` schema。小时事实保留 48 个月、日终事实 2 年，月/季/半年/年度
+汇总 5 年。原始响应写盘前执行字段级和文本级脱敏，再用独立
+AES-256-GCM 密钥加密，允许 30–90 天，默认 90 天。
+
+部署脚本会安装数据库结构、导入定时器并生成原始响应专用密钥；PostgreSQL 与
+加密原始响应的异机副本由 `infra/production/backup/backup-postgres.sh` 统一执行。
+环比、同比读取 `ota_analytics.period_comparison`，百分比分母为零时返回 `NULL`，
+缺失天数通过 `completeness=PARTIAL` 显式标记。

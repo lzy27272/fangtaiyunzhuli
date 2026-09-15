@@ -568,6 +568,7 @@ export const collectLuopanControlledBrowser = async ({
   hotSellingRoomTypeCodes = [],
   collectValidStayedOrders = false,
   now = new Date(),
+  onSourceResponse = null,
 }) => {
   if (
     !hotel
@@ -589,7 +590,16 @@ export const collectLuopanControlledBrowser = async ({
     }
     const scope = await readSingleHotelScope(page)
     verifyFingerprint(scope.fingerprint, expectedHotelFingerprint)
+    const observedAt = localIso(now)
     const tableRows = await queryForecastRows(page, scope.businessDate)
+    if (typeof onSourceResponse === 'function') {
+      onSourceResponse({
+        sourceId: 'LUOPAN_ROOM_FORECAST_CURRENT',
+        sourceSystem: 'LUOPAN_CLOUD',
+        observedAt,
+        payload: tableRows,
+      })
+    }
     const parsed = parseLuopanForecastTable({
       rows: tableRows,
       businessDate: scope.businessDate,
@@ -597,6 +607,14 @@ export const collectLuopanControlledBrowser = async ({
     })
     const futureEndDate = addCalendarDays(scope.businessDate, 14)
     const futureTableRows = await queryForecastRows(page, futureEndDate)
+    if (typeof onSourceResponse === 'function') {
+      onSourceResponse({
+        sourceId: 'LUOPAN_ROOM_FORECAST_FUTURE',
+        sourceSystem: 'LUOPAN_CLOUD',
+        observedAt,
+        payload: futureTableRows,
+      })
+    }
     const futurePage = parseLuopanForecastTable({
       rows: futureTableRows,
       businessDate: futureEndDate,
@@ -619,7 +637,6 @@ export const collectLuopanControlledBrowser = async ({
       )
       .sort((left, right) =>
         left.stayDate.localeCompare(right.stayDate))
-    const observedAt = localIso(now)
     const collectionRunId = randomUUID()
     const ingestedAt = localIso(new Date())
     let validStayedOrderSummary = null

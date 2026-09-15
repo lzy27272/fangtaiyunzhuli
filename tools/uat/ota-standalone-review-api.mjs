@@ -101,6 +101,10 @@ import {
   monitorFromSnapshot,
 } from './live-report-collector.mjs'
 import {
+  ANALYTICS_RETENTION_POLICY,
+  createAnalyticsRetentionStore,
+} from './analytics-retention.mjs'
+import {
   normalizeBieyanghongCookieHeader,
   validateBieyanghongCookieAccess,
 } from './bieyanghong-cookie-validation.mjs'
@@ -230,6 +234,23 @@ const cookieSecretsPath =
 const cookieSecretKey = process.env.OTA_REVIEW_SECRET_KEY?.trim()
 const pseudonymSecretKey =
   process.env.OTA_REVIEW_PSEUDONYM_SECRET_KEY?.trim()
+const analyticsRetentionEnabled =
+  process.env.OTA_ANALYTICS_RETENTION_ENABLED === 'true'
+const analyticsRawRetentionDays = Number.parseInt(
+  process.env.OTA_ANALYTICS_RAW_RETENTION_DAYS
+    ?? String(ANALYTICS_RETENTION_POLICY.rawEvidenceDefaultDays),
+  10,
+)
+const analyticsRetention = analyticsRetentionEnabled
+  ? createAnalyticsRetentionStore({
+      rootPath:
+        process.env.OTA_ANALYTICS_RETENTION_ROOT?.trim()
+        || (dataPath ? join(dirname(dataPath), 'analytics-retention') : ''),
+      encryptionKey:
+        process.env.OTA_ANALYTICS_RAW_EVIDENCE_KEY?.trim(),
+      rawRetentionDays: analyticsRawRetentionDays,
+    })
+  : null
 const automaticHourlyCollectionEnabled =
   process.env.OTA_REVIEW_AUTO_COLLECTION_ENABLED === 'true'
 const runtimeMode =
@@ -596,6 +617,7 @@ const briefingHealthAudits = []
 const lastScheduledCollectionSlotByHotel = new Map()
 let scheduledCollectionRunning = false
 let scheduledHotSellingDeliveryWorkflowRunning = false
+let lastAnalyticsRawSweepAt = 0
 const luopanRepairChallengeStore = createLuopanRepairChallengeStore()
 const activeLuopanRepairsByHotel = new Map()
 const latestLuopanRepairChallengeHashByHotel = new Map()
@@ -5077,6 +5099,11 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
       const nextSources = [...activeSources]
       nextSources[activeSourceIndex] = updated
       const pairedSources = pairOtaReviewAndOrderSources(nextSources)
+      analyticsRetention?.recordOtaSource({
+        tenantId: selectedHotel(hotelId).tenantId,
+        hotelId,
+        source: updated,
+      })
       otaSourcesByHotel.set(hotelId, pairedSources)
       persistOtaSources()
       return decorateOtaSources(hotelId, [
@@ -5116,6 +5143,11 @@ const refreshOtaSourceFor = async (hotelId, sourceId) => {
       const nextSources = [...activeSources]
       nextSources[activeSourceIndex] = updated
       const pairedSources = pairOtaReviewAndOrderSources(nextSources)
+      analyticsRetention?.recordOtaSource({
+        tenantId: selectedHotel(hotelId).tenantId,
+        hotelId,
+        source: updated,
+      })
       otaSourcesByHotel.set(hotelId, pairedSources)
       persistOtaSources()
       process.stderr.write(
@@ -5190,6 +5222,48 @@ const refreshEnabledOtaSourcesFor = async (
   return results
 }
 
+const analyticsRawArchiverFor = (hotel) => analyticsRetention
+  ? ({ sourceId, sourceSystem, observedAt, payload }) =>
+      analyticsRetention.archiveRawResponse({
+        tenantId: hotel.tenantId,
+        hotelId: hotel.hotelId,
+        sourceId,
+        sourceSystem,
+        observedAt,
+        payload,
+      })
+  : null
+
+const recordAnalyticsSnapshot = (snapshot) => {
+  if (!analyticsRetention) return []
+  return analyticsRetention.recordSnapshot({
+    snapshot,
+    previousSnapshots: liveSnapshotStore[snapshot.hotelId] ?? [],
+  })
+}
+
+const analyticsImportHealth = () => {
+  if (!analyticsRetention) return { status: 'DISABLED' }
+  const statusPath = join(analyticsRetention.rootPath, 'import-status.json')
+  if (!existsSync(statusPath)) return { status: 'IMPORT_PENDING' }
+  try {
+    const persisted = JSON.parse(readFileSync(statusPath, 'utf8'))
+    const importedAt = new Date(persisted.lastImportedAt)
+    if (!Number.isFinite(importedAt.getTime())) throw new Error('INVALID_DATE')
+    const stale = Date.now() - importedAt.getTime() > 15 * 60_000
+    return {
+      status: stale ? 'IMPORT_STALE' : 'READY',
+      lastImportedAt: importedAt.toISOString(),
+      hourlyFactCount: Number(persisted.hourlyFactCount) || 0,
+      dailyFactCount: Number(persisted.dailyFactCount) || 0,
+      rollupCount: Number(persisted.rollupCount) || 0,
+      ingestErrorCount: Number(persisted.ingestErrorCount) || 0,
+    }
+  } catch {
+    return { status: 'IMPORT_STATUS_INVALID' }
+  }
+}
+
 const collectLuopanLiveFor = async (
   hotelId,
   config,
@@ -5208,6 +5282,7 @@ const collectLuopanLiveFor = async (
       hotSellingRoomTypeCodes:
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
       collectValidStayedOrders: hasEnabledMeituanReviewSource(hotelId),
+      onSourceResponse: analyticsRawArchiverFor(hotel),
     })
     if (!publishSnapshot) {
       return {
@@ -5215,6 +5290,7 @@ const collectLuopanLiveFor = async (
         otaRefreshes: [],
       }
     }
+    recordAnalyticsSnapshot(result.snapshot)
     appendAndPersistSnapshot(
       liveSnapshotStore,
       liveSnapshotPath,
@@ -5337,6 +5413,7 @@ const collectLiveFor = async (
         hotSellingRoomTypeCodes:
           hotSellingRoomTypesFor(hotelId).roomTypeCodes,
         configuredReportDate: businessDayControl.businessDate,
+        onSourceResponse: analyticsRawArchiverFor(hotel),
       })
       if (
         publishSnapshot
@@ -5355,6 +5432,7 @@ const collectLiveFor = async (
         persistBusinessDayControls()
       }
       if (publishSnapshot) {
+        recordAnalyticsSnapshot(result.snapshot)
         appendAndPersistSnapshot(
           liveSnapshotStore,
           liveSnapshotPath,
@@ -5410,6 +5488,7 @@ const collectLiveFor = async (
       hotSellingRoomTypeCodes:
         hotSellingRoomTypesFor(hotelId).roomTypeCodes,
       reportDate: businessDayControl.businessDate,
+      onSourceResponse: analyticsRawArchiverFor(hotel),
     })
     if (hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG') {
       if (publishSnapshot) {
@@ -5455,6 +5534,7 @@ const collectLiveFor = async (
       )
     }
     if (publishSnapshot) {
+      recordAnalyticsSnapshot(result.snapshot)
       appendAndPersistSnapshot(
         liveSnapshotStore,
         liveSnapshotPath,
@@ -5614,6 +5694,21 @@ const scheduledOtaSourceTick = async () => {
         ).length,
       })}\n`,
     )
+  }
+}
+
+const scheduledAnalyticsRetentionTick = () => {
+  if (!analyticsRetention) return
+  const now = Date.now()
+  if (now - lastAnalyticsRawSweepAt < 24 * 60 * 60_000) return
+  const removed = analyticsRetention.sweepRawEvidence({ now: new Date(now) })
+  lastAnalyticsRawSweepAt = now
+  if (removed.length > 0) {
+    process.stdout.write(`${JSON.stringify({
+      event: 'ANALYTICS_RAW_RETENTION_COMPLETED',
+      removedFileCount: removed.length,
+      retentionDays: analyticsRetention.rawRetentionDays,
+    })}\n`)
   }
 }
 
@@ -6619,6 +6714,7 @@ const startYilianCloudRecovery = async (
       }
       activationCommitted = true
       try {
+        recordAnalyticsSnapshot(shadow.snapshot)
         appendAndPersistSnapshot(
           liveSnapshotStore,
           liveSnapshotPath,
@@ -10237,6 +10333,7 @@ const acceptTrustedDeviceSnapshot = ({
     })
   }
   if (!existing) {
+    recordAnalyticsSnapshot(snapshot)
     appendAndPersistSnapshot(
       liveSnapshotStore,
       liveSnapshotPath,
@@ -10522,6 +10619,16 @@ const server = createServer(async (request, response) => {
         outboundDeliveryReady: weComDeliveryLedgerReady,
         outboundDeliveryBlockedReasonCode: weComDeliveryLedgerReasonCode,
         aiAdvice: futureBookingAiStatus,
+        analyticsRetention: {
+          enabled: Boolean(analyticsRetention),
+          ...analyticsImportHealth(),
+          hourlyMonths: ANALYTICS_RETENTION_POLICY.hourlyMonths,
+          dailyYears: ANALYTICS_RETENTION_POLICY.dailyYears,
+          aggregateYears: ANALYTICS_RETENTION_POLICY.aggregateYears,
+          rawEvidenceDays: analyticsRetention?.rawRetentionDays ?? null,
+          offsiteCopyRequired:
+            ANALYTICS_RETENTION_POLICY.offsiteCopyRequired,
+        },
         luopanAssistedRepair: {
           enabled: luopanAssistedRepairEnabled,
           ready: luopanAssistedRepairReady(),
@@ -13095,6 +13202,7 @@ server.listen(port, host, () => {
     void scheduledYilianRecoveryTick()
     void scheduledCollectionTick()
     void scheduledOtaSourceTick()
+    scheduledAnalyticsRetentionTick()
     void scheduledWeComDeliveryTick()
     void scheduledFutureBookingDeliveryTick()
     void scheduledHotSellingDeliveryWorkflowTick()

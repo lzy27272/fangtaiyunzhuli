@@ -1334,6 +1334,7 @@ export const collectLiveReports = async ({
   reportDate: configuredReportDate = null,
   now = new Date(),
   fetchImpl = fetch,
+  onSourceResponse = null,
 }) => {
   const previousBusinessDate =
     configuredReportDate === null
@@ -1379,6 +1380,14 @@ export const collectLiveReports = async ({
           reportDate,
           fetchImpl,
         )
+        if (typeof onSourceResponse === 'function') {
+          onSourceResponse({
+            sourceId: source.sourceId,
+            sourceSystem: 'MEITUAN_BIEYANGHONG',
+            observedAt,
+            payload: root,
+          })
+        }
         const parsed =
           contract === 'ORDER_DETAIL'
             ? orderState(root, reportDate, secretKey, legacySecretKey)

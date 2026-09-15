@@ -208,6 +208,7 @@ const fetchFor = (version, requests) => async (url, init) => {
 
 test('collector creates a safe real baseline from all three PMS reports', async () => {
   const requests = []
+  const rawResponses = []
   const result = await collectLiveReports({
     hotel,
     sources,
@@ -217,10 +218,16 @@ test('collector creates a safe real baseline from all three PMS reports', async 
     target: { roomRevenueTarget: '2000.00' },
     now: new Date('2026-07-26T10:00:00Z'),
     fetchImpl: fetchFor(1, requests),
+    onSourceResponse: (response) => rawResponses.push(response),
   })
 
   assert.equal(result.run.status, 'SUCCEEDED')
   assert.equal(result.run.outboundDeliveryAttempted, false)
+  assert.equal(rawResponses.length, 3)
+  assert.ok(rawResponses.every((item) =>
+    item.sourceSystem === 'MEITUAN_BIEYANGHONG'
+    && item.observedAt === result.snapshot.observedAt
+    && item.payload && typeof item.payload === 'object'))
   assert.equal(result.monitor.simulationMode, false)
   assert.equal(result.monitor.metrics.totalRevenue.value, 1000)
   assert.equal(result.monitor.metrics.soldRooms.value, 6)

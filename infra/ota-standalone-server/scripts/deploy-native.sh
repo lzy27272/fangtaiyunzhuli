@@ -553,6 +553,12 @@ if ! bash \
 fi
 
 if ! bash \
+  "${release_dir}/infra/ota-standalone-server/scripts/configure-analytics-retention.sh"; then
+  echo "ANALYTICS_RETENTION_CONFIGURATION_FAILED" >&2
+  false
+fi
+
+if ! bash \
   "${release_dir}/infra/ota-standalone-server/scripts/configure-public-entry.sh"; then
   echo "PUBLIC_ENTRY_CONFIGURATION_FAILED" >&2
   false

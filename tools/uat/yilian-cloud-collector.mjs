@@ -641,6 +641,7 @@ export const collectYilianCloudReports = async ({
   configuredReportDate = null,
   now = new Date(),
   fetchImpl = fetch,
+  onSourceResponse = null,
 }) => {
   const enabledSources = sources.filter((source) => source.enabled)
   if (enabledSources.length !== 3) throw new Error('YILIAN_SOURCE_CONTRACT_INVALID')
@@ -652,13 +653,24 @@ export const collectYilianCloudReports = async ({
     fetchImpl,
     includeAllOrders: true,
   })
+  const observedAt = localIso(now)
+  if (typeof onSourceResponse === 'function') {
+    for (const source of enabledSources) {
+      const record = fetched.records.get(source.sourceId)
+      onSourceResponse({
+        sourceId: source.sourceId,
+        sourceSystem: 'YILIAN_CLOUD',
+        observedAt,
+        payload: record?.root ?? null,
+      })
+    }
+  }
   const previousBusinessDate = configuredReportDate
     ? canonicalDate(configuredReportDate)
     : null
   if (configuredReportDate && !previousBusinessDate) {
     throw new Error('YILIAN_BUSINESS_DATE_INVALID')
   }
-  const observedAt = localIso(now)
   const realtimeRecord = [...fetched.records.values()].find(
     (record) => record.contract === 'REALTIME_OVERVIEW',
   )

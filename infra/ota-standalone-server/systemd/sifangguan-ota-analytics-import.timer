@@ -1,0 +1,12 @@
+[Unit]
+Description=Import Sifangguan OTA analytics facts every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=sifangguan-ota-analytics-import.service
+
+[Install]
+WantedBy=timers.target

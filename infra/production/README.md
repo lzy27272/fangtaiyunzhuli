@@ -4,6 +4,25 @@ These files are installation inputs for the Ubuntu 24.04 / 4 CPU / 8 GiB
 server. They do not contain credentials and do not deploy anything by
 themselves.
 
+## 数据留存与备份
+
+经营分析数据按以下固定策略运行：小时事实保留 48 个月，日终事实保留 2 年，
+月/季/半年/年度汇总保留 5 年；原始响应必须先脱敏、再使用独立密钥执行
+AES-256-GCM 加密，保留天数只能配置为 30–90 天（默认 90 天）。
+
+PostgreSQL 备份按数量精确保留 30 个日备份、12 个月备份和 3 个年度备份。
+`/etc/hotel-ai-os/backup-offsite.env` 必须由 root 创建（0600），并指向已经挂载的
+NFS、CIFS、rclone 或 SSHFS 异机目录，例如：
+
+```dotenv
+HOTEL_AI_OS_BACKUP_OFFSITE_DIR=/mnt/hotel-ai-os-offsite
+```
+
+没有远端挂载、远端校验失败或异机副本缺失时，备份任务和健康检查都会明确失败，
+不会把同机目录误报为异机备份。OTA `runtime.env`（含原始响应解密密钥）会再用
+数据库备份密钥加密后随三个层级保存；`backup-encryption.key` 本身必须单独离线
+托管，不能与异机密文放在同一存储位置。
+
 ## Expected server paths
 
 | Repository file | Server path |

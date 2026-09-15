@@ -121,6 +121,7 @@ const fixtureFor = (url) => {
 
 test('Yilian collection uses access_token, refreshes dates, paginates, and persists no raw order identity', async () => {
   const requests = []
+  const rawResponses = []
   const result = await collectYilianCloudReports({
     hotel,
     sources,
@@ -130,6 +131,7 @@ test('Yilian collection uses access_token, refreshes dates, paginates, and persi
     secretKey: 'synthetic-yilian-pseudonym-key',
     configuredReportDate: '2026-09-06',
     now: new Date('2026-09-07T02:00:00Z'),
+    onSourceResponse: (response) => rawResponses.push(response),
     fetchImpl: async (url, options) => {
       const parsed = new URL(url)
       requests.push({ url: parsed, options })
@@ -148,6 +150,11 @@ test('Yilian collection uses access_token, refreshes dates, paginates, and persi
   assert.equal(result.run.sourceCount, 3)
   assert.equal(result.run.successfulSourceCount, 3)
   assert.equal(result.run.outboundDeliveryAttempted, false)
+  assert.equal(rawResponses.length, 3)
+  assert.ok(rawResponses.every((item) =>
+    item.sourceSystem === 'YILIAN_CLOUD'
+    && item.observedAt === result.snapshot.observedAt
+    && item.payload && typeof item.payload === 'object'))
   assert.equal(result.snapshot.sourceSystem, 'YILIAN_CLOUD')
   assert.equal(result.snapshot.businessDate, '2026-09-07')
   assert.equal(result.snapshot.businessDateChanged, true)

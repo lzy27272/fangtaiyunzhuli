@@ -9,6 +9,13 @@ install -o root -g root -m 0750 \
 install -o root -g root -m 0750 \
   "${stage}/health-check.sh" \
   /usr/local/lib/hotel-ai-os/health-check.sh
+install -o root -g root -m 0600 \
+  "${stage}/backup-offsite.env.example" \
+  /etc/hotel-ai-os/backup-offsite.env.example
+if [[ ! -r /etc/hotel-ai-os/backup-offsite.env ]]; then
+  printf '%s\n' 'Create /etc/hotel-ai-os/backup-offsite.env for an already-mounted remote target.' >&2
+  exit 3
+fi
 
 for unit_name in \
   hotel-ai-os-postgres-backup.service \

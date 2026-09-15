@@ -129,7 +129,7 @@ test('non-publishing collection cannot append snapshots or refresh OTA', async (
 
   assert.match(
     genericCollection,
-    /if\s*\(publishSnapshot\)\s*\{\s*appendAndPersistSnapshot\(/u,
+    /if\s*\(publishSnapshot\)\s*\{[\s\S]*?recordAnalyticsSnapshot\([\s\S]*?appendAndPersistSnapshot\(/u,
   )
   assert.match(
     genericCollection,

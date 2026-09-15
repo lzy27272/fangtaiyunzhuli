@@ -53,11 +53,27 @@ systemctl list-timers \
   hotel-ai-os-health-check.timer \
   --no-pager
 
-latest_backup="$(find /var/backups/hotel-ai-os/postgres \
-  -maxdepth 1 -type f -name 'hotel_ai_os-auto-*.dump.enc' \
+latest_backup="$(find /var/backups/hotel-ai-os/postgres/daily \
+  -maxdepth 1 -type f -name 'hotel_ai_os-daily-*.dump.enc' \
   -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
-sha256sum --check "${latest_backup}.sha256"
+(cd "$(dirname "${latest_backup}")" && \
+  sha256sum --check "$(basename "${latest_backup}.sha256")")
 stat -c '%U:%G:%a:%s:%n' "${latest_backup}" "${latest_backup}.sha256"
+test -r /etc/hotel-ai-os/backup-offsite.env
+test "$(stat -c '%U:%a' /etc/hotel-ai-os/backup-offsite.env)" = 'root:600'
+# shellcheck disable=SC1091
+. /etc/hotel-ai-os/backup-offsite.env
+offsite_latest="${HOTEL_AI_OS_BACKUP_OFFSITE_DIR}/postgres/daily/$(basename "${latest_backup}")"
+(cd "$(dirname "${offsite_latest}")" && \
+  sha256sum --check "$(basename "${offsite_latest}.sha256")")
+if test -r /etc/sifangguan-ota/runtime.env; then
+  latest_runtime_backup="$(find /var/backups/hotel-ai-os/postgres/daily \
+    -maxdepth 1 -type f -name 'sifangguan-ota-runtime-daily-*.env.enc' \
+    -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+  offsite_runtime="${HOTEL_AI_OS_BACKUP_OFFSITE_DIR}/postgres/daily/$(basename "${latest_runtime_backup}")"
+  (cd "$(dirname "${offsite_runtime}")" && \
+    sha256sum --check "$(basename "${offsite_runtime}.sha256")")
+fi
 
 printf '%s\n' 'RESOURCES'
 df -h /
