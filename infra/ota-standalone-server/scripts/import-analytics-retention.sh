@@ -38,16 +38,20 @@ for batch_file in "${batches[@]}"; do
     mv -- "${batch_file}" "${retry_file}"
     batch_file=${retry_file}
   fi
-  sudo -u postgres psql --dbname hotel_ai_os --set ON_ERROR_STOP=1 <<SQL
-BEGIN;
-CREATE TEMP TABLE analytics_ingest_batch (payload_base64 text NOT NULL) ON COMMIT DROP;
-\copy analytics_ingest_batch (payload_base64) FROM '${batch_file}' WITH (FORMAT text)
-SELECT count(*) AS accepted_events
-FROM analytics_ingest_batch b
-CROSS JOIN LATERAL ota_analytics.ingest_base64_event(b.payload_base64) accepted
-WHERE accepted;
-COMMIT;
-SQL
+  # The queue directory remains 0700. Root reads the batch and feeds it over
+  # stdin; the postgres OS account never receives filesystem access to the
+  # encrypted-evidence tree or spool directory.
+  {
+    printf '%s\n' \
+      'BEGIN;' \
+      'CREATE TEMP TABLE analytics_ingest_batch (payload_base64 text NOT NULL) ON COMMIT DROP;' \
+      '\copy analytics_ingest_batch (payload_base64) FROM STDIN WITH (FORMAT text)'
+    sed '/^$/d' "${batch_file}"
+    printf '%s\n' \
+      '\.' \
+      'SELECT count(*) AS accepted_events FROM analytics_ingest_batch b CROSS JOIN LATERAL ota_analytics.ingest_base64_event(b.payload_base64) accepted WHERE accepted;' \
+      'COMMIT;'
+  } | sudo -u postgres psql --dbname hotel_ai_os --set ON_ERROR_STOP=1
   rm -f -- "${batch_file}"
 done
 
