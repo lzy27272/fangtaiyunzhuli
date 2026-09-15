@@ -210,6 +210,143 @@ test('managed account sees only assigned hotels and scoped APIs enforce the same
       },
     )).status, 403)
 
+    const revenueManagerCreateResponse = await fetch(
+      `http://127.0.0.1:${port}/api/v1/auth/accounts`,
+      {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'scoped-revenue-manager',
+          displayName: '001门店OTA运营经理',
+          password: 'example-Scoped-Revenue-Password-42',
+          roles: ['OTA_OPERATION_MANAGER'],
+          hotelIds: [hotel001.hotelId],
+        }),
+      },
+    )
+    assert.equal(revenueManagerCreateResponse.status, 201)
+    const revenueManagerLogin = await login(
+      port,
+      'scoped-revenue-manager',
+      'example-Scoped-Revenue-Password-42',
+    )
+    assert.equal(revenueManagerLogin.status, 200)
+    const revenueManagerSession = await revenueManagerLogin.json()
+    const revenueManagerHeaders = {
+      Authorization: `Bearer ${revenueManagerSession.accessToken}`,
+    }
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/configuration`,
+      { headers: revenueManagerHeaders },
+    )).status, 200)
+
+    const roomTypeConfigurationResponse = await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/room-type-configuration`,
+      { headers: revenueManagerHeaders },
+    )
+    assert.equal(roomTypeConfigurationResponse.status, 200)
+    const roomTypeConfiguration = (
+      await roomTypeConfigurationResponse.json()
+    ).data
+    const roomTypeSaveResponse = await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/room-type-configuration`,
+      {
+        method: 'POST',
+        headers: {
+          ...revenueManagerHeaders,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'scoped-revenue-room-type-save-1',
+        },
+        body: JSON.stringify({
+          expectedRowVersion: roomTypeConfiguration.rowVersion,
+          mappings: roomTypeConfiguration.mappings,
+          hotSellingRoomTypeCodes:
+            roomTypeConfiguration.hotSellingRoomTypeCodes,
+          reasonCode: 'UPDATE_ROOM_TYPE_CONFIGURATION',
+        }),
+      },
+    )
+    assert.equal(roomTypeSaveResponse.status, 200)
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}`
+      + '/configuration/targets/73000000-0000-4000-8000-000000000001',
+      {
+        method: 'POST',
+        headers: {
+          ...revenueManagerHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          expectedRowVersion: 1,
+          reasonCode: 'UPDATE_STORE_OPERATION_CONFIGURATION',
+        }),
+      },
+    )).status, 200)
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}`
+      + '/configuration/targets/------------------------------------',
+      {
+        method: 'POST',
+        headers: {
+          ...revenueManagerHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          expectedRowVersion: 1,
+          reasonCode: 'UPDATE_STORE_OPERATION_CONFIGURATION',
+        }),
+      },
+    )).status, 403)
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/report-sources`,
+      {
+        method: 'POST',
+        headers: {
+          ...revenueManagerHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sources: [],
+          reasonCode: 'FORBIDDEN_SOURCE_CHANGE',
+        }),
+      },
+    )).status, 403)
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}`
+      + `/api/v1/ota/tenants/${encodeURIComponent(hotel002.tenantId)}`
+      + `/hotels/${encodeURIComponent(hotel002.hotelId)}`
+      + '/room-type-configuration',
+      {
+        method: 'POST',
+        headers: {
+          ...revenueManagerHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          expectedRowVersion: 0,
+          mappings: [],
+          hotSellingRoomTypeCodes: [],
+          reasonCode: 'UPDATE_ROOM_TYPE_CONFIGURATION',
+        }),
+      },
+    )).status, 404)
+    assert.equal((await fetch(
+      `http://127.0.0.1:${port}${hotelBasePath}/room-type-configuration`,
+      {
+        method: 'POST',
+        headers: {
+          ...repairHeaders,
+          'Idempotency-Key': 'general-manager-room-type-save-1',
+        },
+        body: JSON.stringify({
+          expectedRowVersion: 0,
+          mappings: [],
+          hotSellingRoomTypeCodes: [],
+          reasonCode: 'UPDATE_ROOM_TYPE_CONFIGURATION',
+        }),
+      },
+    )).status, 403)
+
     const updateResponse = await fetch(
       `http://127.0.0.1:${port}/api/v1/auth/accounts/${created.id}`,
       {

@@ -10565,6 +10565,21 @@ const isPlatformAdmin = (principal) =>
 
 const canConfigureHotels = (principal) => isPlatformAdmin(principal)
 
+const canConfigureRevenue = (principal) =>
+  canConfigureHotels(principal)
+  || Boolean(principal?.roles?.includes('OTA_OPERATION_MANAGER'))
+
+const REVENUE_WRITE_SUFFIXES = new Set([
+  '/hot-selling-room-types',
+  '/room-type-configuration',
+])
+
+const isRevenueWriteSuffix = (suffix) => {
+  if (REVENUE_WRITE_SUFFIXES.has(suffix)) return true
+  const targetMatch = suffix.match(/^\/configuration\/targets\/([^/]+)$/u)
+  return Boolean(targetMatch && SIMULATION_HOTEL_ID.test(targetMatch[1]))
+}
+
 const ASSIGNABLE_REVIEW_ROLES = new Set([
   'PLATFORM_ADMIN',
   'GENERAL_MANAGER',
@@ -11691,6 +11706,10 @@ const server = createServer(async (request, response) => {
         !['GET', 'HEAD'].includes(request.method ?? '')
         && !canConfigureHotels(requestPrincipal)
         && !REPAIR_WRITE_SUFFIXES.has(suffix)
+        && !(
+          canConfigureRevenue(requestPrincipal)
+          && isRevenueWriteSuffix(suffix)
+        )
       ) {
         auditSecurityEvent({
           action: 'HOTEL_WRITE',
@@ -11899,7 +11918,7 @@ const server = createServer(async (request, response) => {
       }
 
       if (request.method === 'GET' && suffix === '/configuration') {
-        if (!canConfigureHotels(requestPrincipal)) {
+        if (!canConfigureRevenue(requestPrincipal)) {
           rejectForbidden(response)
           return
         }
