@@ -67,4 +67,18 @@ systemctl restart sifangguan-ota-api.service
 systemctl start sifangguan-ota-analytics-import.service
 systemctl is-active sifangguan-ota-analytics-import.timer
 
+api_ready=false
+for _ in $(seq 1 30); do
+  if curl --fail --silent --show-error \
+      http://127.0.0.1:8091/health >/dev/null; then
+    api_ready=true
+    break
+  fi
+  sleep 2
+done
+if [[ ${api_ready} != true ]]; then
+  echo 'ANALYTICS_API_HEALTH_TIMEOUT' >&2
+  exit 1
+fi
+
 printf '%s\n' 'ANALYTICS_RETENTION_CONFIGURED'
