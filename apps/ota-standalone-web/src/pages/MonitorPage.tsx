@@ -126,16 +126,16 @@ function sameRoomTypeCodes(left: string[], right: string[]) {
 function collectionErrorMessage(cause: unknown): string {
   const code = cause instanceof Error ? cause.message : ''
   if (code === 'REPORT_SOURCE_COOKIE_REQUIRED') {
-    return '当前门店已配置报表接口，但尚未保存任何Cookie。请到“报表接口”页为当前门店填写并保存Cookie后重新采集。'
+    return '当前门店已生成 PMS 数据入口，但尚未完成登录授权。请到“PMS系统配置”按厂家提示完成授权后重新采集。'
   }
   if (code === 'REPORT_SOURCE_ENABLED_REQUIRED') {
-    return '当前门店没有启用的报表接口，请先到“报表接口”页启用接口。'
+    return '当前门店没有可用的 PMS 数据入口，请先到“PMS系统配置”核对厂家与入口状态。'
   }
   if (code === 'PMS_BUSINESS_DATE_UNAVAILABLE') {
     return '当前门店Cookie无法访问PMS营业日接口，可能已经失效或缺少登录上下文。请更新Cookie后重新采集。'
   }
   if (code === 'PMS_SESSION_REAUTH_REQUIRED') {
-    return 'PMS已拒绝当前登录会话，本次未生成新简报。请到“报表接口”页更新当前门店的PMS Cookie后重新采集。'
+    return 'PMS已拒绝当前登录会话，本次未生成新简报。请到“PMS系统配置”按厂家方式恢复登录后重新采集。'
   }
   if (code === 'PMS_BUSINESS_DATE_INVALID') {
     return 'PMS返回的营业日格式无效，本次未生成经营监控数据。'
@@ -370,7 +370,7 @@ export function MonitorPage({
           个。
           {cookieReadySourceCount === enabledReportSources.length
             ? ' 采集凭据已就绪。'
-            : ' 缺少Cookie的接口无法采集，请到“报表接口”页补充并保存。'}
+            : ' 缺少登录授权的数据入口无法采集，请到“PMS系统配置”按厂家提示处理。'}
           {cookieMissingSources.length > 0 ? (
             <ul className="monitor-attention-list">
               {cookieMissingSources.map((source) => (
@@ -387,7 +387,7 @@ export function MonitorPage({
               type="button"
               onClick={() => onOpenReportSources(cookieMissingAttention)}
             >
-              进入报表接口核对配置
+              进入PMS系统配置
             </button>
           ) : null}
         </div>
@@ -444,7 +444,7 @@ export function MonitorPage({
             onClick={() =>
               onOpenReportSources(incompleteMonitorAttention)}
           >
-            进入报表接口核对配置
+            进入PMS系统配置
           </button>
         </div>
       ) : null}
@@ -728,7 +728,7 @@ export function MonitorPage({
             </div>
           ) : (
             <div className="state-panel">
-              尚未配置OTA数据源。进入“报表接口”填写OTA后台网址、
+              尚未配置OTA数据源。进入“OTA平台配置”填写OTA后台网址、
               JSON数据接口、Cookie及账号密码。
             </div>
           )}

@@ -30,9 +30,12 @@ interface Props {
   canConfigure: boolean
   hotelCode: string
   pmsSystemCode: PmsSystemCode
+  pmsSystemName: string
   attentionItems: ReportSourceAttention[]
   otaAttentionSourceId: string | null
 }
+
+type CollectionSection = 'overview' | 'pms' | 'ota'
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   ORDER_DETAIL: '订单明细报表',
@@ -47,6 +50,31 @@ const CALCULATION_ROLE_LABELS: Record<CalculationRole, string> = {
   PRIMARY_CALCULATION: '主计算来源',
   AUXILIARY_CALCULATION: '辅助计算来源',
 }
+
+const PMS_VENDOR_LABELS: Record<PmsSystemCode, string> = {
+  MEITUAN_BIEYANGHONG: '美团别样红 PMS',
+  LUOPAN_CLOUD: '罗盘 PMS',
+  YILIAN_CLOUD: '驿联云 PMS',
+  OTHER: '其他 PMS 厂家',
+}
+
+const LUOPAN_MANAGED_DATA_ENTRIES = [
+  {
+    code: 'business-day',
+    name: 'PMS营业日与夜审状态',
+    detail: '服务器受控会话自动读取',
+  },
+  {
+    code: 'room-forecast',
+    name: '房态预测与实体库存',
+    detail: '罗盘内置页面自动采集',
+  },
+  {
+    code: 'operating-metrics',
+    name: '可售、已售、出租率、ADR与预计房费',
+    detail: '罗盘内置页面自动采集',
+  },
+] as const
 
 const REQUIRED_COVERAGE: Array<{
   type: ReportType
@@ -106,6 +134,7 @@ export function ReportSourceConfigPage({
   canConfigure,
   hotelCode,
   pmsSystemCode,
+  pmsSystemName,
   attentionItems,
   otaAttentionSourceId,
 }: Props) {
@@ -113,7 +142,7 @@ export function ReportSourceConfigPage({
   const [cookieDrafts, setCookieDrafts] = useState<Record<string, string>>({})
   const [cookieClears, setCookieClears] = useState<Record<string, boolean>>({})
   const [collectionSection, setCollectionSection] =
-    useState<'overview' | 'pms' | 'ota' | 'reports'>('overview')
+    useState<CollectionSection>('overview')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -123,6 +152,24 @@ export function ReportSourceConfigPage({
   const [trustedDeviceEligible, setTrustedDeviceEligible] =
     useState<boolean | null>(null)
   const [overviewVersion, setOverviewVersion] = useState(0)
+  const selectedPmsVendorLabel = pmsSystemCode === 'OTHER'
+    ? pmsSystemName.trim() || PMS_VENDOR_LABELS.OTHER
+    : PMS_VENDOR_LABELS[pmsSystemCode]
+
+  function openCollectionSection(section: CollectionSection) {
+    setCollectionSection(section)
+    window.requestAnimationFrame(() => {
+      const targetId = section === 'overview'
+        ? 'data-access-overview'
+        : section === 'pms'
+          ? 'pms-system-config-panel'
+          : 'ota-source-config-panel'
+      document.getElementById(targetId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    })
+  }
 
   useEffect(() => {
     if (!context) {
@@ -216,6 +263,7 @@ export function ReportSourceConfigPage({
 
   useEffect(() => {
     if (loading || attentionRows.length === 0) return
+    setCollectionSection('pms')
     const frame = window.requestAnimationFrame(() => {
       const panel = document.getElementById('report-source-attention-panel')
       panel?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -363,7 +411,7 @@ export function ReportSourceConfigPage({
         <div>
           <p className="eyebrow">管理员专用</p>
           <h2>数据采集设置</h2>
-          <p>按步骤检查酒店系统、渠道平台和数据报表。日常维护只需进入对应步骤，无需理解技术参数。</p>
+          <p>按步骤检查 PMS 系统和 OTA 平台。厂家链接与报表入口由系统按门店档案自动加载。</p>
         </div>
         <span className="mode-chip">仅管理员可见</span>
       </div>
@@ -371,15 +419,14 @@ export function ReportSourceConfigPage({
       <div className="collection-step-nav" aria-label="采集设置步骤">
         {([
           ['overview', '状态总览', '先看是否正常'],
-          ['pms', 'PMS配置', 'Cookie与接口地址'],
-          ['ota', '渠道平台', '携程、美团等'],
-          ['reports', '高级报表', '接口与登录凭据'],
+          ['pms', 'PMS系统配置', '按厂家自动匹配'],
+          ['ota', 'OTA平台配置', '携程、美团等'],
         ] as const).map(([code, label, detail], index) => (
           <button
             className={collectionSection === code ? 'active' : ''}
             key={code}
             type="button"
-            onClick={() => setCollectionSection(code)}
+            onClick={() => openCollectionSection(code)}
           >
             <span>{index + 1}</span>
             <strong>{label}</strong>
@@ -395,33 +442,74 @@ export function ReportSourceConfigPage({
           {collectionSection === 'overview' ? <>
             <DataAccessOverviewPanel
               context={context}
+              onOpenOtaConfiguration={() => openCollectionSection('ota')}
+              onOpenPmsConfiguration={() => openCollectionSection('pms')}
               pmsSystemCode={pmsSystemCode}
               pmsLoginConfigured={pmsLoginConfig?.configured ?? false}
               refreshVersion={overviewVersion}
               reportSources={sources}
             />
             <div className="collection-next-actions">
-              <button type="button" onClick={() => setCollectionSection('pms')}>检查酒店系统</button>
-              <button className="secondary" type="button" onClick={() => setCollectionSection('ota')}>检查渠道平台</button>
+              <button type="button" onClick={() => openCollectionSection('pms')}>PMS系统配置</button>
+              <button className="secondary" type="button" onClick={() => openCollectionSection('ota')}>OTA平台配置</button>
             </div>
           </> : null}
 
-          {collectionSection === 'pms' ? <>
+          {collectionSection === 'pms' ? <div
+            className="pms-system-config"
+            id="pms-system-config-panel"
+            tabIndex={-1}
+          >
             <article className="report-source-card pms-endpoint-card">
               <header>
                 <div>
-                  <span>{hotelCode} 门店 PMS 配置</span>
-                  <strong>PMS 接口与 Cookie</strong>
+                  <span>{hotelCode} 门店</span>
+                  <strong>PMS系统配置</strong>
                 </div>
-                <span className="mode-chip">本店独立 · {sources.length} 个接口</span>
+                <span className="mode-chip">
+                  系统已匹配 · {selectedPmsVendorLabel}
+                </span>
               </header>
+              <div className="pms-vendor-selection">
+                <label>
+                  系统自动选择的 PMS 厂家
+                  <select
+                    aria-label="当前门店 PMS 厂家"
+                    disabled
+                    value={pmsSystemCode}
+                  >
+                    {Object.entries(PMS_VENDOR_LABELS).map(([code, label]) => (
+                      <option key={code} value={code}>
+                        {code === 'OTHER' ? selectedPmsVendorLabel : label}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    已根据门店档案自动选择；进入本页即加载该厂家的登录方式、已有链接和数据入口。
+                  </small>
+                </label>
+              </div>
               <p>
-                当前门店的报表名称、接口地址和 Cookie 均独立保存，不会同步或覆盖其他门店。
-                驿联云使用云端登录授权令牌，按相同的门店隔离规则安全保存。
-                不同 PMS 厂家可按实际报表名称和接口地址分别配置。
+                {pmsSystemCode === 'OTHER'
+                  ? '该厂家尚未内置适配，可在下方录入厂家提供的数据入口；保存内容只属于当前门店。'
+                  : '厂家链接和报表入口由系统直接生成，无需再次输入。页面只要求处理该厂家必要的登录或授权。'}
               </p>
               <div className="pms-endpoint-list">
-                {sources.length > 0 ? sources.map((source) => (
+                {pmsSystemCode === 'LUOPAN_CLOUD'
+                  ? LUOPAN_MANAGED_DATA_ENTRIES.map((entry) => (
+                    <div className="pms-endpoint-row" key={entry.code}>
+                      <div>
+                        <strong>{entry.name}</strong>
+                        <span>厂家内置数据入口</span>
+                      </div>
+                      <code>{entry.detail}</code>
+                      <div className="pms-endpoint-states">
+                        <span className="endpoint-state enabled">自动生成</span>
+                        <span className="endpoint-state enabled">无需填写地址</span>
+                      </div>
+                    </div>
+                  ))
+                  : sources.length > 0 ? sources.map((source) => (
                   <div className="pms-endpoint-row" key={source.sourceId}>
                     <div>
                       <strong>{source.displayName}</strong>
@@ -441,27 +529,73 @@ export function ReportSourceConfigPage({
                   </div>
                 )) : (
                   <div className="state-panel">
-                    本店尚未配置 PMS 数据接口，可进入配置后按厂家实际报表新增。
+                    {pmsSystemCode === 'OTHER'
+                      ? '本店尚未配置 PMS 数据入口，请在下方按厂家资料新增。'
+                      : '系统尚未读取到该厂家的数据入口，请刷新状态后重试。'}
                   </div>
                 )}
               </div>
               <footer>
-                <span>页面只显示登录授权状态，不回显 Cookie、令牌或账号密码。</span>
-                <button
-                  className="secondary"
-                  type="button"
-                  onClick={() => setCollectionSection('reports')}
-                >
-                  {sources.length > 0
-                    ? pmsSystemCode === 'YILIAN_CLOUD'
-                      ? '修改接口与云端授权'
-                      : '修改接口与 Cookie'
-                    : pmsSystemCode === 'YILIAN_CLOUD'
-                      ? '新增接口与云端授权'
-                      : '新增接口与 Cookie'}
-                </button>
+                <span>
+                  {pmsSystemCode === 'OTHER'
+                    ? '仅其他 PMS 厂家需要手工维护接口定义。'
+                    : '已有链接与报表入口只读展示；Cookie、令牌和账号密码不会回显。'}
+                </span>
               </footer>
             </article>
+            {attentionRows.length > 0 ? (
+              <section
+                className="report-source-attention-panel"
+                id="report-source-attention-panel"
+                role="alert"
+                tabIndex={-1}
+              >
+                <div>
+                  <strong>最近一次 PMS 采集需要处理</strong>
+                  <span>
+                    {pmsSystemCode === 'OTHER'
+                      ? '已按失败来源定位；修改并保存后，请重新采集验证。'
+                      : '已定位到当前厂家；请按下方登录或授权提示处理，无需修改系统生成的数据入口。'}
+                  </span>
+                </div>
+                <ul>
+                  {attentionRows.map((row) => (
+                    <li key={`${row.attention.sourceId}:${row.attention.errorCode}`}>
+                      <div>
+                        <strong>
+                          {row.sourceIndex >= 0
+                            ? `数据入口 ${String(row.sourceIndex + 1).padStart(2, '0')} · `
+                            : ''}
+                          {row.source?.displayName
+                            ?? row.attention.sourceCode
+                            ?? '未识别数据入口'}
+                        </strong>
+                        <span>
+                          {row.guidance.reason}
+                          {'；需核对：'}
+                          {row.guidance.fields.join('、')}
+                        </span>
+                      </div>
+                      {pmsSystemCode === 'OTHER' && row.source ? (
+                        <button
+                          className="secondary"
+                          type="button"
+                          onClick={() =>
+                            document
+                              .getElementById(sourceCardId(row.source!.sourceId))
+                              ?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              })}
+                        >
+                          定位该数据入口
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
             {pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? (
               trustedDeviceEligible === true ? (
                 <TrustedDevicePanel
@@ -493,7 +627,7 @@ export function ReportSourceConfigPage({
             ) : (
               <article className="report-source-card">
                 <header>
-                  <div><span>酒店系统厂家</span><strong>其他 PMS 接入配置</strong></div>
+                  <div><span>酒店系统厂家</span><strong>{selectedPmsVendorLabel}接入配置</strong></div>
                   <span className="mode-chip">待适配</span>
                 </header>
                 <p>厂家名称已保存到门店档案。请先完成该厂家的只读数据接口适配、字段映射和单店校验；通过前不会启用采集或播报。</p>
@@ -516,7 +650,7 @@ export function ReportSourceConfigPage({
                 }}
               />
             ) : null}
-          </> : null}
+          </div> : null}
 
           {collectionSection === 'ota' ? <OtaSourceConfigPanel
             attentionSourceId={otaAttentionSourceId}
@@ -526,65 +660,13 @@ export function ReportSourceConfigPage({
               setOverviewVersion((current) => current + 1)}
           /> : null}
 
-          {collectionSection === 'reports' ? <>
+          {collectionSection === 'pms' && pmsSystemCode === 'OTHER' ? <>
           <div className="security-note report-source-note">
-            高级报表只在新增或更换采集接口时使用。登录凭据会按门店加密保存，保存后不再显示原文。
+            该 PMS 厂家尚未内置适配。仅在厂家提供或更换数据入口时填写；登录凭据会按门店加密保存，保存后不再显示原文。
           </div>
           <div className="security-note report-source-note" role="status">
             当前门店独立配置：报表名称、接口地址、请求内容和 Cookie 均不会同步或覆盖其他门店。
           </div>
-
-          {attentionRows.length > 0 ? (
-            <section
-              className="report-source-attention-panel"
-              id="report-source-attention-panel"
-              role="alert"
-              tabIndex={-1}
-            >
-              <div>
-                <strong>最近一次采集需要核对以下报表</strong>
-                <span>
-                  已按失败来源定位；修改并保存后，请返回“实时监控”重新采集验证。
-                </span>
-              </div>
-              <ul>
-                {attentionRows.map((row) => (
-                  <li key={`${row.attention.sourceId}:${row.attention.errorCode}`}>
-                    <div>
-                      <strong>
-                        {row.sourceIndex >= 0
-                          ? `报表 ${String(row.sourceIndex + 1).padStart(2, '0')} · `
-                          : ''}
-                        {row.source?.displayName
-                          ?? row.attention.sourceCode
-                          ?? '未识别报表'}
-                      </strong>
-                      <span>
-                        {row.guidance.reason}
-                        {'；需核对：'}
-                        {row.guidance.fields.join('、')}
-                      </span>
-                    </div>
-                    {row.source ? (
-                      <button
-                        className="secondary"
-                        type="button"
-                        onClick={() =>
-                          document
-                            .getElementById(sourceCardId(row.source!.sourceId))
-                            ?.scrollIntoView({
-                              behavior: 'smooth',
-                              block: 'center',
-                            })}
-                      >
-                        定位该报表
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
 
           <h3>计算覆盖</h3>
           <div className="coverage-grid">
@@ -759,17 +841,13 @@ export function ReportSourceConfigPage({
                       </small>
                     </label>
                     <label className="wide-field cookie-field">
-                      {pmsSystemCode === 'YILIAN_CLOUD'
-                        ? '云端登录授权（自动维护）'
-                        : '该接口专用登录凭据（可选）'}
+                      该接口专用登录凭据（可选）
                       <input
                         autoComplete="off"
-                        disabled={!canConfigure || pmsSystemCode === 'YILIAN_CLOUD'}
+                        disabled={!canConfigure}
                         maxLength={16 * 1024}
                         placeholder={
-                          pmsSystemCode === 'YILIAN_CLOUD'
-                            ? '请通过云端官方登录更新，无需手工粘贴'
-                            : source.cookieConfigured
+                          source.cookieConfigured
                             ? '已配置；留空表示保持不变'
                             : '粘贴登录凭据原文，系统会加密保存'
                         }
@@ -789,11 +867,7 @@ export function ReportSourceConfigPage({
                         }}
                       />
                       <small>
-                        {pmsSystemCode === 'YILIAN_CLOUD'
-                          ? source.cookieConfigured
-                            ? '云端授权已加密配置，不在页面回显'
-                            : '尚未完成云端登录验证'
-                          : cookieDrafts[source.sourceId]
+                        {cookieDrafts[source.sourceId]
                           ? '待替换：保存后立即从页面内存清除'
                           : source.cookieConfigured
                             ? `已安全配置${source.cookieUpdatedAt
@@ -802,7 +876,7 @@ export function ReportSourceConfigPage({
                             : '未配置；公开接口可以留空'}
                       </small>
                     </label>
-                    {source.cookieConfigured && pmsSystemCode !== 'YILIAN_CLOUD' ? (
+                    {source.cookieConfigured ? (
                       <label className="cookie-clear-option">
                         <input
                           checked={Boolean(cookieClears[source.sourceId])}

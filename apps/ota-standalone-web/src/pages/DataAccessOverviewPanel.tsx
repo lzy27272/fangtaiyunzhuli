@@ -16,6 +16,8 @@ import { businessCodeLabel, businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props {
   context: HotelContext
+  onOpenOtaConfiguration: () => void
+  onOpenPmsConfiguration: () => void
   pmsSystemCode: PmsSystemCode
   pmsLoginConfigured: boolean
   refreshVersion: number
@@ -61,6 +63,8 @@ const completenessText = (
 
 export function DataAccessOverviewPanel({
   context,
+  onOpenOtaConfiguration,
+  onOpenPmsConfiguration,
   pmsSystemCode,
   pmsLoginConfigured,
   refreshVersion,
@@ -145,7 +149,7 @@ export function DataAccessOverviewPanel({
           <p className="eyebrow">门店数据状态</p>
           <h3>当前门店数据接入总览</h3>
           <p>
-            集中查看酒店系统、渠道平台和报表配置，以及最近一次采集是否已经形成经营数据和简报。
+            集中查看酒店系统、渠道平台和已生成的数据入口，以及最近一次采集是否已经形成经营数据和简报。
           </p>
         </div>
         <button
@@ -162,7 +166,7 @@ export function DataAccessOverviewPanel({
 
       <div className="data-access-overview-grid">
         <article>
-          <span>报表接口配置</span>
+          <span>PMS数据入口</span>
           <strong>
             {reportStatus.enabledCount > 0
               ? `${reportStatus.enabledCount} 个已启用`
@@ -269,21 +273,20 @@ export function DataAccessOverviewPanel({
       </div>
 
       <div className="button-row overview-actions">
-        <a className="button-link" href="#ota-source-config-panel">
+        <button
+          className="button-link"
+          type="button"
+          onClick={onOpenOtaConfiguration}
+        >
           配置OTA平台数据
-        </a>
-        <a
+        </button>
+        <button
           className="button-link secondary"
-          href="#luopan-browser-config-panel"
+          type="button"
+          onClick={onOpenPmsConfiguration}
         >
-          核对罗盘云配置
-        </a>
-        <a
-          className="button-link secondary"
-          href="#report-source-list"
-        >
-          核对报表接口
-        </a>
+          PMS系统配置
+        </button>
       </div>
     </section>
   )

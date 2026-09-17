@@ -46,15 +46,14 @@ test('Bieyanghong defaults to scoped server-Cookie repair while retaining an exp
   assert.match(cookieRepair, /\{hotelCode\} · 云端 Cookie 修复/u)
   assert.match(cookieRepair, /当前 \{hotelCode\} 门店/u)
   assert.match(cookieRepair, /本店验证/u)
-  assert.match(page, /PMS配置/u)
-  assert.match(page, /PMS 接口与 Cookie/u)
-  assert.match(page, /当前门店的报表名称、接口地址和 Cookie 均独立保存/u)
-  assert.match(page, /本店独立/u)
+  assert.match(page, /PMS系统配置/u)
+  assert.match(page, /系统已匹配/u)
+  assert.match(page, /厂家链接和报表入口由系统直接生成，无需再次输入/u)
+  assert.match(page, /已有链接与报表入口只读展示/u)
   assert.match(page, /source\.endpointUrl/u)
-  assert.match(page, /修改接口与 Cookie/u)
-  assert.match(page, /新增接口与 Cookie/u)
+  assert.doesNotMatch(page, /修改接口与 Cookie|新增接口与 Cookie/u)
   assert.ok(
-    page.indexOf('PMS 接口与 Cookie') < page.indexOf('<TrustedDevicePanel'),
+    page.indexOf('PMS系统配置') < page.indexOf('<TrustedDevicePanel'),
   )
   assert.match(api, /ensureReportSourcesForEveryHotel/u)
   assert.match(api, /OTA_REVIEW_BIEYANGHONG_COLLECTION_MODE/u)

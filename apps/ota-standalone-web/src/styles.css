@@ -454,6 +454,7 @@ details.history-card { display: block; }
   background: #1f6453;
   font-size: .78rem;
   font-weight: 800;
+  cursor: pointer;
 }
 .overview-actions .button-link.secondary {
   border-color: #aeb9b3;
@@ -882,12 +883,44 @@ details.history-card { display: block; }
   background: #f8fcfa;
 }
 .pms-cookie-validation-card > header { background: #eaf4f0; }
+.pms-system-config {
+  display: grid;
+  gap: 1rem;
+  scroll-margin-top: 1rem;
+}
+.pms-system-config:focus { outline: none; }
 .pms-endpoint-card {
   margin-bottom: 1.2rem;
   border-color: #aac9bd;
   background: #f8fcfa;
 }
 .pms-endpoint-card > header { background: #eaf4f0; }
+.pms-vendor-selection {
+  padding: 1rem 1rem 0;
+}
+.pms-vendor-selection label {
+  display: grid;
+  gap: .45rem;
+  max-width: 32rem;
+  color: #36584e;
+  font-size: .75rem;
+  font-weight: 800;
+}
+.pms-vendor-selection select {
+  min-height: 2.7rem;
+  border: 1px solid #aac9bd;
+  border-radius: .65rem;
+  padding: .55rem .7rem;
+  color: #173a30;
+  background: #fff;
+  font: inherit;
+  opacity: 1;
+}
+.pms-vendor-selection small {
+  color: #667871;
+  font-weight: 500;
+  line-height: 1.5;
+}
 .pms-endpoint-card > p {
   margin: 0;
   padding: 1rem 1rem 0;

@@ -117,7 +117,7 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.doesNotMatch(monitorSource, /collectNow\('automatic'\)/)
   assert.match(monitorSource, /系统每小时自动采集一次 PMS 数据/)
   assert.match(monitorSource, /重新采集已配置报表/)
-  assert.match(monitorSource, /进入报表接口核对配置/)
+  assert.match(monitorSource, /进入PMS系统配置/)
   assert.match(storeConsoleSource, /const connectionTab(?:: StoreTab)? = canConfigure \? 'collection' : 'repair'/)
   assert.match(storeConsoleSource, /setTab\(connectionTab\)/)
   assert.match(storeConsoleSource, /最后采集时间/)
@@ -126,8 +126,8 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.match(storeConsoleSource, /attentionItems=\{\[\]\}/)
   assert.match(monitorSource, /incompleteMonitorAttention/)
   assert.match(monitorSource, /reportSourceGuidance/)
-  assert.match(reportSourceSource, /最近一次采集需要核对以下报表/)
-  assert.match(reportSourceSource, /定位该报表/)
+  assert.match(reportSourceSource, /最近一次 PMS 采集需要处理/)
+  assert.match(reportSourceSource, /定位该数据入口/)
   assert.match(reportSourceSource, /needs-attention/)
   assert.match(reportSourceSource, /scrollIntoView/)
   assert.match(stylesSource, /\.report-source-attention-panel/)
@@ -182,9 +182,9 @@ test('store workspaces present business Chinese and keep technical values second
   assert.match(historySource, /businessCodeLabel\(message\.deliveryStatus/)
   assert.match(historySource, /className="technical-details"/)
   assert.match(reportSourceSource, /状态总览/)
-  assert.match(reportSourceSource, /酒店系统/)
-  assert.match(reportSourceSource, /渠道平台/)
-  assert.match(reportSourceSource, /高级报表/)
+  assert.match(reportSourceSource, /PMS系统配置/)
+  assert.match(reportSourceSource, /OTA平台配置/)
+  assert.doesNotMatch(reportSourceSource, /\['reports'|高级报表/)
   assert.doesNotMatch(reportSourceSource, />变更原因码</)
   assert.match(storeConsoleSource, /HotSellingRoomConfigPanel/)
   assert.match(hotSellingRoomSource, /热销房型与渠道对应/)
@@ -355,7 +355,8 @@ test('new stores can register another PMS vendor without enabling an unsupported
   assert.match(reviewApiSource, /'OTHER'/)
   assert.match(reviewApiSource, /pmsSystemName: input\.pmsSystemName/)
   assert.match(reviewApiSource, /input\.pmsSystemCode === 'MEITUAN_BIEYANGHONG'/)
-  assert.match(reportSourceSource, /其他 PMS 接入配置/)
+  assert.match(reportSourceSource, /pmsSystemName\.trim\(\) \|\| PMS_VENDOR_LABELS\.OTHER/)
+  assert.match(reportSourceSource, /\{selectedPmsVendorLabel\}接入配置/)
 })
 
 test('report source administration and scoped revenue configuration stay separate', () => {
@@ -402,8 +403,11 @@ test('multiple report URLs are saved by hotel with HTTPS and secret boundaries',
   assert.doesNotMatch(reportSourceSource, /fetch\(['"`]https?:/)
 })
 
-test('every PMS store can edit hotel-specific interfaces and encrypted credentials', () => {
+test('known PMS vendors use generated entries while custom vendors keep scoped editing', () => {
   assert.match(businessApiSource, /enabledToggleOnly: boolean/)
+  assert.match(reportSourceSource, /厂家链接和报表入口由系统直接生成，无需再次输入/u)
+  assert.match(reportSourceSource, /LUOPAN_MANAGED_DATA_ENTRIES/u)
+  assert.match(reportSourceSource, /pmsSystemCode === 'OTHER'/u)
   assert.match(reportSourceSource, /当前门店独立配置/u)
   assert.match(reportSourceSource, /新增报表接口/u)
   assert.match(reportSourceSource, /保存本店配置/u)
@@ -552,6 +556,16 @@ test('report-source administration shows configuration, data formation, brief an
   assert.match(dataAccessOverviewSource, /loadBriefs/)
   assert.match(dataAccessOverviewSource, /loadOtaSources/)
   assert.match(dataAccessOverviewSource, /配置OTA平台数据/)
+  assert.match(dataAccessOverviewSource, /onClick=\{onOpenOtaConfiguration\}/)
+  assert.match(dataAccessOverviewSource, /onClick=\{onOpenPmsConfiguration\}/)
+  assert.match(reportSourceSource, /onOpenOtaConfiguration=\{\(\) => openCollectionSection\('ota'\)\}/)
+  assert.match(reportSourceSource, /onOpenPmsConfiguration=\{\(\) => openCollectionSection\('pms'\)\}/)
+  assert.match(reportSourceSource, /type CollectionSection = 'overview' \| 'pms' \| 'ota'/)
+  assert.doesNotMatch(
+    dataAccessOverviewSource,
+    /href="#(?:ota-source-config-panel|luopan-browser-config-panel|report-source-list)"/,
+  )
+  assert.doesNotMatch(dataAccessOverviewSource, /核对罗盘云配置|核对报表接口/)
   assert.match(dataAccessOverviewSource, /collectionRunId/)
   assert.doesNotMatch(
     dataAccessOverviewSource,
