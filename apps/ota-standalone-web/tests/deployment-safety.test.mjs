@@ -136,6 +136,7 @@ test('publisher requires a pre-pinned SSH host key for every remote transport', 
 
 test('publisher scopes releases and reuses verified immutable artifacts', () => {
   assert.match(publishSource, /Get-ReleaseChangePlan/u)
+  assert.match(publishSource, /fangtaiyunzhuli\.git/u)
   assert.match(publishSource, /\$branchOutput = @\(/u)
   assert.match(publishSource, /Invoke-CheckedCommandWithRetry/u)
   assert.match(publishSource, /http\.version=HTTP\/1\.1/u)

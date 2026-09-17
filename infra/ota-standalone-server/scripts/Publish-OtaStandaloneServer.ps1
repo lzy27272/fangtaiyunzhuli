@@ -20,7 +20,7 @@ param(
 
     [string]$ExpectedGitRemoteUrl = (
         'https://github.com/lzy27272/' +
-        'OTAyunyingtuisongzhushou.git'
+        'fangtaiyunzhuli.git'
     ),
 
     [switch]$SkipGitPush,
@@ -327,7 +327,10 @@ function Get-ReleaseChangePlan {
             continue
         }
         if ($path -match '^infra/ota-standalone-server/') {
-            if ($path -notmatch '/README\.md$') {
+            if (
+                $path -notmatch '/README\.md$' -and
+                $path -ne 'infra/ota-standalone-server/scripts/Publish-OtaStandaloneServer.ps1'
+            ) {
                 $null = $components.Add('full')
                 $runtimeChanged = $true
                 $fullRequired = $true
