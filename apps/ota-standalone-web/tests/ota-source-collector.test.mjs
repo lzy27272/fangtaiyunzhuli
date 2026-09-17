@@ -106,7 +106,7 @@ test('OTA JSON refresh stores only data-shape summary and detected dimensions', 
   assert.match(observedRoomTypes[0].roomTypeCode, /^OBS-[a-f0-9]{20}$/u)
 })
 
-test('Ctrip order endpoint stays failed closed until its schema is validated', async () => {
+test('Ctrip order endpoint rejects expired sessions and metadata-only bodies', async () => {
   const common = {
     source: {
       platformCode: 'CTRIP',
@@ -121,6 +121,15 @@ test('Ctrip order endpoint stays failed closed until its schema is validated', a
   await assert.rejects(collectOtaSource({
     ...common,
     fetchImpl: async () => new Response(JSON.stringify({
+      ResponseStatus: { Ack: 'Success' },
+      resStatus: { rcode: 402 },
+      resultStatus: { resultCode: 0 },
+    }), { status: 200 }),
+  }), /OTA_CTRIP_SESSION_INVALID/u)
+
+  await assert.rejects(collectOtaSource({
+    ...common,
+    fetchImpl: async () => new Response(JSON.stringify({
       ResponseStatus: {
         Extension: [
           { Id: 'TraceId', Value: 'must-not-be-retained' },
@@ -129,11 +138,143 @@ test('Ctrip order endpoint stays failed closed until its schema is validated', a
       },
     }), { status: 200 }),
   }), /OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED/u)
+})
+
+test('Ctrip order endpoint returns only a safe page-level aggregate', async () => {
+  const result = await collectOtaSource({
+    source: {
+      platformCode: 'CTRIP',
+      requestMethod: 'GET',
+      dataEndpointUrl:
+        'https://ebooking.ctrip.example/restapi/soa2/27204/queryOrderList/',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-ctrip-cookie',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async (_url, options) => {
+      assert.equal(options.method, 'GET')
+      assert.equal(options.body, undefined)
+      return new Response(JSON.stringify({
+        ResponseStatus: { Ack: 'Success' },
+        resStatus: { rcode: 200 },
+        total: 3,
+        orderList: [
+          { orderId: 'private-1', guestName: '张三' },
+          { orderId: 'private-2', guestName: '李四' },
+        ],
+      }), { status: 200 })
+    },
+    now: () => new Date('2026-09-17T02:00:00.000Z'),
+  })
+
+  assert.deepEqual(result, {
+    observedAt: '2026-09-17T02:00:00.000Z',
+    httpStatus: 200,
+    rootType: 'OBJECT',
+    recordPath: '$.orderList',
+    recordCount: 2,
+    detectedDimensions: ['ORDER'],
+    detectedFields: ['orderList', 'total'],
+    providerDataset: {
+      provider: 'CTRIP',
+      dataset: 'ORDER',
+      scope: 'ENDPOINT_TOTAL_AND_CURRENT_PAGE',
+      totalCount: 3,
+      returnedCount: 2,
+      hasMore: true,
+      paginationComplete: false,
+      fetchedPageCount: 1,
+    },
+  })
+  assert.equal(JSON.stringify(result).includes('private-1'), false)
+  assert.equal(JSON.stringify(result).includes('张三'), false)
+
+  const alternateSuccess = await collectOtaSource({
+    source: {
+      platformCode: 'CTRIP',
+      requestMethod: 'GET',
+      dataEndpointUrl:
+        'https://ebooking.ctrip.example/restapi/soa2/27204/queryOrderList',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-ctrip-cookie',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+    fetchImpl: async () => new Response(JSON.stringify({
+      ResponseStatus: { Ack: 'Success' },
+      resStatus: { rcode: 500 },
+      resultStatus: { resultCode: 0 },
+      total: 0,
+      orderList: [],
+    }), { status: 200 }),
+  })
+  assert.equal(alternateSuccess.providerDataset.paginationComplete, true)
+  assert.equal(alternateSuccess.recordCount, 0)
+})
+
+test('Ctrip order endpoint rejects inconsistent totals and business codes', async () => {
+  const common = {
+    source: {
+      platformCode: 'CTRIP',
+      requestMethod: 'GET',
+      dataEndpointUrl:
+        'https://ebooking.ctrip.example/restapi/soa2/27204/queryOrderList',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-ctrip-cookie',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+  }
 
   await assert.rejects(collectOtaSource({
     ...common,
     fetchImpl: async () => new Response(JSON.stringify({
-      data: [{ stayDate: '2026-09-17', orderId: 'private-order-id' }],
+      ResponseStatus: { Ack: 'Success' },
+      resStatus: { rcode: 200 },
+      total: 1,
+      orderList: [{}, {}],
+    }), { status: 200 }),
+  }), /OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED/u)
+
+  await assert.rejects(collectOtaSource({
+    ...common,
+    fetchImpl: async () => new Response(JSON.stringify({
+      ResponseStatus: { Ack: 'Success' },
+      resStatus: { rcode: 500 },
+      resultStatus: { resultCode: 1 },
+      total: 0,
+      orderList: [],
+    }), { status: 200 }),
+  }), /OTA_CTRIP_ORDER_BUSINESS_ERROR/u)
+
+  await assert.rejects(collectOtaSource({
+    ...common,
+    fetchImpl: async () => new Response(JSON.stringify({
+      ResponseStatus: { Ack: 'Success' },
+      resStatus: { rcode: 200 },
+      resultStatus: { resultCode: 1 },
+      total: 0,
+      orderList: [],
+    }), { status: 200 }),
+  }), /OTA_CTRIP_ORDER_BUSINESS_ERROR/u)
+
+  const numericStringTotal = await collectOtaSource({
+    ...common,
+    fetchImpl: async () => new Response(JSON.stringify({
+      ResponseStatus: { ack: 'Success' },
+      resStatus: { rcode: '200' },
+      total: '2',
+      orderList: [{}, {}],
+    }), { status: 200 }),
+  })
+  assert.equal(numericStringTotal.providerDataset.totalCount, 2)
+  assert.equal(numericStringTotal.providerDataset.paginationComplete, true)
+
+  await assert.rejects(collectOtaSource({
+    ...common,
+    fetchImpl: async () => new Response(JSON.stringify({
+      ResponseStatus: { Ack: 'Success' },
+      resStatus: { rcode: 200 },
+      total: '02',
+      orderList: [{}, {}],
     }), { status: 200 }),
   }), /OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED/u)
 })

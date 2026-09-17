@@ -5,6 +5,9 @@ export const OTA_INCOMPLETE_RANK_RETRY_MINUTES = 10
 export const OTA_SCHEDULER_STARTUP_GRACE_MILLISECONDS = 90_000
 const FLIGGY_AGGREGATION_VERSION = 6
 const CTRIP_ORDER_PATH = '/restapi/soa2/27204/queryorderlist'
+const CTRIP_SESSION_CLASSIFICATION_FIX_CUTOFF = Date.parse(
+  '2026-09-17T05:42:00.000Z',
+)
 const FLIGGY_LEGACY_PAGE_SIZE_FIX_CUTOFF = Date.parse(
   '2026-08-17T14:05:00.000Z',
 )
@@ -74,6 +77,24 @@ export const otaSourcePollingDue = (
     source.platformCode === 'CTRIP'
     && source.lastRefreshStatus === 'FAILED'
     && source.lastErrorCode === 'OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED'
+  ) {
+    try {
+      const endpoint = new URL(source.dataEndpointUrl)
+      if (
+        endpoint.pathname.replace(/\/+$/, '').toLowerCase()
+          === CTRIP_ORDER_PATH
+      ) {
+        return observedAt < CTRIP_SESSION_CLASSIFICATION_FIX_CUTOFF
+          && currentTime - observedAt >= 90_000
+      }
+    } catch {
+      // Invalid URLs remain governed by the ordinary closed validation path.
+    }
+  }
+  if (
+    source.platformCode === 'CTRIP'
+    && source.lastRefreshStatus === 'FAILED'
+    && source.lastErrorCode === 'OTA_CTRIP_SESSION_INVALID'
   ) {
     try {
       const endpoint = new URL(source.dataEndpointUrl)

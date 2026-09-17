@@ -90,6 +90,16 @@ const GUIDANCE: Record<string, OtaSourceGuidance> = {
     fields: ['携程订单适配版本', '经授权的脱敏响应样例', '字段与分页口径'],
     action: '请保留现有配置，不要反复更换 Cookie；由平台管理员取得授权脱敏样例后完成专用适配与验证。',
   },
+  OTA_CTRIP_SESSION_INVALID: {
+    reason: '携程登录会话已过期，接口只返回了业务错误包装',
+    fields: ['携程Cookie', '携程官方后台登录状态'],
+    action: '重新登录携程商家后台，更新此来源的完整Cookie并保存；接口网址和请求参数无需修改，保存后系统会立即重新采集。',
+  },
+  OTA_CTRIP_ORDER_BUSINESS_ERROR: {
+    reason: '携程订单接口返回业务错误，没有形成可用订单数据',
+    fields: ['携程Cookie', '门店与账号权限'],
+    action: '先确认该账号可以打开当前门店订单列表，再更新完整Cookie并保存。',
+  },
   OTA_MEITUAN_ORDER_BUSINESS_ERROR: {
     reason: '美团订单接口返回业务错误，HTTP 连接成功但没有有效订单数据',
     fields: ['Cookie', '门店与账号权限', '订单数据接口网址'],

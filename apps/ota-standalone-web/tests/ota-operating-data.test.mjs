@@ -213,3 +213,15 @@ test('Ctrip schema guidance explains why HTTP success is not enough', () => {
     lastSummary: null,
   })).state, 'UNRECOGNIZED')
 })
+
+test('expired Ctrip session routes the operator to reauthentication without changing the endpoint', () => {
+  const guidance = otaSourceGuidance('OTA_CTRIP_SESSION_INVALID')
+  assert.match(guidance.reason, /携程登录会话已过期/u)
+  assert.match(guidance.action, /接口网址和请求参数无需修改/u)
+  assert.match(guidance.action, /保存后系统会立即重新采集/u)
+  assert.equal(otaOperatingDataState(source({
+    lastRefreshStatus: 'FAILED',
+    lastErrorCode: 'OTA_CTRIP_SESSION_INVALID',
+    lastSummary: null,
+  })).state, 'FAILED')
+})

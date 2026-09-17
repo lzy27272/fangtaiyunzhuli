@@ -57,6 +57,7 @@ const OTA_PEER_RANK_LABELS: Record<string, string> = {
 }
 
 const otaProviderLabel = (provider?: string): string => {
+  if (provider === 'CTRIP') return '携程'
   if (provider === 'MEITUAN') return '美团'
   if (provider === 'DOUYIN') return '抖音'
   if (provider === 'FLIGGY') return '飞猪'

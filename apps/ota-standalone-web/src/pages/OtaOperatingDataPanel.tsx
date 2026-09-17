@@ -43,10 +43,55 @@ const OTA_PEER_RANK_LABELS: Record<string, string> = {
 }
 
 const otaProviderLabel = (provider?: string): string => {
+  if (provider === 'CTRIP') return '携程'
   if (provider === 'MEITUAN') return '美团'
   if (provider === 'DOUYIN') return '抖音'
   if (provider === 'FLIGGY') return '飞猪'
   return 'OTA'
+}
+
+function OrderDatasetBoard({ source }: { source: OtaSourceView }) {
+  const dataset = source.lastSummary?.providerDataset
+  if (dataset?.dataset !== 'ORDER') return null
+  const paginationComplete = dataset.paginationComplete === true
+    || (dataset.hasMore === false && dataset.totalCount === dataset.returnedCount)
+  return (
+    <section className="ota-peer-rank-board ota-order-dataset-board">
+      <header>
+        <div>
+          <strong>{otaProviderLabel(dataset.provider)}订单汇总</strong>
+          <small>{observedAtLabel(source.lastSummary?.observedAt)}</small>
+        </div>
+        <span>仅展示汇总</span>
+      </header>
+      <div className="ota-peer-rank-grid">
+        <div>
+          <span>平台返回总量</span>
+          <strong>{dataset.totalCount === null ? '待确认' : `${dataset.totalCount} 条`}</strong>
+        </div>
+        <div>
+          <span>本次返回记录</span>
+          <strong>{dataset.returnedCount} 条</strong>
+        </div>
+        <div>
+          <span>分页完整性</span>
+          <strong>{paginationComplete ? '完整' : '仅当前页'}</strong>
+        </div>
+        {dataset.canceledCount !== undefined ? (
+          <div>
+            <span>已取消订单</span>
+            <strong>{dataset.canceledCount} 条</strong>
+          </div>
+        ) : null}
+      </div>
+      {!paginationComplete ? (
+        <div className="ota-data-warning" role="status">
+          当前接口仍有更多分页；本页数量不代表完整订单量，不据此推算取消率或间夜。
+        </div>
+      ) : null}
+      <small>不展示订单号、住客、房型、联系方式或任何订单明细。</small>
+    </section>
+  )
 }
 
 const pollingIntervalLabel = (minutes: number): string => {
@@ -300,11 +345,7 @@ function SourceDataBody({ source }: { source: OtaSourceView }) {
     return <div className="ota-data-muted">该来源已停用，保留历史配置但不参与自动采集。</div>
   }
   if (kind === 'ORDER') {
-    return (
-      <div className="ota-data-muted">
-        订单汇总已采集，并按现行口径仅用于评价率分母；不展示订单明细或住客信息。
-      </div>
-    )
+    return <OrderDatasetBoard source={source} />
   }
   const reviewDataset = source.lastSummary?.providerDataset
   return (
@@ -366,9 +407,11 @@ export function OtaOperatingDataPanel({
                         <button className="inline-action-link" onClick={() => onOpenSource(source.sourceId)} type="button">
                           {source.lastErrorCode === 'OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED'
                             ? '查看适配说明'
-                            : view.state === 'FAILED' || view.state === 'UNRECOGNIZED'
-                              ? '核对来源配置'
-                              : '查看来源配置'}
+                            : source.lastErrorCode === 'OTA_CTRIP_SESSION_INVALID'
+                              ? '重新登录并更新Cookie'
+                              : view.state === 'FAILED' || view.state === 'UNRECOGNIZED'
+                                ? '核对来源配置'
+                                : '查看来源配置'}
                         </button>
                       ) : null}
                     </article>

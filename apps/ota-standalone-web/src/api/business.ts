@@ -357,7 +357,7 @@ export interface OtaReviewMetricsSummary {
 }
 
 export interface OtaProviderDatasetSummary {
-  provider: 'MEITUAN' | 'DOUYIN' | 'FLIGGY'
+  provider: 'CTRIP' | 'MEITUAN' | 'DOUYIN' | 'FLIGGY'
   dataset: 'ORDER' | 'REVIEW'
   scope: 'BUSINESS_MONTH_TO_DATE' | 'ENDPOINT_TOTAL_AND_CURRENT_PAGE'
   periodBasis?:

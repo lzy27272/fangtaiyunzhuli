@@ -1347,6 +1347,78 @@ export const summarizeMeituanOrderJson = ({
   }
 }
 
+export const summarizeCtripOrderJson = (root) => {
+  const hasResultStatus = (
+    root?.resultStatus !== null
+    && typeof root?.resultStatus === 'object'
+    && !Array.isArray(root?.resultStatus)
+  )
+  const hasResponseStatus = (
+    root?.resStatus !== null
+    && typeof root?.resStatus === 'object'
+    && !Array.isArray(root?.resStatus)
+  )
+  const responseCode = root?.resStatus?.rcode
+  const resultCode = root?.resultStatus?.resultCode
+  if (responseCode === 402 || responseCode === '402') {
+    throw new Error('OTA_CTRIP_SESSION_INVALID')
+  }
+  const acknowledgement = (
+    root?.ResponseStatus?.Ack
+    ?? root?.ResponseStatus?.ack
+  )
+  const businessStatusOk = hasResultStatus
+    ? resultCode === 0
+    : hasResponseStatus
+      && (responseCode === 200 || responseCode === '200')
+  const hasRecognizedBusinessStatus = (
+    hasResultStatus || hasResponseStatus
+  )
+  if (
+    acknowledgement !== 'Success'
+    || !businessStatusOk
+  ) {
+    throw new Error(
+      hasRecognizedBusinessStatus
+        ? 'OTA_CTRIP_ORDER_BUSINESS_ERROR'
+        : 'OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED',
+    )
+  }
+  const rawTotalCount = root.total
+  const totalCount = Number.isSafeInteger(rawTotalCount)
+    ? rawTotalCount
+    : typeof rawTotalCount === 'string'
+      && /^(?:0|[1-9]\d*)$/u.test(rawTotalCount)
+      ? Number(rawTotalCount)
+      : Number.NaN
+  if (
+    !Array.isArray(root.orderList)
+    || !Number.isSafeInteger(totalCount)
+    || totalCount < 0
+    || totalCount < root.orderList.length
+  ) {
+    throw new Error('OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED')
+  }
+  const returnedCount = root.orderList.length
+  return {
+    rootType: 'OBJECT',
+    recordPath: '$.orderList',
+    recordCount: returnedCount,
+    detectedDimensions: ['ORDER'],
+    detectedFields: ['orderList', 'total'],
+    providerDataset: {
+      provider: 'CTRIP',
+      dataset: 'ORDER',
+      scope: 'ENDPOINT_TOTAL_AND_CURRENT_PAGE',
+      totalCount,
+      returnedCount,
+      hasMore: totalCount > returnedCount,
+      paginationComplete: totalCount === returnedCount,
+      fetchedPageCount: 1,
+    },
+  }
+}
+
 export const summarizeOtaJson = (root) => {
   const candidates = objectRows(root)
     .sort((left, right) => right.rows.length - left.rows.length)
@@ -1683,6 +1755,17 @@ export const collectOtaSource = async ({
     fetchImpl,
   })
   const { root } = response
+  if (
+    effectiveSource.platformCode === 'CTRIP'
+    && endpoint.pathname.replace(/\/+$/u, '').toLowerCase()
+      === CTRIP_ORDER_PATH
+  ) {
+    return {
+      observedAt: now().toISOString(),
+      httpStatus: response.httpStatus,
+      ...summarizeCtripOrderJson(root),
+    }
+  }
   onRoomTypeCatalog(extractRoomTypeCatalog(root, {
     platformCode: effectiveSource.platformCode ?? 'OTHER',
     scope: roomTypeCatalogScope,
@@ -1694,13 +1777,6 @@ export const collectOtaSource = async ({
     source: effectiveSource,
     endpoint,
   })
-  if (
-    effectiveSource.platformCode === 'CTRIP'
-    && endpoint.pathname.replace(/\/+$/u, '').toLowerCase()
-      === CTRIP_ORDER_PATH
-  ) {
-    throw new Error('OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED')
-  }
   return {
     observedAt: now().toISOString(),
     httpStatus: response.httpStatus,
