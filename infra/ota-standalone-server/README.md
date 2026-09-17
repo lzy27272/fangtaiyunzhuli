@@ -145,6 +145,29 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
 9. 健康检查失败或门店密文、后台认证、运行密钥发生意外变化时，自动恢复
    上一代码版本及受保护运行状态。
 
+发布器默认使用 `-TestProfile Auto`，会比较待发布提交与远端主线：
+
+- 仅文档或测试变化：只推送 Git，不上传服务器；
+- 普通前端变化：运行前端测试、切换静态资源，不停止 API；
+- API、权限、企业微信、数据保留或基础设施变化：自动升级为完整测试；
+- 服务端发现当前版本不是发布器声明的基线时：自动升级为完整部署，禁止遗漏
+  中间版本。
+
+通过验证的测试结果、前端构建和发布包按 Git 提交/源码树缓存在
+`tmp/release/ota-standalone/cache-v2`。同一不可变提交再次发布时会校验 SHA-256
+后直接复用；缓存目录未加入 Git，也不包含运行密钥或门店数据。
+
+需要主动执行完整验证时使用：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  infra\ota-standalone-server\scripts\Publish-OtaStandaloneServer.ps1 `
+  -TestProfile Full
+```
+
+排查工具链或缓存问题时可增加 `-ForceRebuild`，强制重新测试、构建、扫描和
+打包。`-SkipTests` 只保留给受控故障恢复，日常发布禁止使用。
+
 只查看发布计划：
 
 ```powershell

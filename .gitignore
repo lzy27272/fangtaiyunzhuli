@@ -2,6 +2,7 @@
 .vscode/
 .codex/
 .tooling/
+/tmp/
 .uat-runtime/
 docs/uat/evidence/runtime/
 .pnpm-store/

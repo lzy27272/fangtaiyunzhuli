@@ -134,6 +134,33 @@ test('publisher requires a pre-pinned SSH host key for every remote transport', 
   )
 })
 
+test('publisher scopes releases and reuses verified immutable artifacts', () => {
+  assert.match(publishSource, /Get-ReleaseChangePlan/u)
+  assert.match(publishSource, /\$branchOutput = @\(/u)
+  assert.match(publishSource, /Invoke-CheckedCommandWithRetry/u)
+  assert.match(publishSource, /http\.version=HTTP\/1\.1/u)
+  assert.match(publishSource, /effectiveTestProfile/u)
+  assert.match(publishSource, /cache-v2/u)
+  assert.match(publishSource, /Test-JsonCacheReceipt/u)
+  assert.match(publishSource, /artifactCacheHit/u)
+  assert.match(publishSource, /webBuildCacheHit/u)
+  assert.match(publishSource, /SFG_OTA_RELEASE_BASE_COMMIT/u)
+  assert.match(publishSource, /SFG_OTA_RELEASE_COMPONENTS/u)
+  assert.match(publishSource, /NO_RUNTIME_COMPONENT_CHANGED/u)
+})
+
+test('native deploy keeps narrow paths narrow and escalates stale baselines', () => {
+  assert.match(deploySource, /DEPLOYMENT_SCOPE_ESCALATED_TO_FULL/u)
+  assert.match(deploySource, /NATIVE_DEPLOYMENT_ALREADY_CURRENT/u)
+  assert.match(deploySource, /component_enabled\(\)/u)
+  assert.match(deploySource, /requires_api_quiesce=false/u)
+  assert.match(deploySource, /requires_web_restart=false/u)
+  assert.match(deploySource, /if \[\[ \$\{requires_api_quiesce\} == true \]\]; then/u)
+  assert.match(deploySource, /if \[\[ \$\{configure_analytics\} == true \]\]; then/u)
+  assert.match(deploySource, /sleep 0\.25/u)
+  assert.doesNotMatch(deploySource, /sleep 2\n  done\n  return 1\n\}/u)
+})
+
 test('native deploy arms one ERR rollback path across switch and restart', () => {
   const armedAt = deploySource.indexOf('rollback_armed=true')
   const switchAt = deploySource.indexOf('next_link=')

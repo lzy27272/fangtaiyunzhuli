@@ -9,6 +9,8 @@ fi
 archive="${SFG_OTA_RELEASE_ARCHIVE:-}"
 commit="${SFG_OTA_RELEASE_COMMIT:-}"
 expected_sha="${SFG_OTA_RELEASE_SHA256:-}"
+base_commit="${SFG_OTA_RELEASE_BASE_COMMIT:-}"
+requested_components="${SFG_OTA_RELEASE_COMPONENTS:-full}"
 release_root=/opt/sifangguan-ota/releases
 current_link=/opt/sifangguan-ota/current
 backup_root=/var/backups/sifangguan-ota/code-releases
@@ -95,7 +97,9 @@ trap deployment_error_trap ERR
 
 if [[ ! -f ${archive} \
   || ! ${commit} =~ ^[0-9a-f]{40}$ \
-  || ! ${expected_sha} =~ ^[0-9a-f]{64}$ ]]; then
+  || ! ${expected_sha} =~ ^[0-9a-f]{64}$ \
+  || ( -n ${base_commit} && ! ${base_commit} =~ ^[0-9a-f]{40}$ ) \
+  || ! ${requested_components} =~ ^(full|api|web|phase1|analytics|public)(,(api|web|phase1|analytics|public))*$ ]]; then
   echo "RELEASE_INPUT_INVALID" >&2
   exit 2
 fi
@@ -160,6 +164,65 @@ if [[ -L ${current_link} ]]; then
     || ${previous_release} != "${release_root}/"* ]]; then
     echo "PREVIOUS_RELEASE_POINTER_UNSAFE" >&2
     exit 2
+  fi
+fi
+
+deployment_components="${requested_components}"
+previous_commit=""
+if [[ -n ${previous_release} \
+  && -f ${previous_release}/.release-commit ]]; then
+  previous_commit="$(cat "${previous_release}/.release-commit")"
+fi
+if [[ ${previous_commit} == "${commit}" ]] \
+  && systemctl is-active --quiet sifangguan-ota-api.service \
+  && systemctl is-active --quiet sifangguan-ota-web.service \
+  && curl --fail --silent --connect-timeout 1 --max-time 2 \
+    http://127.0.0.1:8091/health >/dev/null \
+  && curl --fail --silent --connect-timeout 1 --max-time 2 \
+    http://127.0.0.1:5180/ >/dev/null; then
+  trap - ERR
+  echo "NATIVE_DEPLOYMENT_ALREADY_CURRENT"
+  echo "Commit: ${commit}"
+  exit 0
+fi
+if [[ -z ${base_commit} \
+  || ${previous_commit} != "${base_commit}" ]]; then
+  deployment_components=full
+  echo "DEPLOYMENT_SCOPE_ESCALATED_TO_FULL:${previous_commit:-none}:${base_commit:-none}"
+fi
+
+component_enabled() {
+  local component=$1
+  [[ ,${deployment_components}, == *,full,* \
+    || ,${deployment_components}, == *,${component},* ]]
+}
+
+requires_api_quiesce=false
+requires_web_restart=false
+configure_phase1=false
+configure_analytics=false
+configure_public=false
+if component_enabled api \
+  || component_enabled phase1 \
+  || component_enabled analytics; then
+  requires_api_quiesce=true
+fi
+if component_enabled full; then
+  requires_api_quiesce=true
+  requires_web_restart=true
+  configure_phase1=true
+  configure_analytics=true
+  configure_public=true
+else
+  if component_enabled phase1; then
+    configure_phase1=true
+  fi
+  if component_enabled analytics; then
+    configure_analytics=true
+  fi
+  if component_enabled public; then
+    configure_public=true
+    requires_web_restart=true
   fi
 fi
 
@@ -319,14 +382,16 @@ restore_protected_state() {
 }
 
 wait_for_health() {
-  for _ in $(seq 1 30); do
-    if curl --fail --silent --show-error \
+  for _ in $(seq 1 120); do
+    if curl --fail --silent \
+        --connect-timeout 1 --max-time 2 \
         http://127.0.0.1:8091/health >/dev/null \
-      && curl --fail --silent --show-error \
+      && curl --fail --silent \
+        --connect-timeout 1 --max-time 2 \
         http://127.0.0.1:5180/ >/dev/null; then
       return 0
     fi
-    sleep 2
+    sleep 0.25
   done
   return 1
 }
@@ -348,9 +413,6 @@ recover_pre_switch_release() {
   if ! systemctl restart sifangguan-ota-api.service; then
     recovery_failed=1
   fi
-  if ! systemctl restart sifangguan-ota-web.service; then
-    recovery_failed=1
-  fi
   if ! wait_for_health; then
     echo "PRE_SWITCH_RECOVERY_HEALTH_CHECK_FAILED" >&2
     recovery_failed=1
@@ -367,8 +429,10 @@ recover_pre_switch_release() {
 rollback_release() {
   local rollback_failed=0
   rollback_armed=false
-  if ! restore_protected_state; then
-    rollback_failed=1
+  if [[ -n ${backup_dir} ]]; then
+    if ! restore_protected_state; then
+      rollback_failed=1
+    fi
   fi
   if [[ -n ${previous_release} && -d ${previous_release} ]]; then
     rollback_link="${current_link}.rollback"
@@ -380,11 +444,15 @@ rollback_release() {
     echo "PREVIOUS_RELEASE_UNAVAILABLE" >&2
     rollback_failed=1
   fi
-  if ! systemctl restart sifangguan-ota-api.service; then
-    rollback_failed=1
+  if [[ ${requires_api_quiesce} == true ]]; then
+    if ! systemctl restart sifangguan-ota-api.service; then
+      rollback_failed=1
+    fi
   fi
-  if ! systemctl restart sifangguan-ota-web.service; then
-    rollback_failed=1
+  if [[ ${requires_web_restart} == true ]]; then
+    if ! systemctl restart sifangguan-ota-web.service; then
+      rollback_failed=1
+    fi
   fi
   if ! wait_for_health; then
     echo "ROLLBACK_HEALTH_CHECK_FAILED" >&2
@@ -421,123 +489,135 @@ initialize_phase_one_refresh_state() {
   mv -Tf "${state_tmp}" "${state_path}"
 }
 
-install -d -m 0755 "$(dirname "${scheduler_pause_path}")"
-if [[ -e ${scheduler_pause_path} || -L ${scheduler_pause_path} ]]; then
-  echo "SCHEDULER_PAUSE_ALREADY_PRESENT" >&2
-  false
-fi
-scheduler_pause_tmp="${scheduler_pause_path}.$$"
-(
-  umask 077
-  printf 'deployment\n' > "${scheduler_pause_tmp}"
-)
-mv -Tf "${scheduler_pause_tmp}" "${scheduler_pause_path}"
-scheduler_pause_created=true
-scheduler_pause_tmp=""
-pre_switch_recovery_armed=true
-
-systemctl stop sifangguan-ota-api.service
-api_active_state="$(
-  systemctl show \
-    --property=ActiveState \
-    --value \
-    sifangguan-ota-api.service
-)"
-api_main_pid="$(
-  systemctl show \
-    --property=MainPID \
-    --value \
-    sifangguan-ota-api.service
-)"
-if [[ ${api_active_state} != inactive \
-  && ${api_active_state} != failed ]]; then
-  echo "DEPLOYMENT_API_STOP_NOT_CONFIRMED" >&2
-  false
-fi
-if [[ ! ${api_main_pid} =~ ^[0-9]+$ || ${api_main_pid} -ne 0 ]]; then
-  echo "DEPLOYMENT_API_PROCESS_STILL_PRESENT" >&2
-  false
-fi
-
-if [[ -d /var/lib/sifangguan-ota ]]; then
-  registry_listing_file="$(mktemp)"
-  find /var/lib/sifangguan-ota \
-    -maxdepth 1 \
-    -type f \
-    -name 'trusted-device-registry-*.json' \
-    -print0 \
-    | sort -z > "${registry_listing_file}"
-  while IFS= read -r -d '' registry_path; do
-    protected_paths+=("${registry_path}")
-  done < "${registry_listing_file}"
-  rm -f -- "${registry_listing_file}"
-  registry_listing_file=""
-fi
-
-backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-backup_dir="${backup_root}/${commit}-${backup_stamp}-$$"
-install -d -m 0700 "${backup_root}" "${backup_dir}"
-for index in "${!protected_paths[@]}"; do
-  protected_path="${protected_paths[$index]}"
-  if [[ -L ${protected_path} \
-    || ( -e ${protected_path} && ! -f ${protected_path} ) ]]; then
-    echo "PROTECTED_RUNTIME_PATH_UNSAFE" >&2
+if [[ ${requires_api_quiesce} == true ]]; then
+  install -d -m 0755 "$(dirname "${scheduler_pause_path}")"
+  if [[ -e ${scheduler_pause_path} || -L ${scheduler_pause_path} ]]; then
+    echo "SCHEDULER_PAUSE_ALREADY_PRESENT" >&2
     false
   fi
-  if [[ -f ${protected_path} ]]; then
-    cp --preserve=mode,ownership,timestamps \
-      "${protected_path}" \
-      "${backup_dir}/${index}.data"
-    printf 'PRESENT\n' > "${backup_dir}/${index}.state"
-  else
-    printf 'ABSENT\n' > "${backup_dir}/${index}.state"
+  scheduler_pause_tmp="${scheduler_pause_path}.$$"
+  (
+    umask 077
+    printf 'deployment\n' > "${scheduler_pause_tmp}"
+  )
+  mv -Tf "${scheduler_pause_tmp}" "${scheduler_pause_path}"
+  scheduler_pause_created=true
+  scheduler_pause_tmp=""
+  pre_switch_recovery_armed=true
+
+  systemctl stop sifangguan-ota-api.service
+  api_active_state="$(
+    systemctl show \
+      --property=ActiveState \
+      --value \
+      sifangguan-ota-api.service
+  )"
+  api_main_pid="$(
+    systemctl show \
+      --property=MainPID \
+      --value \
+      sifangguan-ota-api.service
+  )"
+  if [[ ${api_active_state} != inactive \
+    && ${api_active_state} != failed ]]; then
+    echo "DEPLOYMENT_API_STOP_NOT_CONFIRMED" >&2
+    false
   fi
-  chmod 0600 "${backup_dir}/${index}.state"
-done
+  if [[ ! ${api_main_pid} =~ ^[0-9]+$ || ${api_main_pid} -ne 0 ]]; then
+    echo "DEPLOYMENT_API_PROCESS_STILL_PRESENT" >&2
+    false
+  fi
 
-rollback_armed=true
-pre_switch_recovery_armed=false
-ensure_pseudonym_secret_key
-initialize_phase_one_refresh_state
+  if [[ -d /var/lib/sifangguan-ota ]]; then
+    registry_listing_file="$(mktemp)"
+    find /var/lib/sifangguan-ota \
+      -maxdepth 1 \
+      -type f \
+      -name 'trusted-device-registry-*.json' \
+      -print0 \
+      | sort -z > "${registry_listing_file}"
+    while IFS= read -r -d '' registry_path; do
+      protected_paths+=("${registry_path}")
+    done < "${registry_listing_file}"
+    rm -f -- "${registry_listing_file}"
+    registry_listing_file=""
+  fi
 
-snapshot_migration_path \
-  "${yilian_report_sources_path}" \
-  yilian-report-sources-baseline
-snapshot_migration_path \
-  "${yilian_repair_status_path}" \
-  yilian-repair-status-baseline
+  backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup_dir="${backup_root}/${commit}-${backup_stamp}-$$"
+  install -d -m 0700 "${backup_root}" "${backup_dir}"
+  for index in "${!protected_paths[@]}"; do
+    protected_path="${protected_paths[$index]}"
+    if [[ -L ${protected_path} \
+      || ( -e ${protected_path} && ! -f ${protected_path} ) ]]; then
+      echo "PROTECTED_RUNTIME_PATH_UNSAFE" >&2
+      false
+    fi
+    if [[ -f ${protected_path} ]]; then
+      cp --preserve=mode,ownership,timestamps \
+        "${protected_path}" \
+        "${backup_dir}/${index}.data"
+      printf 'PRESENT\n' > "${backup_dir}/${index}.state"
+    else
+      printf 'ABSENT\n' > "${backup_dir}/${index}.state"
+    fi
+    chmod 0600 "${backup_dir}/${index}.state"
+  done
 
-before_fingerprint="$(protected_fingerprint)"
-before_non_yilian_fingerprint="$(
-  protected_fingerprint_without_yilian_migration
-)"
+  rollback_armed=true
+  pre_switch_recovery_armed=false
+  ensure_pseudonym_secret_key
+  initialize_phase_one_refresh_state
+
+  snapshot_migration_path \
+    "${yilian_report_sources_path}" \
+    yilian-report-sources-baseline
+  snapshot_migration_path \
+    "${yilian_repair_status_path}" \
+    yilian-repair-status-baseline
+
+  before_fingerprint="$(protected_fingerprint)"
+  before_non_yilian_fingerprint="$(
+    protected_fingerprint_without_yilian_migration
+  )"
+else
+  rollback_armed=true
+fi
 
 next_link="${current_link}.next"
 ln -sfn "${release_dir}" "${next_link}"
 mv -Tf "${next_link}" "${current_link}"
 
-systemctl enable sifangguan-ota-api.service sifangguan-ota-web.service
-systemctl restart sifangguan-ota-api.service
-systemctl restart sifangguan-ota-web.service
+if component_enabled full; then
+  systemctl enable sifangguan-ota-api.service sifangguan-ota-web.service
+fi
+if [[ ${requires_api_quiesce} == true ]]; then
+  systemctl restart sifangguan-ota-api.service
+fi
+if [[ ${requires_web_restart} == true ]]; then
+  systemctl restart sifangguan-ota-web.service
+fi
 
 if ! wait_for_health; then
   echo "DEPLOYMENT_HEALTH_CHECK_FAILED" >&2
   false
 fi
 
-after_fingerprint="$(protected_fingerprint)"
-if [[ ${after_fingerprint} != "${before_fingerprint}" ]]; then
-  after_non_yilian_fingerprint="$(
-    protected_fingerprint_without_yilian_migration
-  )"
-  if [[ ${after_non_yilian_fingerprint} \
-    != "${before_non_yilian_fingerprint}" ]]; then
-    echo "PROTECTED_RUNTIME_STATE_CHANGED" >&2
-    false
-  fi
-  if ! verify_expected_yilian_migration; then
-    echo "PROTECTED_RUNTIME_STATE_CHANGED" >&2
-    false
+if [[ ${requires_api_quiesce} == true ]]; then
+  after_fingerprint="$(protected_fingerprint)"
+  if [[ ${after_fingerprint} != "${before_fingerprint}" ]]; then
+    after_non_yilian_fingerprint="$(
+      protected_fingerprint_without_yilian_migration
+    )"
+    if [[ ${after_non_yilian_fingerprint} \
+      != "${before_non_yilian_fingerprint}" ]]; then
+      echo "PROTECTED_RUNTIME_STATE_CHANGED" >&2
+      false
+    fi
+    if ! verify_expected_yilian_migration; then
+      echo "PROTECTED_RUNTIME_STATE_CHANGED" >&2
+      false
+    fi
   fi
 fi
 
@@ -546,22 +626,28 @@ if [[ "$(readlink -f "${current_link}")" != "${release_dir}" ]]; then
   false
 fi
 
-if ! bash \
-  "${release_dir}/infra/ota-standalone-server/scripts/configure-phase1-runtime.sh"; then
-  echo "PHASE1_RUNTIME_CONFIGURATION_FAILED" >&2
-  false
+if [[ ${configure_phase1} == true ]]; then
+  if ! bash \
+    "${release_dir}/infra/ota-standalone-server/scripts/configure-phase1-runtime.sh"; then
+    echo "PHASE1_RUNTIME_CONFIGURATION_FAILED" >&2
+    false
+  fi
 fi
 
-if ! bash \
-  "${release_dir}/infra/ota-standalone-server/scripts/configure-analytics-retention.sh"; then
-  echo "ANALYTICS_RETENTION_CONFIGURATION_FAILED" >&2
-  false
+if [[ ${configure_analytics} == true ]]; then
+  if ! bash \
+    "${release_dir}/infra/ota-standalone-server/scripts/configure-analytics-retention.sh"; then
+    echo "ANALYTICS_RETENTION_CONFIGURATION_FAILED" >&2
+    false
+  fi
 fi
 
-if ! bash \
-  "${release_dir}/infra/ota-standalone-server/scripts/configure-public-entry.sh"; then
-  echo "PUBLIC_ENTRY_CONFIGURATION_FAILED" >&2
-  false
+if [[ ${configure_public} == true ]]; then
+  if ! bash \
+    "${release_dir}/infra/ota-standalone-server/scripts/configure-public-entry.sh"; then
+    echo "PUBLIC_ENTRY_CONFIGURATION_FAILED" >&2
+    false
+  fi
 fi
 
 systemctl is-active sifangguan-ota-api.service
@@ -576,5 +662,6 @@ pre_switch_recovery_armed=false
 trap - ERR
 echo "NATIVE_DEPLOYMENT_COMPLETE"
 echo "Commit: ${commit}"
-echo "Protected-state backup: ${backup_dir}"
+echo "Components: ${deployment_components}"
+echo "Protected-state backup: ${backup_dir:-not-required}"
 echo "Web: http://127.0.0.1:5180 (SSH tunnel only)"
