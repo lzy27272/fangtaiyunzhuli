@@ -52,6 +52,12 @@ import {
 import { HistoryPage } from './HistoryPage'
 import { HotSellingRoomConfigPanel } from './HotSellingRoomConfigPanel'
 import { MappingTargetPage } from './MappingTargetPage'
+import { OtaOperatingDataPanel } from './OtaOperatingDataPanel'
+import {
+  groupOtaOperatingSources,
+  latestSuccessfulCollectionAt,
+  otaOperatingDataState,
+} from './otaOperatingData'
 import {
   ReportSourceConfigPage,
   type CollectionSection,
@@ -105,37 +111,19 @@ const sourceDisplayName = (platform: string) => ({
   QUNAR: '去哪儿', TONGCHENG: '同程', OTHER: '其他渠道',
 }[platform] ?? platform)
 
-const PLATFORM_ORDER = ['CTRIP', 'MEITUAN', 'FLIGGY', 'DOUYIN', 'QUNAR', 'TONGCHENG', 'OTHER'] as const
-
-const OTA_STATE_PRIORITY: Record<Tone, number> = {
-  error: 4,
-  warning: 3,
-  info: 3,
-  ok: 2,
-  muted: 1,
-}
-
-const configuredOtaSources = (sources: OtaSourceView[]) => [...sources]
-  .sort((left, right) => {
-    const leftIndex = PLATFORM_ORDER.indexOf(left.platformCode as typeof PLATFORM_ORDER[number])
-    const rightIndex = PLATFORM_ORDER.indexOf(right.platformCode as typeof PLATFORM_ORDER[number])
-    const platformOrder = (leftIndex < 0 ? PLATFORM_ORDER.length : leftIndex)
-      - (rightIndex < 0 ? PLATFORM_ORDER.length : rightIndex)
-    if (platformOrder !== 0) return platformOrder
-    return OTA_STATE_PRIORITY[otaState(right).tone]
-      - OTA_STATE_PRIORITY[otaState(left).tone]
+const configuredOtaSources = (sources: OtaSourceView[]) =>
+  groupOtaOperatingSources(sources).flatMap((group) => {
+    const representative = group.sources.find((source) =>
+      otaOperatingDataState(source).state === group.state.state)
+    return representative ? [representative] : []
   })
-  .filter((source, index, all) =>
-    all.findIndex((candidate) => candidate.platformCode === source.platformCode) === index)
 
 const storeMonogram = (hotelName: string) => hotelName.trim().match(/[\u3400-\u9fffA-Za-z0-9]/)?.[0] ?? '店'
 
 function otaState(source: OtaSourceView | undefined): { tone: Tone; label: string } {
   if (!source) return { tone: 'muted', label: '未配置' }
-  if (!source.enabled) return { tone: 'muted', label: '已停用' }
-  if (source.lastRefreshStatus === 'FAILED') return { tone: 'error', label: '异常' }
-  if (source.lastRefreshStatus === 'COMPLETE') return { tone: 'ok', label: '正常' }
-  return { tone: 'warning', label: '待验证' }
+  const state = otaOperatingDataState(source)
+  return { tone: state.tone, label: state.label }
 }
 
 function pmsRepairState(summary: HotelSummary) {
@@ -212,16 +200,19 @@ function directTarget(summary: HotelSummary): {
   if (pms.tone === 'error') {
     return { tab: 'repair', label: 'PMS需要修复处理' }
   }
-  const failedOta = configuredOtaSources(summary.otaSources)
-    .find((source) => otaState(source).tone === 'error')
-  if (failedOta) {
+  const attentionOta = configuredOtaSources(summary.otaSources)
+    .find((source) => {
+      const state = otaOperatingDataState(source).state
+      return state !== 'READY' && state !== 'DISABLED'
+    })
+  if (attentionOta) {
     return {
       tab: 'collection',
-      label: `检查${sourceDisplayName(failedOta.platformCode)}`,
+      label: `检查${sourceDisplayName(attentionOta.platformCode)}`,
       options: {
         collectionSection: 'ota',
-        otaAttentionSourceId: failedOta.sourceId,
-        otaAttentionPlatformCode: failedOta.platformCode,
+        otaAttentionSourceId: attentionOta.sourceId,
+        otaAttentionPlatformCode: attentionOta.platformCode,
       },
     }
   }
@@ -629,7 +620,10 @@ export function StoreDetailPage({
   const pms = pmsState(summary)
   const pmsRepair = pmsRepairState(summary)
   const broadcast = broadcastState(summary)
-  const lastCollectionAt = data.monitor?.cutoffAt ?? null
+  const lastCollectionAt = latestSuccessfulCollectionAt(
+    data.monitor?.cutoffAt,
+    data.otaSources,
+  )
   const latestBrief = [...data.briefs]
     .sort((left, right) => left.cutoffAt.localeCompare(right.cutoffAt))
     .at(-1)
@@ -677,6 +671,13 @@ export function StoreDetailPage({
         target?.focus({ preventScroll: true })
       })
     })
+  }
+
+  const openOtaSource = (sourceId?: string) => {
+    const source = sourceId
+      ? data.otaSources.find((candidate) => candidate.sourceId === sourceId)
+      : null
+    openCollection('ota', sourceId ?? null, source?.platformCode ?? null)
   }
 
   const openRepair = () => {
@@ -756,6 +757,12 @@ export function StoreDetailPage({
             ))}
             {!Object.keys(data.monitor?.metrics ?? {}).length ? <EmptyState title="暂无可预览数据" detail="完成 PMS 登录并执行一次采集后显示。" /> : null}
           </div>
+
+          <OtaOperatingDataPanel
+            canConfigure={canConfigure}
+            onOpenSource={openOtaSource}
+            sources={data.otaSources}
+          />
 
           <div className="two-column-section">
             <section className="content-panel">

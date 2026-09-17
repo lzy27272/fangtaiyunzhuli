@@ -4,6 +4,7 @@ export const OTA_DEFAULT_POLL_INTERVAL_MINUTES = 120
 export const OTA_INCOMPLETE_RANK_RETRY_MINUTES = 10
 export const OTA_SCHEDULER_STARTUP_GRACE_MILLISECONDS = 90_000
 const FLIGGY_AGGREGATION_VERSION = 6
+const CTRIP_ORDER_PATH = '/restapi/soa2/27204/queryorderlist'
 const FLIGGY_LEGACY_PAGE_SIZE_FIX_CUTOFF = Date.parse(
   '2026-08-17T14:05:00.000Z',
 )
@@ -70,6 +71,21 @@ export const otaSourcePollingDue = (
     return currentTime - observedAt >= 90_000
   }
   if (
+    source.platformCode === 'CTRIP'
+    && source.lastRefreshStatus === 'FAILED'
+    && source.lastErrorCode === 'OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED'
+  ) {
+    try {
+      const endpoint = new URL(source.dataEndpointUrl)
+      if (
+        endpoint.pathname.replace(/\/+$/, '').toLowerCase()
+          === CTRIP_ORDER_PATH
+      ) return false
+    } catch {
+      // Invalid URLs remain governed by the ordinary closed validation path.
+    }
+  }
+  if (
     source.platformCode === 'MEITUAN'
     && source.lastRefreshStatus === 'COMPLETE'
     && source.lastSummary?.recordPath === '$.data.commentList'
@@ -112,6 +128,12 @@ export const otaSourcePollingDue = (
     try {
       const endpoint = new URL(source.dataEndpointUrl)
       const pathname = endpoint.pathname.replace(/\/+$/, '')
+      if (
+        source.platformCode === 'CTRIP'
+        && pathname.toLowerCase() === CTRIP_ORDER_PATH
+      ) {
+        return true
+      }
       const fliggyApi = endpoint.searchParams.get('api') ?? ''
       const requiresProviderDatasetBackfill =
         endpoint.protocol === 'https:'

@@ -35,6 +35,7 @@ const MEITUAN_ORDER_PATH = '/api/v1/ebooking/orders/list'
 const DOUYIN_LIFE_HOST = 'life.douyin.com'
 const DOUYIN_REVIEW_PATH = '/life/infra/v1/review/get_review_list/'
 const DOUYIN_ORDER_PATH = '/life/trade_view/v1/workbench/book/query/list'
+const CTRIP_ORDER_PATH = '/restapi/soa2/27204/queryorderlist'
 const SHANGHAI_TIME_ZONE = 'Asia/Shanghai'
 const MEITUAN_PEER_RANK_METRICS = Object.freeze({
   '入住间夜': 'STAY_ROOM_NIGHTS',
@@ -1693,6 +1694,13 @@ export const collectOtaSource = async ({
     source: effectiveSource,
     endpoint,
   })
+  if (
+    effectiveSource.platformCode === 'CTRIP'
+    && endpoint.pathname.replace(/\/+$/u, '').toLowerCase()
+      === CTRIP_ORDER_PATH
+  ) {
+    throw new Error('OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED')
+  }
   return {
     observedAt: now().toISOString(),
     httpStatus: response.httpStatus,

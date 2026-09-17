@@ -121,7 +121,7 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.match(storeConsoleSource, /canConfigure \? setTab\('collection'\) : openRepair\(\)/)
   assert.match(storeConsoleSource, /openCollection\('pms'\)/)
   assert.match(storeConsoleSource, /最后采集时间/)
-  assert.match(storeConsoleSource, /lastCollectionAt = data\.monitor\?\.cutoffAt/)
+  assert.match(storeConsoleSource, /latestSuccessfulCollectionAt\(/)
   assert.match(storeConsoleSource, /<time dateTime=\{lastCollectionAt\}>/)
   assert.match(storeConsoleSource, /attentionItems=\{pmsAttentionItems\}/)
   assert.match(storeConsoleSource, /source\.completeness !== 'COMPLETE'/)

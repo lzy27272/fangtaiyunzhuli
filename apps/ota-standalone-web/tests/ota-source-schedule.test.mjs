@@ -402,6 +402,38 @@ test('provider adapters refresh legacy summaries once after deployment', () => {
   }
 })
 
+test('legacy Ctrip order metadata is refreshed once into a failed-closed state', () => {
+  const source = {
+    enabled: true,
+    platformCode: 'CTRIP',
+    pollIntervalMinutes: 360,
+    lastRefreshStatus: 'COMPLETE',
+    lastRefreshAt: '2026-09-17T01:33:29.021Z',
+    dataEndpointUrl:
+      'https://ebooking.ctrip.example/restapi/soa2/27204/queryOrderList/',
+    lastSummary: {
+      recordPath: '$.ResponseStatus.Extension',
+      recordCount: 2,
+      detectedDimensions: [],
+    },
+  }
+  assert.equal(otaSourcePollingDue(
+    source,
+    new Date('2026-09-17T01:33:30.000Z'),
+  ), true)
+  source.lastRefreshStatus = 'FAILED'
+  source.lastErrorCode = 'OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED'
+  source.lastSummary = null
+  assert.equal(otaSourcePollingDue(
+    source,
+    new Date('2026-09-17T01:33:30.000Z'),
+  ), false)
+  assert.equal(otaSourcePollingDue(
+    source,
+    new Date('2026-09-17T07:33:30.000Z'),
+  ), false)
+})
+
 test('Chinese-named Fliggy sources backfill dashboards while disabled sources stay closed', () => {
   const source = {
     enabled: true,

@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const storePageUrl = new URL('../src/pages/StoreConsolePage.tsx', import.meta.url)
 const consoleUiUrl = new URL('../src/components/ConsoleUi.tsx', import.meta.url)
+const otaPanelUrl = new URL('../src/pages/OtaOperatingDataPanel.tsx', import.meta.url)
 
 test('store overview renders only configured OTA sources with icons and direct actions', async () => {
   const [storePage, consoleUi] = await Promise.all([
@@ -20,17 +21,41 @@ test('store overview renders only configured OTA sources with icons and direct a
     storePage,
     /onOpen\(summary\.hotel, direct\?\.tab, direct\?\.options\)/u,
   )
-  assert.match(storePage, /otaAttentionSourceId: failedOta\.sourceId/u)
-  assert.match(storePage, /otaAttentionPlatformCode: failedOta\.platformCode/u)
+  assert.match(storePage, /otaAttentionSourceId: attentionOta\.sourceId/u)
+  assert.match(storePage, /otaAttentionPlatformCode: attentionOta\.platformCode/u)
   assert.match(
     storePage,
     /otaAttentionSourceId: source\.sourceId, otaAttentionPlatformCode: source\.platformCode/u,
   )
   assert.match(storePage, /collectionSection: 'ota'/u)
-  assert.match(storePage, /OTA_STATE_PRIORITY\[otaState\(right\)\.tone\]/u)
+  assert.match(storePage, /groupOtaOperatingSources\(sources\)/u)
   assert.match(storePage, /label: '上游数据待处理', tab: 'collection'/u)
   assert.match(storePage, /label: '检查采集数据'/u)
   assert.match(consoleUi, /export function PlatformIcon/u)
+})
+
+test('store detail renders every configured OTA data result instead of status only', async () => {
+  const [storePage, otaPanel] = await Promise.all([
+    readFile(storePageUrl, 'utf8'),
+    readFile(otaPanelUrl, 'utf8'),
+  ])
+
+  assert.match(storePage, /<OtaOperatingDataPanel/u)
+  assert.match(storePage, /sources=\{data\.otaSources\}/u)
+  assert.match(storePage, /onOpenSource=\{openOtaSource\}/u)
+  assert.match(storePage, /latestSuccessfulCollectionAt\(/u)
+  assert.match(storePage, /openCollection\('ota', source\.sourceId, source\.platformCode\)/u)
+  assert.match(storePage, /state !== 'READY' && state !== 'DISABLED'/u)
+  assert.match(otaPanel, /groupOtaOperatingSources\(sources\)/u)
+  assert.match(otaPanel, /group\.sources\.map/u)
+  assert.match(otaPanel, /summary\.recordCount/u)
+  assert.match(otaPanel, /summary\.detectedDimensions/u)
+  assert.doesNotMatch(otaPanel, /summary\.detectedFields/u)
+  assert.match(otaPanel, /source\.lastSummary\?\.peerRanking/u)
+  assert.match(otaPanel, /summary\?\.reviewMetrics/u)
+  assert.match(otaPanel, /kind === 'ORDER'/u)
+  assert.match(otaPanel, /未形成经营数据/u)
+  assert.match(otaPanel, /不能把接口元数据误报为经营数据/u)
 })
 
 test('store overview and exception center expose one PMS repair state without heartbeat alerts', async () => {

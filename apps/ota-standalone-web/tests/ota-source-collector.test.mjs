@@ -106,6 +106,38 @@ test('OTA JSON refresh stores only data-shape summary and detected dimensions', 
   assert.match(observedRoomTypes[0].roomTypeCode, /^OBS-[a-f0-9]{20}$/u)
 })
 
+test('Ctrip order endpoint stays failed closed until its schema is validated', async () => {
+  const common = {
+    source: {
+      platformCode: 'CTRIP',
+      requestMethod: 'GET',
+      dataEndpointUrl:
+        'https://ebooking.ctrip.example/restapi/soa2/27204/queryOrderList/',
+      requestPayloadJson: '',
+    },
+    cookie: 'session=synthetic-ctrip-cookie',
+    lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
+  }
+  await assert.rejects(collectOtaSource({
+    ...common,
+    fetchImpl: async () => new Response(JSON.stringify({
+      ResponseStatus: {
+        Extension: [
+          { Id: 'TraceId', Value: 'must-not-be-retained' },
+          { Id: 'Server', Value: 'must-not-be-retained' },
+        ],
+      },
+    }), { status: 200 }),
+  }), /OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED/u)
+
+  await assert.rejects(collectOtaSource({
+    ...common,
+    fetchImpl: async () => new Response(JSON.stringify({
+      data: [{ stayDate: '2026-09-17', orderId: 'private-order-id' }],
+    }), { status: 200 }),
+  }), /OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED/u)
+})
+
 test('Meituan e-booking refresh adds only its fixed browser context', async () => {
   const result = await collectOtaSource({
     source: {

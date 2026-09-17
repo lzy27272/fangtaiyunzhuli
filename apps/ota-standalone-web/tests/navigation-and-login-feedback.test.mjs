@@ -38,8 +38,8 @@ test('one-click navigation preserves the exact failed OTA source and platform en
     storePage,
     /otaAttentionPlatformCode\?: OtaPlatformCode \| null/u,
   )
-  assert.match(storePage, /otaAttentionSourceId: failedOta\.sourceId/u)
-  assert.match(storePage, /otaAttentionPlatformCode: failedOta\.platformCode/u)
+  assert.match(storePage, /otaAttentionSourceId: attentionOta\.sourceId/u)
+  assert.match(storePage, /otaAttentionPlatformCode: attentionOta\.platformCode/u)
   assert.match(storePage, /direct\?\.options/u)
   assert.match(storePage, /initialSection=\{collectionSection\}/u)
   assert.match(
