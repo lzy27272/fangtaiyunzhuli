@@ -1360,7 +1360,7 @@ export const summarizeCtripOrderJson = (root) => {
   )
   const responseCode = root?.resStatus?.rcode
   const resultCode = root?.resultStatus?.resultCode
-  if (responseCode === 402 || responseCode === '402') {
+  if ([401, 402, '401', '402'].includes(responseCode)) {
     throw new Error('OTA_CTRIP_SESSION_INVALID')
   }
   const acknowledgement = (

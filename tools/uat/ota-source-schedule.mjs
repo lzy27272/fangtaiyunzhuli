@@ -6,7 +6,7 @@ export const OTA_SCHEDULER_STARTUP_GRACE_MILLISECONDS = 90_000
 const FLIGGY_AGGREGATION_VERSION = 6
 const CTRIP_ORDER_PATH = '/restapi/soa2/27204/queryorderlist'
 const CTRIP_SESSION_CLASSIFICATION_FIX_CUTOFF = Date.parse(
-  '2026-09-17T05:42:00.000Z',
+  '2026-09-17T06:00:00.000Z',
 )
 const FLIGGY_LEGACY_PAGE_SIZE_FIX_CUTOFF = Date.parse(
   '2026-08-17T14:05:00.000Z',
@@ -76,7 +76,10 @@ export const otaSourcePollingDue = (
   if (
     source.platformCode === 'CTRIP'
     && source.lastRefreshStatus === 'FAILED'
-    && source.lastErrorCode === 'OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED'
+    && [
+      'OTA_CTRIP_ORDER_SCHEMA_UNRECOGNIZED',
+      'OTA_CTRIP_ORDER_BUSINESS_ERROR',
+    ].includes(source.lastErrorCode)
   ) {
     try {
       const endpoint = new URL(source.dataEndpointUrl)

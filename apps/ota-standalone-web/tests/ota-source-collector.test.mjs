@@ -118,14 +118,16 @@ test('Ctrip order endpoint rejects expired sessions and metadata-only bodies', a
     cookie: 'session=synthetic-ctrip-cookie',
     lookupImpl: async () => [{ address: '203.0.113.10', family: 4 }],
   }
-  await assert.rejects(collectOtaSource({
-    ...common,
-    fetchImpl: async () => new Response(JSON.stringify({
-      ResponseStatus: { Ack: 'Success' },
-      resStatus: { rcode: 402 },
-      resultStatus: { resultCode: 0 },
-    }), { status: 200 }),
-  }), /OTA_CTRIP_SESSION_INVALID/u)
+  for (const responseCode of [401, 402, '401', '402']) {
+    await assert.rejects(collectOtaSource({
+      ...common,
+      fetchImpl: async () => new Response(JSON.stringify({
+        ResponseStatus: { Ack: 'Success' },
+        resStatus: { rcode: responseCode },
+        resultStatus: { resultCode: 0 },
+      }), { status: 200 }),
+    }), /OTA_CTRIP_SESSION_INVALID/u)
+  }
 
   await assert.rejects(collectOtaSource({
     ...common,

@@ -402,7 +402,7 @@ test('provider adapters refresh legacy summaries once after deployment', () => {
   }
 })
 
-test('legacy Ctrip order metadata and schema failures are reclassified once', () => {
+test('legacy Ctrip metadata and adapter failures are reclassified once', () => {
   const source = {
     enabled: true,
     platformCode: 'CTRIP',
@@ -432,7 +432,17 @@ test('legacy Ctrip order metadata and schema failures are reclassified once', ()
     source,
     new Date('2026-09-17T07:33:30.000Z'),
   ), true)
-  source.lastRefreshAt = '2026-09-17T07:33:30.000Z'
+  source.lastRefreshAt = '2026-09-17T05:55:33.984Z'
+  source.lastErrorCode = 'OTA_CTRIP_ORDER_BUSINESS_ERROR'
+  assert.equal(otaSourcePollingDue(
+    source,
+    new Date('2026-09-17T05:55:34.000Z'),
+  ), false)
+  assert.equal(otaSourcePollingDue(
+    source,
+    new Date('2026-09-17T05:57:04.000Z'),
+  ), true)
+  source.lastRefreshAt = '2026-09-17T06:00:00.000Z'
   source.lastErrorCode = 'OTA_CTRIP_SESSION_INVALID'
   assert.equal(otaSourcePollingDue(
     source,
