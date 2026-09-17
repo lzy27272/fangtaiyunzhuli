@@ -21,8 +21,18 @@ import { otaSourceGuidance } from './otaSourceGuidance'
 interface Props {
   context: HotelContext
   canConfigure: boolean
+  canRepairLogin?: boolean
   attentionSourceId: string | null
+  attentionPlatformCode?: OtaPlatformCode | null
+  attentionRequestSequence?: number
   onStatusChanged?: () => void
+}
+
+type ControlledLoginFeedback = {
+  tone: 'progress' | 'success' | 'warning' | 'error'
+  title: string
+  detail: string
+  reasonCode?: string | null
 }
 
 const PLATFORM_LABELS: Record<OtaPlatformCode, string> = {
@@ -107,6 +117,23 @@ const CONTROLLED_LOGIN_STATUS_LABELS: Record<string, string> = {
 }
 
 const CONTROLLED_LOGIN_ERROR_LABELS: Record<string, string> = {
+  OTA_CHANNEL_CREDENTIALS_MISSING:
+    '尚未配置飞猪账号密码，请先补充并保存。',
+  OTA_CHANNEL_CREDENTIALS_CONFLICT:
+    '同一门店的飞猪数据源使用了不同账号，请统一后重试。',
+  OTA_CHANNEL_CREDENTIALS_CHANGED:
+    '登录期间账号或数据源配置发生变化，本次会话未保存；请保存当前配置后重新登录。',
+  OTA_CHANNEL_NOT_CONFIGURED: '当前门店尚未配置飞猪数据源。',
+  OTA_CONTROLLED_LOGIN_ALREADY_RUNNING:
+    '已有飞猪登录任务正在处理，请稍后查看结果。',
+  OTA_FLIGGY_BROWSER_RUNTIME_UNAVAILABLE:
+    '服务器缺少飞猪受控登录运行环境，请联系平台管理员。',
+  OTA_FLIGGY_BROWSER_NOT_FOUND:
+    '服务器未找到可用浏览器，请联系平台管理员。',
+  OTA_FLIGGY_LOGIN_TIMEOUT:
+    '飞猪登录在90秒内未完成，任务已停止。',
+  OTA_FLIGGY_LOGIN_INTERRUPTED:
+    '上次飞猪登录被服务重启中断，请重新尝试。',
   OTA_FLIGGY_USERNAME_FORM_UNAVAILABLE: '未检测到飞猪官方账号输入页。',
   OTA_FLIGGY_PASSWORD_FORM_UNAVAILABLE:
     '账号提交后未进入密码页；当前账号可能不适用密码登录。',
@@ -118,7 +145,61 @@ const CONTROLLED_LOGIN_ERROR_LABELS: Record<string, string> = {
   OTA_FLIGGY_SLIDER_VERIFICATION_REQUIRED: '飞猪要求完成滑块验证。',
   OTA_FLIGGY_QR_VERIFICATION_REQUIRED: '飞猪要求扫码确认登录。',
   OTA_FLIGGY_EXTERNAL_VERIFICATION_REQUIRED: '飞猪要求完成额外身份验证。',
+  OTA_FLIGGY_SESSION_INCOMPLETE:
+    '飞猪已登录，但未返回覆盖数据接口的完整会话。',
+  OTA_FLIGGY_MTOP_SESSION_UNAVAILABLE:
+    '飞猪已登录，但数据接口所需令牌尚未建立。',
+  OTA_FLIGGY_VERIFICATION_EXPIRED:
+    '飞猪验证码任务已过期，请重新登录。',
+  OTA_FLIGGY_VERIFICATION_LIMIT_REACHED:
+    '验证码尝试次数已用完，请重新发起登录。',
+  OTA_FLIGGY_VERIFICATION_ATTEMPT_INVALID:
+    '验证码任务不存在或已经结束，请重新登录。',
+  OTA_FLIGGY_LOGIN_RATE_LIMITED:
+    '飞猪登录尝试已达安全上限，请在显示的解锁时间后重试。',
 }
+
+const CONTROLLED_LOGIN_TIMEOUT_MS = 120_000
+const OTA_REFRESH_TIMEOUT_MS = 90_000
+
+const withRequestTimeout = async <T,>(
+  request: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  timeoutCode: string,
+): Promise<T> => {
+  const controller = new AbortController()
+  let timer = 0
+  const timeout = new Promise<T>((_resolve, reject) => {
+    timer = window.setTimeout(() => {
+      controller.abort()
+      reject(new Error(timeoutCode))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([request(controller.signal), timeout])
+  } catch (cause) {
+    if (
+      controller.signal.aborted
+      || (cause instanceof DOMException && cause.name === 'AbortError')
+    ) throw new Error(timeoutCode)
+    throw cause
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+const controlledLoginErrorCode = (cause: unknown): string => {
+  const raw = cause instanceof Error ? cause.message : String(cause ?? '')
+  return Object.keys(CONTROLLED_LOGIN_ERROR_LABELS)
+    .find((code) => raw.includes(code))
+    ?? (raw.startsWith('OTA_') ? raw : 'OTA_FLIGGY_LOGIN_FAILED')
+}
+
+const controlledLoginErrorDetail = (reasonCode: string | null | undefined) =>
+  reasonCode
+    ? CONTROLLED_LOGIN_ERROR_LABELS[reasonCode]
+      ?? businessCodeLabel(reasonCode, '飞猪未建立有效登录会话。')
+    : '飞猪未建立有效登录会话。'
 
 const SENSITIVE_QUERY_KEY =
   /(?:token|cookie|password|passwd|secret|session|authorization|api[_-]?key|sign(?:ature)?)/i
@@ -197,10 +278,19 @@ const emptyOtaSource = (
 const otaCardId = (sourceId: string) =>
   `ota-source-${sourceId.replace(/[^A-Za-z0-9_-]/g, '-')}`
 
+const otaAccountInputId = (sourceId: string) =>
+  `ota-account-${sourceId.replace(/[^A-Za-z0-9_-]/g, '-')}`
+
+const otaPlatformId = (platformCode: OtaPlatformCode) =>
+  `ota-platform-${platformCode.toLowerCase()}`
+
 export function OtaSourceConfigPanel({
   context,
   canConfigure,
+  canRepairLogin = canConfigure,
   attentionSourceId,
+  attentionPlatformCode = null,
+  attentionRequestSequence = 0,
   onStatusChanged,
 }: Props) {
   const [sources, setSources] = useState<OtaSourceView[]>([])
@@ -208,11 +298,14 @@ export function OtaSourceConfigPanel({
     useState<Record<string, number>>({})
   const [controlledLogins, setControlledLogins] =
     useState<OtaControlledLoginProfile[]>([])
-  const [controlledLoginResult, setControlledLoginResult] =
-    useState<OtaControlledLoginResult | null>(null)
   const [verificationAnswer, setVerificationAnswer] = useState('')
   const [loggingInPlatform, setLoggingInPlatform] =
     useState<OtaPlatformCode | null>(null)
+  const [controlledLoginPhase, setControlledLoginPhase] =
+    useState<'LOGIN' | 'REFRESH' | null>(null)
+  const [controlledLoginSeconds, setControlledLoginSeconds] = useState(0)
+  const [controlledLoginFeedback, setControlledLoginFeedback] =
+    useState<ControlledLoginFeedback | null>(null)
   const [cookieDrafts, setCookieDrafts] =
     useState<Record<string, string>>({})
   const [accountDrafts, setAccountDrafts] =
@@ -250,14 +343,26 @@ export function OtaSourceConfigPanel({
     setPortalUrlEnabled(Object.fromEntries(
       rows.map((source) => [source.sourceId, Boolean(source.portalUrl)]),
     ))
-    setExpandedSourceIds(Object.fromEntries(
+    setExpandedSourceIds((current) => Object.fromEntries(
       rows.map((source) => [
         source.sourceId,
-        source.rowVersion === 0
-          || attentionSourceId === source.sourceId,
+        current[source.sourceId]
+          ?? (
+            source.rowVersion === 0
+            || attentionSourceId === source.sourceId
+          ),
       ]),
     ))
-    expandPlatformForRows(rows)
+    setExpandedPlatformCodes((current) => {
+      const next = { ...current }
+      for (const source of rows) {
+        if (
+          source.rowVersion === 0
+          || attentionSourceId === source.sourceId
+        ) next[source.platformCode] = true
+      }
+      return next
+    })
     return rows
   }
 
@@ -277,7 +382,7 @@ export function OtaSourceConfigPanel({
             rows.map((source) => [source.sourceId, source.rowVersion]),
           ))
           setControlledLogins(loginProfiles)
-          setControlledLoginResult(null)
+          setControlledLoginFeedback(null)
           setVerificationAnswer('')
           setCookieDrafts({})
           setAccountDrafts({})
@@ -312,12 +417,17 @@ export function OtaSourceConfigPanel({
   }, [context])
 
   useEffect(() => {
-    if (attentionSourceId === null || loading) return
+    if (
+      (attentionSourceId === null && attentionPlatformCode === null)
+      || loading
+    ) return
+    let targetPlatformCode = attentionPlatformCode
     if (attentionSourceId) {
       const attentionSource = sources.find(
         (source) => source.sourceId === attentionSourceId,
       )
       if (attentionSource) {
+        targetPlatformCode = attentionSource.platformCode
         setExpandedPlatformCodes((current) => ({
           ...current,
           [attentionSource.platformCode]: true,
@@ -328,15 +438,35 @@ export function OtaSourceConfigPanel({
         [attentionSourceId]: true,
       }))
     }
+    if (targetPlatformCode) {
+      setExpandedPlatformCodes((current) => ({
+        ...current,
+        [targetPlatformCode]: true,
+      }))
+    }
+    let innerFrame = 0
     const frame = window.requestAnimationFrame(() => {
-      const target = attentionSourceId
-        ? document.getElementById(otaCardId(attentionSourceId))
-        : document.getElementById('ota-source-config-panel')
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      target?.focus({ preventScroll: true })
+      innerFrame = window.requestAnimationFrame(() => {
+        const target = attentionSourceId
+          ? document.getElementById(otaCardId(attentionSourceId))
+          : targetPlatformCode
+            ? document.getElementById(otaPlatformId(targetPlatformCode))
+            : document.getElementById('ota-source-config-panel')
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        target?.focus({ preventScroll: true })
+      })
     })
-    return () => window.cancelAnimationFrame(frame)
-  }, [attentionSourceId, loading, sources.length])
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.cancelAnimationFrame(innerFrame)
+    }
+  }, [
+    attentionRequestSequence,
+    attentionPlatformCode,
+    attentionSourceId,
+    loading,
+    sources.length,
+  ])
 
   useEffect(() => {
     const nextAttemptAt = controlledLogins
@@ -353,10 +483,52 @@ export function OtaSourceConfigPanel({
     return () => window.clearTimeout(timer)
   }, [context, controlledLogins])
 
+  useEffect(() => {
+    if (!controlledLoginPhase) {
+      setControlledLoginSeconds(0)
+      return undefined
+    }
+    const startedAt = Date.now()
+    setControlledLoginSeconds(0)
+    const timer = window.setInterval(() => {
+      setControlledLoginSeconds(
+        Math.floor((Date.now() - startedAt) / 1_000),
+      )
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [controlledLoginPhase])
+
   const enabledCount = useMemo(
     () => sources.filter((source) => source.enabled).length,
     [sources],
   )
+
+  const hasUnsavedConfiguration = useMemo(() =>
+    sources.some((source) =>
+      source.rowVersion === 0
+      || dirtySourceIds[source.sourceId]
+      || Boolean((cookieDrafts[source.sourceId] ?? '').trim())
+      || Boolean((accountDrafts[source.sourceId] ?? '').trim())
+      || Boolean(passwordDrafts[source.sourceId])
+      || Boolean(clearCookies[source.sourceId])
+      || Boolean(clearCredentials[source.sourceId])
+      || (
+        (portalUrlEnabled[source.sourceId] ?? Boolean(source.portalUrl))
+        !== Boolean(source.portalUrl)
+      ))
+      || Object.keys(persistedSourceVersions).some((sourceId) =>
+        !sources.some((source) => source.sourceId === sourceId)),
+  [
+    accountDrafts,
+    clearCookies,
+    clearCredentials,
+    cookieDrafts,
+    dirtySourceIds,
+    passwordDrafts,
+    persistedSourceVersions,
+    portalUrlEnabled,
+    sources,
+  ])
 
   const platformGroups = useMemo(() =>
     (Object.entries(PLATFORM_LABELS) as Array<[OtaPlatformCode, string]>)
@@ -387,6 +559,7 @@ export function OtaSourceConfigPanel({
     sourceId: string,
     patch: Partial<OtaSourceView>,
   ) => {
+    if (loggingInPlatform !== null) return
     setSources((current) => current.map((source) =>
       source.sourceId === sourceId ? { ...source, ...patch } : source))
     setDirtySourceIds((current) => ({ ...current, [sourceId]: true }))
@@ -481,7 +654,7 @@ export function OtaSourceConfigPanel({
   }
 
   async function save() {
-    if (!canConfigure) return
+    if (!canConfigure || loggingInPlatform !== null) return
     setError('')
     setNotice('')
     const validationError = validate()
@@ -618,7 +791,6 @@ export function OtaSourceConfigPanel({
   }
 
   const mergeControlledLoginResult = (result: OtaControlledLoginResult) => {
-    setControlledLoginResult(result)
     if (result.profile) {
       setControlledLogins((current) => [
         ...current.filter((profile) =>
@@ -633,70 +805,249 @@ export function OtaSourceConfigPanel({
     }
   }
 
-  const controlledLoginRefreshNotice = (result: OtaControlledLoginResult) => {
-    const failed = result.refreshedSources.filter((source) =>
-      source.lastRefreshStatus === 'FAILED')
-    const complete = result.refreshedSources.length - failed.length
-    return failed.length > 0
-      ? `飞猪会话已更新；${complete}个数据源刷新成功，${failed.length}个失败，请查看失败卡片错误码。`
-      : `飞猪会话已安全更新，并刷新${complete}个已启用数据源。`
+  const focusFliggyCredentials = () => {
+    const source = sources.find((item) =>
+      item.platformCode === 'FLIGGY' && !item.credentialsConfigured)
+      ?? sources.find((item) => item.platformCode === 'FLIGGY')
+    if (!source) return
+    setExpandedPlatformCodes((current) => ({ ...current, FLIGGY: true }))
+    setExpandedSourceIds((current) => ({
+      ...current,
+      [source.sourceId]: true,
+    }))
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const input = document.getElementById(
+          otaAccountInputId(source.sourceId),
+        )
+        input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        input?.focus({ preventScroll: true })
+      })
+    })
+  }
+
+  const refreshFliggySourcesAfterLogin = async () => {
+    if (!canConfigure) {
+      return { complete: 0, failed: [], total: 0, deferred: true }
+    }
+    const targets = sources.filter((source) =>
+      source.platformCode === 'FLIGGY' && source.enabled)
+    let complete = 0
+    const failed: string[] = []
+    for (const source of targets) {
+      setRefreshingId(source.sourceId)
+      try {
+        const refreshed = await withRequestTimeout(
+          (signal) => refreshOtaSource(
+            context,
+            source.sourceId,
+            { signal },
+          ),
+          OTA_REFRESH_TIMEOUT_MS,
+          'OTA_SOURCE_REFRESH_TIMEOUT',
+        )
+        setSources((current) => current.map((item) =>
+          item.sourceId === source.sourceId ? refreshed : item))
+        if (refreshed.lastRefreshStatus === 'COMPLETE') complete += 1
+        else failed.push(refreshed.displayName)
+      } catch {
+        failed.push(source.displayName)
+      }
+    }
+    setRefreshingId(null)
+    return { complete, failed, total: targets.length, deferred: false }
+  }
+
+  const failedLoginFeedback = (
+    reasonCode: string | null | undefined,
+  ): ControlledLoginFeedback => ({
+    tone: 'error',
+    title: '飞猪登录失败',
+    detail: controlledLoginErrorDetail(reasonCode),
+    reasonCode,
+  })
+
+  const restoredLoginFeedback = (
+    profile: OtaControlledLoginProfile,
+  ): ControlledLoginFeedback | null => {
+    if (!profile.credentialsConfigured) {
+      return {
+        tone: 'warning',
+        title: '尚未配置飞猪账号密码',
+        detail: controlledLoginErrorDetail('OTA_CHANNEL_CREDENTIALS_MISSING'),
+        reasonCode: 'OTA_CHANNEL_CREDENTIALS_MISSING',
+      }
+    }
+    if (profile.status === 'EXTERNAL_VERIFICATION_REQUIRED') {
+      return {
+        tone: 'warning',
+        title: '需要在飞猪官网确认',
+        detail: controlledLoginErrorDetail(profile.lastErrorCode),
+        reasonCode: profile.lastErrorCode,
+      }
+    }
+    if (profile.status === 'RATE_LIMITED') {
+      return {
+        tone: 'warning',
+        title: '飞猪登录已触发安全限次',
+        detail: controlledLoginErrorDetail(profile.lastErrorCode),
+        reasonCode: profile.lastErrorCode,
+      }
+    }
+    return profile.status === 'FAILED'
+      ? failedLoginFeedback(profile.lastErrorCode)
+      : null
   }
 
   async function loginAndRefreshFliggy() {
-    if (!canConfigure) return
+    if (!canRepairLogin) return
+    if (hasUnsavedConfiguration) {
+      setControlledLoginFeedback({
+        tone: 'warning',
+        title: '请先保存当前配置',
+        detail: '账号、数据源或入口存在未保存修改；保存或撤销后再重新登录。',
+      })
+      return
+    }
     setLoggingInPlatform('FLIGGY')
+    setControlledLoginPhase('LOGIN')
     setError('')
-    setNotice('正在通过飞猪官方登录页建立受控会话，请勿重复提交。')
-    setControlledLoginResult(null)
+    setNotice('')
+    setControlledLoginFeedback({
+      tone: 'progress',
+      title: '正在登录飞猪',
+      detail: '正在通过飞猪官方登录页验证账号并建立安全会话，请勿重复提交。',
+    })
+    setControlledLogins((current) => current.map((profile) =>
+      profile.platformCode === 'FLIGGY'
+        ? { ...profile, status: 'RUNNING', lastErrorCode: null }
+        : profile))
     setVerificationAnswer('')
     try {
-      const result = await startOtaControlledLogin(context, 'FLIGGY')
+      const result = await withRequestTimeout(
+        (signal) => startOtaControlledLogin(
+          context,
+          'FLIGGY',
+          { signal },
+        ),
+        CONTROLLED_LOGIN_TIMEOUT_MS,
+        'OTA_FLIGGY_LOGIN_TIMEOUT',
+      )
       mergeControlledLoginResult(result)
       if (result.status === 'AUTHENTICATED') {
-        setNotice(controlledLoginRefreshNotice(result))
+        setControlledLoginPhase('REFRESH')
+        setControlledLoginFeedback({
+          tone: 'success',
+          title: '飞猪登录成功',
+          detail: '有效会话已安全保存，正在刷新本门店已启用的飞猪数据。',
+        })
+        const refreshed = await refreshFliggySourcesAfterLogin()
+        setControlledLoginFeedback({
+          tone: refreshed.failed.length > 0 ? 'warning' : 'success',
+          title: '飞猪登录成功',
+          detail: refreshed.deferred
+            ? '有效会话已安全保存，系统将按计划自动刷新本门店飞猪数据。'
+            : refreshed.total === 0
+            ? '有效会话已安全保存；当前没有启用的数据源需要刷新。'
+            : refreshed.failed.length > 0
+              ? `会话已建立；${refreshed.complete}/${refreshed.total} 个数据源刷新成功，未完成：${refreshed.failed.join('、')}。可在下方失败卡片继续处理。`
+              : `会话已建立，${refreshed.complete} 个已启用数据源刷新成功。`,
+        })
       } else if (result.status === 'VERIFICATION_REQUIRED') {
-        setNotice('飞猪要求一次性验证码；请在10分钟内完成，最多提交3次。')
+        setControlledLoginFeedback({
+          tone: 'warning',
+          title: '还需一次性验证码',
+          detail: '请在10分钟内完成，最多提交3次；刷新页面后也可继续当前验证。',
+          reasonCode: result.reasonCode,
+        })
+      } else if (result.status === 'EXTERNAL_VERIFICATION_REQUIRED') {
+        setControlledLoginFeedback({
+          tone: 'warning',
+          title: '需要在飞猪官网确认',
+          detail: controlledLoginErrorDetail(result.reasonCode),
+          reasonCode: result.reasonCode,
+        })
       } else {
-        setNotice('飞猪要求滑块或扫码等外部验证；本次已安全停止，请改用官网登录修复。')
+        setControlledLoginFeedback(failedLoginFeedback(
+          result.reasonCode ?? result.profile?.lastErrorCode,
+        ))
       }
     } catch (cause) {
-      await reload().catch(() => undefined)
-      setError(businessErrorMessage(cause, '飞猪登录失败'))
-      setNotice('')
+      const reasonCode = controlledLoginErrorCode(cause)
+      setControlledLoginFeedback(failedLoginFeedback(reasonCode))
+      void reload().catch(() => undefined)
     } finally {
+      setControlledLoginPhase(null)
       setLoggingInPlatform(null)
       onStatusChanged?.()
     }
   }
 
   async function submitFliggyVerification() {
-    const attemptId = controlledLoginResult?.attemptId
+    const profile = controlledLogins.find((item) =>
+      item.platformCode === 'FLIGGY')
+    const attemptId = profile?.challengeAttemptId
     if (!attemptId || !/^[A-Za-z0-9]{4,8}$/.test(verificationAnswer)) {
       setError('请输入页面当前显示的4至8位验证码。')
       return
     }
     setLoggingInPlatform('FLIGGY')
+    setControlledLoginPhase('LOGIN')
     setError('')
-    setNotice('正在提交一次性验证码…')
+    setControlledLoginFeedback({
+      tone: 'progress',
+      title: '正在验证验证码',
+      detail: '正在提交本次一次性验证码，请勿重复点击。',
+    })
     try {
-      const result = await submitOtaControlledLoginVerification(
-        context,
-        'FLIGGY',
-        attemptId,
-        verificationAnswer,
+      const result = await withRequestTimeout(
+        (signal) => submitOtaControlledLoginVerification(
+          context,
+          'FLIGGY',
+          attemptId,
+          verificationAnswer,
+          { signal },
+        ),
+        CONTROLLED_LOGIN_TIMEOUT_MS,
+        'OTA_FLIGGY_LOGIN_TIMEOUT',
       )
       setVerificationAnswer('')
       mergeControlledLoginResult(result)
       if (result.status === 'AUTHENTICATED') {
-        setNotice(controlledLoginRefreshNotice(result))
+        setControlledLoginPhase('REFRESH')
+        setControlledLoginFeedback({
+          tone: 'success',
+          title: '飞猪登录成功',
+          detail: '验证码已通过，会话已安全保存，正在刷新飞猪数据。',
+        })
+        const refreshed = await refreshFliggySourcesAfterLogin()
+        setControlledLoginFeedback({
+          tone: refreshed.failed.length > 0 ? 'warning' : 'success',
+          title: '飞猪登录成功',
+          detail: refreshed.deferred
+            ? '验证码已通过，会话已安全保存，系统将按计划自动刷新本门店飞猪数据。'
+            : refreshed.total === 0
+              ? '验证码已通过，会话已安全保存；当前没有启用的数据源需要刷新。'
+            : refreshed.failed.length > 0
+            ? `会话已建立；${refreshed.complete}/${refreshed.total} 个数据源刷新成功，未完成：${refreshed.failed.join('、')}。`
+            : `会话已建立，${refreshed.complete} 个已启用数据源刷新成功。`,
+        })
+      } else if (result.status === 'VERIFICATION_REQUIRED') {
+        setControlledLoginFeedback({
+          tone: 'warning',
+          title: '验证码尚未通过',
+          detail: controlledLoginErrorDetail(result.reasonCode),
+          reasonCode: result.reasonCode,
+        })
       } else {
-        setNotice('验证码尚未通过，请核对页面当前验证码后重试。')
+        setControlledLoginFeedback(failedLoginFeedback(result.reasonCode))
       }
     } catch (cause) {
-      await reload().catch(() => undefined)
-      setError(businessErrorMessage(cause, '验证码提交失败'))
-      setNotice('')
+      const reasonCode = controlledLoginErrorCode(cause)
+      setControlledLoginFeedback(failedLoginFeedback(reasonCode))
+      void reload().catch(() => undefined)
     } finally {
+      setControlledLoginPhase(null)
       setLoggingInPlatform(null)
       onStatusChanged?.()
     }
@@ -705,7 +1056,9 @@ export function OtaSourceConfigPanel({
   return (
     <section
       className={`ota-source-config-panel ${
-        attentionSourceId !== null ? 'attention-requested' : ''
+        attentionSourceId !== null || attentionPlatformCode !== null
+          ? 'attention-requested'
+          : ''
       }`}
       id="ota-source-config-panel"
       tabIndex={-1}
@@ -747,8 +1100,25 @@ export function OtaSourceConfigPanel({
               SOURCE_KIND_ORDER[left] - SOURCE_KIND_ORDER[right])
           const controlledLogin = controlledLogins.find((profile) =>
             profile.platformCode === group.platformCode)
+          const challengeAttemptId = controlledLogin?.challengeAttemptId
+          const challengeCaptcha = controlledLogin?.captchaImageDataUrl
+          const challengeRequired = group.platformCode === 'FLIGGY'
+            && Boolean(challengeAttemptId)
+            && controlledLogin?.challengeActive === true
+            && controlledLogin.status === 'VERIFICATION_REQUIRED'
+          const visibleLoginFeedback = group.platformCode === 'FLIGGY'
+            ? controlledLoginFeedback
+              ?? (controlledLogin
+                ? restoredLoginFeedback(controlledLogin)
+                : null)
+            : null
           return (
-            <section className="ota-platform-group" key={group.platformCode}>
+            <section
+              className="ota-platform-group"
+              id={otaPlatformId(group.platformCode)}
+              key={group.platformCode}
+              tabIndex={-1}
+            >
               <button
                 aria-expanded={platformExpanded}
                 className="ota-platform-menu"
@@ -826,8 +1196,9 @@ export function OtaSourceConfigPanel({
                       <button
                         className="secondary"
                         disabled={
-                          !canConfigure
+                          !canRepairLogin
                           || loggingInPlatform !== null
+                          || hasUnsavedConfiguration
                           || !controlledLogin.credentialsConfigured
                           || controlledLogin.status === 'RATE_LIMITED'
                           || controlledLogin.challengeActive
@@ -836,24 +1207,76 @@ export function OtaSourceConfigPanel({
                         onClick={() => void loginAndRefreshFliggy()}
                       >
                         {loggingInPlatform === 'FLIGGY'
-                          ? '登录处理中…'
-                          : '账号登录并刷新'}
+                          ? controlledLoginPhase === 'REFRESH'
+                            ? `刷新数据中 ${controlledLoginSeconds}秒`
+                            : `登录处理中 ${controlledLoginSeconds}秒`
+                          : controlledLogin.status === 'NEVER'
+                            ? '立即登录'
+                            : '重新登录'}
                       </button>
+                      {hasUnsavedConfiguration ? (
+                        <small>请先保存或撤销当前修改，再发起飞猪登录。</small>
+                      ) : null}
                     </div>
                   ) : null}
-                  {group.platformCode === 'FLIGGY'
-                    && controlledLoginResult?.status
-                      === 'VERIFICATION_REQUIRED'
-                    && controlledLoginResult.attemptId ? (
+                  {visibleLoginFeedback && controlledLogin ? (
+                    <div
+                      aria-live="polite"
+                      className={`ota-controlled-login-feedback ${visibleLoginFeedback.tone}`}
+                      role={visibleLoginFeedback.tone === 'error' ? 'alert' : 'status'}
+                    >
+                      <div>
+                        <strong>{visibleLoginFeedback.title}</strong>
+                        <span>
+                          {visibleLoginFeedback.detail}
+                          {controlledLoginPhase
+                            ? ` 已等待 ${controlledLoginSeconds} 秒。`
+                            : ''}
+                        </span>
+                        {visibleLoginFeedback.reasonCode ? (
+                          <details className="technical-details">
+                            <summary>查看错误编号</summary>
+                            <code>{visibleLoginFeedback.reasonCode}</code>
+                          </details>
+                        ) : null}
+                      </div>
+                      {!['progress', 'success'].includes(
+                        visibleLoginFeedback.tone,
+                      ) ? (
+                        <div className="ota-controlled-login-actions">
+                          {canConfigure ? (
+                            <button
+                              className="secondary"
+                              type="button"
+                              onClick={focusFliggyCredentials}
+                            >
+                              定位账号密码
+                            </button>
+                          ) : (
+                            <small>账号密码需由平台管理员更新。</small>
+                          )}
+                          <a
+                            className="button-link secondary"
+                            href={controlledLogin.repairUrl}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            打开飞猪官网验证
+                          </a>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {challengeRequired ? (
                     <div className="ota-controlled-verification" role="group">
                       <div>
                         <strong>完成一次性验证码</strong>
                         <small>仅填写当前页面验证码，不要填写账号、密码或其他登录凭据。</small>
                       </div>
-                      {controlledLoginResult.captchaImageDataUrl ? (
+                      {challengeCaptcha ? (
                         <img
                           alt="飞猪登录验证码"
-                          src={controlledLoginResult.captchaImageDataUrl}
+                          src={challengeCaptcha}
                         />
                       ) : null}
                       <input
@@ -918,7 +1341,7 @@ export function OtaSourceConfigPanel({
                     <label className="inline-toggle">
                       <input
                         checked={source.enabled}
-                        disabled={!canConfigure}
+                        disabled={!canConfigure || loggingInPlatform !== null}
                         type="checkbox"
                         onChange={(event) =>
                           updateSource(source.sourceId, {
@@ -958,7 +1381,7 @@ export function OtaSourceConfigPanel({
                 <label>
                   OTA来源名称
                   <input
-                    disabled={!canConfigure}
+                    disabled={!canConfigure || loggingInPlatform !== null}
                     placeholder="例如 携程房态"
                     value={source.displayName}
                     onChange={(event) =>
@@ -970,7 +1393,7 @@ export function OtaSourceConfigPanel({
                 <label>
                   OTA平台
                   <select
-                    disabled={!canConfigure}
+                    disabled={!canConfigure || loggingInPlatform !== null}
                     value={source.platformCode}
                     onChange={(event) => {
                       const platformCode = event.target.value as OtaPlatformCode
@@ -992,7 +1415,7 @@ export function OtaSourceConfigPanel({
                       portalUrlEnabled[source.sourceId]
                       ?? Boolean(source.portalUrl)
                     }
-                    disabled={!canConfigure}
+                    disabled={!canConfigure || loggingInPlatform !== null}
                     type="checkbox"
                     onChange={(event) =>
                       setPortalUrlEnabled((current) => ({
@@ -1008,7 +1431,7 @@ export function OtaSourceConfigPanel({
                   <label className="wide-field">
                     OTA后台登录网址（补充）
                     <input
-                      disabled={!canConfigure}
+                      disabled={!canConfigure || loggingInPlatform !== null}
                       placeholder="https://..."
                       value={source.portalUrl}
                       onChange={(event) =>
@@ -1024,7 +1447,7 @@ export function OtaSourceConfigPanel({
                 <label className="wide-field">
                   渠道数据接口地址（可选）
                   <input
-                    disabled={!canConfigure}
+                    disabled={!canConfigure || loggingInPlatform !== null}
                     placeholder="可补充填写：https://.../api/..."
                     value={source.dataEndpointUrl}
                     onChange={(event) =>
@@ -1048,7 +1471,7 @@ export function OtaSourceConfigPanel({
                 <label>
                   请求方式
                   <select
-                    disabled={!canConfigure}
+                    disabled={!canConfigure || loggingInPlatform !== null}
                     value={source.requestMethod}
                     onChange={(event) =>
                       updateSource(source.sourceId, {
@@ -1067,7 +1490,7 @@ export function OtaSourceConfigPanel({
                 <label>
                   轮询间隔
                   <select
-                    disabled={!canConfigure}
+                    disabled={!canConfigure || loggingInPlatform !== null}
                     value={source.pollIntervalMinutes}
                     onChange={(event) =>
                       updateSource(source.sourceId, {
@@ -1088,7 +1511,7 @@ export function OtaSourceConfigPanel({
                   <label className="wide-field">
                     提交内容
                     <textarea
-                      disabled={!canConfigure}
+                      disabled={!canConfigure || loggingInPlatform !== null}
                       maxLength={20_000}
                       placeholder='例如：{"hotelCode":"H001"}'
                       rows={5}
@@ -1104,7 +1527,11 @@ export function OtaSourceConfigPanel({
                   渠道登录凭据
                   <input
                     autoComplete="off"
-                    disabled={!canConfigure || clearCookies[source.sourceId]}
+                    disabled={
+                      !canConfigure
+                      || loggingInPlatform !== null
+                      || clearCookies[source.sourceId]
+                    }
                     maxLength={16 * 1024}
                     placeholder={
                       source.cookieConfigured
@@ -1133,8 +1560,13 @@ export function OtaSourceConfigPanel({
                 <label>
                   OTA账号
                   <input
+                    id={otaAccountInputId(source.sourceId)}
                     autoComplete="off"
-                    disabled={!canConfigure || clearCredentials[source.sourceId]}
+                    disabled={
+                      !canConfigure
+                      || loggingInPlatform !== null
+                      || clearCredentials[source.sourceId]
+                    }
                     placeholder={
                       source.credentialsConfigured
                         ? '已配置；重新填写将替换'
@@ -1154,7 +1586,11 @@ export function OtaSourceConfigPanel({
                   OTA密码
                   <input
                     autoComplete="new-password"
-                    disabled={!canConfigure || clearCredentials[source.sourceId]}
+                    disabled={
+                      !canConfigure
+                      || loggingInPlatform !== null
+                      || clearCredentials[source.sourceId]
+                    }
                     placeholder={
                       source.credentialsConfigured
                         ? '已配置；重新填写将替换'
@@ -1175,7 +1611,11 @@ export function OtaSourceConfigPanel({
                   <label className="cookie-clear-option wide-field">
                     <input
                       checked={Boolean(clearCookies[source.sourceId])}
-                      disabled={!canConfigure || Boolean(cookieDrafts[source.sourceId])}
+                      disabled={
+                        !canConfigure
+                        || loggingInPlatform !== null
+                        || Boolean(cookieDrafts[source.sourceId])
+                      }
                       type="checkbox"
                       onChange={(event) =>
                         setClearCookies((current) => ({
@@ -1192,6 +1632,7 @@ export function OtaSourceConfigPanel({
                       checked={Boolean(clearCredentials[source.sourceId])}
                       disabled={
                         !canConfigure
+                        || loggingInPlatform !== null
                         || Boolean(accountDrafts[source.sourceId])
                         || Boolean(passwordDrafts[source.sourceId])
                       }
@@ -1248,6 +1689,7 @@ export function OtaSourceConfigPanel({
                     className="secondary"
                     disabled={
                       !canConfigure
+                      || loggingInPlatform !== null
                       || refreshingId !== null
                       || source.rowVersion === 0
                       || (
@@ -1264,6 +1706,7 @@ export function OtaSourceConfigPanel({
                 {canConfigure ? (
                   <button
                     className="danger-link"
+                    disabled={loggingInPlatform !== null}
                     type="button"
                     onClick={() =>
                       setSources((current) =>
@@ -1282,7 +1725,7 @@ export function OtaSourceConfigPanel({
                   {canConfigure ? (
                     <button
                       className="secondary ota-platform-add-source"
-                      disabled={saving}
+                      disabled={saving || loggingInPlatform !== null}
                       type="button"
                       onClick={() => {
                         const source = emptyOtaSource(group.platformCode)
@@ -1318,7 +1761,7 @@ export function OtaSourceConfigPanel({
         <div className="report-source-actions">
           <button
             className="secondary"
-            disabled={saving}
+            disabled={saving || loggingInPlatform !== null}
             type="button"
               onClick={() => {
                 const source = emptyOtaSource()
@@ -1340,7 +1783,11 @@ export function OtaSourceConfigPanel({
             新增OTA渠道
           </button>
           <button
-            disabled={saving || sources.length === 0}
+            disabled={
+              saving
+              || loggingInPlatform !== null
+              || sources.length === 0
+            }
             type="button"
             onClick={() => void save()}
           >

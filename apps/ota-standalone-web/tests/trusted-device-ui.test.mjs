@@ -48,8 +48,8 @@ test('Bieyanghong defaults to scoped server-Cookie repair while retaining an exp
   assert.match(cookieRepair, /本店验证/u)
   assert.match(page, /PMS系统配置/u)
   assert.match(page, /系统已匹配/u)
-  assert.match(page, /厂家链接和报表入口由系统直接生成，无需再次输入/u)
-  assert.match(page, /已有链接与报表入口只读展示/u)
+  assert.match(page, /厂家链接和报表入口由系统根据门店档案自动生成或加载，无需再次输入/u)
+  assert.match(page, /已有链接与报表入口已自动加载，无需重复录入/u)
   assert.match(page, /source\.endpointUrl/u)
   assert.doesNotMatch(page, /修改接口与 Cookie|新增接口与 Cookie/u)
   assert.ok(

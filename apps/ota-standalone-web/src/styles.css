@@ -555,6 +555,60 @@ details.history-card { display: block; }
   color: #8b3e14;
   background: transparent;
 }
+.ota-controlled-login-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .9rem 1rem;
+  border: 1px solid #b7cec4;
+  border-radius: .85rem;
+  background: #f2f8f5;
+}
+.ota-controlled-login-feedback > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: .3rem;
+}
+.ota-controlled-login-feedback span {
+  color: #536861;
+  line-height: 1.55;
+}
+.ota-controlled-login-feedback.progress {
+  border-color: #9abeb1;
+  background: #edf7f3;
+}
+.ota-controlled-login-feedback.success {
+  border-color: #80b79f;
+  background: #edf8f2;
+}
+.ota-controlled-login-feedback.warning {
+  border-color: #d6a449;
+  background: #fff8e8;
+}
+.ota-controlled-login-feedback.error {
+  border-color: #df9286;
+  background: #fff2ef;
+}
+.ota-controlled-login-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .55rem;
+}
+.ota-controlled-login-actions .button-link {
+  border: 1px solid #aeb9b3;
+  border-radius: .7rem;
+  padding: .65rem .85rem;
+  color: #21463c;
+  background: #fff;
+  font-weight: 700;
+}
+.ota-controlled-login-actions small {
+  align-self: center;
+  color: #8a3c31;
+}
 .ota-controlled-verification img {
   max-width: 10rem;
   max-height: 4rem;
@@ -619,10 +673,12 @@ details.history-card { display: block; }
     grid-row: 2;
   }
   .ota-controlled-login-panel,
+  .ota-controlled-login-feedback,
   .ota-controlled-verification {
     align-items: stretch;
     flex-direction: column;
   }
+  .ota-controlled-login-actions { justify-content: flex-start; }
   .ota-controlled-verification input { max-width: none; }
 }
 .ota-refresh-summary {

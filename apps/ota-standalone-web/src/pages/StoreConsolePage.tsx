@@ -15,6 +15,7 @@ import {
   type IncidentView,
   type MonitorView,
   type OutboxPreview,
+  type OtaPlatformCode,
   type OtaSourceView,
   type RoomTypeConfigurationView,
   type SimulationConfiguration,
@@ -51,7 +52,11 @@ import {
 import { HistoryPage } from './HistoryPage'
 import { HotSellingRoomConfigPanel } from './HotSellingRoomConfigPanel'
 import { MappingTargetPage } from './MappingTargetPage'
-import { ReportSourceConfigPage } from './ReportSourceConfigPage'
+import {
+  ReportSourceConfigPage,
+  type CollectionSection,
+} from './ReportSourceConfigPage'
+import { OtaSourceConfigPanel } from './OtaSourceConfigPanel'
 import { StoreRepairPanel } from './StoreRepairPanel'
 
 export interface HotelSummary {
@@ -66,6 +71,12 @@ export interface HotelSummary {
 }
 
 type StoreTab = 'overview' | 'repair' | 'collection' | 'operations' | 'broadcast'
+
+export interface StoreOpenOptions {
+  collectionSection?: CollectionSection
+  otaAttentionSourceId?: string | null
+  otaAttentionPlatformCode?: OtaPlatformCode | null
+}
 
 const PMS_LABELS = {
   MEITUAN_BIEYANGHONG: '美团别样红 PMS',
@@ -96,12 +107,23 @@ const sourceDisplayName = (platform: string) => ({
 
 const PLATFORM_ORDER = ['CTRIP', 'MEITUAN', 'FLIGGY', 'DOUYIN', 'QUNAR', 'TONGCHENG', 'OTHER'] as const
 
+const OTA_STATE_PRIORITY: Record<Tone, number> = {
+  error: 4,
+  warning: 3,
+  info: 3,
+  ok: 2,
+  muted: 1,
+}
+
 const configuredOtaSources = (sources: OtaSourceView[]) => [...sources]
   .sort((left, right) => {
     const leftIndex = PLATFORM_ORDER.indexOf(left.platformCode as typeof PLATFORM_ORDER[number])
     const rightIndex = PLATFORM_ORDER.indexOf(right.platformCode as typeof PLATFORM_ORDER[number])
-    return (leftIndex < 0 ? PLATFORM_ORDER.length : leftIndex)
+    const platformOrder = (leftIndex < 0 ? PLATFORM_ORDER.length : leftIndex)
       - (rightIndex < 0 ? PLATFORM_ORDER.length : rightIndex)
+    if (platformOrder !== 0) return platformOrder
+    return OTA_STATE_PRIORITY[otaState(right).tone]
+      - OTA_STATE_PRIORITY[otaState(left).tone]
   })
   .filter((source, index, all) =>
     all.findIndex((candidate) => candidate.platformCode === source.platformCode) === index)
@@ -157,8 +179,11 @@ function broadcastDiagnosis(summary: HotelSummary): { tone: Tone; label: string;
     && Boolean(summary.monitor.collectionRunId)
   const briefReady = latestBrief?.completenessCode === 'COMPLETE'
 
-  if ((failedIncident || failedDelivery) && (!monitorReady || !briefReady)) {
+  if ((failedIncident || failedDelivery) && !monitorReady) {
     return { tone: 'warning', label: '上游数据待处理', tab: 'collection' }
+  }
+  if ((failedIncident || failedDelivery) && !briefReady) {
+    return { tone: 'error', label: '简报待处理', tab: 'broadcast' }
   }
   if (failedIncident || failedDelivery) {
     return { tone: 'error', label: '播报异常', tab: 'broadcast' }
@@ -171,9 +196,17 @@ function broadcastDiagnosis(summary: HotelSummary): { tone: Tone; label: string;
 
 const broadcastState = (summary: HotelSummary) => broadcastDiagnosis(summary)
 
-function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } | null {
+function directTarget(summary: HotelSummary): {
+  tab: StoreTab
+  label: string
+  options?: StoreOpenOptions
+} | null {
   if (summary.hotel.pmsSystemCode === 'OTHER') {
-    return { tab: 'collection', label: '完善PMS接入' }
+    return {
+      tab: 'collection',
+      label: '完善PMS接入',
+      options: { collectionSection: 'pms' },
+    }
   }
   const pms = pmsState(summary)
   if (pms.tone === 'error') {
@@ -182,11 +215,23 @@ function directTarget(summary: HotelSummary): { tab: StoreTab; label: string } |
   const failedOta = configuredOtaSources(summary.otaSources)
     .find((source) => otaState(source).tone === 'error')
   if (failedOta) {
-    return { tab: 'collection', label: `检查${sourceDisplayName(failedOta.platformCode)}` }
+    return {
+      tab: 'collection',
+      label: `检查${sourceDisplayName(failedOta.platformCode)}`,
+      options: {
+        collectionSection: 'ota',
+        otaAttentionSourceId: failedOta.sourceId,
+        otaAttentionPlatformCode: failedOta.platformCode,
+      },
+    }
   }
   const broadcast = broadcastDiagnosis(summary)
   if (broadcast.label === '上游数据待处理') {
-    return { tab: 'collection', label: '检查采集数据' }
+    return {
+      tab: 'collection',
+      label: '检查采集数据',
+      options: { collectionSection: 'pms' },
+    }
   }
   if (broadcast.tone === 'error') {
     return { tab: broadcast.tab, label: '检查播报' }
@@ -228,7 +273,11 @@ export function StoreOverviewPage({
   directoryError: string
   canCreate: boolean
   onCreate: () => void
-  onOpen: (hotel: SimulationHotelView, tab?: StoreTab) => void
+  onOpen: (
+    hotel: SimulationHotelView,
+    tab?: StoreTab,
+    options?: StoreOpenOptions,
+  ) => void
   onOpenException: () => void
   onRefreshDirectory: () => void
 }) {
@@ -325,15 +374,15 @@ export function StoreOverviewPage({
                 <span><strong>{summary.hotel.hotelCode} · {summary.hotel.hotelName}</strong><small>{pmsDisplayName(summary.hotel)} · {businessCodeLabel(summary.hotel.lifecycleStatus, '状态待确认')}</small></span>
               </button>
               <div className="source-statuses">
-                <button aria-label={`打开 PMS 处理页面，当前${pms.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, pmsRepairState(summary).required ? 'repair' : 'collection')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
+                <button aria-label={`打开 PMS 处理页面，当前${pms.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, pmsRepairState(summary).required ? 'repair' : 'collection', { collectionSection: 'pms' })} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
                 {otaSources.map((source) => {
                   const state = otaState(source)
-                  return <button aria-label={`打开${sourceDisplayName(source.platformCode)}配置，当前${state.label}`} className="channel-status-link" key={source.platformCode} onClick={() => onOpen(summary.hotel, 'collection')} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button>
+                  return <button aria-label={`打开${sourceDisplayName(source.platformCode)}配置，当前${state.label}`} className="channel-status-link" key={source.platformCode} onClick={() => onOpen(summary.hotel, 'collection', { collectionSection: 'ota', otaAttentionSourceId: source.sourceId, otaAttentionPlatformCode: source.platformCode })} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button>
                 })}
                 <button aria-label={`打开${broadcast.tab === 'collection' ? '采集配置' : '播报记录'}，当前${broadcast.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, broadcast.tab)} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
               </div>
               <div className="store-meta"><strong>{formatTime(summary.monitor?.cutoffAt)}</strong><small>{openIncidents ? `${openIncidents}项异常待处理` : '最近检查'}</small></div>
-              <button className={`row-action${direct ? ' direct' : ''}`} type="button" onClick={() => onOpen(summary.hotel, direct?.tab)}>{direct ? <><Icon name="arrow" />一键直达<small>{direct.label}</small></> : <>进入门店<Icon name="chevron" /></>}</button>
+              <button className={`row-action${direct ? ' direct' : ''}`} type="button" onClick={() => onOpen(summary.hotel, direct?.tab, direct?.options)}>{direct ? <><Icon name="arrow" />一键直达<small>{direct.label}</small></> : <>进入门店<Icon name="chevron" /></>}</button>
             </article>
           )
         })}
@@ -363,6 +412,9 @@ const emptyDetail: DetailData = {
 export function StoreDetailPage({
   hotel,
   initialTab = 'overview',
+  initialCollectionSection = 'overview',
+  initialOtaAttentionSourceId = null,
+  initialOtaAttentionPlatformCode = null,
   canConfigure,
   canRevenueConfigure,
   onBack,
@@ -370,14 +422,29 @@ export function StoreDetailPage({
 }: {
   hotel: SimulationHotelView
   initialTab?: StoreTab
+  initialCollectionSection?: CollectionSection
+  initialOtaAttentionSourceId?: string | null
+  initialOtaAttentionPlatformCode?: OtaPlatformCode | null
   canConfigure: boolean
   canRevenueConfigure: boolean
   onBack: () => void
   onOpenExceptions: () => void
 }) {
   const context = useMemo<HotelContext>(() => ({ tenantId: hotel.tenantId, hotelId: hotel.hotelId }), [hotel])
-  const authorizedInitialTab = initialTab === 'collection' && !canConfigure ? 'repair' : initialTab
+  const authorizedInitialTab = initialTab === 'collection'
+    && !canConfigure
+    && initialCollectionSection !== 'ota'
+    ? 'repair'
+    : initialTab
   const [tab, setTab] = useState<StoreTab>(authorizedInitialTab)
+  const [collectionSection, setCollectionSection] =
+    useState<CollectionSection>(initialCollectionSection)
+  const [otaAttentionSourceId, setOtaAttentionSourceId] =
+    useState<string | null>(initialOtaAttentionSourceId)
+  const [otaAttentionPlatformCode, setOtaAttentionPlatformCode] =
+    useState<OtaPlatformCode | null>(initialOtaAttentionPlatformCode)
+  const [collectionNavigationSequence, setCollectionNavigationSequence] =
+    useState(0)
   const [data, setData] = useState<DetailData>(emptyDetail)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -435,8 +502,23 @@ export function StoreDetailPage({
   }, [canConfigure, context])
 
   useEffect(() => {
-    setTab(initialTab === 'collection' && !canConfigure ? 'repair' : initialTab)
-  }, [canConfigure, initialTab])
+    setTab(
+      initialTab === 'collection'
+      && !canConfigure
+      && initialCollectionSection !== 'ota'
+        ? 'repair'
+        : initialTab,
+    )
+    setCollectionSection(initialCollectionSection)
+    setOtaAttentionSourceId(initialOtaAttentionSourceId)
+    setOtaAttentionPlatformCode(initialOtaAttentionPlatformCode)
+  }, [
+    canConfigure,
+    initialCollectionSection,
+    initialOtaAttentionPlatformCode,
+    initialOtaAttentionSourceId,
+    initialTab,
+  ])
   useEffect(() => {
     collectionAbortRef.current?.abort()
     collectionAbortRef.current = null
@@ -477,7 +559,7 @@ export function StoreDetailPage({
           throw new Error('可信设备采集状态异常，请刷新后重试。')
         }
         if (!trusted.device || trusted.device.status !== 'ACTIVE') {
-          setTab('repair')
+          openRepair()
           throw new Error('请先在登录修复中完成本机可信设备安装与绑定。')
         }
         const baselineSnapshotAt = trusted.device.lastSnapshotAt
@@ -497,7 +579,7 @@ export function StoreDetailPage({
           next.device?.lastCompleteness !== 'COMPLETE'
           || !next.device.cutoverReady
         ) {
-          setTab('repair')
+          openRepair()
           throw new Error('本机已返回数据，但快照仍不完整，请进入登录修复查看状态。')
         }
         await refresh()
@@ -547,7 +629,6 @@ export function StoreDetailPage({
   const pms = pmsState(summary)
   const pmsRepair = pmsRepairState(summary)
   const broadcast = broadcastState(summary)
-  const connectionTab: StoreTab = canConfigure ? 'collection' : 'repair'
   const lastCollectionAt = data.monitor?.cutoffAt ?? null
   const latestBrief = [...data.briefs]
     .sort((left, right) => left.cutoffAt.localeCompare(right.cutoffAt))
@@ -558,21 +639,78 @@ export function StoreDetailPage({
     .at(-1)
   const trustedDeviceCollection = data.trustedDeviceStatus?.eligible
     && data.trustedDeviceStatus.mode === 'STORE_TRUSTED_DEVICE'
+  const pmsAttentionItems = useMemo(() =>
+    collectionSection === 'pms'
+      ? (data.monitor?.sources ?? [])
+        .filter((source) => source.completeness !== 'COMPLETE')
+        .map((source) => ({
+          sourceId: source.sourceId,
+          sourceCode: source.sourceCode,
+          errorCode: source.errorCode ?? 'COLLECTION_INCOMPLETE',
+        }))
+      : [],
+  [collectionSection, data.monitor?.sources])
   const repairTabLabel = hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
     ? 'Cookie修复'
     : '登录修复'
+  const openCollection = (
+    section: CollectionSection,
+    sourceId: string | null = null,
+    platformCode: OtaPlatformCode | null = null,
+  ) => {
+    setCollectionSection(section)
+    setOtaAttentionSourceId(sourceId)
+    setOtaAttentionPlatformCode(platformCode)
+    setCollectionNavigationSequence((current) => current + 1)
+    setTab('collection')
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const targetId = sourceId
+          ? `ota-source-${sourceId.replace(/[^A-Za-z0-9_-]/g, '-')}`
+          : section === 'pms'
+            ? 'pms-system-config-panel'
+            : section === 'ota'
+              ? 'ota-source-config-panel'
+              : 'data-access-overview'
+        const target = document.getElementById(targetId)
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        target?.focus({ preventScroll: true })
+      })
+    })
+  }
+
+  const openRepair = () => {
+    setTab('repair')
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const target = document.getElementById('store-repair-panel')
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        target?.focus({ preventScroll: true })
+      })
+    })
+  }
+
+  useEffect(() => {
+    if (loading || tab !== 'repair') return
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById('store-repair-panel')
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      target?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [loading, tab])
 
   return (
     <section className="console-page store-detail-page">
       <button className="back-link" type="button" onClick={onBack}>‹ 返回门店总览</button>
       <div className="page-title-row compact-title">
         <div><p className="section-kicker">{hotel.hotelCode} · 门店工作台</p><h1>{hotel.hotelName}</h1><p>{pmsDisplayName(hotel)} · 账号仅可读取授权门店</p></div>
-        <div className="title-actions"><button className="quiet-button" type="button" onClick={() => void refresh()}><Icon name="refresh" />刷新状态</button><button className="quiet-button" type="button" onClick={() => setTab(connectionTab)}><Icon name={canConfigure ? 'settings' : 'shield'} />{canConfigure ? '门店设置' : repairTabLabel}</button></div>
+        <div className="title-actions"><button className="quiet-button" type="button" onClick={() => void refresh()}><Icon name="refresh" />刷新状态</button><button className="quiet-button" type="button" onClick={() => canConfigure ? setTab('collection') : openRepair()}><Icon name={canConfigure ? 'settings' : 'shield'} />{canConfigure ? '门店设置' : repairTabLabel}</button></div>
       </div>
 
       <div className="store-health-bar">
-        <button className="channel-status-link" onClick={() => setTab(pmsRepair.required ? 'repair' : connectionTab)} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
-        {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <button className="channel-status-link" key={source.platformCode} onClick={() => setTab(connectionTab)} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button> })}
+        <button className="channel-status-link" onClick={() => pmsRepair.required || !canConfigure ? openRepair() : openCollection('pms')} type="button"><PlatformIcon name="PMS" /><Status tone={pms.tone}>PMS · {pms.label}</Status></button>
+        {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <button className="channel-status-link" key={source.platformCode} onClick={() => openCollection('ota', source.sourceId, source.platformCode)} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button> })}
         <button className="channel-status-link" onClick={() => setTab(broadcast.tab)} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
       </div>
 
@@ -580,7 +718,12 @@ export function StoreDetailPage({
         {([
           ['overview', '门店概览'],
           ['repair', repairTabLabel],
-          ...(canConfigure ? [['collection', '采集配置'] as [StoreTab, string]] : []),
+          ...(canConfigure || tab === 'collection'
+            ? [[
+                'collection',
+                canConfigure ? '采集配置' : '渠道修复',
+              ] as [StoreTab, string]]
+            : []),
           ['operations', '运营配置'],
           ['broadcast', '播报记录'],
         ] as Array<[StoreTab, string]>).map(([code, label]) => <button key={code} className={tab === code ? 'active' : ''} onClick={() => setTab(code)} type="button">{label}</button>)}
@@ -592,7 +735,7 @@ export function StoreDetailPage({
 
       {!loading && tab === 'overview' ? (
         <div className="detail-overview">
-          {pmsRepair.required ? <button className="issue-banner" type="button" onClick={() => setTab('repair')}><Icon name="alert" size={22} /><span><strong>PMS需要修复处理</strong><small>{pmsRepair.reasons.map((reason) => PMS_REPAIR_REASON_LABEL[reason]).join('；') || 'PMS状态暂时不可用'}</small></span><span>一键直达<Icon name="chevron" /></span></button> : null}
+          {pmsRepair.required ? <button className="issue-banner" type="button" onClick={openRepair}><Icon name="alert" size={22} /><span><strong>PMS需要修复处理</strong><small>{pmsRepair.reasons.map((reason) => PMS_REPAIR_REASON_LABEL[reason]).join('；') || 'PMS状态暂时不可用'}</small></span><span>一键直达<Icon name="chevron" /></span></button> : null}
           {data.incidents.some((item) => item.type !== 'PMS_REPAIR_REQUIRED' && !/CLOSED|RESOLVED/i.test(item.status)) ? (
             <button className="issue-banner" type="button" onClick={onOpenExceptions}><Icon name="alert" size={22} /><span><strong>{data.incidents.filter((item) => item.type !== 'PMS_REPAIR_REQUIRED' && !/CLOSED|RESOLVED/i.test(item.status)).length}项其他问题需要处理</strong><small>查看异常原因及安全处理入口</small></span><span>进入异常处理<Icon name="chevron" /></span></button>
           ) : null}
@@ -616,7 +759,7 @@ export function StoreDetailPage({
 
           <div className="two-column-section">
             <section className="content-panel">
-              <div className="section-heading small"><div><h2>数据连接</h2><p>连接状态与最近同步时间</p></div><button className="text-link" onClick={() => setTab(connectionTab)} type="button">{canConfigure ? '查看配置' : repairTabLabel}</button></div>
+              <div className="section-heading small"><div><h2>数据连接</h2><p>连接状态与最近同步时间</p></div><button className="text-link" onClick={() => canConfigure ? setTab('collection') : openRepair()} type="button">{canConfigure ? '查看配置' : repairTabLabel}</button></div>
               <div className="connection-table">
                 <div><strong className="connection-name"><PlatformIcon name="PMS" />{pmsDisplayName(hotel)}</strong><Status tone={pms.tone}>{pms.label}</Status><span>{formatTime(data.monitor?.cutoffAt)}</span></div>
                 {configuredOtaSources(data.otaSources).map((source) => { const state = otaState(source); return <div key={source.platformCode}><strong className="connection-name"><PlatformIcon name={source.platformCode as PlatformIconName} />{sourceDisplayName(source.platformCode)}</strong><Status tone={state.tone}>{state.label}</Status><span>{formatTime(source.lastRefreshAt)}</span></div> })}
@@ -630,9 +773,11 @@ export function StoreDetailPage({
         </div>
       ) : null}
 
-      {!loading && tab === 'repair' ? <StoreRepairPanel context={context} hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /> : null}
+      {!loading && tab === 'repair' ? <div id="store-repair-panel" tabIndex={-1}><StoreRepairPanel context={context} hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /></div> : null}
 
-      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} pmsSystemName={hotel.pmsSystemName} attentionItems={[]} otaAttentionSourceId={null} /></div> : null}
+      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} pmsSystemName={hotel.pmsSystemName} attentionItems={pmsAttentionItems} initialSection={collectionSection} navigationSequence={collectionNavigationSequence} onSectionChange={setCollectionSection} otaAttentionPlatformCode={otaAttentionPlatformCode} otaAttentionSourceId={otaAttentionSourceId} /></div> : null}
+
+      {!loading && tab === 'collection' && !canConfigure ? <div className="embedded-legacy-page"><OtaSourceConfigPanel attentionPlatformCode={otaAttentionPlatformCode} attentionRequestSequence={collectionNavigationSequence} attentionSourceId={otaAttentionSourceId} canConfigure={false} canRepairLogin context={context} onStatusChanged={() => void refresh()} /></div> : null}
 
       {!loading && tab === 'operations' ? (
         <div className="operations-layout">
@@ -662,4 +807,4 @@ export async function loadAuthorizedHotels(): Promise<SimulationHotelView[]> {
   return (await listSimulationHotels()).hotels
 }
 
-export type { StoreTab }
+export type { CollectionSection, StoreTab }

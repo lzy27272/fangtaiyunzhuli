@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { hasRefreshContext, login, logout, refreshSession } from './api/auth'
-import type { SimulationHotelView } from './api/business'
+import type { OtaPlatformCode, SimulationHotelView } from './api/business'
 import { clearSession, getSession, setSession, type AuthSession } from './auth/session'
 import { Brand, Icon, LoadingState } from './components/ConsoleUi'
 import { ExceptionCenterPage } from './pages/ExceptionCenterPage'
 import { NewStoreWizard } from './pages/NewStoreWizard'
 import { PeoplePermissionsPage } from './pages/PeoplePermissionsPage'
 import { PersonalSecurityPage } from './pages/PersonalSecurityPage'
-import { loadAuthorizedHotels, StoreDetailPage, StoreOverviewPage, type StoreTab } from './pages/StoreConsolePage'
+import {
+  loadAuthorizedHotels,
+  StoreDetailPage,
+  StoreOverviewPage,
+  type CollectionSection,
+  type StoreOpenOptions,
+  type StoreTab,
+} from './pages/StoreConsolePage'
 
 type AppPage = 'stores' | 'exceptions' | 'people' | 'security' | 'store-detail' | 'new-store'
 const REPAIR_HOTEL_QUERY_PARAM = 'repairHotel'
@@ -69,6 +76,13 @@ function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSign
   const [hotels, setHotels] = useState<SimulationHotelView[]>([])
   const [selectedHotel, setSelectedHotel] = useState<SimulationHotelView | null>(null)
   const [selectedTab, setSelectedTab] = useState<StoreTab>('overview')
+  const [selectedCollectionSection, setSelectedCollectionSection] =
+    useState<CollectionSection>('overview')
+  const [selectedOtaAttentionSourceId, setSelectedOtaAttentionSourceId] =
+    useState<string | null>(null)
+  const [selectedOtaAttentionPlatformCode, setSelectedOtaAttentionPlatformCode] =
+    useState<OtaPlatformCode | null>(null)
+  const [storeNavigationSequence, setStoreNavigationSequence] = useState(0)
   const [loadingDirectory, setLoadingDirectory] = useState(true)
   const [directoryError, setDirectoryError] = useState('')
   const [working, setWorking] = useState(false)
@@ -116,7 +130,21 @@ function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSign
   }, [directoryError, hotels, initialRepairHotelCode, loadingDirectory])
 
   const navigate = (next: AppPage) => { setPage(next); setAccountMenu(false); setMobileMenu(false) }
-  const openHotel = (hotel: SimulationHotelView, tab: StoreTab = 'overview') => { setSelectedHotel(hotel); setSelectedTab(tab); navigate('store-detail') }
+  const openHotel = (
+    hotel: SimulationHotelView,
+    tab: StoreTab = 'overview',
+    options: StoreOpenOptions = {},
+  ) => {
+    setSelectedHotel(hotel)
+    setSelectedTab(tab)
+    setSelectedCollectionSection(options.collectionSection ?? 'overview')
+    setSelectedOtaAttentionSourceId(options.otaAttentionSourceId ?? null)
+    setSelectedOtaAttentionPlatformCode(
+      options.otaAttentionPlatformCode ?? null,
+    )
+    setStoreNavigationSequence((current) => current + 1)
+    navigate('store-detail')
+  }
   const activeTopPage = page === 'store-detail' || page === 'new-store' ? 'stores' : page
 
   async function signOut() {
@@ -146,7 +174,7 @@ function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSign
     <main className="console-main">
       {loadingDirectory && page !== 'security' ? <LoadingState label="正在载入授权门店…" /> : null}
       {page === 'stores' ? <StoreOverviewPage hotels={hotels} loadingDirectory={loadingDirectory} directoryError={directoryError} canCreate={platformAdmin} onCreate={() => navigate('new-store')} onOpen={openHotel} onOpenException={() => navigate('exceptions')} onRefreshDirectory={() => void refreshHotels()} /> : null}
-      {page === 'store-detail' && selectedHotel ? <StoreDetailPage hotel={selectedHotel} initialTab={selectedTab} canConfigure={canConfigure} canRevenueConfigure={canRevenueConfigure} onBack={() => navigate('stores')} onOpenExceptions={() => navigate('exceptions')} /> : null}
+      {page === 'store-detail' && selectedHotel ? <StoreDetailPage key={`${selectedHotel.hotelId}-${storeNavigationSequence}`} hotel={selectedHotel} initialTab={selectedTab} initialCollectionSection={selectedCollectionSection} initialOtaAttentionPlatformCode={selectedOtaAttentionPlatformCode} initialOtaAttentionSourceId={selectedOtaAttentionSourceId} canConfigure={canConfigure} canRevenueConfigure={canRevenueConfigure} onBack={() => navigate('stores')} onOpenExceptions={() => navigate('exceptions')} /> : null}
       {page === 'new-store' && platformAdmin ? <NewStoreWizard session={session} onCancel={() => navigate('stores')} onCreated={(hotel) => { void refreshHotels(); openHotel(hotel, 'collection') }} /> : null}
       {page === 'exceptions' ? <ExceptionCenterPage hotels={hotels} onOpenStore={openHotel} /> : null}
       {page === 'people' && platformAdmin ? <PeoplePermissionsPage session={session} hotels={hotels} /> : null}

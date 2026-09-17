@@ -7,6 +7,7 @@ import {
   triggerLiveCollection,
   type HotelContext,
   type IncidentView,
+  type OtaPlatformCode,
   type SimulationHotelView,
 } from '../api/business'
 import { EmptyState, Icon, LoadingState, Status, type Tone } from '../components/ConsoleUi'
@@ -17,7 +18,7 @@ import {
   type PmsRepairReason,
 } from '../domain/pmsRepair'
 import { businessCodeLabel, businessErrorMessage, safeBusinessText } from '../ui/businessDisplay'
-import type { StoreTab } from './StoreConsolePage'
+import type { StoreOpenOptions, StoreTab } from './StoreConsolePage'
 
 const COLLECTION_FEEDBACK_TIMEOUT_MS = 120_000
 
@@ -44,13 +45,15 @@ interface ConsoleIssue {
   title: string
   detail: string
   observedAt: string
+  otaSourceId?: string
+  otaPlatformCode?: OtaPlatformCode
   original?: IncidentView
 }
 
 const KIND_LABEL: Record<IssueKind, string> = {
   PMS_REPAIR: 'PMS需要修复处理', LOGIN: '登录失效', COLLECTION: '采集失败', PARTIAL: '数据不完整', BROADCAST: '播报失败',
 }
-const sourceLabel = (value: string) => ({ CTRIP: '携程', MEITUAN: '美团', FLIGGY: '飞猪', DOUYIN: '抖音', PMS: '酒店系统', WECOM: '企业微信' }[value] ?? '其他数据来源')
+const sourceLabel = (value: string) => ({ CTRIP: '携程', MEITUAN: '美团', FLIGGY: '飞猪', DOUYIN: '抖音', QUNAR: '去哪儿', TONGCHENG: '同程', OTHER: '其他OTA', PMS: '酒店系统', WECOM: '企业微信' }[value] ?? '其他数据来源')
 const fmt = (value: string) => {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
@@ -75,7 +78,7 @@ function classifyIncident(incident: IncidentView): IssueKind | null {
   const raw = `${incident.type} ${incident.directionCode ?? ''}`.toUpperCase()
   if (incident.type === 'PMS_REPAIR_REQUIRED') return 'PMS_REPAIR'
   if (/DEVICE.*OFFLINE|OFFLINE.*DEVICE/.test(raw)) return null
-  if (/LOGIN|AUTH|SESSION|COOKIE/.test(raw)) return 'LOGIN'
+  if (/LOGIN|AUTH|SESSION|COOKIE|VERIFICATION|CAPTCHA|SLIDER|QR/.test(raw)) return 'LOGIN'
   if (/BROADCAST|DELIVERY|WECOM|MESSAGE/.test(raw)) return 'BROADCAST'
   if (/PARTIAL|INCOMPLETE/.test(raw)) return 'PARTIAL'
   return 'COLLECTION'
@@ -92,6 +95,18 @@ async function loadIssuesForHotel(hotel: SimulationHotelView): Promise<ConsoleIs
     for (const incident of incidentResult.value.filter((item) => !/CLOSED|RESOLVED/i.test(item.status))) {
       const kind = classifyIncident(incident)
       if (!kind) continue
+      const rawOtaPlatformCode = [
+        'CTRIP',
+        'MEITUAN',
+        'FLIGGY',
+        'DOUYIN',
+        'QUNAR',
+        'TONGCHENG',
+        'OTHER',
+      ].includes(incident.sourceCode ?? '')
+        ? incident.sourceCode ?? undefined
+        : undefined
+      const otaPlatformCode = rawOtaPlatformCode as OtaPlatformCode | undefined
       const pmsRepairReasons = kind === 'PMS_REPAIR'
         ? (incident.directionCode ?? '').split(',')
           .filter((reason): reason is PmsRepairReason => reason in PMS_REPAIR_REASON_LABEL)
@@ -102,6 +117,7 @@ async function loadIssuesForHotel(hotel: SimulationHotelView): Promise<ConsoleIs
         title: kind === 'PMS_REPAIR' ? 'PMS需要修复处理' : `${sourceLabel(incident.sourceCode ?? 'PMS')} · ${KIND_LABEL[kind]}`,
         detail: pmsRepairReasons.map((reason) => PMS_REPAIR_REASON_LABEL[reason]).join('；') || safeBusinessText(incident.type, KIND_LABEL[kind]),
         observedAt: incident.lastObservedAt,
+        otaPlatformCode,
         original: incident,
       })
     }
@@ -122,8 +138,8 @@ async function loadIssuesForHotel(hotel: SimulationHotelView): Promise<ConsoleIs
   }
   if (otaResult.status === 'fulfilled') {
     for (const source of otaResult.value.filter((item) => item.enabled && item.lastRefreshStatus === 'FAILED')) {
-      const login = /LOGIN|AUTH|SESSION|COOKIE/i.test(source.lastErrorCode ?? '')
-      issues.push({ id: `${hotel.hotelId}-ota-${source.sourceId}`, hotel, kind: login ? 'LOGIN' : 'COLLECTION', source: sourceLabel(source.platformCode), title: `${sourceLabel(source.platformCode)} · ${login ? '登录失效' : '采集失败'}`, detail: businessCodeLabel(source.lastErrorCode, '渠道最近一次刷新失败'), observedAt: source.lastRefreshAt ?? new Date().toISOString() })
+      const login = /LOGIN|AUTH|SESSION|COOKIE|VERIFICATION|CAPTCHA|SLIDER|QR/i.test(source.lastErrorCode ?? '')
+      issues.push({ id: `${hotel.hotelId}-ota-${source.sourceId}`, hotel, kind: login ? 'LOGIN' : 'COLLECTION', source: sourceLabel(source.platformCode), title: `${sourceLabel(source.platformCode)} · ${login ? '登录失效' : '采集失败'}`, detail: businessCodeLabel(source.lastErrorCode, '渠道最近一次刷新失败'), observedAt: source.lastRefreshAt ?? new Date().toISOString(), otaSourceId: source.sourceId, otaPlatformCode: source.platformCode })
     }
   }
   if (wecomResult.status === 'fulfilled' && ['REJECTED', 'AMBIGUOUS'].includes(wecomResult.value.lastDelivery?.deliveryStatus ?? '')) {
@@ -137,7 +153,11 @@ export function ExceptionCenterPage({
   onOpenStore,
 }: {
   hotels: SimulationHotelView[]
-  onOpenStore: (hotel: SimulationHotelView, tab: StoreTab) => void
+  onOpenStore: (
+    hotel: SimulationHotelView,
+    tab: StoreTab,
+    options?: StoreOpenOptions,
+  ) => void
 }) {
   const [issues, setIssues] = useState<ConsoleIssue[]>([])
   const [loading, setLoading] = useState(true)
@@ -177,6 +197,18 @@ export function ExceptionCenterPage({
   const safeAction = async () => {
     if (!selected) return
     const issue = selected
+    if (
+      ['LOGIN', 'COLLECTION', 'PARTIAL'].includes(issue.kind)
+      && issue.otaPlatformCode
+    ) {
+      setSelected(null)
+      onOpenStore(issue.hotel, 'collection', {
+        collectionSection: 'ota',
+        otaAttentionPlatformCode: issue.otaPlatformCode,
+        otaAttentionSourceId: issue.otaSourceId ?? null,
+      })
+      return
+    }
     if (issue.kind === 'PMS_REPAIR' || issue.kind === 'LOGIN') {
       setSelected(null); onOpenStore(issue.hotel, 'repair'); return
     }
@@ -195,8 +227,16 @@ export function ExceptionCenterPage({
     finally { setProcessing(false) }
   }
 
-  const actionLabel = selected?.kind === 'PMS_REPAIR' || selected?.kind === 'LOGIN'
-    ? '进入PMS修复' : selected?.kind === 'BROADCAST' ? '检查播报记录' : '安全重新采集'
+  const actionLabel = selected?.otaPlatformCode
+    && ['LOGIN', 'COLLECTION', 'PARTIAL'].includes(selected.kind)
+    ? selected.kind === 'LOGIN'
+      ? '直达渠道登录修复'
+      : '直达异常数据源'
+    : selected?.kind === 'PMS_REPAIR' || selected?.kind === 'LOGIN'
+      ? '进入PMS修复'
+      : selected?.kind === 'BROADCAST'
+        ? '检查播报记录'
+        : '安全重新采集'
 
   return (
     <section className="console-page exception-page">
@@ -213,7 +253,7 @@ export function ExceptionCenterPage({
         return <article key={issue.id}><span className={`issue-icon ${tone}`}><Icon name="alert" /></span><div className="issue-store"><strong>{issue.hotel.hotelCode} · {issue.hotel.hotelName}</strong><small>{issue.source}</small></div><div><strong>{issue.title}</strong><small>{issue.detail}</small></div><div><strong>{fmt(issue.observedAt)}</strong><small>最近发现</small></div><Status tone={tone}>待处理</Status><button className="row-action" onClick={() => { setSelected(issue); setNote(''); setError('') }} type="button">检查处理<Icon name="chevron" /></button></article>
       })}</div>
 
-      {selected ? <div className="drawer-backdrop" onMouseDown={() => setSelected(null)}><aside className="side-drawer wide" onMouseDown={(event) => event.stopPropagation()}><header><div><p className="section-kicker">异常详情</p><h2>{selected.title}</h2></div><button className="icon-button" onClick={() => setSelected(null)} type="button">×</button></header><div className="drawer-body"><div className="issue-detail-head"><span className="issue-icon error"><Icon name="alert" /></span><div><strong>{selected.hotel.hotelCode} · {selected.hotel.hotelName}</strong><small>{selected.source} · {fmt(selected.observedAt)}</small></div></div><dl className="review-list compact"><div><dt>异常类型</dt><dd>{KIND_LABEL[selected.kind]}</dd></div><div><dt>原因</dt><dd>{selected.detail}</dd></div><div><dt>当前状态</dt><dd><Status tone="error">待处理</Status></dd></div><div><dt>安全处理方式</dt><dd>{selected.kind === 'PMS_REPAIR' || selected.kind === 'LOGIN' ? selected.hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? '进入PMS修复，粘贴并验证本门店最新 Cookie；无需安装门店软件。' : selected.hotel.pmsSystemCode === 'YILIAN_CLOUD' ? '系统会先用后台加密凭据自动重登；若厂家要求验证码或风控确认，再进入PMS修复按提示人工处理。' : '进入PMS修复，根据提示完成官网验证。' : selected.kind === 'BROADCAST' ? '检查最近投递和数据完整性，确认未送达后再补发。' : '触发一次安全重新采集，不执行批量登录。'}</dd></div></dl><label className="optional-note">处理说明（选填）<textarea placeholder="可填写本次处理说明；不填写也可以继续" value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} /><small>{note.length}/500 · 当前接口暂不保存处理说明</small></label>{processing ? <div className="inline-message progress" role="status" aria-live="polite"><strong>采集请求已提交</strong><span>正在连接酒店系统并核对数据，已等待 {processingSeconds} 秒。罗盘采集通常需要 30–90 秒，请勿重复点击。</span></div> : null}{error ? <div className="inline-message error" role="alert">{error}</div> : null}</div><footer><button className="quiet-button" type="button" onClick={() => setSelected(null)}>{processing ? '关闭弹窗' : '取消'}</button><button className="primary-button danger-safe" disabled={processing} type="button" onClick={() => void safeAction()}>{processing ? `正在采集 ${processingSeconds} 秒` : actionLabel}</button></footer></aside></div> : null}
+      {selected ? <div className="drawer-backdrop" onMouseDown={() => setSelected(null)}><aside className="side-drawer wide" onMouseDown={(event) => event.stopPropagation()}><header><div><p className="section-kicker">异常详情</p><h2>{selected.title}</h2></div><button className="icon-button" onClick={() => setSelected(null)} type="button">×</button></header><div className="drawer-body"><div className="issue-detail-head"><span className="issue-icon error"><Icon name="alert" /></span><div><strong>{selected.hotel.hotelCode} · {selected.hotel.hotelName}</strong><small>{selected.source} · {fmt(selected.observedAt)}</small></div></div><dl className="review-list compact"><div><dt>异常类型</dt><dd>{KIND_LABEL[selected.kind]}</dd></div><div><dt>原因</dt><dd>{selected.detail}</dd></div><div><dt>当前状态</dt><dd><Status tone="error">待处理</Status></dd></div><div><dt>安全处理方式</dt><dd>{selected.otaPlatformCode && ['LOGIN', 'COLLECTION', 'PARTIAL'].includes(selected.kind) ? selected.kind === 'LOGIN' ? '直接打开对应 OTA 异常来源，显示登录状态、失败原因和允许执行的修复动作。' : '直接打开对应 OTA 异常来源，显示具体失败原因，并提供该来源的刷新和配置处理入口。' : selected.kind === 'PMS_REPAIR' || selected.kind === 'LOGIN' ? selected.hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG' ? '进入PMS修复，粘贴并验证本门店最新 Cookie；无需安装门店软件。' : selected.hotel.pmsSystemCode === 'YILIAN_CLOUD' ? '系统会先用后台加密凭据自动重登；若厂家要求验证码或风控确认，再进入PMS修复按提示人工处理。' : '进入PMS修复，根据提示完成官网验证。' : selected.kind === 'BROADCAST' ? '检查最近投递和数据完整性，确认未送达后再补发。' : '触发一次安全重新采集，不执行批量登录。'}</dd></div></dl><label className="optional-note">处理说明（选填）<textarea placeholder="可填写本次处理说明；不填写也可以继续" value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} /><small>{note.length}/500 · 当前接口暂不保存处理说明</small></label>{processing ? <div className="inline-message progress" role="status" aria-live="polite"><strong>采集请求已提交</strong><span>正在连接酒店系统并核对数据，已等待 {processingSeconds} 秒。罗盘采集通常需要 30–90 秒，请勿重复点击。</span></div> : null}{error ? <div className="inline-message error" role="alert">{error}</div> : null}</div><footer><button className="quiet-button" type="button" onClick={() => setSelected(null)}>{processing ? '关闭弹窗' : '取消'}</button><button className="primary-button danger-safe" disabled={processing} type="button" onClick={() => void safeAction()}>{processing ? `正在采集 ${processingSeconds} 秒` : actionLabel}</button></footer></aside></div> : null}
     </section>
   )
 }

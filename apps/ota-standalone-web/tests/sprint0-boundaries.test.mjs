@@ -118,12 +118,13 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.match(monitorSource, /系统每小时自动采集一次 PMS 数据/)
   assert.match(monitorSource, /重新采集已配置报表/)
   assert.match(monitorSource, /进入PMS系统配置/)
-  assert.match(storeConsoleSource, /const connectionTab(?:: StoreTab)? = canConfigure \? 'collection' : 'repair'/)
-  assert.match(storeConsoleSource, /setTab\(connectionTab\)/)
+  assert.match(storeConsoleSource, /canConfigure \? setTab\('collection'\) : openRepair\(\)/)
+  assert.match(storeConsoleSource, /openCollection\('pms'\)/)
   assert.match(storeConsoleSource, /最后采集时间/)
   assert.match(storeConsoleSource, /lastCollectionAt = data\.monitor\?\.cutoffAt/)
   assert.match(storeConsoleSource, /<time dateTime=\{lastCollectionAt\}>/)
-  assert.match(storeConsoleSource, /attentionItems=\{\[\]\}/)
+  assert.match(storeConsoleSource, /attentionItems=\{pmsAttentionItems\}/)
+  assert.match(storeConsoleSource, /source\.completeness !== 'COMPLETE'/)
   assert.match(monitorSource, /incompleteMonitorAttention/)
   assert.match(monitorSource, /reportSourceGuidance/)
   assert.match(reportSourceSource, /最近一次 PMS 采集需要处理/)
@@ -343,7 +344,8 @@ test('store direct action diagnoses upstream data before reporting a broadcast f
   assert.match(storeConsoleSource, /loadBriefs\(context\)/)
   assert.match(storeConsoleSource, /latestBrief\?\.completenessCode === 'COMPLETE'/)
   assert.match(storeConsoleSource, /label: '上游数据待处理', tab: 'collection'/)
-  assert.match(storeConsoleSource, /tab: 'collection', label: '检查采集数据'/)
+  assert.match(storeConsoleSource, /label: '简报待处理', tab: 'broadcast'/)
+  assert.match(storeConsoleSource, /tab: 'collection',[\s\S]*label: '检查采集数据'/)
   assert.match(storeConsoleSource, /setTab\(broadcast\.tab\)/)
 })
 
@@ -405,7 +407,7 @@ test('multiple report URLs are saved by hotel with HTTPS and secret boundaries',
 
 test('known PMS vendors use generated entries while custom vendors keep scoped editing', () => {
   assert.match(businessApiSource, /enabledToggleOnly: boolean/)
-  assert.match(reportSourceSource, /厂家链接和报表入口由系统直接生成，无需再次输入/u)
+  assert.match(reportSourceSource, /厂家链接和报表入口由系统根据门店档案自动生成或加载，无需再次输入/u)
   assert.match(reportSourceSource, /LUOPAN_MANAGED_DATA_ENTRIES/u)
   assert.match(reportSourceSource, /pmsSystemCode === 'OTHER'/u)
   assert.match(reportSourceSource, /当前门店独立配置/u)
@@ -480,7 +482,10 @@ test('OTA sources support encrypted configuration, immediate read-only refresh a
   assert.match(fliggySourceCollectorSource, /OTA_FLIGGY_PAGINATION_STALLED/)
   assert.doesNotMatch(monitorSource, /bestPeerPoiId/)
   assert.match(monitorSource, /直达修改/)
-  assert.match(storeConsoleSource, /setTab\(connectionTab\)/)
+  assert.match(
+    storeConsoleSource,
+    /openCollection\('ota', source\.sourceId, source\.platformCode\)/,
+  )
   assert.match(businessApiSource, /\/ota-sources/)
   assert.match(businessApiSource, /\/ota-source-refreshes/)
   assert.match(reviewApiSource, /ota-source-configs\.json/)

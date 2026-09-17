@@ -43,6 +43,7 @@ import {
   fliggyLoginRateLimitState,
   fliggyMtopTokenAvailable,
   startFliggyControlledLogin,
+  withFliggyControlledLoginTimeout,
 } from './fliggy-controlled-login.mjs'
 import {
   pairOtaReviewAndOrderSources,
@@ -589,6 +590,7 @@ const otaSourcesByHotel = new Map()
 const otaSourceSecretsByHotel = new Map()
 const otaSourceRefreshLocks = new Map()
 const otaControlledLoginLocks = new Map()
+const otaControlledLoginCleanupLocks = new Map()
 const activeOtaControlledLoginAttempts = new Map()
 const luopanBrowserConfigsByHotel = new Map()
 const luopanSessionStatesByHotel = new Map()
@@ -2382,6 +2384,35 @@ const persistOtaSecrets = () => {
   renameSync(temporaryPath, otaSourceSecretPath)
 }
 
+const recoverInterruptedOtaControlledLoginStates = () => {
+  let recovered = false
+  for (const [hotelId, sources] of otaSourcesByHotel) {
+    const updated = sources.map((source) => {
+      if (
+        source.platformCode !== 'FLIGGY'
+        || !['RUNNING', 'VERIFICATION_REQUIRED'].includes(
+          source.lastLoginStatus,
+        )
+      ) return source
+      recovered = true
+      return {
+        ...source,
+        lastLoginStatus: 'FAILED',
+        lastLoginErrorCode: 'OTA_FLIGGY_LOGIN_INTERRUPTED',
+      }
+    })
+    otaSourcesByHotel.set(hotelId, updated)
+  }
+  if (!recovered) return
+  try {
+    persistOtaSources()
+  } catch {
+    process.stderr.write(
+      'REVIEW_OTA_CONTROLLED_LOGIN_RECOVERY_PERSIST_FAILED\n',
+    )
+  }
+}
+
 if (dataPath && existsSync(dataPath)) {
   try {
     const persisted = JSON.parse(readFileSync(dataPath, 'utf8'))
@@ -2573,6 +2604,8 @@ if (otaSourceConfigPath && existsSync(otaSourceConfigPath)) {
     process.stderr.write('REVIEW_OTA_SOURCE_STORE_IGNORED\n')
   }
 }
+
+recoverInterruptedOtaControlledLoginStates()
 
 const otaRoomTypeCatalogFingerprint = (hotelId, source) => {
   return createHash('sha256')
@@ -4625,6 +4658,54 @@ const latestOtaLoginStateSource = (sources) => [...sources]
     new Date(right.lastLoginAttemptAt ?? 0).getTime()
     - new Date(left.lastLoginAttemptAt ?? 0).getTime())[0] ?? null
 
+const otaControlledLoginRevisionFor = (hotelId, platformCode) => {
+  const secrets = otaSecretsForHotel(hotelId)
+  const bindings = otaPlatformSourcesFor(hotelId, platformCode)
+    .map((source) => ({
+      sourceId: source.sourceId,
+      rowVersion: source.rowVersion,
+      credentials: secrets[source.sourceId]?.credentials ?? null,
+    }))
+    .sort((left, right) => left.sourceId.localeCompare(right.sourceId))
+  return createHash('sha256')
+    .update(JSON.stringify(bindings))
+    .digest('hex')
+}
+
+const assertOtaControlledLoginRevision = (
+  hotelId,
+  platformCode,
+  expectedRevision,
+) => {
+  if (
+    otaControlledLoginRevisionFor(hotelId, platformCode)
+    !== expectedRevision
+  ) {
+    throw new Error('OTA_CHANNEL_CREDENTIALS_CHANGED')
+  }
+}
+
+const otaControlledLoginOperationSignal = (
+  timeoutSignal,
+  abortController,
+) => AbortSignal.any([timeoutSignal, abortController.signal])
+
+const otaControlledLoginFailureCode = (
+  error,
+  hotelId,
+  platformCode,
+  expectedRevision,
+) => {
+  if (
+    otaControlledLoginRevisionFor(hotelId, platformCode)
+    !== expectedRevision
+  ) return 'OTA_CHANNEL_CREDENTIALS_CHANGED'
+  const errorCode = safeOtaRefreshErrorCode(error)
+  return errorCode === 'OTA_FLIGGY_LOGIN_ABORTED'
+    ? 'OTA_FLIGGY_LOGIN_INTERRUPTED'
+    : errorCode
+}
+
 const updateOtaPlatformLoginState = (
   hotelId,
   platformCode,
@@ -4640,15 +4721,90 @@ const updateOtaPlatformLoginState = (
 
 const cleanExpiredOtaControlledLogin = async (hotelId, platformCode) => {
   const key = otaControlledLoginKey(hotelId, platformCode)
+  const cleanup = otaControlledLoginCleanupLocks.get(key)
+  if (cleanup) return cleanup
+  if (otaControlledLoginLocks.has(key)) return null
   const active = activeOtaControlledLoginAttempts.get(key)
-  if (!active || active.expiresAt > Date.now()) return
+  if (!active) return null
+  const configurationChanged =
+    active.configurationRevision
+    !== otaControlledLoginRevisionFor(hotelId, platformCode)
+  if (!configurationChanged && active.expiresAt > Date.now()) return null
   activeOtaControlledLoginAttempts.delete(key)
   clearTimeout(active.expiryTimer)
-  await active.login.close().catch(() => {})
-  updateOtaPlatformLoginState(hotelId, platformCode, {
-    lastLoginStatus: 'FAILED',
-    lastLoginErrorCode: 'OTA_FLIGGY_VERIFICATION_EXPIRED',
-  })
+  const errorCode = configurationChanged
+    ? 'OTA_CHANNEL_CREDENTIALS_CHANGED'
+    : 'OTA_FLIGGY_VERIFICATION_EXPIRED'
+  let updateError = null
+  try {
+    updateOtaPlatformLoginState(hotelId, platformCode, {
+      lastLoginStatus: 'FAILED',
+      lastLoginErrorCode: errorCode,
+    })
+  } catch (error) {
+    updateError = error
+  }
+  const operation = Promise.resolve()
+    .then(() => active.login.close())
+    .catch(() => {})
+    .then(() => {
+      if (updateError) throw updateError
+      return errorCode
+    })
+  otaControlledLoginCleanupLocks.set(key, operation)
+  try {
+    return await operation
+  } finally {
+    if (otaControlledLoginCleanupLocks.get(key) === operation) {
+      otaControlledLoginCleanupLocks.delete(key)
+    }
+  }
+}
+
+const invalidateChangedOtaControlledLogin = async (
+  hotelId,
+  platformCode,
+) => {
+  const key = otaControlledLoginKey(hotelId, platformCode)
+  const revision = otaControlledLoginRevisionFor(hotelId, platformCode)
+  const running = otaControlledLoginLocks.get(key)
+  let invalidated = false
+  if (running && running.configurationRevision !== revision) {
+    invalidated = true
+    running.abortController.abort()
+  }
+  const active = activeOtaControlledLoginAttempts.get(key)
+  let closeOperation = null
+  if (active && active.configurationRevision !== revision) {
+    invalidated = true
+    activeOtaControlledLoginAttempts.delete(key)
+    clearTimeout(active.expiryTimer)
+    closeOperation = Promise.resolve()
+      .then(() => active.login.close())
+      .catch(() => {})
+    otaControlledLoginCleanupLocks.set(key, closeOperation)
+  }
+  let updateError = null
+  if (invalidated) {
+    try {
+      updateOtaPlatformLoginState(hotelId, platformCode, {
+        lastLoginStatus: 'FAILED',
+        lastLoginErrorCode: 'OTA_CHANNEL_CREDENTIALS_CHANGED',
+      })
+    } catch (error) {
+      updateError = error
+    }
+  }
+  if (closeOperation) {
+    try {
+      await closeOperation
+    } finally {
+      if (otaControlledLoginCleanupLocks.get(key) === closeOperation) {
+        otaControlledLoginCleanupLocks.delete(key)
+      }
+    }
+  }
+  if (updateError) throw updateError
 }
 
 const storeOtaControlledLoginChallenge = (
@@ -4663,6 +4819,7 @@ const storeOtaControlledLoginChallenge = (
   const expiryTimer = setTimeout(() => {
     const active = activeOtaControlledLoginAttempts.get(key)
     if (!active || active.attemptId !== attempt.attemptId) return
+    if (otaControlledLoginLocks.has(key)) return
     activeOtaControlledLoginAttempts.delete(key)
     void active.login.close().catch(() => {})
     updateOtaPlatformLoginState(hotelId, platformCode, {
@@ -4701,6 +4858,15 @@ const otaControlledLoginProfilesFor = (hotelId) => {
   const active = activeOtaControlledLoginAttempts.get(
     otaControlledLoginKey(hotelId, platformCode),
   )
+  const interruptedPersistedLogin = Boolean(
+    ['RUNNING', 'VERIFICATION_REQUIRED'].includes(
+      state?.lastLoginStatus,
+    )
+    && !active
+    && !otaControlledLoginLocks.has(
+      otaControlledLoginKey(hotelId, platformCode),
+    ),
+  )
   return [{
     platformCode,
     loginMode: 'CONTROLLED_BROWSER_CREDENTIALS',
@@ -4716,18 +4882,31 @@ const otaControlledLoginProfilesFor = (hotelId) => {
         ? 'VERIFICATION_REQUIRED'
         : expiredPersistedRateLimit
           ? 'FAILED'
-          : state?.lastLoginStatus ?? 'NEVER',
+          : interruptedPersistedLogin
+            ? 'FAILED'
+            : state?.lastLoginStatus ?? 'NEVER',
     lastAttemptAt: state?.lastLoginAttemptAt ?? null,
     lastAuthenticatedAt: state?.lastLoginAt ?? null,
     lastErrorCode: rateLimit.rateLimited
       ? 'OTA_FLIGGY_LOGIN_RATE_LIMITED'
       : expiredPersistedRateLimit
         ? null
-        : state?.lastLoginErrorCode ?? null,
+        : interruptedPersistedLogin
+          ? 'OTA_FLIGGY_LOGIN_INTERRUPTED'
+          : state?.lastLoginErrorCode ?? null,
     nextAttemptAt: rateLimit.nextAttemptAt,
     attemptCount: rateLimit.attemptCount,
     maxAttempts: rateLimit.maxAttempts,
     challengeActive: Boolean(active),
+    challengeAttemptId: active?.attemptId ?? null,
+    challengeType: active?.login?.challengeType ?? null,
+    captchaImageDataUrl: active?.login?.captcha
+      ? `data:image/png;base64,${active.login.captcha.toString('base64')}`
+      : null,
+    challengeExpiresAt: active?.expiresAt
+      ? new Date(active.expiresAt).toISOString()
+      : null,
+    repairUrl: fliggyControlledLoginPolicy.portalUrl,
   }]
 }
 
@@ -4784,8 +4963,14 @@ const beginOtaControlledLoginAttempt = (
 const applyFliggyAuthenticatedSession = (
   hotelId,
   login,
+  configurationRevision,
   now = new Date(),
 ) => {
+  assertOtaControlledLoginRevision(
+    hotelId,
+    'FLIGGY',
+    configurationRevision,
+  )
   const sources = otaPlatformSourcesFor(hotelId, 'FLIGGY')
   const needsMtop = sources.some((source) => {
     const endpointUrl = source.dataEndpointUrl
@@ -4846,10 +5031,20 @@ const finalizeOtaControlledLogin = async (
   hotelId,
   platformCode,
   login,
+  configurationRevision,
 ) => {
+  assertOtaControlledLoginRevision(
+    hotelId,
+    platformCode,
+    configurationRevision,
+  )
   if (login.status === 'AUTHENTICATED') {
     try {
-      applyFliggyAuthenticatedSession(hotelId, login)
+      applyFliggyAuthenticatedSession(
+        hotelId,
+        login,
+        configurationRevision,
+      )
       return otaControlledLoginPublicResult(hotelId, login)
     } finally {
       await login.close().catch(() => {})
@@ -4857,16 +5052,17 @@ const finalizeOtaControlledLogin = async (
   }
   if (login.status === 'VERIFICATION_REQUIRED' && login.submit) {
     const attemptId = randomUUID()
+    updateOtaPlatformLoginState(hotelId, platformCode, {
+      lastLoginStatus: 'VERIFICATION_REQUIRED',
+      lastLoginErrorCode: login.reasonCode,
+    })
     storeOtaControlledLoginChallenge(hotelId, platformCode, {
       attemptId,
       hotelId,
       platformCode,
       login,
       answerCount: 0,
-    })
-    updateOtaPlatformLoginState(hotelId, platformCode, {
-      lastLoginStatus: 'VERIFICATION_REQUIRED',
-      lastLoginErrorCode: login.reasonCode,
+      configurationRevision,
     })
     return otaControlledLoginPublicResult(
       hotelId,
@@ -4889,22 +5085,46 @@ const startOtaControlledLoginFor = async (
   platformCode,
   { allowInteractiveChallenge = true } = {},
 ) => {
+  if (shuttingDown) {
+    throw new Error('OTA_CONTROLLED_LOGIN_SERVICE_SHUTTING_DOWN')
+  }
   if (platformCode !== 'FLIGGY') {
     throw new Error('OTA_CONTROLLED_LOGIN_UNSUPPORTED')
   }
   await cleanExpiredOtaControlledLogin(hotelId, platformCode)
+  if (shuttingDown) {
+    throw new Error('OTA_CONTROLLED_LOGIN_SERVICE_SHUTTING_DOWN')
+  }
   const key = otaControlledLoginKey(hotelId, platformCode)
   if (activeOtaControlledLoginAttempts.has(key)) {
     throw new Error('OTA_CONTROLLED_LOGIN_ALREADY_RUNNING')
   }
   const running = otaControlledLoginLocks.get(key)
-  if (running) return running
-  const operation = (async () => {
-    const credentials = otaCredentialsForPlatform(hotelId, platformCode)
-    beginOtaControlledLoginAttempt(hotelId, platformCode)
+  if (running) return running.promise
+  const credentials = otaCredentialsForPlatform(hotelId, platformCode)
+  const configurationRevision = otaControlledLoginRevisionFor(
+    hotelId,
+    platformCode,
+  )
+  beginOtaControlledLoginAttempt(hotelId, platformCode)
+  const abortController = new AbortController()
+  const operation = Promise.resolve().then(async () => {
     let login
     try {
-      login = await startFliggyControlledLogin({ credentials })
+      login = await withFliggyControlledLoginTimeout(
+        (timeoutSignal) => startFliggyControlledLogin({
+          credentials,
+          signal: otaControlledLoginOperationSignal(
+            timeoutSignal,
+            abortController,
+          ),
+        }),
+      )
+      assertOtaControlledLoginRevision(
+        hotelId,
+        platformCode,
+        configurationRevision,
+      )
       if (!allowInteractiveChallenge && login.status !== 'AUTHENTICATED') {
         updateOtaPlatformLoginState(hotelId, platformCode, {
           lastLoginStatus: login.status === 'EXTERNAL_VERIFICATION_REQUIRED'
@@ -4921,10 +5141,16 @@ const startOtaControlledLoginFor = async (
         hotelId,
         platformCode,
         login,
+        configurationRevision,
       )
     } catch (error) {
       await login?.close?.().catch(() => {})
-      const errorCode = safeOtaRefreshErrorCode(error)
+      const errorCode = otaControlledLoginFailureCode(
+        error,
+        hotelId,
+        platformCode,
+        configurationRevision,
+      )
       updateOtaPlatformLoginState(hotelId, platformCode, {
         lastLoginStatus: errorCode === 'OTA_FLIGGY_LOGIN_RATE_LIMITED'
           ? 'RATE_LIMITED'
@@ -4933,12 +5159,19 @@ const startOtaControlledLoginFor = async (
       })
       throw new Error(errorCode)
     }
-  })()
-  otaControlledLoginLocks.set(key, operation)
+  })
+  const handle = {
+    promise: operation,
+    abortController,
+    configurationRevision,
+  }
+  otaControlledLoginLocks.set(key, handle)
   try {
     return await operation
   } finally {
-    otaControlledLoginLocks.delete(key)
+    if (otaControlledLoginLocks.get(key) === handle) {
+      otaControlledLoginLocks.delete(key)
+    }
   }
 }
 
@@ -4948,45 +5181,117 @@ const submitOtaControlledLoginAnswer = async (
   attemptId,
   answer,
 ) => {
-  await cleanExpiredOtaControlledLogin(hotelId, platformCode)
+  if (shuttingDown) {
+    throw new Error('OTA_CONTROLLED_LOGIN_SERVICE_SHUTTING_DOWN')
+  }
+  const staleReason = await cleanExpiredOtaControlledLogin(
+    hotelId,
+    platformCode,
+  )
+  if (shuttingDown) {
+    throw new Error('OTA_CONTROLLED_LOGIN_SERVICE_SHUTTING_DOWN')
+  }
+  if (staleReason) throw new Error(staleReason)
   const key = otaControlledLoginKey(hotelId, platformCode)
+  if (otaControlledLoginLocks.has(key)) {
+    throw new Error('OTA_CONTROLLED_LOGIN_ALREADY_RUNNING')
+  }
   const active = activeOtaControlledLoginAttempts.get(key)
   if (!active || active.attemptId !== attemptId) {
     throw new Error('OTA_FLIGGY_VERIFICATION_ATTEMPT_INVALID')
   }
-  if (
-    active.answerCount
-    >= fliggyControlledLoginPolicy.maxVerificationAnswers
-  ) {
-    activeOtaControlledLoginAttempts.delete(key)
-    clearTimeout(active.expiryTimer)
-    await active.login.close().catch(() => {})
-    updateOtaPlatformLoginState(hotelId, platformCode, {
-      lastLoginStatus: 'FAILED',
-      lastLoginErrorCode: 'OTA_FLIGGY_VERIFICATION_LIMIT_REACHED',
-    })
-    throw new Error('OTA_FLIGGY_VERIFICATION_LIMIT_REACHED')
+  const { configurationRevision } = active
+  const abortController = new AbortController()
+  const operation = Promise.resolve().then(async () => {
+    let login
+    try {
+      assertOtaControlledLoginRevision(
+        hotelId,
+        platformCode,
+        configurationRevision,
+      )
+      if (
+        active.answerCount
+        >= fliggyControlledLoginPolicy.maxVerificationAnswers
+      ) {
+        throw new Error('OTA_FLIGGY_VERIFICATION_LIMIT_REACHED')
+      }
+      clearTimeout(active.expiryTimer)
+      active.answerCount += 1
+      login = await withFliggyControlledLoginTimeout(
+        (timeoutSignal) => active.login.submit(answer, {
+          signal: otaControlledLoginOperationSignal(
+            timeoutSignal,
+            abortController,
+          ),
+        }),
+      )
+      assertOtaControlledLoginRevision(
+        hotelId,
+        platformCode,
+        configurationRevision,
+      )
+      if (activeOtaControlledLoginAttempts.get(key) === active) {
+        activeOtaControlledLoginAttempts.delete(key)
+      }
+      if (login.status === 'VERIFICATION_REQUIRED' && login.submit) {
+        updateOtaPlatformLoginState(hotelId, platformCode, {
+          lastLoginStatus: 'VERIFICATION_REQUIRED',
+          lastLoginErrorCode: login.reasonCode,
+        })
+        storeOtaControlledLoginChallenge(hotelId, platformCode, {
+          attemptId,
+          hotelId,
+          platformCode,
+          login,
+          answerCount: active.answerCount,
+          configurationRevision,
+        })
+        return otaControlledLoginPublicResult(
+          hotelId,
+          login,
+          { attemptId },
+        )
+      }
+      return await finalizeOtaControlledLogin(
+        hotelId,
+        platformCode,
+        login,
+        configurationRevision,
+      )
+    } catch (error) {
+      if (activeOtaControlledLoginAttempts.get(key) === active) {
+        activeOtaControlledLoginAttempts.delete(key)
+      }
+      clearTimeout(active.expiryTimer)
+      await login?.close?.().catch(() => {})
+      await active.login.close().catch(() => {})
+      const errorCode = otaControlledLoginFailureCode(
+        error,
+        hotelId,
+        platformCode,
+        configurationRevision,
+      )
+      updateOtaPlatformLoginState(hotelId, platformCode, {
+        lastLoginStatus: 'FAILED',
+        lastLoginErrorCode: errorCode,
+      })
+      throw new Error(errorCode)
+    }
+  })
+  const handle = {
+    promise: operation,
+    abortController,
+    configurationRevision,
   }
-  active.answerCount += 1
-  const login = await active.login.submit(answer)
-  activeOtaControlledLoginAttempts.delete(key)
-  clearTimeout(active.expiryTimer)
-  if (login.status === 'VERIFICATION_REQUIRED' && login.submit) {
-    storeOtaControlledLoginChallenge(hotelId, platformCode, {
-      ...active,
-      login,
-    })
-    updateOtaPlatformLoginState(hotelId, platformCode, {
-      lastLoginStatus: 'VERIFICATION_REQUIRED',
-      lastLoginErrorCode: login.reasonCode,
-    })
-    return otaControlledLoginPublicResult(
-      hotelId,
-      login,
-      { attemptId },
-    )
+  otaControlledLoginLocks.set(key, handle)
+  try {
+    return await operation
+  } finally {
+    if (otaControlledLoginLocks.get(key) === handle) {
+      otaControlledLoginLocks.delete(key)
+    }
   }
-  return finalizeOtaControlledLogin(hotelId, platformCode, login)
 }
 
 const safeOtaRefreshErrorCode = (error) => {
@@ -12045,11 +12350,8 @@ const server = createServer(async (request, response) => {
           hotelId,
           body.platformCode,
         )
-        const refreshedSources = result.status === 'AUTHENTICATED'
-          ? await refreshOtaPlatformSourcesFor(hotelId, body.platformCode)
-          : []
         json(response, 200, {
-          data: { ...result, refreshedSources },
+          data: { ...result, refreshedSources: [] },
         })
         return
       }
@@ -12075,11 +12377,8 @@ const server = createServer(async (request, response) => {
           body.attemptId,
           body.answer,
         )
-        const refreshedSources = result.status === 'AUTHENTICATED'
-          ? await refreshOtaPlatformSourcesFor(hotelId, body.platformCode)
-          : []
         json(response, 200, {
-          data: { ...result, refreshedSources },
+          data: { ...result, refreshedSources: [] },
         })
         return
       }
@@ -12105,8 +12404,12 @@ const server = createServer(async (request, response) => {
         otaSourcesByHotel.set(hotelId, normalized)
         persistOtaSecrets()
         persistOtaSources()
+        await invalidateChangedOtaControlledLogin(hotelId, 'FLIGGY')
         json(response, 200, {
-          data: decorateOtaSources(hotelId, normalized),
+          data: decorateOtaSources(
+            hotelId,
+            otaSourcesByHotel.get(hotelId) ?? [],
+          ),
         })
         return
       }
@@ -13238,6 +13541,10 @@ let shuttingDown = false
 const shutdown = async () => {
   if (shuttingDown) return
   shuttingDown = true
+  const forcedExit = setTimeout(() => process.exit(0), 2_000)
+  const serverClosed = new Promise((resolveClose) => {
+    server.close(resolveClose)
+  })
   weComRepairBotRuntime?.disconnect()
   const closeOperations = []
   for (const handle of activeLuopanRepairsByHotel.values()) {
@@ -13247,9 +13554,22 @@ const shutdown = async () => {
     revokeBieyanghongVncSession(handle)
     closeOperations.push(handle.login?.close().catch(() => {}))
   }
+  for (const handle of otaControlledLoginLocks.values()) {
+    handle.abortController.abort()
+    closeOperations.push(handle.promise)
+  }
+  for (const cleanup of otaControlledLoginCleanupLocks.values()) {
+    closeOperations.push(cleanup)
+  }
+  for (const active of activeOtaControlledLoginAttempts.values()) {
+    clearTimeout(active.expiryTimer)
+    closeOperations.push(active.login?.close().catch(() => {}))
+  }
+  activeOtaControlledLoginAttempts.clear()
   await Promise.allSettled(closeOperations.filter(Boolean))
-  server.close(() => process.exit(0))
-  setTimeout(() => process.exit(0), 2_000).unref()
+  await serverClosed
+  clearTimeout(forcedExit)
+  process.exit(0)
 }
 
 process.once('SIGINT', () => { void shutdown() })

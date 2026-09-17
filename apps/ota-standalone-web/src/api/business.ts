@@ -505,6 +505,11 @@ export interface OtaControlledLoginProfile {
   attemptCount: number
   maxAttempts: number
   challengeActive: boolean
+  challengeAttemptId: string | null
+  challengeType: 'CODE' | 'IMAGE_CODE' | 'SLIDER' | 'QR' | null
+  captchaImageDataUrl: string | null
+  challengeExpiresAt: string | null
+  repairUrl: string
 }
 
 export interface OtaControlledLoginResult {
@@ -1504,6 +1509,7 @@ export function saveOtaSources(
 export function refreshOtaSource(
   context: HotelContext,
   sourceId: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<OtaSourceView> {
   return postCommand<OtaSourceView>(
     scopedPath(context, '/ota-source-refreshes'),
@@ -1511,6 +1517,7 @@ export function refreshOtaSource(
       sourceId,
       reasonCode: 'MANUAL_OTA_SOURCE_REFRESH',
     },
+    options,
   )
 }
 
@@ -1523,6 +1530,7 @@ export function loadOtaControlledLogins(
 export function startOtaControlledLogin(
   context: HotelContext,
   platformCode: 'FLIGGY',
+  options: { signal?: AbortSignal } = {},
 ): Promise<OtaControlledLoginResult> {
   return postCommand<OtaControlledLoginResult>(
     scopedPath(context, '/ota-controlled-logins'),
@@ -1530,6 +1538,7 @@ export function startOtaControlledLogin(
       platformCode,
       reasonCode: 'MANUAL_OTA_CONTROLLED_LOGIN',
     },
+    options,
   )
 }
 
@@ -1538,6 +1547,7 @@ export function submitOtaControlledLoginVerification(
   platformCode: 'FLIGGY',
   attemptId: string,
   answer: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<OtaControlledLoginResult> {
   return postCommand<OtaControlledLoginResult>(
     scopedPath(context, '/ota-controlled-login-verifications'),
@@ -1547,17 +1557,20 @@ export function submitOtaControlledLoginVerification(
       answer,
       reasonCode: 'SUBMIT_OTA_LOGIN_VERIFICATION',
     },
+    options,
   )
 }
 
 function postCommand<T>(
   path: string,
   body: Record<string, unknown>,
+  options: { signal?: AbortSignal } = {},
 ): Promise<T> {
   return authenticatedRequest(path, {
     method: 'POST',
     headers: writeHeaders(),
     body: JSON.stringify(body),
+    signal: options.signal,
   })
 }
 

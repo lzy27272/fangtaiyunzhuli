@@ -8,6 +8,7 @@ import {
   type HotelContext,
   type PmsLoginConfigView,
   type PmsSystemCode,
+  type OtaPlatformCode,
   type ReportSourceInput,
   type ReportSourceView,
   type ReportType,
@@ -32,10 +33,14 @@ interface Props {
   pmsSystemCode: PmsSystemCode
   pmsSystemName: string
   attentionItems: ReportSourceAttention[]
+  initialSection?: CollectionSection
+  onSectionChange?: (section: CollectionSection) => void
   otaAttentionSourceId: string | null
+  otaAttentionPlatformCode?: OtaPlatformCode | null
+  navigationSequence?: number
 }
 
-type CollectionSection = 'overview' | 'pms' | 'ota'
+export type CollectionSection = 'overview' | 'pms' | 'ota'
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   ORDER_DETAIL: '订单明细报表',
@@ -136,13 +141,17 @@ export function ReportSourceConfigPage({
   pmsSystemCode,
   pmsSystemName,
   attentionItems,
+  initialSection = 'overview',
+  onSectionChange,
   otaAttentionSourceId,
+  otaAttentionPlatformCode = null,
+  navigationSequence = 0,
 }: Props) {
   const [sources, setSources] = useState<ReportSourceView[]>([])
   const [cookieDrafts, setCookieDrafts] = useState<Record<string, string>>({})
   const [cookieClears, setCookieClears] = useState<Record<string, boolean>>({})
   const [collectionSection, setCollectionSection] =
-    useState<CollectionSection>('overview')
+    useState<CollectionSection>(initialSection)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -158,18 +167,33 @@ export function ReportSourceConfigPage({
 
   function openCollectionSection(section: CollectionSection) {
     setCollectionSection(section)
+    onSectionChange?.(section)
     window.requestAnimationFrame(() => {
       const targetId = section === 'overview'
         ? 'data-access-overview'
         : section === 'pms'
           ? 'pms-system-config-panel'
           : 'ota-source-config-panel'
-      document.getElementById(targetId)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      })
+      const target = document.getElementById(targetId)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      target?.focus({ preventScroll: true })
     })
   }
+
+  useEffect(() => {
+    setCollectionSection(initialSection)
+    const frame = window.requestAnimationFrame(() => {
+      const targetId = initialSection === 'overview'
+        ? 'data-access-overview'
+        : initialSection === 'pms'
+          ? 'pms-system-config-panel'
+          : 'ota-source-config-panel'
+      const target = document.getElementById(targetId)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      target?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [initialSection, navigationSequence, otaAttentionSourceId])
 
   useEffect(() => {
     if (!context) {
@@ -492,10 +516,10 @@ export function ReportSourceConfigPage({
               <p>
                 {pmsSystemCode === 'OTHER'
                   ? '该厂家尚未内置适配，可在下方录入厂家提供的数据入口；保存内容只属于当前门店。'
-                  : '厂家链接和报表入口由系统直接生成，无需再次输入。页面只要求处理该厂家必要的登录或授权。'}
+                  : '厂家链接和报表入口由系统根据门店档案自动生成或加载，无需再次输入。页面只要求处理该厂家必要的登录或授权。'}
               </p>
               <div className="pms-endpoint-list">
-                {pmsSystemCode === 'LUOPAN_CLOUD'
+                {pmsSystemCode === 'LUOPAN_CLOUD' && sources.length === 0
                   ? LUOPAN_MANAGED_DATA_ENTRIES.map((entry) => (
                     <div className="pms-endpoint-row" key={entry.code}>
                       <div>
@@ -539,7 +563,7 @@ export function ReportSourceConfigPage({
                 <span>
                   {pmsSystemCode === 'OTHER'
                     ? '仅其他 PMS 厂家需要手工维护接口定义。'
-                    : '已有链接与报表入口只读展示；Cookie、令牌和账号密码不会回显。'}
+                    : '已有链接与报表入口已自动加载，无需重复录入；Cookie、令牌和账号密码不会回显。'}
                 </span>
               </footer>
             </article>
@@ -653,7 +677,9 @@ export function ReportSourceConfigPage({
           </div> : null}
 
           {collectionSection === 'ota' ? <OtaSourceConfigPanel
+            attentionPlatformCode={otaAttentionPlatformCode}
             attentionSourceId={otaAttentionSourceId}
+            attentionRequestSequence={navigationSequence}
             canConfigure={canConfigure}
             context={context}
             onStatusChanged={() =>

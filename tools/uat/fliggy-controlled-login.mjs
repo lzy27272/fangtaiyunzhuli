@@ -43,6 +43,68 @@ const boundedText = (value, minimum, maximum) =>
   && value.length <= maximum
   && !/[\r\n\u0000]/.test(value)
 
+const settleCleanup = async (operation, timeoutMs = 5_000) => {
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+    timer.unref?.()
+  })
+  try {
+    await Promise.race([
+      Promise.resolve()
+        .then(operation)
+        .catch(() => undefined),
+      timeout,
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+const fliggyLoginAbortError = () => {
+  const error = new Error('OTA_FLIGGY_LOGIN_ABORTED')
+  error.name = 'AbortError'
+  return error
+}
+
+const runWithAbort = async (
+  signal,
+  operation,
+  { onAbort = null, onLateResult = null } = {},
+) => {
+  if (!signal) return operation()
+  if (signal.aborted) {
+    await settleCleanup(() => onAbort?.())
+    throw fliggyLoginAbortError()
+  }
+
+  let aborted = false
+  let abortHandler
+  const abort = new Promise((_, reject) => {
+    abortHandler = () => {
+      aborted = true
+      void settleCleanup(() => onAbort?.())
+      reject(fliggyLoginAbortError())
+    }
+    signal.addEventListener('abort', abortHandler, { once: true })
+  })
+  const trackedOperation = Promise.resolve()
+    .then(operation)
+    .then(async (result) => {
+      if (!aborted) return result
+      await settleCleanup(() => onLateResult?.(result))
+      throw fliggyLoginAbortError()
+    })
+  try {
+    return await Promise.race([trackedOperation, abort])
+  } catch (error) {
+    if (signal.aborted) throw fliggyLoginAbortError()
+    throw error
+  } finally {
+    signal.removeEventListener('abort', abortHandler)
+  }
+}
+
 const allowedCookieDomain = (value) => {
   const domain = String(value ?? '').trim().toLowerCase().replace(/^\./, '')
   return SESSION_COOKIE_DOMAINS.some(
@@ -328,38 +390,29 @@ export const startFliggyControlledLogin = async ({
   credentials: rawCredentials,
   chromium = null,
   executablePath = null,
+  signal = null,
 }) => {
   const credentials = validateCredentials(rawCredentials)
   const browserExecutable = executablePath ?? browserExecutableFor()
   if (!browserExecutable || !existsSync(browserExecutable)) {
     throw new Error('OTA_FLIGGY_BROWSER_NOT_FOUND')
   }
-  const browser = await (chromium ?? chromiumFor()).launch({
-    headless: true,
-    executablePath: browserExecutable,
-    args: [
-      '--disable-features=PasswordManagerOnboarding,PasswordLeakDetection',
-      '--disable-save-password-bubble',
-      '--no-default-browser-check',
-      '--no-first-run',
-    ],
-  })
-  const context = await browser.newContext({
-    acceptDownloads: false,
-    locale: 'zh-CN',
-    timezoneId: 'Asia/Shanghai',
-    viewport: { width: 1440, height: 960 },
-  })
-  const page = await context.newPage()
+  let browser = null
+  let context = null
+  let page = null
   let closed = false
+  let closePromise = null
   let usernameSubmitted = false
   let passwordSubmitted = false
   let portalSessionProbeAttempted = false
-  const close = async () => {
-    if (closed) return
+  const close = () => {
+    if (closePromise) return closePromise
     closed = true
-    await context.close().catch(() => {})
-    await browser.close().catch(() => {})
+    closePromise = (async () => {
+      await settleCleanup(() => context?.close?.())
+      await settleCleanup(() => browser?.close?.())
+    })()
+    return closePromise
   }
 
   const authenticated = async () => {
@@ -373,110 +426,153 @@ export const startFliggyControlledLogin = async ({
     }
   }
 
-  const advance = async (verificationAnswer = null) => {
-    if (closed) throw new Error('OTA_FLIGGY_LOGIN_ATTEMPT_CLOSED')
-    if (verificationAnswer !== null) {
-      if (!/^[A-Za-z0-9]{4,8}$/.test(verificationAnswer)) {
-        throw new Error('OTA_FLIGGY_VERIFICATION_ANSWER_INVALID')
-      }
-      const verification = await firstVisible(
-        page,
-        fliggyLoginSelectors.verification,
-      )
-      const submit = await firstVisible(page, fliggyLoginSelectors.submit)
-      if (!verification || !submit) {
-        throw new Error('OTA_FLIGGY_VERIFICATION_FORM_UNAVAILABLE')
-      }
-      await verification.fill(verificationAnswer)
-      await clickAndSettle(page, submit)
-    }
-
-    for (let step = 0; step < 15; step += 1) {
-      const bodyText = await safeBodyText(page)
-      const classified = classifyFliggyLoginChallengeText(bodyText)
-      const username = await firstVisible(page, fliggyLoginSelectors.username)
-      const password = await firstVisible(page, fliggyLoginSelectors.password)
-      const submit = await firstVisible(page, fliggyLoginSelectors.submit)
-      const verification = await firstVisible(
-        page,
-        fliggyLoginSelectors.verification,
-      )
-      if (fliggyAuthenticationEligible({
-        url: page.url(),
-        usernameSubmitted,
-        passwordSubmitted,
-        usernameVisible: Boolean(username),
-        passwordVisible: Boolean(password),
-        challengeDetected: Boolean(classified),
-      })) return authenticated()
-      if (classified?.status === 'FAILED') {
-        return { ...classified, close }
+  const advance = async (
+    verificationAnswer = null,
+    { signal: operationSignal = null } = {},
+  ) => runWithAbort(
+    operationSignal,
+    async () => {
+      if (closed) throw new Error('OTA_FLIGGY_LOGIN_ATTEMPT_CLOSED')
+      if (verificationAnswer !== null) {
+        if (!/^[A-Za-z0-9]{4,8}$/.test(verificationAnswer)) {
+          throw new Error('OTA_FLIGGY_VERIFICATION_ANSWER_INVALID')
+        }
+        const verification = await firstVisible(
+          page,
+          fliggyLoginSelectors.verification,
+        )
+        const submit = await firstVisible(page, fliggyLoginSelectors.submit)
+        if (!verification || !submit) {
+          throw new Error('OTA_FLIGGY_VERIFICATION_FORM_UNAVAILABLE')
+        }
+        await verification.fill(verificationAnswer)
+        await clickAndSettle(page, submit)
       }
 
-      if (!usernameSubmitted && username && submit) {
-        await username.fill(credentials.account)
-        usernameSubmitted = true
-        if (!passwordSubmitted && password) {
+      for (let step = 0; step < 15; step += 1) {
+        const bodyText = await safeBodyText(page)
+        const classified = classifyFliggyLoginChallengeText(bodyText)
+        const username = await firstVisible(page, fliggyLoginSelectors.username)
+        const password = await firstVisible(page, fliggyLoginSelectors.password)
+        const submit = await firstVisible(page, fliggyLoginSelectors.submit)
+        const verification = await firstVisible(
+          page,
+          fliggyLoginSelectors.verification,
+        )
+        if (fliggyAuthenticationEligible({
+          url: page.url(),
+          usernameSubmitted,
+          passwordSubmitted,
+          usernameVisible: Boolean(username),
+          passwordVisible: Boolean(password),
+          challengeDetected: Boolean(classified),
+        })) return authenticated()
+        if (classified?.status === 'FAILED') {
+          return { ...classified, close }
+        }
+
+        if (!usernameSubmitted && username && submit) {
+          await username.fill(credentials.account)
+          usernameSubmitted = true
+          if (!passwordSubmitted && password) {
+            await password.fill(credentials.password)
+            passwordSubmitted = true
+          }
+          await clickAndSettle(page, submit)
+          continue
+        }
+
+        if (!passwordSubmitted && password && submit) {
           await password.fill(credentials.password)
           passwordSubmitted = true
+          await clickAndSettle(page, submit)
+          continue
         }
-        await clickAndSettle(page, submit)
-        continue
-      }
 
-      if (!passwordSubmitted && password && submit) {
-        await password.fill(credentials.password)
-        passwordSubmitted = true
-        await clickAndSettle(page, submit)
-        continue
-      }
-
-      if (verification && submit) {
-        const captcha = await captureCaptcha(page)
-        return {
-          status: 'VERIFICATION_REQUIRED',
-          reasonCode: 'OTA_FLIGGY_CODE_VERIFICATION_REQUIRED',
-          challengeType: captcha ? 'IMAGE_CODE' : 'CODE',
-          captcha,
-          submit: advance,
-          close,
+        if (verification && submit) {
+          const captcha = await captureCaptcha(page)
+          return {
+            status: 'VERIFICATION_REQUIRED',
+            reasonCode: 'OTA_FLIGGY_CODE_VERIFICATION_REQUIRED',
+            challengeType: captcha ? 'IMAGE_CODE' : 'CODE',
+            captcha,
+            submit: advance,
+            close,
+          }
         }
-      }
-      if (classified) return { ...classified, close }
-      if (
-        passwordSubmitted
-        && !username
-        && !password
-        && !portalSessionProbeAttempted
-      ) {
-        portalSessionProbeAttempted = true
-        try {
-          return await authenticated()
-        } catch (error) {
-          if (error?.message !== 'OTA_FLIGGY_SESSION_INVALID') throw error
+        if (classified) return { ...classified, close }
+        if (
+          passwordSubmitted
+          && !username
+          && !password
+          && !portalSessionProbeAttempted
+        ) {
+          portalSessionProbeAttempted = true
+          try {
+            return await authenticated()
+          } catch (error) {
+            if (error?.message !== 'OTA_FLIGGY_SESSION_INVALID') throw error
+          }
+          continue
         }
-        continue
+        await page.waitForTimeout(1_000)
       }
-      await page.waitForTimeout(1_000)
-    }
-    return {
-      status: 'FAILED',
-      reasonCode: !usernameSubmitted
-        ? 'OTA_FLIGGY_USERNAME_FORM_UNAVAILABLE'
-        : !passwordSubmitted
-          ? 'OTA_FLIGGY_PASSWORD_FORM_UNAVAILABLE'
-          : 'OTA_FLIGGY_LOGIN_CONFIRMATION_UNAVAILABLE',
-      close,
-    }
-  }
+      return {
+        status: 'FAILED',
+        reasonCode: !usernameSubmitted
+          ? 'OTA_FLIGGY_USERNAME_FORM_UNAVAILABLE'
+          : !passwordSubmitted
+            ? 'OTA_FLIGGY_PASSWORD_FORM_UNAVAILABLE'
+            : 'OTA_FLIGGY_LOGIN_CONFIRMATION_UNAVAILABLE',
+        close,
+      }
+    },
+    { onAbort: close, onLateResult: (result) => result?.close?.() },
+  )
 
   try {
-    await page.goto(FLIGGY_PORTAL_URL, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30_000,
-    })
-    await page.waitForTimeout(1_500)
-    return await advance()
+    browser = await runWithAbort(
+      signal,
+      () => (chromium ?? chromiumFor()).launch({
+        headless: true,
+        executablePath: browserExecutable,
+        timeout: 30_000,
+        args: [
+          '--disable-features=PasswordManagerOnboarding,PasswordLeakDetection',
+          '--disable-save-password-bubble',
+          '--no-default-browser-check',
+          '--no-first-run',
+        ],
+      }),
+      { onAbort: close, onLateResult: (lateBrowser) => lateBrowser?.close?.() },
+    )
+    context = await runWithAbort(
+      signal,
+      () => browser.newContext({
+        acceptDownloads: false,
+        locale: 'zh-CN',
+        timezoneId: 'Asia/Shanghai',
+        viewport: { width: 1440, height: 960 },
+      }),
+      { onAbort: close, onLateResult: (lateContext) => lateContext?.close?.() },
+    )
+    page = await runWithAbort(
+      signal,
+      () => context.newPage(),
+      { onAbort: close, onLateResult: (latePage) => latePage?.close?.() },
+    )
+    return await runWithAbort(
+      signal,
+      async () => {
+        await page.goto(FLIGGY_PORTAL_URL, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30_000,
+        })
+        await page.waitForTimeout(1_500)
+        return advance()
+      },
+      { onAbort: close, onLateResult: (result) => result?.close?.() },
+    )
   } catch (error) {
     await close()
     throw error
@@ -489,7 +585,46 @@ export const fliggyControlledLoginPolicy = Object.freeze({
   attemptWindowMinutes: 30,
   challengeTtlMinutes: 10,
   maxVerificationAnswers: 3,
+  attemptTimeoutSeconds: 90,
 })
+
+export const withFliggyControlledLoginTimeout = async (
+  operationFactory,
+  {
+    timeoutMs = fliggyControlledLoginPolicy.attemptTimeoutSeconds * 1_000,
+  } = {},
+) => {
+  if (typeof operationFactory !== 'function') {
+    throw new TypeError('FLIGGY_CONTROLLED_LOGIN_OPERATION_FACTORY_REQUIRED')
+  }
+  const controller = new AbortController()
+  let timer
+  let timedOut = false
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+      reject(new Error('OTA_FLIGGY_LOGIN_TIMEOUT'))
+    }, timeoutMs)
+    timer.unref?.()
+  })
+  const trackedOperation = Promise.resolve()
+    .then(() => operationFactory(controller.signal))
+    .then(async (result) => {
+      if (!timedOut) return result
+      await settleCleanup(() => result?.close?.())
+      throw new Error('OTA_FLIGGY_LOGIN_TIMEOUT')
+    })
+    .catch((error) => {
+      if (timedOut) throw new Error('OTA_FLIGGY_LOGIN_TIMEOUT')
+      throw error
+    })
+  try {
+    return await Promise.race([trackedOperation, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 export const fliggyLoginRateLimitState = ({
   windowStartedAt,

@@ -10,6 +10,7 @@ import {
   fliggyMtopTokenAvailable,
   normalizeFliggySessionState,
   startFliggyControlledLogin,
+  withFliggyControlledLoginTimeout,
 } from '../../../tools/uat/fliggy-controlled-login.mjs'
 
 const cookie = (name, value, domain, path = '/') => ({
@@ -154,6 +155,191 @@ test('Fliggy controlled login rate limit releases when its window expires', () =
   })
   assert.equal(expired.rateLimited, false)
   assert.equal(expired.nextAttemptAt, null)
+})
+
+test('Fliggy controlled login has a bounded whole-attempt timeout and closes late results', async () => {
+  let aborted = false
+  let closed = false
+  await assert.rejects(
+    withFliggyControlledLoginTimeout((signal) => new Promise((resolve) => {
+      signal.addEventListener('abort', () => { aborted = true }, { once: true })
+      setTimeout(() => resolve({
+        status: 'AUTHENTICATED',
+        close: async () => { closed = true },
+      }), 25)
+    }), { timeoutMs: 5 }),
+    /OTA_FLIGGY_LOGIN_TIMEOUT/,
+  )
+  await new Promise((resolve) => setTimeout(resolve, 35))
+  assert.equal(aborted, true)
+  assert.equal(closed, true)
+  assert.equal(fliggyControlledLoginPolicy.attemptTimeoutSeconds, 90)
+})
+
+test('Fliggy controlled login timeout aborts a never-settling operation', async () => {
+  let aborted = false
+  await assert.rejects(
+    withFliggyControlledLoginTimeout((signal) => new Promise(() => {
+      signal.addEventListener('abort', () => { aborted = true }, { once: true })
+    }), { timeoutMs: 5 }),
+    /OTA_FLIGGY_LOGIN_TIMEOUT/,
+  )
+  assert.equal(aborted, true)
+})
+
+test('Fliggy controlled login cleans up browser setup failures', async () => {
+  let browserClosed = 0
+  const browser = {
+    newContext: async () => { throw new Error('synthetic-context-failure') },
+    close: async () => { browserClosed += 1 },
+  }
+  await assert.rejects(
+    startFliggyControlledLogin({
+      credentials: { account: 'synthetic-account', password: 'synthetic-pass' },
+      chromium: { launch: async () => browser },
+      executablePath: process.execPath,
+    }),
+    /synthetic-context-failure/,
+  )
+  assert.equal(browserClosed, 1)
+
+  let contextClosed = 0
+  browserClosed = 0
+  const context = {
+    newPage: async () => { throw new Error('synthetic-page-failure') },
+    close: async () => { contextClosed += 1 },
+  }
+  await assert.rejects(
+    startFliggyControlledLogin({
+      credentials: { account: 'synthetic-account', password: 'synthetic-pass' },
+      chromium: {
+        launch: async () => ({
+          newContext: async () => context,
+          close: async () => { browserClosed += 1 },
+        }),
+      },
+      executablePath: process.execPath,
+    }),
+    /synthetic-page-failure/,
+  )
+  assert.equal(contextClosed, 1)
+  assert.equal(browserClosed, 1)
+})
+
+test('Fliggy controlled login cleanup survives a synchronous context close error', async () => {
+  let browserClosed = 0
+  const page = {
+    url: () => 'https://hotel.fliggy.com/ebooking/login.htm',
+    goto: async () => undefined,
+    waitForTimeout: async () => undefined,
+    waitForNavigation: async () => null,
+    frames: () => [],
+    locator: () => ({
+      first() { return this },
+      isVisible: async () => false,
+      innerText: async () => '登录页面',
+    }),
+  }
+  const login = await startFliggyControlledLogin({
+    credentials: { account: 'synthetic-account', password: 'synthetic-pass' },
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({
+          newPage: async () => page,
+          close: () => { throw new Error('synthetic-close-failure') },
+        }),
+        close: async () => { browserClosed += 1 },
+      }),
+    },
+    executablePath: process.execPath,
+  })
+  await login.close()
+  assert.equal(browserClosed, 1)
+})
+
+test('Fliggy whole-attempt timeout closes a context blocked in page creation', async () => {
+  let contextClosed = 0
+  let browserClosed = 0
+  const context = {
+    newPage: async () => new Promise(() => {}),
+    close: async () => { contextClosed += 1 },
+  }
+  await assert.rejects(
+    withFliggyControlledLoginTimeout(
+      (signal) => startFliggyControlledLogin({
+        credentials: {
+          account: 'synthetic-account',
+          password: 'synthetic-pass',
+        },
+        chromium: {
+          launch: async () => ({
+            newContext: async () => context,
+            close: async () => { browserClosed += 1 },
+          }),
+        },
+        executablePath: process.execPath,
+        signal,
+      }),
+      { timeoutMs: 10 },
+    ),
+    /OTA_FLIGGY_LOGIN_TIMEOUT/,
+  )
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(contextClosed, 1)
+  assert.equal(browserClosed, 1)
+})
+
+test('Fliggy verification submission accepts abort signals and closes resources', async () => {
+  let contextClosed = 0
+  let browserClosed = 0
+  let blockVerificationFill = false
+  const locatorKind = (selector) => {
+    if (selector === 'body') return 'BODY'
+    if (/(?:sms|code|验证码|短信)/i.test(selector)) return 'VERIFICATION'
+    if (/(?:submit|login-button|J_SubmitStatic)/i.test(selector)) return 'SUBMIT'
+    return 'OTHER'
+  }
+  const page = {
+    url: () => 'https://hotel.fliggy.com/ebooking/login.htm',
+    goto: async () => undefined,
+    waitForTimeout: async () => undefined,
+    waitForNavigation: async () => null,
+    frames: () => [],
+    locator: (selector) => {
+      const kind = locatorKind(selector)
+      return {
+        first() { return this },
+        isVisible: async () => ['VERIFICATION', 'SUBMIT'].includes(kind),
+        innerText: async () => kind === 'BODY' ? '请输入短信验证码' : '',
+        fill: async () => blockVerificationFill
+          ? new Promise(() => {})
+          : undefined,
+        click: async () => undefined,
+      }
+    },
+  }
+  const login = await startFliggyControlledLogin({
+    credentials: { account: 'synthetic-account', password: 'synthetic-pass' },
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({
+          newPage: async () => page,
+          close: async () => { contextClosed += 1 },
+        }),
+        close: async () => { browserClosed += 1 },
+      }),
+    },
+    executablePath: process.execPath,
+  })
+  assert.equal(login.status, 'VERIFICATION_REQUIRED')
+  blockVerificationFill = true
+  const controller = new AbortController()
+  const submission = login.submit('1234', { signal: controller.signal })
+  controller.abort()
+  await assert.rejects(submission, /OTA_FLIGGY_LOGIN_ABORTED/)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(contextClosed, 1)
+  assert.equal(browserClosed, 1)
 })
 
 test('Fliggy controlled login supports iframe two-step credentials', async () => {

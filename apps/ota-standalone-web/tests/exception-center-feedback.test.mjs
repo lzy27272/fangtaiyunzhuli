@@ -27,3 +27,47 @@ test('safe recollection reports partial source results before refreshing', () =>
     /LUOPAN_ORDER_DETAIL_NOT_CONFIGURED: '罗盘订单明细尚未配置'/,
   )
 })
+
+test('source-scoped OTA failures route to their exact source and platform', () => {
+  assert.match(exceptionCenterSource, /otaSourceId: source\.sourceId/u)
+  assert.match(exceptionCenterSource, /otaPlatformCode: source\.platformCode/u)
+  assert.match(
+    exceptionCenterSource,
+    /\['LOGIN', 'COLLECTION', 'PARTIAL'\]\.includes\(issue\.kind\)[\s\S]*issue\.otaPlatformCode/u,
+  )
+  assert.match(exceptionCenterSource, /collectionSection: 'ota'/u)
+  assert.match(
+    exceptionCenterSource,
+    /otaAttentionSourceId: issue\.otaSourceId \?\? null/u,
+  )
+  assert.match(
+    exceptionCenterSource,
+    /otaAttentionPlatformCode: issue\.otaPlatformCode/u,
+  )
+  assert.match(exceptionCenterSource, /直达渠道登录修复/u)
+  assert.match(exceptionCenterSource, /直达异常数据源/u)
+})
+
+test('platform-scoped incidents never guess a source when one platform has multiple sources', () => {
+  const incidentMappingStart = exceptionCenterSource.indexOf(
+    "if (incidentResult.status === 'fulfilled')",
+  )
+  const incidentMappingEnd = exceptionCenterSource.indexOf(
+    'const hasPmsRepairIncident',
+    incidentMappingStart,
+  )
+  assert.ok(incidentMappingStart >= 0)
+  assert.ok(incidentMappingEnd > incidentMappingStart)
+
+  const incidentMapping = exceptionCenterSource.slice(
+    incidentMappingStart,
+    incidentMappingEnd,
+  )
+  assert.match(incidentMapping, /otaPlatformCode,/u)
+  assert.doesNotMatch(incidentMapping, /otaSourceId/u)
+  assert.doesNotMatch(incidentMapping, /sources?\.find\(/u)
+  assert.match(
+    exceptionCenterSource,
+    /otaAttentionPlatformCode: issue\.otaPlatformCode,[\s\S]*otaAttentionSourceId: issue\.otaSourceId \?\? null/u,
+  )
+})
