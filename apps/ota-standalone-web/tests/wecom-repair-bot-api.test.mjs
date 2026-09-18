@@ -103,7 +103,7 @@ const startApi = async (runtimePath, { loginProbe = false, preload = null } = {}
 }
 
 const stopApi = async (child) => {
-  if (child.exitCode !== null) return
+  if (child.exitCode !== null || child.signalCode !== null) return
   child.kill()
   await once(child, 'exit')
 }
@@ -635,12 +635,12 @@ test('first administrator can pair multiple stores through one real API command 
     assert.deepEqual(pending.hotelIds, [])
     assert.deepEqual(pending.pendingHotelIds, hotelIds)
     assert.equal((await authorize('stale.manager', bound.rowVersion)).status, 409)
-    const entry = async (userId, { corpId = 'ww-preauth-test', text = false } = {}) => {
+    const entry = async (userId, { corpId = 'ww-preauth-test', text = false, content = '激活' } = {}) => {
       const msgid = randomUUID()
       await writeFile(inbox, JSON.stringify({ headers: { req_id: msgid }, body: {
         aibotid: 'fake-offline-bot', msgid, chattype: 'single', from: { userid: userId, corpid: corpId },
         create_time: Math.floor(Date.now() / 1000), msgtype: text ? 'text' : 'event',
-        ...(text ? { text: { content: '激活' } } : { event: { eventtype: 'enter_chat' } }),
+        ...(text ? { text: { content } } : { event: { eventtype: 'enter_chat' } }),
       } }))
       for (let attempt = 0; attempt < 100; attempt += 1) {
         try {
@@ -676,8 +676,58 @@ test('first administrator can pair multiple stores through one real API command 
     }) })).status, 200)
     assert.match(await entry('cancelled.manager'), /已撤销/)
     assert.equal((await read()).members.find((m) => m.userId === 'cancelled.manager').active, false)
+    // A fresh sender's explicit activation now creates an encrypted, zero-permission candidate.
+    const registrationText = await entry('auto.discovered', { text: true, content: '激活 自动登记店长' })
+    assert.match(registrationText, /已自动识别.*待授权/)
+    const registered = await read()
+    const discovered = registered.members.find((m) => m.userId === 'auto.discovered')
+    assert.equal(discovered.activationStatus, 'REQUESTED')
+    assert.equal(discovered.active, false)
+    assert.equal(discovered.displayName, '自动登记店长')
+    assert.deepEqual(discovered.hotelIds, [])
+    assert.match(await entry('auto.discovered', { text: true }), /待授权/)
+    assert.equal((await read()).rowVersion, registered.rowVersion)
+    const approve = (version, extra = {}) => fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({
+      action: 'APPROVE_REGISTRATION', expectedRowVersion: version, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS',
+      memberId: discovered.memberId, hotelIds, displayName: '自动登记店长', role: 'OPERATIONS_MANAGER',
+      identityConfirmed: true, ...extra,
+    }) })
+    assert.equal((await approve(before.rowVersion)).status, 409)
+    assert.equal((await approve(registered.rowVersion, { identityConfirmed: false })).status, 400)
+    // Disk failure must not grant or acknowledge a candidate approval.
+    await rm(configPath); await mkdir(configPath)
+    assert.equal((await approve(registered.rowVersion)).status, 500)
+    assert.equal((await read()).members.find((m) => m.memberId === discovered.memberId).active, false)
+    await rm(configPath, { recursive: true })
+    assert.equal((await approve(registered.rowVersion, { userId: 'forged-other-account' })).status, 200)
+    const approved = await read()
+    const granted = approved.members.find((m) => m.memberId === discovered.memberId)
+    assert.deepEqual(granted.hotelIds, hotelIds)
+    assert.equal(granted.globalRecipient, false)
+    assert.equal(granted.offboardingLinked, false)
+    assert.equal(approved.members.some((m) => m.userId === 'forged-other-account'), false)
+    assert.match(await entry('auto.discovered', { text: true }), /已绑定/)
+    assert.equal((await approve(approved.rowVersion)).status, 400)
+    // An unsuccessful candidate registration stays unregistered and can be retried safely.
+    await rm(configPath); await mkdir(configPath)
+    assert.match(await entry('failed.registration', { text: true }), /登记未完成/)
+    assert.equal((await read()).members.some((m) => m.userId === 'failed.registration'), false)
+    await rm(configPath, { recursive: true })
+    assert.match(await entry('failed.registration', { text: true }), /已自动识别/)
+    assert.match(await entry('cancelled.manager', { text: true }), /已撤销/)
+    assert.match(await entry('foreign.registration', { text: true, corpId: 'foreign' }), /无法核验/)
+    assert.equal((await read()).members.some((m) => m.userId === 'foreign.registration'), false)
     const persisted = await readFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), 'utf8')
     assert.equal(persisted.includes('pending.manager'), false)
+    assert.equal(persisted.includes('auto.discovered'), false)
+    assert.equal(persisted.includes('自动登记店长'), false)
+    await stopApi(child)
+    const restarted = await startApi(runtimePath, { preload, loginProbe: true }); child = restarted.child
+    const reloaded = (await (await fetch(`http://127.0.0.1:${restarted.port}/api/v1/ota/wecom-repair-admins`, {
+      headers: { Authorization: `Bearer ${restarted.accessToken}` },
+    })).json()).data
+    assert.equal(reloaded.members.find((m) => m.userId === 'failed.registration').activationStatus, 'REQUESTED')
+    assert.deepEqual(reloaded.members.find((m) => m.userId === 'auto.discovered').hotelIds, hotelIds)
   } finally {
     if (child) await stopApi(child)
     await rm(runtimePath, { recursive: true, force: true })

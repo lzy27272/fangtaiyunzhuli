@@ -233,6 +233,7 @@ import {
   repairAdminRoster,
   preauthorizeRepairAdmin,
   activatePreauthorizedRepairAdmin,
+  registerRepairAdmin, approveRepairAdminRegistration,
   bindRepairAdminToHotels,
   updateRepairAdmin,
   normalizeRepairDirectory,
@@ -4602,6 +4603,10 @@ const applyRepairAdminCommand = (body) => {
   }
   if (body.action === 'AUTHORIZE') {
     commitRepairAdminCredentials(preauthorizeRepairAdmin({ ...body,
+      credentials: weComRepairBotCredentials, hotels }))
+    weComRepairBotPairingStore.clear()
+  } else if (body.action === 'APPROVE_REGISTRATION') {
+    commitRepairAdminCredentials(approveRepairAdminRegistration({ ...body,
       credentials: weComRepairBotCredentials, hotels }))
     weComRepairBotPairingStore.clear()
   } else if (body.action === 'APPROVAL_CONFIG') {
@@ -9762,6 +9767,30 @@ const handleWeComRepairBotText = async (frame, replyText) => {
   }
 
   const command = parseWeComRepairBotText(body?.text?.content)
+  if (/^激活(?:\s|$)/u.test(String(body?.text?.content ?? '').trim())) {
+    let message
+    try {
+      const result = registerRepairAdmin({ credentials: weComRepairBotCredentials, frame })
+      if (result.credentials !== weComRepairBotCredentials) commitRepairAdminCredentials(result.credentials)
+      message = result.status === 'ACTIVE'
+        ? '你的账号已绑定，无需重复激活。发送“状态”可查看负责门店的待处理任务。'
+        : result.status === 'PREAUTHORIZED'
+          ? '已有预授权，但本次尚未完成激活。请管理员核对企业身份和授权配置，未新增权限。'
+          : result.status === 'APPROVAL_PENDING'
+            ? '你已有企微待审批申请，无需重复登记。请发送“申请状态”查看进度。'
+            : '已自动识别你的企微账号并登记到待授权名单，目前还没有门店权限。请管理员进入“人员与权限 → 企微管理与审批 → 待授权人员”，选择你并勾选门店批准；无需输入账号或配对码。批准后发送“状态”即可查看。未填写姓名可再发送“激活 你的姓名”。'
+    } catch (error) {
+      message = ({
+        WECOM_REPAIR_ADMIN_MEMBER_REVOKED: '你的修复权限已撤销，请联系平台管理员核对人员状态，不能重新激活。',
+        WECOM_REPAIR_ADMIN_REGISTRATION_IDENTITY_INVALID: '无法核验本条消息身份，请在本企业正确机器人的单聊中重新发送“激活”。',
+        WECOM_REPAIR_ADMIN_REGISTRATION_INVALID: '请发送“激活”或“激活 你的姓名”，不需要填写账号。',
+        WECOM_REPAIR_ADMIN_NAME_INVALID: '姓名格式不正确，请发送“激活”或“激活 你的真实姓名”（最多60字）。',
+        WECOM_REPAIR_ADMIN_REGISTRATION_CAPACITY_REACHED: '待授权名单已满，请联系平台管理员处理。',
+      })[error?.message] ?? '登记未完成，请稍后重新发送“激活”；本次不会新增权限。'
+    }
+    await replyText(frame, message)
+    return
+  }
   if (command.type === 'PAIR') {
     try {
       if (!weComRepairBotCredentials) {
@@ -9882,7 +9911,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
       ? '你的修复权限已撤销，请联系平台管理员核对人员状态。'
       : weComRepairBotCredentials?.bindingApproval?.enabled
         ? '当前账号尚未绑定。请发送“申请 003 你的姓名”（将003换为负责门店编号）；管理员会在企微收到审批卡片，同意后自动绑定。多店示例：“申请 003,005 你的姓名”。也可使用已有预授权或备用配对码。'
-        : '当前账号尚未激活或未获授权。请管理员在后台“免配对码授权”核对你的企微账号和负责门店；保存后发送“激活”。也可使用备用配对码绑定。')
+        : '当前账号尚未获得门店权限。发送“激活 你的姓名”即可自动登记账号，管理员在“人员与权限 → 企微管理与审批 → 待授权人员”中选择门店批准，无需手填账号或配对码。')
     return
   }
 
@@ -10220,7 +10249,7 @@ weComRepairBotRuntime = createWeComRepairBotRuntime({
       ? '你的修复权限已撤销，请联系平台管理员核对人员状态。'
       : weComRepairBotCredentials?.bindingApproval?.enabled
         ? '欢迎使用门店修复助手。新人员发送“申请 003 你的姓名”（多店用逗号分隔），由指定管理员在企微同意后自动绑定。发送“申请状态”查询进度。已有预授权可发送“激活”，也可使用备用绑定码；已绑定人员发送“状态”查看任务。'
-        : '欢迎使用门店修复助手。管理员已预授权时会自动绑定；若尚未激活，请发送“激活”。已绑定人员发送“状态”查看任务，发送“恢复 015”处理有权限的门店。也可使用备用绑定码。'),
+        : '欢迎使用门店修复助手。新人员发送“激活 你的姓名”自动登记账号，管理员选择门店批准后即绑定，不需要手填账号或配对码。已有预授权会自动激活；已绑定人员发送“状态”查看任务。'),
   onTemplateCardEvent: handleWeComRepairBotTemplateCard,
 })
 // Failed persistence stops startup rather than replaying an ambiguous send.

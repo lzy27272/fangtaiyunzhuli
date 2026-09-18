@@ -7,6 +7,7 @@ import {
   updateRepairAdmin, decryptRepairDirectoryCallback, repairDirectoryXmlField,
   applyRepairDirectoryEvent,
   preauthorizeRepairAdmin, activatePreauthorizedRepairAdmin,
+  registerRepairAdmin, approveRepairAdminRegistration,
 } from '../../../tools/uat/wecom/src/wecom-repair-admins.mjs'
 import {
   createWeComRepairBotPairingStore, normalizeWeComRepairBotCredentials,
@@ -26,6 +27,82 @@ const credentials = () => normalizeWeComRepairBotCredentials({ botId: 'bot-test-
     directoryLinkedAt: '2026-09-17T04:00:00Z' } },
 })
 const memberId = (id) => createHash('sha256').update(id).digest('hex')
+const registrationFrame = (overrides = {}) => ({ body: {
+  aibotid: 'bot-test-01', msgtype: 'text', chattype: 'single', msgid: 'register-msg-1',
+  create_time: Math.floor(now.getTime() / 1000), from: { userid: 'applicant', corpid: directory.corpId },
+  text: { content: '激活 王店长' }, ...overrides,
+} })
+
+test('activation registers the observed sender without permissions; approval uses immutable member identity', () => {
+  const before = credentials()
+  assert.equal(Object.hasOwn(before.userProfiles.manager, 'registration'), false)
+  const withoutDirectory = { ...before, directorySync: null }
+  assert.equal(registerRepairAdmin({ credentials: withoutDirectory, frame: registrationFrame(), now }).status, 'REQUESTED')
+  const result = registerRepairAdmin({ credentials: before, frame: registrationFrame(), now })
+  const pending = normalizeWeComRepairBotCredentials(result.credentials)
+  const member = repairAdminRoster(pending, hotels, now).find((m) => m.userId === 'applicant')
+  assert.equal(result.status, 'REQUESTED')
+  assert.equal(member.active, false)
+  assert.equal(member.activationStatus, 'REQUESTED')
+  assert.equal(member.nameSource, 'APPLICANT_PROVIDED')
+  assert.equal(member.displayName, '王店长')
+  assert.deepEqual(pending.allowedUserIds, before.allowedUserIds)
+  assert.deepEqual(pending.hotelAllowedUserIds, before.hotelAllowedUserIds)
+  assert.equal(weComRepairBotCanRepairHotel({ credentials: pending, userId: 'applicant', hotelId: 'hotel-1' }), false)
+  assert.equal(registerRepairAdmin({ credentials: pending, frame: registrationFrame(), now }).credentials, pending)
+  const input = { credentials: pending, memberId: member.memberId, hotels, now,
+    hotelIds: ['hotel-1', 'hotel-2'], displayName: '王店长', role: 'OPERATIONS_MANAGER' }
+  assert.throws(() => approveRepairAdminRegistration(input), /REGISTRATION_CONFIRM_REQUIRED/)
+  const approved = approveRepairAdminRegistration({ ...input, identityConfirmed: true, userId: 'forged-user' })
+  assert.deepEqual(approved.allowedUserIds, before.allowedUserIds)
+  assert.equal(approved.hotelAllowedUserIds['hotel-1'].includes('applicant'), true)
+  assert.equal(approved.hotelAllowedUserIds['hotel-2'].includes('applicant'), true)
+  assert.equal(Object.values(approved.hotelAllowedUserIds).flat().includes('forged-user'), false)
+  assert.equal(approved.userProfiles.applicant.directoryUserId, '')
+  assert.equal(approved.userProfiles.applicant.registration, null)
+  assert.throws(() => approveRepairAdminRegistration({ ...input, credentials: approved, identityConfirmed: true }), /REGISTRATION_STALE/)
+  assert.equal(registerRepairAdmin({ credentials: approved, frame: registrationFrame(), now }).status, 'ACTIVE')
+})
+
+test('registration rejects foreign/group/stale/malformed messages and never revives revocations', () => {
+  const before = credentials()
+  for (const fields of [ { aibotid: 'foreign' }, { chattype: 'group' }, { chatid: 'group' },
+    { from: { userid: 'applicant', corpid: 'foreign' } }, { from: { userid: 'bad id' } },
+    { msgtype: 'event' }, { msgid: '' }, { msgid: 123 }, { from: { userid: 123 } }, { create_time: 1 }, { create_time: 'bad' },
+    { create_time: Math.floor(now.getTime() / 1000) + 3600 } ]) {
+    assert.throws(() => registerRepairAdmin({ credentials: before, frame: registrationFrame(fields), now }), /REGISTRATION_IDENTITY_INVALID/)
+  }
+  assert.throws(() => registerRepairAdmin({ credentials: before, frame: registrationFrame({ text: { content: '激活\n伪造\n姓名' } }), now }), /REGISTRATION_INVALID/)
+  assert.throws(() => registerRepairAdmin({ credentials: before, frame: registrationFrame({ text: { content: '激活 \u202e假名' } }), now }), /NAME_INVALID/)
+  const pending = registerRepairAdmin({ credentials: before, frame: registrationFrame(), now }).credentials
+  const revoked = updateRepairAdmin({ credentials: pending, action: 'REVOKE', memberId: memberId('applicant'), hotels, now })
+  assert.throws(() => registerRepairAdmin({ credentials: revoked, frame: registrationFrame(), now }), /MEMBER_REVOKED/)
+  assert.throws(() => approveRepairAdminRegistration({ credentials: revoked, memberId: memberId('applicant'), hotels, now }), /REGISTRATION_STALE/)
+})
+
+test('bare activation can add a claimed name, while expiry, bot changes and capacity block approval atomically', () => {
+  const blank = registerRepairAdmin({ credentials: credentials(), frame: registrationFrame({ text: { content: '激活' } }), now }).credentials
+  assert.equal(blank.userProfiles.applicant.displayName, '')
+  const pending = registerRepairAdmin({ credentials: blank, frame: registrationFrame(), now }).credentials
+  const input = { credentials: pending, memberId: memberId('applicant'), hotels, now,
+    hotelIds: ['hotel-1', 'hotel-2'], displayName: '王店长', role: 'STORE_MANAGER', identityConfirmed: true }
+  for (const changed of [{ now: new Date(now.getTime() + 24 * 60 * 60_000) },
+    { credentials: { ...pending, botId: 'another-bot' } },
+    { credentials: { ...pending, directorySync: { ...pending.directorySync, corpId: 'another-corp' } } }]) {
+    assert.throws(() => approveRepairAdminRegistration({ ...input, ...changed }), /REGISTRATION_STALE/)
+  }
+  const full = structuredClone(pending)
+  full.hotelAllowedUserIds['hotel-2'] = Array.from({ length: 20 }, (_, n) => `full-${n}`)
+  const copy = structuredClone(full)
+  assert.throws(() => approveRepairAdminRegistration({ ...input, credentials: full }), /CAPACITY_REACHED/)
+  assert.deepEqual(full, copy)
+  assert.throws(() => approveRepairAdminRegistration({ ...input, hotelIds: ['unknown'] }), /HOTELS_INVALID/)
+  const hasCard = { ...pending, bindingApproval: { requests: [{ userId: 'applicant', status: 'PENDING', expiresAt: new Date(now.getTime() + 1000).toISOString() }] } }
+  assert.equal(registerRepairAdmin({ credentials: hasCard, frame: registrationFrame(), now }).credentials, hasCard)
+  const capacity = credentials()
+  capacity.userProfiles = Object.fromEntries(Array.from({ length: 500 }, (_, n) => [`registered-${n}`, { registration: pending.userProfiles.applicant.registration }]))
+  assert.throws(() => registerRepairAdmin({ credentials: capacity, frame: registrationFrame(), now }), /REGISTRATION_CAPACITY_REACHED/)
+})
 const eventXml = (user = 'zhangsan', change = 'delete_user', extra = '') =>
   `<xml><ToUserName><![CDATA[${directory.corpId}]]></ToUserName><MsgType>event</MsgType>`
   + `<CreateTime>${Math.floor(now.getTime() / 1000)}</CreateTime><Event>change_contact</Event>`

@@ -929,7 +929,9 @@ export interface WeComRepairAdmin {
   hotelIds: string[]
   hotels: Array<{ hotelId: string; hotelCode: string; displayName: string }>
   active: boolean
-  activationStatus: 'ACTIVE' | 'PENDING' | 'REVOKED' | 'UNASSIGNED'
+  activationStatus: 'ACTIVE' | 'PENDING' | 'REQUESTED' | 'REVOKED' | 'UNASSIGNED'
+  registrationRequestedAt: string | null
+  registrationCurrent: boolean
   pendingHotelIds: string[]
   identityReviewRequired: boolean
   pendingHotels: Array<{ hotelId: string; hotelCode: string; displayName: string }>
@@ -977,6 +979,8 @@ export interface WeComRepairAdminsView {
 }
 
 export type WeComRepairAdminCommand =
+  | { action: 'APPROVE_REGISTRATION'; memberId: string; hotelIds: string[]; displayName: string;
+      role: WeComRepairAdmin['role']; identityConfirmed: boolean }
   | { action: 'APPROVAL_CONFIG'; approvalEnabled: boolean; approverMemberIds: string[] }
   | { action: 'AUTHORIZE'; userId: string; hotelIds: string[]; displayName: string;
       role: WeComRepairAdmin['role']; directoryUserId: string; directoryIdentityConfirmed: boolean }

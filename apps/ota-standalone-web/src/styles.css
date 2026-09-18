@@ -128,6 +128,7 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .repair-approval-panel .repair-admin-hotels { max-height: 28rem; }
 .people-wecom-settings { margin-top: 1.25rem; padding: clamp(1rem, 2vw, 1.5rem); background: #fff; border: 1px solid #d8e4de; border-radius: 1rem; }
 .people-wecom-settings > .repair-admin-panel { margin-top: 1rem; padding-top: 0; border-top: 0; }
+.repair-registration-panel, .repair-registration-editor { scroll-margin-top: 5rem; }
 .store-repair-members { display: flex; flex-wrap: wrap; gap: .8rem; list-style: none; padding: 0; }
 .store-repair-members li { display: grid; gap: .3rem; padding: .8rem 1rem; border: 1px solid #c8d8d2; border-radius: .7rem; overflow-wrap: anywhere; }
 .store-repair-members span, .store-repair-members small { color: #677b73; font-size: .85rem; }

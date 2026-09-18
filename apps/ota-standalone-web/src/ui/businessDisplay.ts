@@ -129,6 +129,8 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED: '当前门店修复管理员已达上限',
   WECOM_REPAIR_BOT_PAIRING_HOTEL_INVALID: '当前门店暂时无法绑定修复管理员',
   WECOM_REPAIR_ADMIN_NAME_INVALID: '请填写有效姓名，并选择人员岗位',
+  WECOM_REPAIR_ADMIN_REGISTRATION_STALE: '此申请已失效、已处理或账号状态已变更，请让本人重新发送“激活”并刷新名单',
+  WECOM_REPAIR_ADMIN_REGISTRATION_CONFIRM_REQUIRED: '请核对此人为在职员工，并确认所选门店后再批准',
   WECOM_REPAIR_APPROVAL_CONFIG_INVALID: '请最多选择两位绑定审批人',
   WECOM_REPAIR_APPROVAL_APPROVER_INVALID: '所选审批人已解绑或尚未核对通讯录身份，请刷新后重新选择',
   WECOM_REPAIR_APPROVAL_DIRECTORY_REQUIRED: '请先验证通讯录回调，并至少勾选一位已核对身份的审批人',

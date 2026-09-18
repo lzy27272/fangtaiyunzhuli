@@ -132,6 +132,16 @@ test('store repair people are scoped and read-only with an exact global-permissi
   assert.doesNotMatch(storeRepairSummarySource, /saveWeCom|manageWeCom|startWeCom|type="checkbox"|type="password"/)
 })
 
+test('sender-discovered registration is the primary no-account-input grant path', () => {
+  assert.match(repairAdminsSource, /aria-label="待授权人员"/)
+  assert.match(repairAdminsSource, /m\.activationStatus === 'REQUESTED'/)
+  assert.match(repairAdminsSource, /action: 'APPROVE_REGISTRATION', memberId: existing\.memberId/)
+  assert.match(repairAdminsSource, /identityConfirmed && existing\?\.registrationCurrent/)
+  assert.match(repairAdminsSource, /账号已从员工本人消息自动识别/)
+  assert.match(repairAdminsSource, /registration \? null : existing && !direct/)
+  assert.match(repairAdminsSource, /备用方式：手工预授权 \/ 配对码/)
+})
+
 test('people permissions expose the current roles and retire canceled roles from assignment', () => {
   const roleOptionsBlock = peoplePermissionsSource.slice(
     peoplePermissionsSource.indexOf('const ROLE_OPTIONS'),
