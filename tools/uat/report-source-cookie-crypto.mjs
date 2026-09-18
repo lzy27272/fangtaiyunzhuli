@@ -26,11 +26,11 @@ const validateScope = (scope) => {
   return Buffer.from(`sifangguan-report-cookie:v1:${scope}`, 'utf8')
 }
 
-export const validateCookieValue = (cookieValue) => {
+const validateSecretValue = (cookieValue, maximumBytes) => {
   if (
     typeof cookieValue !== 'string'
     || Buffer.byteLength(cookieValue, 'utf8') < 1
-    || Buffer.byteLength(cookieValue, 'utf8') > MAX_COOKIE_BYTES
+    || Buffer.byteLength(cookieValue, 'utf8') > maximumBytes
     || cookieValue.trim().length < 1
     || /[\r\n\u0000]/.test(cookieValue)
     || /^\s*cookie\s*:/i.test(cookieValue)
@@ -39,8 +39,13 @@ export const validateCookieValue = (cookieValue) => {
   }
 }
 
+export const validateCookieValue = (cookieValue) => validateSecretValue(cookieValue, MAX_COOKIE_BYTES)
+// This one scope stores a bounded administrator roster, not an HTTP cookie.
+// Keep the original limit unchanged for all collector/session credentials.
+const valueLimit = (scope) => scope === 'wecom-repair-bot:v1' ? 4 * 1024 * 1024 : MAX_COOKIE_BYTES
+
 export const encryptCookie = (cookieValue, encodedKey, scope) => {
-  validateCookieValue(cookieValue)
+  validateSecretValue(cookieValue, valueLimit(scope))
   const key = decodeKey(encodedKey)
   const iv = randomBytes(12)
   const cipher = createCipheriv(ALGORITHM, key, iv)
@@ -82,6 +87,6 @@ export const decryptCookie = (record, encodedKey, scope) => {
     decipher.update(Buffer.from(record.ciphertext, 'base64url')),
     decipher.final(),
   ]).toString('utf8')
-  validateCookieValue(plaintext)
+  validateSecretValue(plaintext, valueLimit(scope))
   return plaintext
 }

@@ -129,6 +129,8 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED: '当前门店修复管理员已达上限',
   WECOM_REPAIR_BOT_PAIRING_HOTEL_INVALID: '当前门店暂时无法绑定修复管理员',
   WECOM_REPAIR_ADMIN_NAME_INVALID: '请填写有效姓名，并选择人员岗位',
+  WECOM_REPAIR_ADMIN_USER_INVALID: '请填写准确的企微机器人账号（UserID），不能使用姓名或手机号代替',
+  WECOM_REPAIR_ADMIN_DIRECTORY_NOT_VERIFIED: '新人员免码授权需要先接通并验证下方通讯录回调；也可使用备用配对码',
   WECOM_REPAIR_ADMIN_HOTELS_INVALID: '请选择有效的负责门店；如需撤销全部权限，请使用解绑此人',
   WECOM_REPAIR_ADMIN_CAPACITY_REACHED: '所选门店已有20名管理员，请调整后再绑定',
   WECOM_REPAIR_ADMIN_MEMBER_NOT_FOUND: '该人员已解绑或不存在，请刷新名单后重试',

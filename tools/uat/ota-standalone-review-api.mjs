@@ -231,6 +231,8 @@ import {
 } from './wecom/src/wecom-repair-bot.mjs'
 import {
   repairAdminRoster,
+  preauthorizeRepairAdmin,
+  activatePreauthorizedRepairAdmin,
   bindRepairAdminToHotels,
   updateRepairAdmin,
   normalizeRepairDirectory,
@@ -4591,7 +4593,11 @@ const applyRepairAdminCommand = (body) => {
     } })
     return { ...repairAdminView(), createdPairing: pairing }
   }
-  if (body.action === 'DIRECTORY') {
+  if (body.action === 'AUTHORIZE') {
+    commitRepairAdminCredentials(preauthorizeRepairAdmin({ ...body,
+      credentials: weComRepairBotCredentials, hotels }))
+    weComRepairBotPairingStore.clear()
+  } else if (body.action === 'DIRECTORY') {
     const previous = weComRepairBotCredentials.directorySync
     const update = body.directoryUpdate
     let next
@@ -9699,6 +9705,12 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     return
   }
 
+  const activation = activateWeComRepairAdmin(frame)
+  if (activation) {
+    await replyText(frame, activation)
+    return
+  }
+
   const command = parseWeComRepairBotText(body?.text?.content)
   if (command.type === 'PAIR') {
     try {
@@ -9759,6 +9771,11 @@ const handleWeComRepairBotText = async (frame, replyText) => {
           ? `绑定成功。当前已绑定${allowedUserIds.length}/2名全局接收人，并已显式允许处理所有门店修复任务。发送“状态”可查看待处理任务。`
           : `绑定成功。当前已绑定${allowedUserIds.length}/2名全局接收人；默认仅接收通知，需由平台管理员显式开启跨门店处理权限。`
       }
+      if (userProfiles?.[pairing.userId]?.pendingHotelIds?.length) {
+        userProfiles = { ...userProfiles, [pairing.userId]: {
+          ...userProfiles[pairing.userId], pendingHotelIds: [],
+        } }
+      }
       const nextCredentials = normalizeWeComRepairBotCredentials({
         ...weComRepairBotCredentials,
         allowedUserIds,
@@ -9811,7 +9828,12 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     .filter(([, userIds]) => userIds.includes(userId))
     .map(([hotelId]) => hotelId)
   if (!globalAllowedUserIds.includes(userId) && userHotelIds.length === 0) {
-    await replyText(frame, '当前账号未获授权，请先使用后台配对码完成绑定。')
+    await replyText(frame, '当前账号尚未激活或未获授权。请管理员在后台“免配对码授权”核对你的企微账号和负责门店；保存后发送“激活”。也可使用备用配对码绑定。')
+    return
+  }
+
+  if (String(body?.text?.content ?? '').trim() === '激活') {
+    await replyText(frame, '你的账号已绑定，无需重复激活。发送“状态”可查看负责门店的待处理任务。')
     return
   }
 
@@ -10102,11 +10124,27 @@ const handleWeComRepairBotTemplateCard = async (
   }
 }
 
+const activateWeComRepairAdmin = (frame) => {
+  const result = activatePreauthorizedRepairAdmin({
+    credentials: weComRepairBotCredentials, frame, hotels,
+  })
+  if (!result.activated) return null
+  // Persist before acknowledging activation; a failed write grants nothing in memory.
+  commitRepairAdminCredentials(result.credentials)
+  const labels = hotels.filter((h) => result.hotelIds.includes(h.hotelId))
+    .map((h) => `${h.hotelCode} ${h.hotelName}`).join('、')
+  return `自动绑定成功。你已获授权处理 ${labels}（共${result.hotelIds.length}家门店），无需配对码。发送“状态”可查看任务。`
+}
+
 weComRepairBotRuntime = createWeComRepairBotRuntime({
   canSendToUser: (userId) => !weComRepairBotCredentials?.userProfiles?.[userId]?.revokedAt
     && ((weComRepairBotCredentials?.allowedUserIds ?? []).includes(userId)
       || Object.values(weComRepairBotCredentials?.hotelAllowedUserIds ?? {}).some((ids) => ids.includes(userId))),
   onTextMessage: handleWeComRepairBotText,
+  onEnterChat: (frame) => activateWeComRepairAdmin(frame)
+    ?? (weComRepairBotCredentials?.userProfiles?.[frame?.body?.from?.userid]?.revokedAt
+      ? '你的修复权限已撤销，请联系平台管理员核对人员状态。'
+      : '欢迎使用门店修复助手。管理员已预授权时会自动绑定；若尚未激活，请发送“激活”。已绑定人员发送“状态”查看任务，发送“恢复 015”处理有权限的门店。也可使用备用绑定码。'),
   onTemplateCardEvent: handleWeComRepairBotTemplateCard,
 })
 weComRepairBotRuntime.configure({

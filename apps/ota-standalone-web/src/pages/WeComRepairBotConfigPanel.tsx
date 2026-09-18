@@ -452,7 +452,7 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
             }
           />
           <small>
-            快捷配对仅绑定当前门店；多店授权和人员身份维护请使用下方“已绑定人员与多店授权”。
+            快捷配对仅绑定当前门店，作为备用方式；推荐使用下方“免配对码授权”，可一次选择多店。
           </small>
         </label>
       </div>
@@ -486,7 +486,7 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
                   >= selectedHotelBinding.pairedUserCapacity
               ? '该门店已达绑定上限'
               : selectedHotelBinding
-                ? `为${selectedHotelBinding.hotelCode}新增修复管理员`
+                ? `备用：为${selectedHotelBinding.hotelCode}生成配对码`
                 : loading
                   ? '正在读取当前门店'
                   : '当前门店管理员状态不可用'}

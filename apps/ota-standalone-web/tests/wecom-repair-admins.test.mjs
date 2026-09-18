@@ -6,11 +6,13 @@ import {
   normalizeRepairAdminState, repairAdminRoster, bindRepairAdminToHotels,
   updateRepairAdmin, decryptRepairDirectoryCallback, repairDirectoryXmlField,
   applyRepairDirectoryEvent,
+  preauthorizeRepairAdmin, activatePreauthorizedRepairAdmin,
 } from '../../../tools/uat/wecom/src/wecom-repair-admins.mjs'
 import {
   createWeComRepairBotPairingStore, normalizeWeComRepairBotCredentials,
   weComRepairBotCanRepairHotel, weComRepairBotRecipientsForHotel, createWeComRepairBotRuntime,
 } from '../../../tools/uat/wecom/src/wecom-repair-bot.mjs'
+import { encryptCookie, decryptCookie, validateCookieValue } from '../../../tools/uat/report-source-cookie-crypto.mjs'
 
 const now = new Date('2026-09-18T04:00:01.200Z')
 const hotels = [1, 2, 3].map((n) => ({ hotelId: `hotel-${n}`, hotelCode: `00${n}`, hotelName: `测试门店${n}` }))
@@ -157,4 +159,115 @@ test('queued messages and captcha recheck revocation before actual delivery', as
   allowed = true
   await assert.rejects(runtime.sendCaptcha({ userId: 'manager', captcha: Buffer.alloc(32), content: 'test' }), /USER_REVOKED/)
   assert.deepEqual(fake.sent, [])
+})
+
+const pendingAdmin = (overrides = {}) => preauthorizeRepairAdmin({ credentials: {
+  ...credentials(), directorySync: { ...directory, verifiedAt: now.toISOString() },
+}, userId: 'new.manager', directoryUserId: 'new.directory', directoryIdentityConfirmed: true,
+displayName: '免码运营经理', role: 'OPERATIONS_MANAGER', hotelIds: ['hotel-1', 'hotel-3'], hotels, now, ...overrides })
+const entryFrame = (overrides = {}) => ({ body: { aibotid: 'bot-test-01', msgid: 'entry-1',
+  msgtype: 'event', event: { eventtype: 'enter_chat' },
+  create_time: Math.floor(now.getTime() / 1000), from: { userid: 'new.manager', corpid: directory.corpId }, ...overrides } })
+
+test('preauthorization persists a pending scope with no delivery/action grants; exact entry activates atomically', () => {
+  const pending = normalizeWeComRepairBotCredentials(pendingAdmin())
+  const member = repairAdminRoster(pending, hotels).find((m) => m.userId === 'new.manager')
+  assert.equal(member.activationStatus, 'PENDING')
+  assert.equal(member.offboardingLinked, true)
+  for (const h of hotels) {
+    assert.equal(weComRepairBotRecipientsForHotel(pending, h.hotelId).includes('new.manager'), false)
+    assert.equal(weComRepairBotCanRepairHotel({ credentials: pending, userId: 'new.manager', hotelId: h.hotelId }), false)
+  }
+  const result = activatePreauthorizedRepairAdmin({ credentials: pending, frame: entryFrame(), hotels, now })
+  assert.equal(result.activated, true)
+  assert.deepEqual(result.credentials.allowedUserIds, ['global.user'])
+  assert.equal(weComRepairBotCanRepairHotel({ credentials: result.credentials, userId: 'new.manager', hotelId: 'hotel-3' }), true)
+  assert.equal(weComRepairBotCanRepairHotel({ credentials: result.credentials, userId: 'new.manager', hotelId: 'hotel-2' }), false)
+  assert.equal(activatePreauthorizedRepairAdmin({ credentials: result.credentials, frame: entryFrame(), hotels, now }).activated, false)
+})
+
+test('wrong identity, group, stale event, foreign corp/bot and disabled directory never activate pending grants', () => {
+  const pending = pendingAdmin()
+  for (const overrides of [
+    { from: { userid: 'someone.else', corpid: directory.corpId } },
+    { from: { userid: 'new.manager', corpid: 'other-corp' } },
+    { aibotid: 'other-bot' }, { aibotid: undefined },
+    { chattype: 'group' }, { chatid: 'group-id' },
+    { create_time: undefined }, { create_time: Math.floor(now.getTime() / 1000) - 60 },
+    { create_time: Math.floor(now.getTime() / 1000) + 120 },
+  ]) assert.equal(activatePreauthorizedRepairAdmin({ credentials: pending, frame: entryFrame(overrides), hotels, now }).activated, false)
+  assert.equal(activatePreauthorizedRepairAdmin({ credentials: { ...pending, directorySync: { ...pending.directorySync, enabled: false } }, frame: entryFrame(), hotels, now }).activated, false)
+  assert.equal(activatePreauthorizedRepairAdmin({ credentials: pending, frame: entryFrame({ msgtype: 'text', chattype: 'single', create_time: undefined, text: { content: '激活' } }), hotels, now }).activated, true)
+})
+
+test('manual revoke and member departure cancel pending authorization permanently', () => {
+  const pending = pendingAdmin()
+  const revoked = updateRepairAdmin({ credentials: pending, action: 'REVOKE', memberId: memberId('new.manager'), hotels, now })
+  const departed = applyRepairDirectoryEvent({ credentials: pending, xml: eventXml('new.directory'), now }).credentials
+  for (const current of [revoked, departed]) {
+    assert.equal(repairAdminRoster(current, hotels).find((m) => m.userId === 'new.manager').activationStatus, 'REVOKED')
+    assert.equal(activatePreauthorizedRepairAdmin({ credentials: current, frame: entryFrame(), hotels, now }).activated, false)
+    assert.throws(() => pendingAdmin({ credentials: current }), /MEMBER_REVOKED/)
+    assert.throws(() => pendingAdmin({ credentials: current, userId: 'new.alias' }), /DIRECTORY_USER_DUPLICATE/)
+  }
+})
+
+test('new preauthorization requires verified corporate identity; known users get immediate exact store updates', () => {
+  assert.throws(() => pendingAdmin({ directoryIdentityConfirmed: false }), /IDENTITY_CONFIRM_REQUIRED/)
+  assert.throws(() => pendingAdmin({ credentials: credentials() }), /DIRECTORY_NOT_VERIFIED/)
+  assert.throws(() => pendingAdmin({ hotelIds: ['not-real'] }), /HOTELS_INVALID/)
+  assert.throws(() => pendingAdmin({ directoryUserId: 'zhangsan' }), /DIRECTORY_USER_DUPLICATE/)
+  const immediate = pendingAdmin({ credentials: credentials(), userId: 'manager', hotelIds: ['hotel-3'] })
+  assert.equal(immediate.userProfiles.manager.directoryUserId, 'zhangsan')
+  assert.deepEqual(immediate.hotelAllowedUserIds['hotel-1'], [])
+  assert.deepEqual(immediate.hotelAllowedUserIds['hotel-3'], ['manager'])
+})
+
+test('editing pending stores preserves departure ordering; contact rename requires renewed identity confirmation', () => {
+  const pending = pendingAdmin()
+  const edited = pendingAdmin({ credentials: pending, now: new Date(now.getTime() + 60_000) })
+  assert.equal(edited.userProfiles['new.manager'].directoryLinkedAt, pending.userProfiles['new.manager'].directoryLinkedAt)
+  assert.equal(applyRepairDirectoryEvent({ credentials: edited, xml: eventXml('new.directory'), now }).result, 'REVOKED')
+  const renamed = applyRepairDirectoryEvent({ credentials: pending,
+    xml: eventXml('new.directory', 'update_user', '<NewUserID>new.directory.renamed</NewUserID>'), now }).credentials
+  assert.equal(activatePreauthorizedRepairAdmin({ credentials: renamed, frame: entryFrame(), hotels, now }).activated, false)
+  assert.equal(repairAdminRoster(renamed, hotels).find((m) => m.userId === 'new.manager').identityReviewRequired, true)
+})
+
+test('activation rechecks store existence/capacity and pending reservations are bounded', () => {
+  const pending = pendingAdmin()
+  pending.hotelAllowedUserIds['hotel-3'] = Array.from({ length: 20 }, (_, i) => `occupant-${i}`)
+  const before = structuredClone(pending)
+  assert.throws(() => activatePreauthorizedRepairAdmin({ credentials: pending, frame: entryFrame(), hotels, now }), /CAPACITY_REACHED/)
+  assert.deepEqual(pending, before)
+  assert.throws(() => activatePreauthorizedRepairAdmin({ credentials: pendingAdmin(), frame: entryFrame(), hotels: hotels.slice(0, 2), now }), /HOTELS_INVALID/)
+  assert.throws(() => pendingAdmin({ credentials: pending, userId: 'another', directoryUserId: 'another.directory' }), /CAPACITY_REACHED/)
+})
+
+test('welcome hook handles activation errors truthfully without exposing exception details or replying to groups', () => {
+  class Fake extends EventEmitter {
+    isConnected = true; replies = []
+    connect() { this.emit('authenticated') }
+    disconnect() {}
+    async replyWelcome(frame, body) { this.replies.push(body.text.content) }
+  }
+  const fake = new Fake()
+  const runtime = createWeComRepairBotRuntime({ createClient: () => fake, onEnterChat() { throw new Error('private-details') } })
+  runtime.configure({ enabled: true, credentials: credentials() })
+  fake.emit('event.enter_chat', entryFrame())
+  assert.match(fake.replies[0], /自动绑定未完成/)
+  assert.equal(fake.replies[0].includes('private-details'), false)
+  fake.emit('event.enter_chat', entryFrame({ chattype: 'group' }))
+  assert.equal(fake.replies.length, 1)
+})
+
+test('encrypted roster supports many staff without relaxing ordinary HTTP cookie limits', () => {
+  const key = Buffer.alloc(32, 27).toString('base64url'), scope = 'wecom-repair-bot:v1'
+  const payload = JSON.stringify({ profiles: 'test'.repeat(10000) })
+  assert.throws(() => validateCookieValue(payload), /COOKIE_VALUE_INVALID/)
+  assert.throws(() => encryptCookie(payload, key, 'source-cookie:test'), /COOKIE_VALUE_INVALID/)
+  const encrypted = encryptCookie(payload, key, scope)
+  assert.equal(decryptCookie(encrypted, key, scope), payload)
+  assert.throws(() => decryptCookie(encrypted, key, 'source-cookie:test'))
+  assert.throws(() => encryptCookie('x'.repeat(4 * 1024 * 1024 + 1), key, scope), /COOKIE_VALUE_INVALID/)
 })

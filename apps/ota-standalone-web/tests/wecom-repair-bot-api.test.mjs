@@ -566,10 +566,11 @@ test('first administrator can pair multiple stores through one real API command 
           if (!existsSync(${JSON.stringify(inbox)})) return;
           let frame; try { frame = JSON.parse(readFileSync(${JSON.stringify(inbox)}, 'utf8')); } catch { return; }
           if (this.seen.has(frame.body.msgid)) return;
-          this.seen.add(frame.body.msgid); this.emit('message.text', frame);
+          this.seen.add(frame.body.msgid); this.emit(frame.body.msgtype === 'event' ? 'event.' + frame.body.event.eventtype : 'message.text', frame);
         }, 15); }
         disconnect() { clearInterval(this.timer); }
         async replyStream(frame, id, content) { writeFileSync(${JSON.stringify(replies)}, JSON.stringify({ msgid: frame.body.msgid, content })); }
+        async replyWelcome(frame, body) { writeFileSync(${JSON.stringify(replies)}, JSON.stringify({ msgid: frame.body.msgid, content: body.text.content })); }
       } };
     `)
     await writeFile(preload, `import { registerHooks } from 'node:module';
@@ -579,7 +580,9 @@ test('first administrator can pair multiple stores through one real API command 
       } });`)
     await writeFile(join(runtimePath, 'wecom-repair-bot-config.json'), JSON.stringify({ enabled: true }))
     await writeFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), JSON.stringify({ record: encryptCookie(
-      JSON.stringify({ botId: 'fake-offline-bot', secret: 'example-offline-robot-secret', allowedUserIds: [], hotelAllowedUserIds: {} }),
+      JSON.stringify({ botId: 'fake-offline-bot', secret: 'example-offline-robot-secret', allowedUserIds: [], hotelAllowedUserIds: {},
+        directorySync: { enabled: true, corpId: 'ww-preauth-test', token: 'exampleCallbackToken',
+          encodingAesKey: Buffer.alloc(32, 19).toString('base64').slice(0, -1), verifiedAt: new Date().toISOString() } }),
       secretKey, 'wecom-repair-bot:v1',
     ) }))
     const started = await startApi(runtimePath, { preload }); child = started.child
@@ -618,6 +621,63 @@ test('first administrator can pair multiple stores through one real API command 
     assert.equal(bound.members[0].globalRecipient, false)
     assert.match(await send('pair-test-2', 'uninvited.user'), /无效或已过期/)
     assert.equal((await read()).members.length, 1)
+    const authorize = async (userId, expectedRowVersion) => fetch(endpoint, {
+      method: 'POST', headers, body: JSON.stringify({ action: 'AUTHORIZE', expectedRowVersion: expectedRowVersion ?? (await read()).rowVersion,
+        reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS', userId, directoryUserId: `${userId}.directory`,
+        directoryIdentityConfirmed: true, hotelIds, displayName: '预授权测试经理', role: 'OPERATIONS_MANAGER' }),
+    })
+    const preauthorized = await authorize('pending.manager')
+    assert.equal(preauthorized.status, 200)
+    const pendingView = (await preauthorized.json()).data
+    const pending = pendingView.members.find((m) => m.userId === 'pending.manager')
+    assert.equal(pending.activationStatus, 'PENDING')
+    assert.equal(pending.active, false)
+    assert.deepEqual(pending.hotelIds, [])
+    assert.deepEqual(pending.pendingHotelIds, hotelIds)
+    assert.equal((await authorize('stale.manager', bound.rowVersion)).status, 409)
+    const entry = async (userId, { corpId = 'ww-preauth-test', text = false } = {}) => {
+      const msgid = randomUUID()
+      await writeFile(inbox, JSON.stringify({ headers: { req_id: msgid }, body: {
+        aibotid: 'fake-offline-bot', msgid, chattype: 'single', from: { userid: userId, corpid: corpId },
+        create_time: Math.floor(Date.now() / 1000), msgtype: text ? 'text' : 'event',
+        ...(text ? { text: { content: '激活' } } : { event: { eventtype: 'enter_chat' } }),
+      } }))
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        try {
+          const reply = JSON.parse(await readFile(replies, 'utf8'))
+          if (reply.msgid === msgid) return reply.content
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      throw new Error('OFFLINE_ACTIVATION_REPLY_TIMEOUT')
+    }
+    await entry('pending.manager', { corpId: 'foreign-corp' })
+    assert.equal((await read()).members.find((m) => m.userId === 'pending.manager').active, false)
+    // Failed persistent write must not acknowledge/grant activation; retry remains possible.
+    const configPath = join(runtimePath, 'wecom-repair-bot-config.json')
+    await rm(configPath); await mkdir(configPath)
+    assert.match(await entry('pending.manager'), /自动绑定未完成/)
+    assert.equal((await read()).members.find((m) => m.userId === 'pending.manager').active, false)
+    await rm(configPath, { recursive: true })
+    assert.match(await entry('pending.manager'), /自动绑定成功.*共2家门店/)
+    const activatedView = await read()
+    const active = activatedView.members.find((m) => m.userId === 'pending.manager')
+    assert.equal(active.activationStatus, 'ACTIVE')
+    assert.deepEqual(active.hotelIds, hotelIds)
+    assert.deepEqual(active.pendingHotelIds, [])
+    assert.match(await entry('pending.manager', { text: true }), /已绑定/)
+    assert.equal((await read()).rowVersion, activatedView.rowVersion)
+    await authorize('text.manager')
+    assert.match(await entry('text.manager', { text: true }), /自动绑定成功/)
+    const cancelled = (await (await authorize('cancelled.manager')).json()).data
+    const cancelledMember = cancelled.members.find((m) => m.userId === 'cancelled.manager')
+    assert.equal((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({
+      action: 'REVOKE', expectedRowVersion: cancelled.rowVersion, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS', memberId: cancelledMember.memberId,
+    }) })).status, 200)
+    assert.match(await entry('cancelled.manager'), /已撤销/)
+    assert.equal((await read()).members.find((m) => m.userId === 'cancelled.manager').active, false)
+    const persisted = await readFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), 'utf8')
+    assert.equal(persisted.includes('pending.manager'), false)
   } finally {
     if (child) await stopApi(child)
     await rm(runtimePath, { recursive: true, force: true })

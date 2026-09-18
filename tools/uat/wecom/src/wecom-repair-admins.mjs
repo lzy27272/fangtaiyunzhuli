@@ -58,6 +58,10 @@ export const normalizeRepairAdminState = (candidate) => {
       revokedAt: validTime(value.revokedAt) ? value.revokedAt : null,
       revokeReason: ['MANUAL', 'MEMBER_DELETED', 'MEMBER_DISABLED'].includes(value.revokeReason)
         ? value.revokeReason : null,
+      pendingHotelIds: normalizeRepairAdminHotelIds(value.pendingHotelIds ?? []),
+      preauthorizedAt: validTime(value.preauthorizedAt) ? value.preauthorizedAt : null,
+      activationCorpId: String(value.activationCorpId ?? ''),
+      activatedAt: validTime(value.activatedAt) ? value.activatedAt : null,
     }]
   }))
   return { userProfiles, directorySync: normalizeRepairDirectory(candidate?.directorySync) }
@@ -72,6 +76,7 @@ export const repairAdminRoster = (credentials, hotels) => {
     const profile = profiles[userId] ?? {}
     const hotelIds = Object.entries(scopes).filter(([, ids]) => ids.includes(userId)).map(([id]) => id)
     const globalRecipient = globalUsers.includes(userId)
+    const pendingHotelIds = profile.revokedAt ? [] : profile.pendingHotelIds ?? []
     return {
       memberId: fingerprint(userId),
       // Account identifiers are visible only on the platform-admin endpoint.
@@ -82,6 +87,14 @@ export const repairAdminRoster = (credentials, hotels) => {
       hotels: hotels.filter((hotel) => hotelIds.includes(hotel.hotelId))
         .map(({ hotelId, hotelCode, hotelName }) => ({ hotelId, hotelCode, displayName: hotelName })),
       active: globalRecipient || hotelIds.length > 0,
+      activationStatus: profile.revokedAt ? 'REVOKED' : globalRecipient || hotelIds.length > 0
+        ? 'ACTIVE' : pendingHotelIds.length ? 'PENDING' : 'UNASSIGNED',
+      pendingHotelIds,
+      identityReviewRequired: pendingHotelIds.length > 0 && profile.activationCorpId !== credentials?.directorySync?.corpId,
+      pendingHotels: hotels.filter((hotel) => pendingHotelIds.includes(hotel.hotelId))
+        .map(({ hotelId, hotelCode, hotelName }) => ({ hotelId, hotelCode, displayName: hotelName })),
+      preauthorizedAt: profile.preauthorizedAt ?? null,
+      activatedAt: profile.activatedAt ?? null,
       directoryUserId: profile.directoryUserId ?? '',
       offboardingLinked: Boolean(profile.directoryUserId && profile.directoryLinkedAt),
       boundAt: profile.boundAt ?? null,
@@ -109,6 +122,7 @@ export const bindRepairAdminToHotels = ({ credentials, userId, hotelIds, hotels,
       ...profile,
       displayName: normalizeRepairAdminName(displayName || profile.displayName),
       role: role ?? profile.role ?? (selected.length > 1 ? 'OPERATIONS_MANAGER' : 'STORE_MANAGER'),
+      pendingHotelIds: [],
       boundAt: profile.boundAt ?? now.toISOString(), updatedAt: now.toISOString(),
     } },
   }
@@ -117,11 +131,12 @@ export const bindRepairAdminToHotels = ({ credentials, userId, hotelIds, hotels,
 export const updateRepairAdmin = ({ credentials, memberId, action, displayName,
   role, hotelIds, directoryUserId, directoryIdentityConfirmed, hotels, now = new Date() }) => {
   const member = repairAdminRoster(credentials, hotels).find((row) => row.memberId === memberId)
-  if (!member || !member.active) fail('MEMBER_NOT_FOUND')
+  if (!member || (!member.active && member.activationStatus !== 'PENDING')) fail('MEMBER_NOT_FOUND')
   const userId = member.userId
   const timestamp = now.toISOString()
   const profile = credentials.userProfiles?.[userId] ?? {}
   if (action === 'REVOKE') return revokeRepairAdmin(credentials, userId, 'MANUAL', timestamp)
+  if (!member.active) fail('ACTION_INVALID')
   if (action !== 'EDIT') fail('ACTION_INVALID')
   const selected = normalizeRepairAdminHotelIds(hotelIds)
   if ((!member.globalRecipient && !selected.length)
@@ -144,6 +159,7 @@ export const updateRepairAdmin = ({ credentials, memberId, action, displayName,
   return { ...credentials, hotelAllowedUserIds: scopes,
     userProfiles: { ...credentials.userProfiles, [userId]: {
       ...profile, displayName: name, role, directoryUserId: directoryId,
+      pendingHotelIds: [],
       directoryLinkedAt: directoryId
         ? (changedIdentity ? timestamp : profile.directoryLinkedAt ?? timestamp) : null,
       updatedAt: timestamp,
@@ -158,9 +174,74 @@ const revokeRepairAdmin = (credentials, userId, reason, timestamp) => ({
     .map(([id, ids]) => [id, ids.filter((candidate) => candidate !== userId)])),
   userProfiles: { ...credentials.userProfiles, [userId]: {
     ...credentials.userProfiles?.[userId], revokedAt: timestamp,
+    pendingHotelIds: [],
     revokeReason: reason, updatedAt: timestamp,
   } },
 })
+
+// An administrator preauthorizes an exact account; names are never used as identity.
+// Pending scopes are NOT put in the runtime allowlists until a matching bot event arrives.
+export const preauthorizeRepairAdmin = ({ credentials, userId, displayName, role,
+  hotelIds, directoryUserId, directoryIdentityConfirmed, hotels, now = new Date() }) => {
+  if (!userIdPattern.test(userId ?? '')) fail('USER_INVALID')
+  const member = repairAdminRoster(credentials, hotels).find((m) => m.userId === userId)
+  if (credentials.userProfiles?.[userId]?.revokedAt) fail('MEMBER_REVOKED')
+  if (member?.active) {
+    return updateRepairAdmin({ credentials, memberId: member.memberId, action: 'EDIT',
+      displayName, role, hotelIds, directoryUserId: member.directoryUserId, hotels, now })
+  }
+  const directory = credentials.directorySync
+  if (!directory?.enabled || !directory.verifiedAt) fail('DIRECTORY_NOT_VERIFIED')
+  if (directoryIdentityConfirmed !== true) fail('IDENTITY_CONFIRM_REQUIRED')
+  if (!userIdPattern.test(directoryUserId ?? '')) fail('DIRECTORY_USER_INVALID')
+  if (Object.entries(credentials.userProfiles ?? {}).some(([id, p]) => id !== userId
+    && p.directoryUserId === directoryUserId)) fail('DIRECTORY_USER_DUPLICATE')
+  const selected = normalizeRepairAdminHotelIds(hotelIds)
+  const name = normalizeRepairAdminName(displayName)
+  if (!name || !['STORE_MANAGER', 'OPERATIONS_MANAGER'].includes(role)) fail('NAME_INVALID')
+  if (!selected.length || selected.some((id) => !hotels.some((h) => h.hotelId === id))) fail('HOTELS_INVALID')
+  for (const id of selected) {
+    const occupants = new Set(credentials.hotelAllowedUserIds[id] ?? [])
+    for (const [candidateId, p] of Object.entries(credentials.userProfiles ?? {})) {
+      if (!p.revokedAt && p.pendingHotelIds?.includes(id)) occupants.add(candidateId)
+    }
+    occupants.add(userId)
+    if (occupants.size > 20) fail('CAPACITY_REACHED')
+  }
+  const timestamp = now.toISOString()
+  const previous = credentials.userProfiles?.[userId]
+  return { ...credentials, userProfiles: { ...credentials.userProfiles, [userId]: {
+    ...previous, displayName: name, role,
+    directoryUserId, directoryLinkedAt: previous?.directoryUserId === directoryUserId
+      ? previous.directoryLinkedAt ?? timestamp : timestamp,
+    pendingHotelIds: selected, preauthorizedAt: timestamp,
+    activationCorpId: directory.corpId, updatedAt: timestamp,
+  } } }
+}
+
+export const activatePreauthorizedRepairAdmin = ({ credentials, frame, hotels, now = new Date() }) => {
+  const body = frame?.body
+  const userId = body?.from?.userid
+  const profile = credentials?.userProfiles?.[userId]
+  const unchanged = { credentials, activated: false }
+  if (!profile?.pendingHotelIds?.length || profile.revokedAt) return unchanged
+  const isEntry = body?.msgtype === 'event' && body?.event?.eventtype === 'enter_chat'
+  if ((!isEntry && (body?.chattype !== 'single' || body?.msgtype !== 'text')) || body?.chattype === 'group'
+    || body?.chatid || body?.aibotid !== credentials.botId) return unchanged
+  const directory = credentials.directorySync
+  if (!directory?.enabled || !directory.verifiedAt || directory.corpId !== profile.activationCorpId
+    || (body.from.corpid && body.from.corpid !== profile.activationCorpId)) return unchanged
+  // enter_chat always carries create_time; messages from older clients may not.
+  const eventTime = Number(body.create_time) * 1000
+  if (isEntry && (!Number.isFinite(eventTime) || eventTime <= 0)) return unchanged
+  if (body.create_time != null && (!Number.isFinite(eventTime)
+    || eventTime < Math.floor(Date.parse(profile.preauthorizedAt) / 1000) * 1000
+    || eventTime > now.getTime() + 60_000 || now.getTime() - eventTime > 10 * 60_000)) return unchanged
+  const next = bindRepairAdminToHotels({ credentials, userId, hotelIds: profile.pendingHotelIds,
+    displayName: profile.displayName, role: profile.role, hotels, now })
+  next.userProfiles[userId] = { ...next.userProfiles[userId], pendingHotelIds: [], activatedAt: now.toISOString() }
+  return { credentials: next, activated: true, userId, hotelIds: profile.pendingHotelIds }
+}
 
 // WeCom uses SHA-1 signatures and AES-256-CBC with a 32-byte PKCS#7 block.
 // Same protocol as core-api's WeComCallbackCrypto, with bounded XML and freshness checks.
@@ -238,6 +319,8 @@ export const applyRepairDirectoryEvent = ({ credentials, xml, now = new Date() }
           id !== botUserId && !p.revokedAt && p.directoryUserId === newUserId)) fail('DIRECTORY_USER_DUPLICATE')
         next = { ...next, userProfiles: { ...next.userProfiles, [botUserId]: {
           ...next.userProfiles[botUserId], directoryUserId: newUserId, updatedAt: now.toISOString(),
+          // Do not let a renamed/reused account consume an old pending authorization.
+          ...(next.userProfiles[botUserId].pendingHotelIds?.length ? { activationCorpId: '' } : {}),
         } } }
         updated = true
       }

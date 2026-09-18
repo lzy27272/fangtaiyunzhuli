@@ -701,6 +701,7 @@ const silentLogger = Object.freeze({
 export const createWeComRepairBotRuntime = ({
   createClient = (options) => new WSClient(options),
   onTextMessage = async () => {},
+  onEnterChat = () => null,
   onTemplateCardEvent = async () => {},
   onStatusChanged = () => {},
   canSendToUser = () => true,
@@ -892,13 +893,18 @@ export const createWeComRepairBotRuntime = ({
         })
       })
       client.on('event.enter_chat', (frame) => {
-        void client.replyWelcome(frame, {
-          msgtype: 'text',
-          text: {
-            content:
-              '门店简报修复助手：已获门店处理权限的账号可发送“恢复 015”后台自动恢复；罗盘等待验证码时发送“门店编号 验证码”。首次使用请先发送后台显示的“绑定 6位配对码”。',
-          },
-        }).catch(() => {})
+        const activeClient = client
+        if (frame?.body?.chattype === 'group' || frame?.body?.chatid) return
+        let content
+        try {
+          content = onEnterChat(frame)
+            || '门店简报修复助手：已预授权的人员发送“激活”完成绑定，发送“状态”查看任务；也可使用后台提供的备用配对码。'
+        } catch {
+          content = '自动绑定未完成，请发送“激活”重试；仍失败时请管理员核对门店容量、授权与保存状态。'
+        }
+        void activeClient.replyWelcome(frame, { msgtype: 'text', text: {
+          content: String(content).slice(0, 1500),
+        } }).catch(() => {})
       })
       client.connect()
     },
