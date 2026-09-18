@@ -592,6 +592,7 @@ test('first administrator can pair multiple stores through one real API command 
     const before = await read()
     assert.equal(before.connected, true)
     assert.deepEqual(before.members, [])
+    const pairingRequestedAt = Date.now()
     const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({
       action: 'PAIR', expectedRowVersion: before.rowVersion, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS',
       hotelIds, displayName: '离线测试运营经理', role: 'OPERATIONS_MANAGER',
@@ -599,6 +600,10 @@ test('first administrator can pair multiple stores through one real API command 
     assert.equal(response.status, 200)
     const created = (await response.json()).data
     assert.match(created.createdPairing.pairingCode, /^\d{6}$/)
+    const pairingExpiresAt = Date.parse(created.createdPairing.expiresAt)
+    assert.ok(pairingExpiresAt >= pairingRequestedAt + 24 * 60 * 60_000)
+    assert.ok(pairingExpiresAt <= Date.now() + 24 * 60 * 60_000)
+    assert.equal(created.createdPairing.attemptsRemaining, 5)
     const send = async (msgid, userId) => {
       await writeFile(inbox, JSON.stringify({ headers: { req_id: msgid }, body: {
         msgid, chattype: 'single', from: { userid: userId },

@@ -129,6 +129,31 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .people-wecom-settings { margin-top: 1.25rem; padding: clamp(1rem, 2vw, 1.5rem); background: #fff; border: 1px solid #d8e4de; border-radius: 1rem; }
 .people-wecom-settings > .repair-admin-panel { margin-top: 1rem; padding-top: 0; border-top: 0; }
 .repair-registration-panel, .repair-registration-editor { scroll-margin-top: 5rem; }
+.repair-binding-actions { flex-shrink: 0; }
+.repair-section-hint { color: #65786f; font-size: .85rem; font-weight: 400; margin-left: .5rem; }
+.repair-members-section { margin-top: 1.8rem; padding-top: 1.2rem; border-top: 1px solid #dbe5df; }
+.repair-members-section h3 { margin: 0; }
+.repair-member-details { margin-top: .8rem; padding-top: .65rem; border-top: 1px solid #e4ece7; font-size: .85rem; }
+.repair-member-details summary, .repair-pairing-scope summary { cursor: pointer; color: #426358; }
+.repair-admin-confirm { scroll-margin-top: 5rem; }
+.repair-pairing-result { scroll-margin-top: 5rem; margin: 1.25rem 0; padding: clamp(1rem, 2.5vw, 1.75rem); border: 2px solid #397c64; border-radius: 1rem; background: #f1faf5; color: #1d4337; }
+.repair-pairing-result:focus-visible, .repair-registration-editor:focus-visible, .repair-admin-confirm:focus-visible { outline: 3px solid #275f51; outline-offset: 3px; }
+.repair-pairing-heading { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: .6rem; }
+.repair-pairing-heading h4 { margin: 0; font-size: 1.1rem; }
+.repair-pairing-heading > span { border-radius: 999px; background: #dcefe3; padding: .35rem .65rem; font-size: .8rem; }
+.repair-pairing-recipient { overflow-wrap: anywhere; }
+.repair-pairing-command-row { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 2rem; margin: 1rem 0; }
+.repair-pairing-command { font-family: ui-monospace, monospace; font-size: clamp(1.6rem, 4vw, 2.5rem); font-variant-numeric: tabular-nums; letter-spacing: .06em; user-select: all; }
+.repair-pairing-expiry { font-weight: 700; }
+.repair-pairing-copy-status { font-weight: 700; }
+.repair-pairing-scope { border-top: 1px solid #cce0d3; padding-top: .8rem; margin-top: 1rem; font-size: .85rem; overflow-wrap: anywhere; }
+.repair-advanced-settings > summary { line-height: 1.6; }
+@media (max-width: 1000px) { .repair-admin-panel > .page-heading { flex-direction: column; gap: .6rem; } }
+@media (max-width: 640px) {
+  .repair-binding-actions { display: grid; width: 100%; }
+  .repair-pairing-command-row { align-items: stretch; flex-direction: column; gap: .8rem; }
+  .repair-section-hint { display: block; margin: .35rem 0 0; }
+}
 .store-repair-members { display: flex; flex-wrap: wrap; gap: .8rem; list-style: none; padding: 0; }
 .store-repair-members li { display: grid; gap: .3rem; padding: .8rem 1rem; border: 1px solid #c8d8d2; border-radius: .7rem; overflow-wrap: anywhere; }
 .store-repair-members span, .store-repair-members small { color: #677b73; font-size: .85rem; }

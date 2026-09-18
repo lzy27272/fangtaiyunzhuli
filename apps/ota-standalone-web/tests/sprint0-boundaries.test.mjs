@@ -139,7 +139,15 @@ test('sender-discovered registration is the primary no-account-input grant path'
   assert.match(repairAdminsSource, /identityConfirmed && existing\?\.registrationCurrent/)
   assert.match(repairAdminsSource, /账号已从员工本人消息自动识别/)
   assert.match(repairAdminsSource, /registration \? null : existing && !direct/)
-  assert.match(repairAdminsSource, /备用方式：手工预授权 \/ 配对码/)
+  assert.match(repairAdminsSource, /备用方式：手工预授权（需账号）/)
+})
+
+test('WeCom binding generation and result stay above the roster and advanced settings', () => {
+  assert.match(repairAdminsSource, /生成绑定码（24小时）/)
+  assert.ok(repairAdminsSource.indexOf('<WeComPairingResult ') < repairAdminsSource.indexOf('aria-label="人员名单"'))
+  assert.ok(repairAdminsSource.indexOf('aria-label="人员门店授权表单"') < repairAdminsSource.indexOf('aria-label="人员名单"'))
+  assert.match(repairAdminsSource, /<details className="repair-admin-directory repair-advanced-settings">/)
+  assert.match(repairAdminsSource, /明文仅在生成时展示/)
 })
 
 test('people permissions expose the current roles and retire canceled roles from assignment', () => {

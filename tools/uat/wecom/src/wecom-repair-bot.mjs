@@ -17,7 +17,7 @@ const SECRET_PATTERN = /^[\x21-\x7e]{16,256}$/u
 const USER_ID_PATTERN = /^[^\s\x00-\x1f\x7f]{1,128}$/u
 const PAIRING_CODE_PATTERN = /^\d{6}$/u
 const CAPTCHA_PATTERN = /^[A-Za-z0-9]{4,8}$/u
-const DEFAULT_PAIRING_TTL_MS = 10 * 60 * 1000
+const DEFAULT_PAIRING_TTL_MS = 24 * 60 * 60 * 1000
 const DEFAULT_PAIRING_ATTEMPTS = 5
 export const WECOM_REPAIR_BOT_MAX_ALLOWED_USERS = 2
 export const WECOM_REPAIR_BOT_MAX_STORE_USERS = 20
@@ -575,7 +575,7 @@ export const createWeComRepairBotPairingStore = ({
   if (
     !Number.isInteger(ttlMs)
     || ttlMs < 60_000
-    || ttlMs > 30 * 60_000
+    || ttlMs > DEFAULT_PAIRING_TTL_MS
     || !Number.isInteger(maxAttempts)
     || maxAttempts < 1
     || maxAttempts > 10

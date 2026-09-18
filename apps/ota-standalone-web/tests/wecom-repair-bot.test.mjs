@@ -82,6 +82,48 @@ test('pairing keeps a safe hotel scope without storing the plain code', () => {
   assert.deepEqual(paired.scope, { type: 'HOTEL', hotelId: 'hotel-014' })
 })
 
+test('pairing defaults to exactly 24 hours and accepts a code just before expiry', () => {
+  let timestamp = Date.parse('2026-09-18T12:00:00Z')
+  const store = createWeComRepairBotPairingStore({ now: () => new Date(timestamp), codeFactory: () => '654321' })
+  const created = store.start({ scope: { type: 'HOTEL', hotelId: 'hotel-014' } })
+  assert.equal(created.expiresAt, '2026-09-19T12:00:00.000Z')
+  assert.equal(created.attemptsRemaining, 5)
+  timestamp += 24 * 60 * 60_000 - 1
+  assert.equal(store.status().active, true)
+  assert.equal(store.submit({ pairingCode: '654321', userId: 'test.manager' }).userId, 'test.manager')
+  assert.throws(() => store.submit({ pairingCode: '654321', userId: 'another.manager' }), /PAIRING_NOT_ACTIVE/)
+})
+
+test('pairing expires at the 24-hour boundary and never revives afterward', () => {
+  let timestamp = Date.parse('2026-09-18T12:00:00Z')
+  const store = createWeComRepairBotPairingStore({ now: () => new Date(timestamp), codeFactory: () => '654321' })
+  store.start()
+  timestamp += 24 * 60 * 60_000
+  assert.equal(store.status().active, false)
+  assert.throws(() => store.submit({ pairingCode: '654321', userId: 'test.manager' }), /PAIRING_NOT_ACTIVE/)
+  timestamp += 1
+  assert.equal(store.status().active, false)
+})
+
+test('24-hour pairing keeps replacement, five-attempt and TTL bounds protections', () => {
+  let code = '123456'
+  const store = createWeComRepairBotPairingStore({ codeFactory: () => code })
+  store.start()
+  code = '654321'
+  store.start()
+  assert.throws(() => store.submit({ pairingCode: '123456', userId: 'test.manager' }), /PAIRING_CODE_REJECTED/)
+  assert.equal(store.status().attemptsRemaining, 4)
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    assert.throws(() => store.submit({ pairingCode: '000000', userId: 'test.manager' }), /PAIRING_CODE_REJECTED/)
+  }
+  assert.equal(store.status().active, false)
+  assert.throws(() => store.submit({ pairingCode: '654321', userId: 'test.manager' }), /PAIRING_NOT_ACTIVE/)
+  for (const ttlMs of [59_999, 24 * 60 * 60_000 + 1, NaN]) {
+    assert.throws(() => createWeComRepairBotPairingStore({ ttlMs }), /PAIRING_CONFIG_INVALID/)
+  }
+  assert.equal(createWeComRepairBotPairingStore({ ttlMs: 24 * 60 * 60_000 }).start().attemptsRemaining, 5)
+})
+
 test('credentials reject whitespace and never appear in runtime status', () => {
   const normalized = normalizeWeComRepairBotCredentials({
     botId: 'aib-example-bot',
