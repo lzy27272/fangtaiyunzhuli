@@ -988,6 +988,7 @@ $forbiddenNames = @(
     'ota-room-type-catalogs.json',
     'wecom-webhook-secrets.json',
     'wecom-repair-bot-secrets.json',
+    'wecom-repair-bot-transaction.json',
     'trusted-device-registry.json',
     'runtime.env'
 )

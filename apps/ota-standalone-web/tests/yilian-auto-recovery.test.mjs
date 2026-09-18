@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -129,7 +129,7 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(api, /migratedYilianReportSources\(sources\)/u)
   assert.match(
     api,
-    /trigger !== 'MANUAL_REPAIR'[\s\S]{0,240}!yilianAutomaticRecoveryDue/u,
+    /!YILIAN_INTERACTIVE_REPAIR_TRIGGERS\.has\(trigger\)[\s\S]{0,240}!yilianAutomaticRecoveryDue/u,
   )
   assert.match(
     api,
@@ -138,7 +138,7 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(api, /void scheduledYilianRecoveryTick\(\)/u)
   assert.match(
     api,
-    /isNightlyRepairDeferred\(\)[\s\S]{0,120}status\.trigger !== 'MANUAL_REPAIR'/u,
+    /if \(isNightlyRepairDeferred\(\)\) continue/u,
   )
   const scheduledRecovery = api.slice(
     api.indexOf('const scheduledYilianRecoveryTick'),
@@ -153,11 +153,11 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
   assert.match(scheduledRecovery, /SCHEDULED_INITIAL_ACTIVATION/u)
   assert.match(
     scheduledRecovery,
-    /const manualRecoveryPending =[\s\S]{0,240}status\.trigger === 'MANUAL_REPAIR'/u,
+    /const manualRecoveryPending =[\s\S]{0,260}YILIAN_INTERACTIVE_REPAIR_TRIGGERS\.has\(status\.trigger\)/u,
   )
   assert.match(
     scheduledRecovery,
-    /manualRecoveryPending[\s\S]{0,120}\? 'MANUAL_REPAIR'/u,
+    /manualRecoveryPending[\s\S]{0,120}\? status\.trigger/u,
   )
   assert.doesNotMatch(
     scheduledRecovery,
@@ -175,6 +175,56 @@ test('Yilian recovery is single-store locked and stops automatic retries for hum
     morningRepair,
     /pmsSystemCode === 'YILIAN_CLOUD'[\s\S]{0,500}startLuopanRepairChallenge/u,
   )
+})
+
+test('WeCom Yilian recovery is authorized, asynchronous, cooled down and private', async () => {
+  const [api, repairBot] = await Promise.all([
+    readSource('../../../tools/uat/ota-standalone-review-api.mjs'),
+    readSource('../../../tools/uat/wecom/src/wecom-repair-bot.mjs'),
+  ])
+  const commandStart = api.indexOf('const YILIAN_WECOM_CREDENTIAL_ERRORS')
+  const commandEnd = api.indexOf('const expireLuopanRepairSessions', commandStart)
+  const command = api.slice(commandStart, commandEnd)
+
+  assert.ok(commandStart > 0)
+  assert.match(api, /const YILIAN_WECOM_REPAIR_COOLDOWN_MS = 5 \* 60_000/u)
+  assert.match(api, /const YILIAN_WECOM_REPAIR_TRIGGER = 'WECOM_MANAGER_REPAIR'/u)
+  assert.match(command, /authorizedYilianHotelForWeCom/u)
+  assert.match(command, /pmsSystemCode === 'YILIAN_CLOUD'/u)
+  assert.match(command, /weComRepairBotActionAuthorizedForHotel\(userId, candidate\.hotelId\)/u)
+  assert.match(command, /const recovery = plan\.shouldRun[\s\S]{0,260}runYilianWeComRecovery\([\s\S]{0,420}await replyText\(frame, plan\.message\)/u)
+  assert.match(command, /onTemplateCardEvent: handleWeComRepairBotTemplateCard/u)
+  assert.match(command, /consumeYilianWeComTemplateCard\([\s\S]{0,2200}runYilianWeComRecovery\([\s\S]{0,520}await updateTemplateCard\(frame,/u)
+  assert.match(command, /startYilianCloudRecovery\([\s\S]{0,180}YILIAN_WECOM_REPAIR_TRIGGER[\s\S]{0,120}notifyOnActionRequired: false/u)
+  assert.match(command, /deliveryType: 'YILIAN_WECOM_REPAIR_RESULT'/u)
+  assert.match(command, /scheduledYilianWeComResultTick/u)
+  assert.match(command, /currentPmsRepairIncidentForHotel\(hotel, now\)/u)
+  assert.match(command, /status\.lastCompletedAt \?\? status\.lastAttemptAt/u)
+  assert.match(repairBot, /taskIdSha256/u)
+  assert.match(repairBot, /recipientSha256/u)
+  assert.match(repairBot, /currentIncidentId !== matched\.action\.incidentId/u)
+  assert.match(command, /requesterSha256/u)
+  assert.doesNotMatch(command, /username|password|accessToken/u)
+})
+
+test('Yilian recovery waits for in-flight collection before replacing tokens', async () => {
+  const api = await readSource('../../../tools/uat/ota-standalone-review-api.mjs')
+  const recoveryStart = api.indexOf('const startYilianCloudRecovery')
+  const recoveryEnd = api.indexOf('const scheduledYilianRecoveryTick', recoveryStart)
+  const recovery = api.slice(recoveryStart, recoveryEnd)
+  const waitIndex = recovery.indexOf('await Promise.race([')
+  const drainIndex = recovery.indexOf('Promise.allSettled(inFlightCollections)')
+  const timeoutIndex = recovery.indexOf('YILIAN_COLLECTION_DRAIN_TIMEOUT')
+  const loginIndex = recovery.indexOf('await startYilianPasswordLogin')
+  const tokenIndex = recovery.indexOf('replaceYilianAccessToken')
+
+  assert.ok(waitIndex > 0)
+  assert.ok(drainIndex > waitIndex)
+  assert.ok(timeoutIndex > drainIndex)
+  assert.ok(loginIndex > waitIndex)
+  assert.ok(tokenIndex > loginIndex)
+  assert.match(recovery, /liveCollectionLocks\.get\(hotelId\)/u)
+  assert.match(recovery, /ISOLATED_NON_PUBLISHING/u)
 })
 
 test('Yilian repair UI stores credentials without echo and exposes explicit cloud retry status', async () => {
@@ -211,6 +261,279 @@ test('Yilian recovery runtime and status state are included in release and rollb
   assert.match(deployment, /yilian-cloud-repair-statuses\.json/u)
   assert.match(runtimeExample, /OTA_REVIEW_YILIAN_ASSISTED_REAUTH_ENABLED=true/u)
   assert.match(runtimeExample, /YILIAN_BROWSER_EXECUTABLE/u)
+})
+
+test('Yilian status persistence failure rolls back memory so recovery can retry', { timeout: 30_000 }, async () => {
+  const runtimePath = await mkdtemp(join(tmpdir(), 'yilian-status-rollback-'))
+  let api = null
+  let blockerPath = null
+  try {
+    api = await startApi(runtimePath)
+    const create = await fetch(
+      `http://127.0.0.1:${api.port}/api/v1/ota/simulation/hotels`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'create-yilian-status-rollback-store',
+        },
+        body: JSON.stringify({
+          hotelCode: '015',
+          hotelDisplayName: 'Yilian Status Rollback Test Hotel',
+          ownershipType: 'DIRECT',
+          pmsSystemCode: 'YILIAN_CLOUD',
+          pmsUsername: 'synthetic-yilian-rollback',
+          pmsPassword: 'synthetic-Yilian-Rollback-Password-42',
+          timezone: 'Asia/Shanghai',
+          reasonCode: 'CREATE_STORE_FROM_CONSOLE_WIZARD',
+        }),
+      },
+    )
+    assert.equal(create.status, 201)
+    const hotelId = (await create.json()).data.resourceId
+    const directory = await fetch(
+      `http://127.0.0.1:${api.port}/api/v1/ota/simulation/hotels`,
+      { headers: { Authorization: `Bearer ${apiToken}` } },
+    )
+    assert.equal(directory.status, 200)
+    const hotel = (await directory.json()).data.hotels.find(
+      (candidate) => candidate.hotelId === hotelId,
+    )
+    assert.ok(hotel)
+    const base = `http://127.0.0.1:${api.port}/api/v1/ota/tenants/`
+      + `${hotel.tenantId}/hotels/${hotelId}`
+    blockerPath = join(
+      runtimePath,
+      `yilian-cloud-repair-statuses.json.${api.child.pid}.tmp`,
+    )
+    await mkdir(blockerPath)
+
+    const failed = await fetch(`${base}/yilian-cloud-repair`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ reasonCode: 'TRIGGER_YILIAN_CLOUD_REAUTH' }),
+    })
+    assert.notEqual(failed.status, 200)
+
+    const afterFailure = await fetch(`${base}/yilian-cloud-repair`, {
+      headers: { Authorization: `Bearer ${apiToken}` },
+    })
+    assert.equal(afterFailure.status, 200)
+    const afterFailureStatus = (await afterFailure.json()).data
+    assert.equal(afterFailureStatus.active, false)
+    assert.equal(afterFailureStatus.state, 'IDLE')
+    assert.equal(afterFailureStatus.lastAttemptAt, null)
+
+    await rm(blockerPath, { recursive: true, force: true })
+    blockerPath = null
+    const clearCredentials = await fetch(`${base}/pms-login-config`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        reasonCode: 'TEST_CLEAR_PMS_CREDENTIALS',
+        credentialUpdate: { action: 'CLEAR' },
+      }),
+    })
+    assert.equal(clearCredentials.status, 200)
+
+    const retried = await fetch(`${base}/yilian-cloud-repair`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ reasonCode: 'TRIGGER_YILIAN_CLOUD_REAUTH' }),
+    })
+    assert.equal(retried.status, 200)
+    const retriedStatus = (await retried.json()).data
+    assert.equal(retriedStatus.active, false)
+    assert.equal(retriedStatus.state, 'CREDENTIALS_REQUIRED')
+    assert.equal(typeof retriedStatus.lastErrorCode, 'string')
+  } finally {
+    if (api) await stopApi(api.child)
+    if (blockerPath) await rm(blockerPath, { recursive: true, force: true })
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
+test('startup reconciles interrupted and already-completed WeCom result outboxes', { timeout: 30_000 }, async () => {
+  const runtimePath = await mkdtemp(join(tmpdir(), 'yilian-wecom-restart-'))
+  let first = null
+  let second = null
+  let third = null
+  let fourth = null
+  try {
+    first = await startApi(runtimePath)
+    const response = await fetch(
+      `http://127.0.0.1:${first.port}/api/v1/ota/simulation/hotels`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'create-yilian-wecom-restart-test-store',
+        },
+        body: JSON.stringify({
+          hotelCode: '015',
+          hotelDisplayName: 'Yilian WeCom Restart Test Hotel',
+          ownershipType: 'DIRECT',
+          pmsSystemCode: 'YILIAN_CLOUD',
+          pmsUsername: 'synthetic-yilian-restart',
+          pmsPassword: 'synthetic-Yilian-Restart-Password-42',
+          timezone: 'Asia/Shanghai',
+          reasonCode: 'CREATE_STORE_FROM_CONSOLE_WIZARD',
+        }),
+      },
+    )
+    assert.equal(response.status, 201)
+    const hotelId = (await response.json()).data.resourceId
+    await stopApi(first.child)
+    first = null
+
+    const repairStatusPath = join(
+      runtimePath,
+      'yilian-cloud-repair-statuses.json',
+    )
+    const statuses = JSON.parse(await readFile(repairStatusPath, 'utf8'))
+    statuses[hotelId] = {
+      ...statuses[hotelId],
+      state: 'SUCCEEDED',
+      trigger: 'WECOM_MANAGER_REPAIR',
+      lastAttemptAt: '2026-09-17T03:39:26.000Z',
+      lastCompletedAt: '2026-09-17T03:40:38.000Z',
+      lastSucceededAt: '2026-09-17T03:40:38.000Z',
+      lastErrorCode: null,
+      sourceCount: 3,
+      successfulSourceCount: 3,
+      weComResult: {
+        operationIdSha256: 'a'.repeat(64),
+        requesterSha256: 'b'.repeat(64),
+        pending: true,
+        actionSource: 'TEMPLATE_CARD',
+        startedAt: '2026-09-17T03:41:00.000Z',
+        state: 'RUNNING',
+        completedAt: null,
+        lastErrorCode: null,
+        lastBusinessDate: '2026-09-17',
+        sourceCount: 0,
+        successfulSourceCount: 0,
+        deliveryAttempt: 0,
+        lastDeliveryAttemptAt: null,
+      },
+    }
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(statuses, null, 2)}\n`,
+      'utf8',
+    )
+
+    second = await startApi(runtimePath)
+    const recovered = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )[hotelId]
+    assert.equal(recovered.state, 'FAILED')
+    assert.equal(recovered.lastErrorCode, 'YILIAN_REPAIR_INTERRUPTED')
+    assert.equal(recovered.weComResult.pending, true)
+    assert.equal(recovered.weComResult.state, 'FAILED')
+    assert.equal(
+      recovered.weComResult.lastErrorCode,
+      'YILIAN_REPAIR_INTERRUPTED',
+    )
+    assert.equal(typeof recovered.weComResult.completedAt, 'string')
+
+    await stopApi(second.child)
+    second = null
+    const completedStatuses = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )
+    completedStatuses[hotelId] = {
+      ...completedStatuses[hotelId],
+      state: 'SUCCEEDED',
+      lastCompletedAt: '2026-09-17T03:50:00.000Z',
+      lastSucceededAt: '2026-09-17T03:50:00.000Z',
+      lastBusinessDate: '2026-09-17',
+      lastErrorCode: null,
+      sourceCount: 3,
+      successfulSourceCount: 3,
+      weComResult: {
+        ...completedStatuses[hotelId].weComResult,
+        pending: true,
+        startedAt: '2026-09-17T03:49:00.000Z',
+        state: 'RUNNING',
+        completedAt: null,
+        lastErrorCode: null,
+        sourceCount: 0,
+        successfulSourceCount: 0,
+      },
+    }
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(completedStatuses, null, 2)}\n`,
+      'utf8',
+    )
+    third = await startApi(runtimePath)
+    const completedRecovery = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )[hotelId]
+    assert.equal(completedRecovery.state, 'SUCCEEDED')
+    assert.equal(completedRecovery.lastErrorCode, null)
+    assert.equal(completedRecovery.weComResult.pending, true)
+    assert.equal(completedRecovery.weComResult.state, 'SUCCEEDED')
+    assert.equal(
+      completedRecovery.weComResult.completedAt,
+      '2026-09-17T03:50:00.000Z',
+    )
+    assert.equal(completedRecovery.weComResult.sourceCount, 3)
+    assert.equal(completedRecovery.weComResult.successfulSourceCount, 3)
+
+    await stopApi(third.child)
+    third = null
+    const unrelatedRunningStatuses = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )
+    unrelatedRunningStatuses[hotelId] = {
+      ...unrelatedRunningStatuses[hotelId],
+      state: 'RUNNING',
+      trigger: 'SCHEDULED_REPAIR',
+      lastAttemptAt: '2026-09-17T04:00:00.000Z',
+      lastCompletedAt: null,
+      lastErrorCode: null,
+      weComResult: {
+        ...unrelatedRunningStatuses[hotelId].weComResult,
+        pending: true,
+        state: 'SUCCEEDED',
+        completedAt: '2026-09-17T03:50:00.000Z',
+        lastErrorCode: null,
+      },
+    }
+    await writeFile(
+      repairStatusPath,
+      `${JSON.stringify(unrelatedRunningStatuses, null, 2)}\n`,
+      'utf8',
+    )
+    fourth = await startApi(runtimePath)
+    const unrelatedRecovery = JSON.parse(
+      await readFile(repairStatusPath, 'utf8'),
+    )[hotelId]
+    assert.equal(unrelatedRecovery.state, 'FAILED')
+    assert.equal(unrelatedRecovery.lastErrorCode, 'YILIAN_REPAIR_INTERRUPTED')
+    assert.equal(unrelatedRecovery.weComResult.pending, true)
+    assert.equal(unrelatedRecovery.weComResult.state, 'SUCCEEDED')
+    assert.equal(unrelatedRecovery.weComResult.lastErrorCode, null)
+  } finally {
+    if (first) await stopApi(first.child)
+    if (second) await stopApi(second.child)
+    if (third) await stopApi(third.child)
+    if (fourth) await stopApi(fourth.child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
 })
 
 test('new Yilian stores persist credentials and safely recover legacy source stores', { timeout: 30_000 }, async () => {

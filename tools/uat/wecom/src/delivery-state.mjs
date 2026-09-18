@@ -386,5 +386,15 @@ export const reconcileInterruptedWeComDelivery = (
       deliveryStatus: 'AMBIGUOUS',
       reasonCode: 'WECOM_PROCESS_INTERRUPTED_RESULT_UNKNOWN',
       networkAttempted: null,
+      parts: Array.isArray(delivery.parts)
+        ? delivery.parts.map((part) =>
+          part?.deliveryStatus === 'SENDING'
+            ? {
+                ...part,
+                deliveryStatus: 'AMBIGUOUS',
+                reasonCode: 'WECOM_PROCESS_INTERRUPTED_RESULT_UNKNOWN',
+              }
+            : part)
+        : delivery.parts,
     }
   : delivery

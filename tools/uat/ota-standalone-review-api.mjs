@@ -16,6 +16,7 @@ import {
   realpathSync,
   renameSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { createConnection } from 'node:net'
@@ -121,6 +122,7 @@ import {
   pmsRepairIncidentFor,
   pmsRepairNoticeContent,
   pmsRepairNoticeMessageKey,
+  yilianPmsRepairGuidance,
 } from './pms-repair-alert.mjs'
 import {
   createTrustedDeviceIntakeStore,
@@ -212,16 +214,20 @@ import {
 import {
   createWeComRepairBotPairingStore,
   createWeComRepairBotRuntime,
+  consumeWeComRepairTemplateCardAction,
   deliverWeComRepairBotToAllowedUsers,
   fingerprintWeComRepairBotValue,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  planYilianRepairCardDelivery,
   planWeComRepairNoticeDeliveries,
   selectWeComRepairNoticeChannels,
   shouldFanOutWeComRepairNotice,
   WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
   WECOM_REPAIR_BOT_MAX_STORE_USERS,
+  weComRepairBotCanRepairHotel,
   weComRepairBotRecipientsForHotel,
+  yilianRepairCardDeliveryActive,
 } from './wecom/src/wecom-repair-bot.mjs'
 
 const host = '127.0.0.1'
@@ -443,6 +449,9 @@ const weComRepairBotConfigPath = dataPath
 const weComRepairBotSecretPath = dataPath
   ? join(dirname(dataPath), 'wecom-repair-bot-secrets.json')
   : null
+const weComRepairBotTransactionPath = dataPath
+  ? join(dirname(dataPath), 'wecom-repair-bot-transaction.json')
+  : null
 const authStatePath =
   process.env.OTA_REVIEW_AUTH_STATE_PATH?.trim()
   || (
@@ -626,6 +635,7 @@ const latestLuopanRepairChallengeHashByHotel = new Map()
 const yilianRepairStatusesByHotel = new Map()
 let yilianRepairStatusStoreInvalid = false
 const activeYilianRepairsByHotel = new Map()
+const activeYilianWeComResultDeliveriesByHotel = new Map()
 const bieyanghongRepairChallengeStore =
   createBieyanghongRepairChallengeStore()
 const activeBieyanghongRepairsByHotel = new Map()
@@ -636,7 +646,9 @@ let scheduledLuopanRecoveryRunning = false
 const lastScheduledYilianRecoveryAtByHotel = new Map()
 let scheduledYilianRecoveryRunning = false
 let weComRepairBotConfig = {
+  rowVersion: 0,
   enabled: false,
+  allowGlobalRepairActions: false,
   botIdSha256: null,
   allowedUserIdSha256: null,
   allowedUserIdSha256s: [],
@@ -655,6 +667,14 @@ const WECOM_DELIVERY_RETENTION_LIMIT = 5_000
 const BRIEFING_HEALTH_AUDIT_RETENTION_MS = 366 * 24 * 60 * 60_000
 const LUOPAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
 const YILIAN_AUTO_RECOVERY_RETRY_MS = 30 * 60_000
+const YILIAN_WECOM_REPAIR_COOLDOWN_MS = 5 * 60_000
+const YILIAN_WECOM_RESULT_RETRY_MS = 5 * 60_000
+const YILIAN_WECOM_RESULT_OUTBOX_LIMIT = 20
+const YILIAN_COLLECTION_DRAIN_TIMEOUT_MS = 2 * 60_000
+const YILIAN_WECOM_CARD_TTL_MS = 24 * 60 * 60_000
+const YILIAN_WECOM_CARD_DELIVERY_RETRY_MS = 5 * 60_000
+const YILIAN_WECOM_CARD_DELIVERY_MAX_ATTEMPTS = 3
+const YILIAN_WECOM_CARD_MAX_GENERATIONS = 30
 const LUOPAN_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 const BIEYANGHONG_REPAIR_SUBMISSION_TIMEOUT_MS = 45_000
 const BIEYANGHONG_VNC_COOKIE = 'sfg_bieyanghong_vnc'
@@ -1485,6 +1505,7 @@ const defaultYilianRepairStatus = () => ({
   state: 'IDLE',
   trigger: null,
   lastAttemptAt: null,
+  lastCompletedAt: null,
   lastValidatedAt: null,
   lastSucceededAt: null,
   lastBusinessDate: null,
@@ -1492,6 +1513,9 @@ const defaultYilianRepairStatus = () => ({
   sourceCount: 0,
   successfulSourceCount: 0,
   outboundDeliveryAttempted: false,
+  weComResult: null,
+  weComResultOutbox: [],
+  weComResultDeadLetters: [],
 })
 
 const normalizeYilianRepairStatus = (candidate) => {
@@ -1510,6 +1534,112 @@ const normalizeYilianRepairStatus = (candidate) => {
     && /^YILIAN_[A-Z0-9_]{2,80}$/u.test(candidate.lastErrorCode)
     ? candidate.lastErrorCode
     : null
+  const normalizeWeComResult = (candidateResult) => {
+    const operationIdSha256 =
+      typeof candidateResult?.operationIdSha256 === 'string'
+      && /^[a-f0-9]{64}$/u.test(candidateResult.operationIdSha256)
+        ? candidateResult.operationIdSha256
+        : null
+    return operationIdSha256
+      ? {
+      operationIdSha256,
+      requesterSha256:
+        typeof candidateResult.requesterSha256 === 'string'
+        && /^[a-f0-9]{64}$/u.test(candidateResult.requesterSha256)
+          ? candidateResult.requesterSha256
+          : null,
+      pending: candidateResult.pending === true,
+      deliveryState: ['PENDING', 'DELIVERED', 'DEAD_LETTER'].includes(
+        candidateResult.deliveryState,
+      )
+        ? candidateResult.deliveryState
+        : candidateResult.pending === true
+          ? 'PENDING'
+          : 'DELIVERED',
+      deliveryFailureCode:
+        typeof candidateResult.deliveryFailureCode === 'string'
+        && /^WECOM_[A-Z0-9_]{2,100}$/u.test(
+          candidateResult.deliveryFailureCode,
+        )
+          ? candidateResult.deliveryFailureCode
+          : null,
+      actionSource: ['TEXT_COMMAND', 'TEMPLATE_CARD'].includes(
+        candidateResult.actionSource,
+      )
+        ? candidateResult.actionSource
+        : 'TEXT_COMMAND',
+      startedAt: safeTime(candidateResult.startedAt),
+      state: YILIAN_REPAIR_STATES.has(candidateResult.state)
+        ? candidateResult.state
+        : 'FAILED',
+      completedAt: safeTime(candidateResult.completedAt),
+      lastErrorCode:
+        typeof candidateResult.lastErrorCode === 'string'
+        && /^YILIAN_[A-Z0-9_]{2,80}$/u.test(
+          candidateResult.lastErrorCode,
+        )
+          ? candidateResult.lastErrorCode
+          : null,
+      lastBusinessDate:
+        typeof candidateResult.lastBusinessDate === 'string'
+        && /^\d{4}-\d{2}-\d{2}$/u.test(
+          candidateResult.lastBusinessDate,
+        )
+          ? candidateResult.lastBusinessDate
+          : null,
+      sourceCount: Number.isInteger(candidateResult.sourceCount)
+        ? Math.max(0, Math.min(20, candidateResult.sourceCount))
+        : 0,
+      successfulSourceCount: Number.isInteger(
+        candidateResult.successfulSourceCount,
+      )
+        ? Math.max(
+          0,
+          Math.min(20, candidateResult.successfulSourceCount),
+        )
+        : 0,
+      deliveryAttempt: Number.isInteger(candidateResult.deliveryAttempt)
+        ? Math.max(0, Math.min(20, candidateResult.deliveryAttempt))
+        : 0,
+      lastDeliveryAttemptAt: safeTime(
+        candidateResult.lastDeliveryAttemptAt,
+      ),
+    }
+      : null
+  }
+  const weComResult = normalizeWeComResult(candidate.weComResult)
+  const outboxOperationIds = new Set()
+  const weComResultOutbox = (Array.isArray(candidate.weComResultOutbox)
+    ? candidate.weComResultOutbox
+    : [])
+    .map(normalizeWeComResult)
+    .filter((result) => {
+      if (
+        !result?.pending
+        || result.operationIdSha256 === weComResult?.operationIdSha256
+        || outboxOperationIds.has(result.operationIdSha256)
+      ) return false
+      outboxOperationIds.add(result.operationIdSha256)
+      return true
+    })
+    .slice(-20)
+  const deadLetterOperationIds = new Set()
+  const weComResultDeadLetters = (
+    Array.isArray(candidate.weComResultDeadLetters)
+      ? candidate.weComResultDeadLetters
+      : []
+  )
+    .map(normalizeWeComResult)
+    .filter((result) => {
+      if (
+        !result
+        || result.deliveryState !== 'DEAD_LETTER'
+        || deadLetterOperationIds.has(result.operationIdSha256)
+      ) return false
+      deadLetterOperationIds.add(result.operationIdSha256)
+      return true
+    })
+    .slice(-20)
   return {
     state: YILIAN_REPAIR_STATES.has(candidate.state)
       ? candidate.state
@@ -1519,6 +1649,7 @@ const normalizeYilianRepairStatus = (candidate) => {
       ? candidate.trigger
       : null,
     lastAttemptAt: safeTime(candidate.lastAttemptAt),
+    lastCompletedAt: safeTime(candidate.lastCompletedAt),
     lastValidatedAt: safeTime(candidate.lastValidatedAt),
     lastSucceededAt: safeTime(candidate.lastSucceededAt),
     lastBusinessDate: safeDate,
@@ -1530,6 +1661,9 @@ const normalizeYilianRepairStatus = (candidate) => {
       ? Math.max(0, Math.min(20, candidate.successfulSourceCount))
       : 0,
     outboundDeliveryAttempted: false,
+    weComResult,
+    weComResultOutbox,
+    weComResultDeadLetters,
   }
 }
 
@@ -1553,23 +1687,115 @@ const persistYilianRepairStatuses = () => {
 }
 
 const updateYilianRepairStatus = (hotelId, patch) => {
+  const hadPrevious = yilianRepairStatusesByHotel.has(hotelId)
+  const previous = yilianRepairStatusesByHotel.get(hotelId)
   const next = normalizeYilianRepairStatus({
     ...yilianRepairStatusRecordFor(hotelId),
     ...patch,
   })
   yilianRepairStatusesByHotel.set(hotelId, next)
-  persistYilianRepairStatuses()
+  try {
+    persistYilianRepairStatuses()
+  } catch (error) {
+    if (hadPrevious) yilianRepairStatusesByHotel.set(hotelId, previous)
+    else yilianRepairStatusesByHotel.delete(hotelId)
+    throw error
+  }
   return next
+}
+
+const yilianWeComResultsForRecord = (record) => [
+  ...(record.weComResultOutbox ?? []),
+  ...(record.weComResult ? [record.weComResult] : []),
+]
+
+const yilianWeComResultForOperation = (record, operationIdSha256) =>
+  yilianWeComResultsForRecord(record).find((result) =>
+    result.operationIdSha256 === operationIdSha256) ?? null
+
+const updateYilianWeComResultForOperation = (
+  hotelId,
+  operationIdSha256,
+  update,
+) => {
+  const record = yilianRepairStatusRecordFor(hotelId)
+  let weComResult = record.weComResult
+  let weComResultOutbox = [...(record.weComResultOutbox ?? [])]
+  let weComResultDeadLetters = [...(record.weComResultDeadLetters ?? [])]
+  const archiveDeadLetter = (result) => {
+    if (
+      result.deliveryState === 'DEAD_LETTER'
+      && !weComResultDeadLetters.some((candidate) =>
+        candidate.operationIdSha256 === result.operationIdSha256)
+    ) {
+      weComResultDeadLetters = [
+        ...weComResultDeadLetters,
+        result,
+      ].slice(-YILIAN_WECOM_RESULT_OUTBOX_LIMIT)
+    }
+  }
+  if (weComResult?.operationIdSha256 === operationIdSha256) {
+    weComResult = update(weComResult)
+    archiveDeadLetter(weComResult)
+  } else {
+    const index = weComResultOutbox.findIndex((result) =>
+      result.operationIdSha256 === operationIdSha256)
+    if (index < 0) return null
+    const nextResult = update(weComResultOutbox[index])
+    archiveDeadLetter(nextResult)
+    if (nextResult.pending) weComResultOutbox[index] = nextResult
+    else weComResultOutbox.splice(index, 1)
+  }
+  return updateYilianRepairStatus(hotelId, {
+    weComResult,
+    weComResultOutbox,
+    weComResultDeadLetters,
+  })
+}
+
+const startYilianWeComResultOperation = (hotelId, nextResult) => {
+  const record = yilianRepairStatusRecordFor(hotelId)
+  const current = record.weComResult
+  const weComResultOutbox = [...(record.weComResultOutbox ?? [])]
+  if (
+    current?.pending
+    && current.operationIdSha256 !== nextResult.operationIdSha256
+  ) {
+    if (current.state === 'RUNNING') {
+      throw new Error('YILIAN_WECOM_RESULT_IN_PROGRESS')
+    }
+    if (
+      !weComResultOutbox.some((result) =>
+        result.operationIdSha256 === current.operationIdSha256)
+    ) weComResultOutbox.push(current)
+  }
+  if (weComResultOutbox.length > YILIAN_WECOM_RESULT_OUTBOX_LIMIT) {
+    throw new Error('YILIAN_WECOM_RESULT_OUTBOX_FULL')
+  }
+  return updateYilianRepairStatus(hotelId, {
+    weComResult: {
+      ...nextResult,
+      deliveryState: 'PENDING',
+      deliveryFailureCode: null,
+    },
+    weComResultOutbox,
+  })
 }
 
 const YILIAN_SOURCE_CONTRACT_MIGRATION_TRIGGER =
   'STARTUP_SOURCE_CONTRACT_MIGRATION'
 const YILIAN_INITIAL_ACTIVATION_TRIGGER = 'INITIAL_ACTIVATION_PENDING'
+const YILIAN_WECOM_REPAIR_TRIGGER = 'WECOM_MANAGER_REPAIR'
+const YILIAN_INTERACTIVE_REPAIR_TRIGGERS = new Set([
+  'MANUAL_REPAIR',
+  YILIAN_WECOM_REPAIR_TRIGGER,
+])
 const YILIAN_ACTIVATION_INTENT_TRIGGERS = new Set([
   YILIAN_INITIAL_ACTIVATION_TRIGGER,
   YILIAN_SOURCE_CONTRACT_MIGRATION_TRIGGER,
   'SCHEDULED_INITIAL_ACTIVATION',
   'MANUAL_REPAIR',
+  YILIAN_WECOM_REPAIR_TRIGGER,
 ])
 
 const yilianInitialActivationPending = (hotel, status) =>
@@ -1671,6 +1897,7 @@ const migrateEmptyYilianReportSources = () => {
         state: 'IDLE',
         trigger: YILIAN_SOURCE_CONTRACT_MIGRATION_TRIGGER,
         lastAttemptAt: null,
+        lastCompletedAt: null,
         lastErrorCode: null,
         sourceCount: 3,
         successfulSourceCount: 0,
@@ -1740,6 +1967,7 @@ const yilianRepairStatusFor = (hotelId) => {
           ? 'RUNNING'
           : record.state,
     lastAttemptAt: record.lastAttemptAt,
+    lastCompletedAt: record.lastCompletedAt,
     lastValidatedAt: record.lastValidatedAt,
     lastSucceededAt: record.lastSucceededAt,
     lastBusinessDate: record.lastBusinessDate,
@@ -1769,6 +1997,9 @@ const YILIAN_AUTOMATIC_RETRYABLE_ERRORS = new Set([
   'YILIAN_SHADOW_VALIDATION_FAILED',
   'YILIAN_TOKEN_PERSIST_FAILED',
   'YILIAN_SNAPSHOT_PERSIST_FAILED',
+  'YILIAN_COLLECTION_DRAIN_TIMEOUT',
+  'YILIAN_REPAIR_CONFIG_CHANGED',
+  'YILIAN_REPAIR_INTERRUPTED',
 ])
 
 const yilianRepairRetryAllowed = (record) =>
@@ -1777,9 +2008,11 @@ const yilianRepairRetryAllowed = (record) =>
 
 const yilianAutomaticRecoveryDue = (record, now = Date.now()) => {
   if (!yilianRepairRetryAllowed(record)) return false
-  const lastAttemptAt = Date.parse(record.lastAttemptAt ?? '')
-  return !Number.isFinite(lastAttemptAt)
-    || now - lastAttemptAt >= YILIAN_AUTO_RECOVERY_RETRY_MS
+  const lastActivityAt = Date.parse(
+    record.lastCompletedAt ?? record.lastAttemptAt ?? '',
+  )
+  return !Number.isFinite(lastActivityAt)
+    || now - lastActivityAt >= YILIAN_AUTO_RECOVERY_RETRY_MS
 }
 
 const LUOPAN_PROFILE_REF = /^[a-z0-9][a-z0-9_-]{0,39}$/
@@ -2513,14 +2746,68 @@ if (yilianRepairStatusPath && existsSync(yilianRepairStatusPath)) {
       && typeof persistedStatuses === 'object'
       && !Array.isArray(persistedStatuses)
     ) {
+      let recoveredInterruptedStatus = false
       for (const [hotelId, status] of Object.entries(persistedStatuses)) {
         const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
         if (hotel?.pmsSystemCode !== 'YILIAN_CLOUD') continue
         const normalized = normalizeYilianRepairStatus(status)
-        yilianRepairStatusesByHotel.set(hotelId, {
-          ...normalized,
-          state: normalized.state === 'RUNNING' ? 'IDLE' : normalized.state,
-        })
+        const pendingRunningResult =
+          normalized.weComResult?.pending === true
+          && normalized.weComResult.state === 'RUNNING'
+        const resultStartedAt = Date.parse(
+          normalized.weComResult?.startedAt ?? '',
+        )
+        const topLevelCompletedAt = Date.parse(
+          normalized.lastCompletedAt ?? '',
+        )
+        const completedResultEvidence = pendingRunningResult
+          && ['SUCCEEDED', 'FAILED', 'HUMAN_AUTHORIZATION_REQUIRED'].includes(
+            normalized.state,
+          )
+          && Number.isFinite(resultStartedAt)
+          && Number.isFinite(topLevelCompletedAt)
+          && topLevelCompletedAt >= resultStartedAt
+        const topLevelInterrupted = normalized.state === 'RUNNING'
+        const resultInterrupted =
+          pendingRunningResult && !completedResultEvidence
+        const interrupted = topLevelInterrupted || resultInterrupted
+        const interruptedAt = interrupted
+          ? new Date().toISOString()
+          : null
+        const recovered = interrupted
+          ? normalizeYilianRepairStatus({
+            ...normalized,
+            state: 'FAILED',
+            lastCompletedAt: interruptedAt,
+            lastErrorCode: 'YILIAN_REPAIR_INTERRUPTED',
+            weComResult: resultInterrupted
+              ? {
+                ...normalized.weComResult,
+                state: 'FAILED',
+                completedAt: interruptedAt,
+                lastErrorCode: 'YILIAN_REPAIR_INTERRUPTED',
+              }
+              : normalized.weComResult,
+          })
+          : completedResultEvidence
+            ? normalizeYilianRepairStatus({
+              ...normalized,
+              weComResult: {
+                ...normalized.weComResult,
+                state: normalized.state,
+                completedAt: normalized.lastCompletedAt,
+                lastErrorCode: normalized.lastErrorCode,
+                lastBusinessDate: normalized.lastBusinessDate,
+                sourceCount: normalized.sourceCount,
+                successfulSourceCount: normalized.successfulSourceCount,
+              },
+            })
+            : normalized
+        yilianRepairStatusesByHotel.set(hotelId, recovered)
+        recoveredInterruptedStatus ||= interrupted || completedResultEvidence
+      }
+      if (recoveredInterruptedStatus) {
+        persistYilianRepairStatuses()
       }
     }
   } catch {
@@ -3269,6 +3556,7 @@ const GROUP_REPAIR_LINK_DELIVERY_TYPES = new Set([
   'PMS_REPAIR_REQUIRED',
   'LUOPAN_REPAIR_REQUIRED',
   'LUOPAN_REPAIR_FAILED',
+  'YILIAN_REPAIR_REQUIRED',
   'DAILY_MORNING_REPAIR_FAILED',
 ])
 const GROUP_REPAIR_WORKFLOW_DELIVERY_TYPES = new Set([
@@ -3318,6 +3606,20 @@ const storedWeComConfig = (config = {}) => {
   }
 }
 
+const publicWeComDeliveryView = (delivery) => {
+  if (!delivery) return null
+  return {
+    ...delivery,
+    parts: Array.isArray(delivery.parts)
+      ? delivery.parts.map((part) => {
+        const publicPart = { ...part }
+        delete publicPart.templateCardAction
+        return publicPart
+      })
+      : [],
+  }
+}
+
 const weComConfigFor = (hotelId) => {
   const config = storedWeComConfig(weComConfigsByHotel.get(hotelId))
   const secret = weComSecretsByHotel.get(hotelId)
@@ -3344,7 +3646,7 @@ const weComConfigFor = (hotelId) => {
     endpointSha256:
       secret ? config.endpointSha256 ?? null : null,
     updatedAt: config.updatedAt ?? null,
-    lastDelivery: deliveries[0] ?? null,
+    lastDelivery: publicWeComDeliveryView(deliveries[0] ?? null),
   }
 }
 
@@ -3495,41 +3797,338 @@ const weComRepairBotHotelUserFingerprints = (hotelAllowedUserIds = {}) =>
       ]),
   )
 
-const weComRepairBotAuthorizedForHotel = (userId, hotelId) =>
+const weComRepairBotActionAuthorizedForHotel = (userId, hotelId) => {
+  return weComRepairBotCanRepairHotel({
+    credentials: weComRepairBotCredentials ?? {},
+    userId,
+    hotelId,
+    allowGlobalRepairActions:
+      weComRepairBotConfig.allowGlobalRepairActions === true,
+  })
+}
+
+const weComRepairBotActionRecipientsForHotel = (hotelId) =>
   weComRepairBotRecipientsForHotel(
     weComRepairBotCredentials ?? {},
     hotelId,
-  ).includes(userId)
+  ).filter((userId) =>
+    weComRepairBotActionAuthorizedForHotel(userId, hotelId))
 
-const persistWeComRepairBotConfig = () => {
-  if (!weComRepairBotConfigPath) return
-  mkdirSync(dirname(weComRepairBotConfigPath), { recursive: true })
-  const temporaryPath = `${weComRepairBotConfigPath}.${process.pid}.tmp`
-  writeFileSync(
-    temporaryPath,
-    `${JSON.stringify(weComRepairBotConfig, null, 2)}\n`,
-    { encoding: 'utf8', mode: 0o600 },
+const WECOM_REPAIR_BOT_TRANSACTION_VERSION = 1
+const WECOM_REPAIR_BOT_TRANSACTION_KEYS = new Set([
+  'version',
+  'transactionId',
+  'preparedAt',
+  'configDocument',
+  'secretDocument',
+])
+const WECOM_REPAIR_BOT_CONFIG_DOCUMENT_KEYS = new Set([
+  'rowVersion',
+  'enabled',
+  'allowGlobalRepairActions',
+  'botIdSha256',
+  'allowedUserIdSha256',
+  'allowedUserIdSha256s',
+  'hotelAllowedUserIdSha256s',
+  'updatedAt',
+])
+const WECOM_REPAIR_BOT_SECRET_RECORD_KEYS = new Set([
+  'version',
+  'algorithm',
+  'iv',
+  'ciphertext',
+  'authTag',
+  'updatedAt',
+])
+
+const objectHasOnlyKeys = (candidate, allowedKeys) =>
+  candidate
+  && typeof candidate === 'object'
+  && !Array.isArray(candidate)
+  && Object.keys(candidate).every((key) => allowedKeys.has(key))
+
+const normalizeStoredWeComRepairBotConfig = (
+  persisted,
+  { strictKeys = false } = {},
+) => {
+  if (
+    !persisted
+    || typeof persisted !== 'object'
+    || Array.isArray(persisted)
+    || (strictKeys
+      && !objectHasOnlyKeys(
+        persisted,
+        WECOM_REPAIR_BOT_CONFIG_DOCUMENT_KEYS,
+      ))
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_CONFIG_INVALID')
+  }
+  const legacyAllowedUserIdSha256 =
+    SHA256_PATTERN.test(String(persisted.allowedUserIdSha256 ?? ''))
+      ? String(persisted.allowedUserIdSha256).toLowerCase()
+      : null
+  const allowedUserIdSha256s = [...new Set([
+    ...(Array.isArray(persisted.allowedUserIdSha256s)
+      ? persisted.allowedUserIdSha256s
+        .map((value) => String(value).toLowerCase())
+        .filter((value) => SHA256_PATTERN.test(value))
+      : []),
+    ...(legacyAllowedUserIdSha256 ? [legacyAllowedUserIdSha256] : []),
+  ])]
+  if (allowedUserIdSha256s.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
+    throw new Error('WECOM_REPAIR_BOT_ALLOWED_USERS_INVALID')
+  }
+  const persistedHotelFingerprints =
+    persisted.hotelAllowedUserIdSha256s == null
+      ? {}
+      : persisted.hotelAllowedUserIdSha256s
+  if (
+    !persistedHotelFingerprints
+    || typeof persistedHotelFingerprints !== 'object'
+    || Array.isArray(persistedHotelFingerprints)
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
+  }
+  const hotelAllowedUserIdSha256s = Object.fromEntries(
+    Object.entries(persistedHotelFingerprints)
+      .filter(([hotelId]) => hotels.some((hotel) => hotel.hotelId === hotelId))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([hotelId, values]) => {
+        const fingerprints = [...new Set(
+          (Array.isArray(values) ? values : [])
+            .map((value) => String(value).toLowerCase()),
+        )]
+        if (
+          !Array.isArray(values)
+          || fingerprints.length > WECOM_REPAIR_BOT_MAX_STORE_USERS
+          || fingerprints.some((value) => !SHA256_PATTERN.test(value))
+        ) {
+          throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
+        }
+        return [hotelId, fingerprints]
+      }),
   )
-  renameSync(temporaryPath, weComRepairBotConfigPath)
+  return {
+    rowVersion:
+      Number.isInteger(persisted.rowVersion) && persisted.rowVersion >= 0
+        ? persisted.rowVersion
+        : 0,
+    enabled: persisted.enabled === true,
+    allowGlobalRepairActions: persisted.allowGlobalRepairActions === true,
+    botIdSha256:
+      SHA256_PATTERN.test(String(persisted.botIdSha256 ?? ''))
+        ? String(persisted.botIdSha256).toLowerCase()
+        : null,
+    allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
+    allowedUserIdSha256s,
+    hotelAllowedUserIdSha256s,
+    updatedAt:
+      typeof persisted.updatedAt === 'string' ? persisted.updatedAt : null,
+  }
 }
 
-const persistWeComRepairBotSecret = () => {
-  if (!weComRepairBotSecretPath) return
-  mkdirSync(dirname(weComRepairBotSecretPath), { recursive: true })
-  const temporaryPath = `${weComRepairBotSecretPath}.${process.pid}.tmp`
-  const record = weComRepairBotCredentials
+const weComRepairBotSecretDocumentFor = (credentials) => {
+  const record = credentials
     ? encryptCookie(
-      JSON.stringify(weComRepairBotCredentials),
+      JSON.stringify(credentials),
       cookieSecretKey,
       weComRepairBotSecretScope(),
     )
     : null
-  writeFileSync(
-    temporaryPath,
-    `${JSON.stringify(record ? { record } : {}, null, 2)}\n`,
-    { encoding: 'utf8', mode: 0o600 },
+  return record ? { record } : {}
+}
+
+const atomicWritePrivateJson = (targetPath, value) => {
+  mkdirSync(dirname(targetPath), { recursive: true })
+  const temporaryPath =
+    `${targetPath}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(
+      temporaryPath,
+      `${JSON.stringify(value, null, 2)}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    renameSync(temporaryPath, targetPath)
+  } catch (error) {
+    try {
+      if (existsSync(temporaryPath)) unlinkSync(temporaryPath)
+    } catch {}
+    throw error
+  }
+}
+
+const assertWeComRepairBotDocumentsMatch = ({
+  configDocument,
+  secretDocument,
+}) => {
+  if (
+    !secretDocument
+    || typeof secretDocument !== 'object'
+    || Array.isArray(secretDocument)
+    || Object.keys(secretDocument).some((key) => key !== 'record')
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_TRANSACTION_SECRET_INVALID')
+  }
+  if (!secretDocument.record) {
+    if (
+      configDocument.enabled
+      || configDocument.botIdSha256
+      || configDocument.allowedUserIdSha256s.length > 0
+      || Object.keys(configDocument.hotelAllowedUserIdSha256s).length > 0
+    ) {
+      throw new Error('WECOM_REPAIR_BOT_TRANSACTION_STATE_MISMATCH')
+    }
+    return
+  }
+  if (
+    !objectHasOnlyKeys(
+      secretDocument.record,
+      WECOM_REPAIR_BOT_SECRET_RECORD_KEYS,
+    )
+    || Object.keys(secretDocument.record).length
+      !== WECOM_REPAIR_BOT_SECRET_RECORD_KEYS.size
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_TRANSACTION_SECRET_INVALID')
+  }
+  const credentials = normalizeWeComRepairBotCredentials(JSON.parse(
+    decryptCookie(
+      secretDocument.record,
+      cookieSecretKey,
+      weComRepairBotSecretScope(),
+    ),
+  ))
+  const botIdSha256 = fingerprintWeComRepairBotValue(credentials.botId)
+  const allowedUserIdSha256s = credentials.allowedUserIds
+    .map(fingerprintWeComRepairBotValue)
+  const hotelAllowedUserIdSha256s =
+    weComRepairBotHotelUserFingerprints(credentials.hotelAllowedUserIds)
+  if (
+    configDocument.botIdSha256 !== botIdSha256
+    || configDocument.allowedUserIdSha256
+      !== (allowedUserIdSha256s[0] ?? null)
+    || JSON.stringify(configDocument.allowedUserIdSha256s)
+      !== JSON.stringify(allowedUserIdSha256s)
+    || JSON.stringify(configDocument.hotelAllowedUserIdSha256s)
+      !== JSON.stringify(hotelAllowedUserIdSha256s)
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_TRANSACTION_STATE_MISMATCH')
+  }
+}
+
+const normalizeWeComRepairBotTransaction = (candidate) => {
+  if (
+    !objectHasOnlyKeys(candidate, WECOM_REPAIR_BOT_TRANSACTION_KEYS)
+    || Object.keys(candidate).length !== WECOM_REPAIR_BOT_TRANSACTION_KEYS.size
+    || candidate.version !== WECOM_REPAIR_BOT_TRANSACTION_VERSION
+    || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(
+      candidate.transactionId ?? '',
+    )
+    || !Number.isFinite(Date.parse(candidate.preparedAt ?? ''))
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_TRANSACTION_INVALID')
+  }
+  const configDocument = normalizeStoredWeComRepairBotConfig(
+    candidate.configDocument,
+    { strictKeys: true },
   )
-  renameSync(temporaryPath, weComRepairBotSecretPath)
+  const secretDocument = candidate.secretDocument
+  assertWeComRepairBotDocumentsMatch({ configDocument, secretDocument })
+  return {
+    transactionId: candidate.transactionId,
+    configDocument,
+    secretDocument,
+  }
+}
+
+const writeWeComRepairBotStateDocuments = ({
+  configDocument,
+  secretDocument,
+}) => {
+  atomicWritePrivateJson(weComRepairBotSecretPath, secretDocument)
+  atomicWritePrivateJson(weComRepairBotConfigPath, configDocument)
+}
+
+const persistWeComRepairBotStateTransaction = ({ credentials, config }) => {
+  if (
+    !weComRepairBotConfigPath
+    && !weComRepairBotSecretPath
+    && !weComRepairBotTransactionPath
+  ) return
+  if (
+    !weComRepairBotConfigPath
+    || !weComRepairBotSecretPath
+    || !weComRepairBotTransactionPath
+  ) {
+    throw new Error('WECOM_REPAIR_BOT_TRANSACTION_PATH_REQUIRED')
+  }
+  const configDocument = normalizeStoredWeComRepairBotConfig(
+    config,
+    { strictKeys: true },
+  )
+  const secretDocument = weComRepairBotSecretDocumentFor(credentials)
+  assertWeComRepairBotDocumentsMatch({ configDocument, secretDocument })
+  const journal = {
+    version: WECOM_REPAIR_BOT_TRANSACTION_VERSION,
+    transactionId: randomUUID(),
+    preparedAt: new Date().toISOString(),
+    configDocument,
+    secretDocument,
+  }
+  atomicWritePrivateJson(weComRepairBotTransactionPath, journal)
+  writeWeComRepairBotStateDocuments({ configDocument, secretDocument })
+  unlinkSync(weComRepairBotTransactionPath)
+}
+
+const recoverWeComRepairBotStateTransaction = () => {
+  if (!weComRepairBotTransactionPath) return
+  if (!existsSync(weComRepairBotTransactionPath)) return
+  try {
+    if (!weComRepairBotConfigPath || !weComRepairBotSecretPath) {
+      throw new Error('WECOM_REPAIR_BOT_TRANSACTION_PATH_REQUIRED')
+    }
+    const journal = normalizeWeComRepairBotTransaction(JSON.parse(
+      readFileSync(weComRepairBotTransactionPath, 'utf8'),
+    ))
+    writeWeComRepairBotStateDocuments(journal)
+    unlinkSync(weComRepairBotTransactionPath)
+    process.stdout.write(`${JSON.stringify({
+      event: 'WECOM_REPAIR_BOT_TRANSACTION_RECOVERED',
+      transactionId: journal.transactionId,
+    })}\n`)
+  } catch (error) {
+    process.stderr.write(
+      'REVIEW_WECOM_REPAIR_BOT_TRANSACTION_RECOVERY_BLOCKED\n',
+    )
+    throw new Error('WECOM_REPAIR_BOT_TRANSACTION_RECOVERY_FAILED', {
+      cause: error,
+    })
+  }
+}
+
+const commitWeComRepairBotState = ({ credentials, config }) => {
+  const previousCredentials = weComRepairBotCredentials
+  const previousConfig = weComRepairBotConfig
+  weComRepairBotCredentials = credentials
+  weComRepairBotConfig = config
+  try {
+    persistWeComRepairBotStateTransaction({ credentials, config })
+  } catch (error) {
+    weComRepairBotCredentials = previousCredentials
+    weComRepairBotConfig = previousConfig
+    try {
+      persistWeComRepairBotStateTransaction({
+        credentials: previousCredentials,
+        config: previousConfig,
+      })
+    } catch {
+      process.stderr.write(
+        'REVIEW_WECOM_REPAIR_BOT_CONFIG_ROLLBACK_INCOMPLETE\n',
+      )
+    }
+    throw new Error('WECOM_REPAIR_BOT_CONFIG_PERSIST_FAILED', {
+      cause: error,
+    })
+  }
 }
 
 const weComRepairBotStatus = () => {
@@ -3566,7 +4165,10 @@ const weComRepairBotStatus = () => {
     0,
   )
   return {
+    rowVersion: weComRepairBotConfig.rowVersion,
     enabled: weComRepairBotConfig.enabled === true,
+    allowGlobalRepairActions:
+      weComRepairBotConfig.allowGlobalRepairActions === true,
     credentialConfigured: Boolean(weComRepairBotCredentials),
     paired: allowedUserIds.length > 0 || hotelPairedUserCount > 0,
     pairedUserCount: allowedUserIds.length,
@@ -3584,7 +4186,10 @@ const weComRepairBotStatus = () => {
   }
 }
 
-const weComRepairBotStatusForHotel = (hotelId) => {
+const weComRepairBotStatusForHotel = (
+  hotelId,
+  { redactGlobalDetails = false } = {},
+) => {
   const status = weComRepairBotStatus()
   const hotelBindings = status.hotelBindings.filter(
     (binding) => binding.hotelId === hotelId,
@@ -3592,7 +4197,7 @@ const weComRepairBotStatusForHotel = (hotelId) => {
   const pairingMatchesHotel = status.pairing.active
     && status.pairing.scope?.type === 'HOTEL'
     && status.pairing.scope.hotelId === hotelId
-  return {
+  const scopedStatus = {
     ...status,
     hotelPairedUserCount:
       hotelBindings[0]?.pairedUserCount ?? 0,
@@ -3604,6 +4209,37 @@ const weComRepairBotStatusForHotel = (hotelId) => {
         expiresAt: null,
         attemptsRemaining: 0,
       },
+  }
+  if (!redactGlobalDetails) return scopedStatus
+  const redactedHotelBindings = hotelBindings.map((binding) => ({
+    ...binding,
+    userFingerprints: [],
+  }))
+  return {
+    rowVersion: status.rowVersion,
+    enabled: status.enabled,
+    allowGlobalRepairActions: false,
+    credentialConfigured: status.credentialConfigured,
+    paired: (redactedHotelBindings[0]?.pairedUserCount ?? 0) > 0,
+    pairedUserCount: 0,
+    pairedUserCapacity: status.pairedUserCapacity,
+    hotelPairedUserCount:
+      redactedHotelBindings[0]?.pairedUserCount ?? 0,
+    hotelBindings: redactedHotelBindings,
+    botIdFingerprint: null,
+    allowedUserFingerprint: null,
+    allowedUserFingerprints: [],
+    updatedAt: status.updatedAt,
+    pairing: {
+      active: false,
+      expiresAt: null,
+      attemptsRemaining: 0,
+    },
+    connectionStatus: status.connectionStatus,
+    connected: status.connected,
+    lastAuthenticatedAt: status.lastAuthenticatedAt,
+    lastDisconnectedAt: status.lastDisconnectedAt,
+    lastErrorCode: status.lastErrorCode,
   }
 }
 
@@ -3690,72 +4326,14 @@ const bieyanghongRepairReasonCode = () => {
   return null
 }
 
+recoverWeComRepairBotStateTransaction()
+
 if (weComRepairBotConfigPath && existsSync(weComRepairBotConfigPath)) {
   try {
     const persisted = JSON.parse(
       readFileSync(weComRepairBotConfigPath, 'utf8'),
     )
-    if (!persisted || typeof persisted !== 'object') {
-      throw new Error('WECOM_REPAIR_BOT_CONFIG_INVALID')
-    }
-    const legacyAllowedUserIdSha256 =
-      SHA256_PATTERN.test(String(persisted.allowedUserIdSha256 ?? ''))
-        ? String(persisted.allowedUserIdSha256).toLowerCase()
-        : null
-    const allowedUserIdSha256s = [...new Set([
-      ...(Array.isArray(persisted.allowedUserIdSha256s)
-        ? persisted.allowedUserIdSha256s
-          .map((value) => String(value).toLowerCase())
-          .filter((value) => SHA256_PATTERN.test(value))
-        : []),
-      ...(legacyAllowedUserIdSha256 ? [legacyAllowedUserIdSha256] : []),
-    ])]
-    if (allowedUserIdSha256s.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
-      throw new Error('WECOM_REPAIR_BOT_ALLOWED_USERS_INVALID')
-    }
-    const persistedHotelFingerprints =
-      persisted.hotelAllowedUserIdSha256s == null
-        ? {}
-        : persisted.hotelAllowedUserIdSha256s
-    if (
-      !persistedHotelFingerprints
-      || typeof persistedHotelFingerprints !== 'object'
-      || Array.isArray(persistedHotelFingerprints)
-    ) {
-      throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
-    }
-    const hotelAllowedUserIdSha256s = Object.fromEntries(
-      Object.entries(persistedHotelFingerprints)
-        .filter(([hotelId]) => hotels.some((hotel) =>
-          hotel.hotelId === hotelId))
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([hotelId, values]) => {
-          const fingerprints = [...new Set(
-            (Array.isArray(values) ? values : [])
-              .map((value) => String(value).toLowerCase()),
-          )]
-          if (
-            !Array.isArray(values)
-            || fingerprints.length > WECOM_REPAIR_BOT_MAX_STORE_USERS
-            || fingerprints.some((value) => !SHA256_PATTERN.test(value))
-          ) {
-            throw new Error('WECOM_REPAIR_BOT_HOTEL_ALLOWED_USERS_INVALID')
-          }
-          return [hotelId, fingerprints]
-        }),
-    )
-    weComRepairBotConfig = {
-      enabled: persisted.enabled === true,
-      botIdSha256:
-        SHA256_PATTERN.test(String(persisted.botIdSha256 ?? ''))
-          ? String(persisted.botIdSha256).toLowerCase()
-          : null,
-      allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
-      allowedUserIdSha256s,
-      hotelAllowedUserIdSha256s,
-      updatedAt:
-        typeof persisted.updatedAt === 'string' ? persisted.updatedAt : null,
-    }
+    weComRepairBotConfig = normalizeStoredWeComRepairBotConfig(persisted)
   } catch {
     process.stderr.write('REVIEW_WECOM_REPAIR_BOT_CONFIG_STORE_IGNORED\n')
   }
@@ -3810,7 +4388,11 @@ const applyWeComRepairBotConfigUpdate = (body) => {
   const credentialUpdate = body?.credentialUpdate ?? { action: 'KEEP' }
   if (
     typeof body?.enabled !== 'boolean'
+    || !Number.isInteger(body?.expectedRowVersion)
+    || body.expectedRowVersion < 0
     || typeof body?.reasonCode !== 'string'
+    || (Object.hasOwn(body ?? {}, 'allowGlobalRepairActions')
+      && typeof body.allowGlobalRepairActions !== 'boolean')
     || !/^[A-Z0-9][A-Z0-9_-]{1,63}$/u.test(body.reasonCode)
     || !credentialUpdate
     || typeof credentialUpdate !== 'object'
@@ -3821,6 +4403,9 @@ const applyWeComRepairBotConfigUpdate = (body) => {
   ) {
     throw new Error('WECOM_REPAIR_BOT_CONFIG_INVALID')
   }
+  if (body.expectedRowVersion !== weComRepairBotConfig.rowVersion) {
+    throw new Error('WECOM_REPAIR_BOT_CONFIG_VERSION_CONFLICT')
+  }
 
   let nextCredentials = weComRepairBotCredentials
   let nextBotIdSha256 = weComRepairBotConfig.botIdSha256
@@ -3829,9 +4414,17 @@ const applyWeComRepairBotConfigUpdate = (body) => {
     weComRepairBotConfig.allowedUserIdSha256s
   let nextHotelAllowedUserIdSha256s =
     weComRepairBotConfig.hotelAllowedUserIdSha256s
+  let clearPairingAfterCommit = false
+  let nextAllowGlobalRepairActions =
+    Object.hasOwn(body, 'allowGlobalRepairActions')
+      ? body.allowGlobalRepairActions
+      : weComRepairBotConfig.allowGlobalRepairActions
   if (credentialUpdate.action === 'REPLACE') {
     const candidateBotId = String(credentialUpdate.botId ?? '').trim()
     const candidateBotIdSha256 = fingerprintWeComRepairBotValue(candidateBotId)
+    if (candidateBotIdSha256 !== weComRepairBotConfig.botIdSha256) {
+      nextAllowGlobalRepairActions = false
+    }
     const preservePairing =
       candidateBotIdSha256 === weComRepairBotConfig.botIdSha256
         ? weComRepairBotCredentials?.allowedUserIds ?? []
@@ -3855,31 +4448,36 @@ const applyWeComRepairBotConfigUpdate = (body) => {
     if (
       preservePairing.length === 0
       && Object.keys(preserveHotelPairing).length === 0
-    ) weComRepairBotPairingStore.clear()
+    ) clearPairingAfterCommit = true
   } else if (credentialUpdate.action === 'CLEAR') {
     nextCredentials = null
     nextBotIdSha256 = null
     nextAllowedUserIdSha256 = null
     nextAllowedUserIdSha256s = []
     nextHotelAllowedUserIdSha256s = {}
-    weComRepairBotPairingStore.clear()
+    nextAllowGlobalRepairActions = false
+    clearPairingAfterCommit = true
   }
 
   if (body.enabled && !nextCredentials) {
     throw new Error('WECOM_REPAIR_BOT_CREDENTIALS_REQUIRED')
   }
 
-  weComRepairBotCredentials = nextCredentials
-  weComRepairBotConfig = {
+  const nextConfig = {
+    rowVersion: weComRepairBotConfig.rowVersion + 1,
     enabled: body.enabled,
+    allowGlobalRepairActions: nextAllowGlobalRepairActions,
     botIdSha256: nextBotIdSha256,
     allowedUserIdSha256: nextAllowedUserIdSha256,
     allowedUserIdSha256s: nextAllowedUserIdSha256s,
     hotelAllowedUserIdSha256s: nextHotelAllowedUserIdSha256s,
     updatedAt: new Date().toISOString(),
   }
-  persistWeComRepairBotSecret()
-  persistWeComRepairBotConfig()
+  commitWeComRepairBotState({
+    credentials: nextCredentials,
+    config: nextConfig,
+  })
+  if (clearPairingAfterCommit) weComRepairBotPairingStore.clear()
   weComRepairBotRuntime?.configure({
     enabled: weComRepairBotConfig.enabled,
     credentials: weComRepairBotCredentials,
@@ -6329,6 +6927,10 @@ const deliverWeComRepairBotDirectMessage = async ({
   deliveryType,
   content,
   captcha = null,
+  templateCard = null,
+  templateIncidentId = null,
+  recipientSha256s = null,
+  requireActionAuthorization = false,
   businessDate = null,
   cutoffAt = null,
 }) => {
@@ -6342,10 +6944,31 @@ const deliverWeComRepairBotDirectMessage = async ({
     if (!weComRepairBotReady()) {
       throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
     }
+    const requestedRecipientSha256s = recipientSha256s == null
+      ? null
+      : [...new Set(recipientSha256s)]
+    if (
+      requestedRecipientSha256s
+      && (
+        requestedRecipientSha256s.length === 0
+        || requestedRecipientSha256s.some((value) =>
+          typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value))
+      )
+    ) throw new Error('WECOM_REPAIR_BOT_RECIPIENT_SCOPE_INVALID')
     const allowedUserIds = weComRepairBotRecipientsForHotel(
       weComRepairBotCredentials ?? {},
       hotelId,
-    )
+    ).filter((userId) =>
+      (
+        !requestedRecipientSha256s
+        || requestedRecipientSha256s.includes(
+          fingerprintWeComRepairBotValue(userId),
+        )
+      )
+      && (
+        requireActionAuthorization !== true
+        || weComRepairBotActionAuthorizedForHotel(userId, hotelId)
+      ))
     if (allowedUserIds.length === 0) {
       throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
     }
@@ -6359,7 +6982,57 @@ const deliverWeComRepairBotDirectMessage = async ({
       && !Number.isNaN(new Date(cutoffAt).getTime())
         ? cutoffAt
         : attemptedAt
-    const messageSha256 = sha256(content)
+    const messageSha256 = sha256(
+      templateCard
+        ? `${content}\n${JSON.stringify(templateCard)}`
+        : content,
+    )
+    if (
+      templateCard
+      && (
+        !Array.isArray(templateCard.button_list)
+        || templateCard.button_list.length !== 1
+        || !/^YILIAN_REPAIR_\d{3}$/u.test(
+          String(templateCard.button_list[0]?.key ?? ''),
+        )
+        || typeof templateIncidentId !== 'string'
+        || !templateIncidentId.startsWith('pms-repair-')
+      )
+    ) throw new Error('WECOM_REPAIR_BOT_TEMPLATE_CARD_INVALID')
+    const cardDeliveries = templateCard
+      ? allowedUserIds.map((userId, partIndex) => {
+        const actionAuthorized =
+          weComRepairBotActionAuthorizedForHotel(userId, hotelId)
+        if (!actionAuthorized) return null
+        const taskId = `sfg_${sha256(
+          `${messageKey}|${attemptedAt}|${partIndex}|${randomUUID()}`,
+        ).slice(0, 48)}`
+        const issuedAt = attemptedAt
+        return {
+          taskId,
+          card: { ...templateCard, task_id: taskId },
+          action: {
+            version: 1,
+            eventKey: String(templateCard.button_list?.[0]?.key ?? ''),
+            taskIdSha256: sha256(taskId),
+            recipientSha256: fingerprintWeComRepairBotValue(userId),
+            incidentId:
+              typeof templateIncidentId === 'string'
+                ? templateIncidentId
+                : null,
+            status: 'ISSUING',
+            issuedAt,
+            expiresAt: new Date(
+              Date.parse(issuedAt) + YILIAN_WECOM_CARD_TTL_MS,
+            ).toISOString(),
+            consumedAt: null,
+            callbackMessageSha256: null,
+            operationState: null,
+            operationIdSha256: null,
+          },
+        }
+      })
+      : []
     const delivery = {
       deliveryId: randomUUID(),
       messageKey,
@@ -6378,7 +7051,16 @@ const deliverWeComRepairBotDirectMessage = async ({
       automaticRetryAttempted: false,
       partCount: allowedUserIds.length,
       deliveredPartCount: 0,
-      parts: [],
+      parts: allowedUserIds.map((userId, partIndex) => ({
+        partIndex,
+        deliveryStatus: 'SENDING',
+        reasonCode: 'WECOM_REPAIR_BOT_MESSAGE_SENDING',
+        httpStatus: null,
+        weComCode: null,
+        ...(cardDeliveries[partIndex]
+          ? { templateCardAction: cardDeliveries[partIndex].action }
+          : {}),
+      })),
       bodyPreview: '企业微信智能机器人私聊通知（内容已隐藏）',
       deliveryChannel: 'WECOM_LONG_CONNECTION',
     }
@@ -6393,46 +7075,76 @@ const deliverWeComRepairBotDirectMessage = async ({
     await durableDeliveryClaim.markLedgerPersisted(delivery.deliveryId)
     const results = await deliverWeComRepairBotToAllowedUsers({
       credentials: weComRepairBotCredentials,
-      hotelId,
-      deliver: (userId) => captcha
-        ? weComRepairBotRuntime.sendCaptcha({ userId, captcha, content })
-        : weComRepairBotRuntime.sendText(userId, content),
+      allowedUserIds,
+      deliver: (userId, partIndex) => {
+        if (captcha) {
+          return weComRepairBotRuntime.sendCaptcha({
+            userId,
+            captcha,
+            content,
+          })
+        }
+        if (templateCard && cardDeliveries[partIndex]) {
+          return weComRepairBotRuntime.sendTemplateCard(
+            userId,
+            cardDeliveries[partIndex].card,
+          )
+        }
+        return weComRepairBotRuntime.sendText(userId, content)
+      },
     })
     for (const [partIndex, result] of results.entries()) {
+      const part = delivery.parts[partIndex]
       if (result.status === 'fulfilled') {
         const weComCode = Number.isInteger(result.value?.errcode)
           ? result.value.errcode
           : null
         delivery.deliveredPartCount += 1
-        delivery.parts.push({
-          partIndex,
+        Object.assign(part, {
           deliveryStatus: 'DELIVERED',
           reasonCode: 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED',
           httpStatus: null,
           weComCode,
         })
+        if (
+          part.templateCardAction
+          && part.templateCardAction.status === 'ISSUING'
+        ) part.templateCardAction.status = 'ACTIVE'
       } else {
-        delivery.parts.push({
-          partIndex,
-          deliveryStatus: 'REJECTED',
-          reasonCode: safeLuopanRepairReason(result.reason),
+        const cardDeliveryUnknown = Boolean(part.templateCardAction)
+        Object.assign(part, {
+          deliveryStatus: cardDeliveryUnknown ? 'AMBIGUOUS' : 'REJECTED',
+          reasonCode: cardDeliveryUnknown
+            ? 'WECOM_REPAIR_BOT_MESSAGE_DELIVERY_UNKNOWN'
+            : safeLuopanRepairReason(result.reason),
           httpStatus: null,
           weComCode: null,
         })
+        if (
+          part.templateCardAction
+          && part.templateCardAction.status === 'ISSUING'
+        ) part.templateCardAction.status = 'DELIVERY_UNKNOWN'
       }
     }
+    const hasAmbiguousPart = delivery.parts.some(
+      (part) => part.deliveryStatus === 'AMBIGUOUS',
+    )
     delivery.deliveryStatus =
       delivery.deliveredPartCount === delivery.partCount
         ? 'DELIVERED'
         : delivery.deliveredPartCount > 0
           ? 'PARTIAL'
-          : 'REJECTED'
+          : hasAmbiguousPart
+            ? 'AMBIGUOUS'
+            : 'REJECTED'
     delivery.reasonCode =
       delivery.deliveryStatus === 'DELIVERED'
         ? 'WECOM_REPAIR_BOT_MESSAGE_DELIVERED'
         : delivery.deliveryStatus === 'PARTIAL'
           ? 'WECOM_REPAIR_BOT_MESSAGE_PARTIAL'
-          : 'WECOM_REPAIR_BOT_MESSAGE_REJECTED'
+          : delivery.deliveryStatus === 'AMBIGUOUS'
+            ? 'WECOM_REPAIR_BOT_MESSAGE_DELIVERY_UNKNOWN'
+            : 'WECOM_REPAIR_BOT_MESSAGE_REJECTED'
     delivery.completedAt = new Date().toISOString()
     persistWeComDeliveries()
     await durableDeliveryClaim.complete({
@@ -6895,7 +7607,9 @@ const notifyYilianRepairRequired = async (hotelId, reasonCode) => {
         : reasonCode === 'YILIAN_AUTHENTICATION_NOT_COMPLETED'
           ? '原因：厂家官网未建立有效会话，可能出现了新的验证步骤；系统已停止自动重试。'
           : '原因：厂家要求短信、验证码或额外安全确认，系统已停止自动重试。',
-      '处理：请在驿联云官网完成验证，或在门店后台更新登录凭据后手动重试。',
+      reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
+        ? '处理：请在门店后台更新登录凭据后重试。'
+        : `处理：请先在驿联云官网完成验证，再私聊修复助手发送“恢复 ${hotel.hotelCode}”，无需登录本系统。`,
       `驿联云官网：${YILIAN_LOGIN_URL}`,
       `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
     ].join('\n'),
@@ -6913,22 +7627,42 @@ const notifyYilianRepairRequired = async (hotelId, reasonCode) => {
       reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
         ? '当前账号或密码已被厂家拒绝，请在修复后台更新后再次一键恢复。'
         : '厂家当前要求短信、滑块或手机确认；系统无法代收厂家发送的短信验证码。',
-      `请进入修复后台处理：${storeRepairConsoleUrlFor(hotel)}`,
-      '完成厂家确认后，点击“一键快速恢复”重新校验三个接口。',
+      ...(reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
+        ? [
+          `请进入备用修复后台处理：${storeRepairConsoleUrlFor(hotel)}`,
+          '更新后可回到企业微信重新发起恢复。',
+        ]
+        : [
+          `驿联云官网：${YILIAN_LOGIN_URL}`,
+          `完成厂家确认后，发送“恢复 ${hotel.hotelCode}”重新校验三个接口，无需登录本系统。`,
+        ]),
     ].join('\n'),
   })
-  await Promise.allSettled([groupNotice, managerNotice])
+  const outcomes = await Promise.allSettled([groupNotice, managerNotice])
+  const delivered = outcomes.some((outcome) =>
+    outcome.status === 'fulfilled'
+    && ['DELIVERED', 'PARTIAL'].includes(
+      outcome.value?.deliveryStatus,
+    ))
+  if (!delivered) {
+    process.stderr.write(`${JSON.stringify({
+      event: 'YILIAN_REPAIR_REQUIRED_NOTICE_FAILED',
+      hotelId,
+      reasonCode,
+    })}\n`)
+  }
 }
 
 const startYilianCloudRecovery = async (
   hotelId,
   trigger = 'MANUAL_REPAIR',
+  { notifyOnActionRequired = true } = {},
 ) => {
   if (!yilianAssistedRepairEnabled) {
     throw new Error('YILIAN_AUTO_REAUTH_DISABLED')
   }
   if (
-    trigger !== 'MANUAL_REPAIR'
+    !YILIAN_INTERACTIVE_REPAIR_TRIGGERS.has(trigger)
     && !yilianAutomaticRecoveryDue(yilianRepairStatusRecordFor(hotelId))
   ) return yilianRepairStatusFor(hotelId)
   const active = activeYilianRepairsByHotel.get(hotelId)
@@ -6957,13 +7691,46 @@ const startYilianCloudRecovery = async (
     let previousSecrets = null
     let tokenCommitted = false
     let activationCommitted = false
-    const hadBusinessDayControl = businessDayControlsByHotel.has(hotelId)
-    const previousBusinessDayControl = hadBusinessDayControl
-      ? { ...businessDayControlsByHotel.get(hotelId) }
-      : null
-    const previousCollectionEnabled = hotel.collectionEnabled
-    const previousHotelRowVersion = hotel.rowVersion
+    let hadBusinessDayControl = false
+    let previousBusinessDayControl = null
+    let previousCollectionEnabled = hotel.collectionEnabled
+    let previousHotelRowVersion = hotel.rowVersion
     try {
+      const inFlightCollections = [
+        liveCollectionLocks.get(hotelId),
+        liveCollectionLocks.get(`${hotelId}:ISOLATED_NON_PUBLISHING`),
+      ].filter(Boolean)
+      if (inFlightCollections.length > 0) {
+        let drainTimeoutId
+        try {
+          await Promise.race([
+            Promise.allSettled(inFlightCollections),
+            new Promise((resolve, reject) => {
+              drainTimeoutId = setTimeout(
+                () => reject(new Error('YILIAN_COLLECTION_DRAIN_TIMEOUT')),
+                YILIAN_COLLECTION_DRAIN_TIMEOUT_MS,
+              )
+              drainTimeoutId.unref?.()
+            }),
+          ])
+        } finally {
+          if (drainTimeoutId) clearTimeout(drainTimeoutId)
+        }
+      }
+      hadBusinessDayControl = businessDayControlsByHotel.has(hotelId)
+      previousBusinessDayControl = hadBusinessDayControl
+        ? { ...businessDayControlsByHotel.get(hotelId) }
+        : null
+      previousCollectionEnabled = hotel.collectionEnabled
+      previousHotelRowVersion = hotel.rowVersion
+      const recoveryConfigFingerprint = () => sha256(stableJson({
+        pmsLoginSecret: pmsLoginSecretsByHotel.get(hotelId) ?? null,
+        reportSources: reportSourcesByHotel.get(hotelId) ?? [],
+        businessDayControl: businessDayControlsByHotel.get(hotelId) ?? null,
+        collectionEnabled: hotel.collectionEnabled,
+        hotelRowVersion: hotel.rowVersion,
+      }))
+      const initialConfigFingerprint = recoveryConfigFingerprint()
       credentials = pmsLoginCredentialsFor(hotelId)
       const sources = reportSourcesByHotel.get(hotelId) ?? []
       const enabledSources = sources.filter((source) => source.enabled)
@@ -6996,6 +7763,9 @@ const startYilianCloudRecovery = async (
         || shadow.snapshot.completeness !== 'COMPLETE'
         || shadow.run.outboundDeliveryAttempted !== false
       ) throw new Error('YILIAN_SHADOW_VALIDATION_FAILED')
+      if (recoveryConfigFingerprint() !== initialConfigFingerprint) {
+        throw new Error('YILIAN_REPAIR_CONFIG_CHANGED')
+      }
 
       previousSecrets = replaceYilianAccessToken(
         hotelId,
@@ -7030,6 +7800,7 @@ const startYilianCloudRecovery = async (
       }
       updateYilianRepairStatus(hotelId, {
         state: 'SUCCEEDED',
+        lastCompletedAt: updatedAt,
         lastValidatedAt: updatedAt,
         lastSucceededAt: updatedAt,
         lastBusinessDate: shadow.snapshot.businessDate,
@@ -7080,16 +7851,21 @@ const startYilianCloudRecovery = async (
         }
       }
       const reasonCode = safeYilianRepairReason(error)
+      const completedAt = new Date().toISOString()
       const state = yilianHumanAuthorizationRequired(reasonCode)
         ? 'HUMAN_AUTHORIZATION_REQUIRED'
         : 'FAILED'
       updateYilianRepairStatus(hotelId, {
         state,
+        lastCompletedAt: completedAt,
         lastErrorCode: reasonCode,
       })
       if (
-        yilianHumanAuthorizationRequired(reasonCode)
-        || reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
+        notifyOnActionRequired
+        && (
+          yilianHumanAuthorizationRequired(reasonCode)
+          || reasonCode === 'YILIAN_CREDENTIALS_REJECTED'
+        )
       ) void notifyYilianRepairRequired(hotelId, reasonCode)
       process.stderr.write(`${JSON.stringify({
         event: 'YILIAN_AUTO_REAUTH_FAILED',
@@ -7136,10 +7912,7 @@ const scheduledYilianRecoveryTick = async () => {
         continue
       }
       const status = yilianRepairStatusRecordFor(hotel.hotelId)
-      if (
-        isNightlyRepairDeferred()
-        && status.trigger !== 'MANUAL_REPAIR'
-      ) continue
+      if (isNightlyRepairDeferred()) continue
       const activationPending = yilianInitialActivationPending(hotel, status)
       const migratedSourceContractPending =
         status.state === 'IDLE'
@@ -7155,7 +7928,7 @@ const scheduledYilianRecoveryTick = async () => {
       const manualRecoveryPending =
         hotel.collectionEnabled
         && status.state === 'IDLE'
-        && status.trigger === 'MANUAL_REPAIR'
+        && YILIAN_INTERACTIVE_REPAIR_TRIGGERS.has(status.trigger)
         && status.lastAttemptAt === null
         && status.lastErrorCode === null
       if (
@@ -7166,14 +7939,16 @@ const scheduledYilianRecoveryTick = async () => {
         )
         || !yilianRepairRetryAllowed(status)
       ) continue
-      const statusLastAttemptAt = Date.parse(status.lastAttemptAt ?? '')
-      const lastAttemptAt = Math.max(
+      const statusLastActivityAt = Date.parse(
+        status.lastCompletedAt ?? status.lastAttemptAt ?? '',
+      )
+      const lastActivityAt = Math.max(
         lastScheduledYilianRecoveryAtByHotel.get(hotel.hotelId) ?? 0,
-        Number.isFinite(statusLastAttemptAt) ? statusLastAttemptAt : 0,
+        Number.isFinite(statusLastActivityAt) ? statusLastActivityAt : 0,
       )
       if (
         !yilianAutomaticRecoveryDue(status, now)
-        || now - lastAttemptAt < YILIAN_AUTO_RECOVERY_RETRY_MS
+        || now - lastActivityAt < YILIAN_AUTO_RECOVERY_RETRY_MS
       ) continue
       lastScheduledYilianRecoveryAtByHotel.set(hotel.hotelId, now)
       await startYilianCloudRecovery(
@@ -7181,7 +7956,7 @@ const scheduledYilianRecoveryTick = async () => {
         activationPending
           ? 'SCHEDULED_INITIAL_ACTIVATION'
           : manualRecoveryPending
-            ? 'MANUAL_REPAIR'
+            ? status.trigger
             : 'SCHEDULED_STALE_SESSION_RECOVERY',
       )
     }
@@ -8277,6 +9052,534 @@ const processBieyanghongRepairSubmission = ({ token, code }) => {
   return submitted.record
 }
 
+const consumeWeComRepairBotMessage = (messageId) => {
+  const normalizedMessageId = typeof messageId === 'string'
+    ? messageId.trim()
+    : ''
+  if (!normalizedMessageId) {
+    return { accepted: false, messageHash: null }
+  }
+  const now = Date.now()
+  for (const [messageHash, seenAt] of seenWeComRepairBotMessageHashes) {
+    if (now - seenAt > 60 * 60 * 1000) {
+      seenWeComRepairBotMessageHashes.delete(messageHash)
+    }
+  }
+  const messageHash = fingerprintWeComRepairBotValue(normalizedMessageId)
+  if (seenWeComRepairBotMessageHashes.has(messageHash)) {
+    return { accepted: false, messageHash }
+  }
+  seenWeComRepairBotMessageHashes.set(messageHash, now)
+  while (seenWeComRepairBotMessageHashes.size > 1_000) {
+    seenWeComRepairBotMessageHashes.delete(
+      seenWeComRepairBotMessageHashes.keys().next().value,
+    )
+  }
+  return { accepted: true, messageHash }
+}
+
+const YILIAN_WECOM_CREDENTIAL_ERRORS = new Set([
+  'YILIAN_CREDENTIALS_REJECTED',
+  'YILIAN_CREDENTIALS_REQUIRED',
+  'YILIAN_CREDENTIALS_INVALID',
+])
+
+const currentPmsRepairIncidentForHotel = (hotel, now = new Date()) => {
+  const trustedDeviceStatus = trustedDeviceEligible(hotel)
+    ? trustedDeviceStoreFor(hotel).status(now)
+    : trustedDeviceNotApplicableStatus(hotel)
+  return pmsRepairIncidentFor({
+    hotel,
+    monitor: liveMonitorFor(hotel.hotelId),
+    trustedDeviceStatus,
+    now,
+  })
+}
+
+const yilianWeComRecoveryPlan = (hotel, now = new Date()) => {
+  const status = yilianRepairStatusFor(hotel.hotelId)
+  if (!status.automationEnabled) {
+    return {
+      shouldRun: false,
+      message: '驿联云后台自动恢复尚未启用，请联系系统管理员。',
+    }
+  }
+  if (!status.credentialsConfigured) {
+    return {
+      shouldRun: false,
+      message: '未配置本门店驿联云凭据，请先在备用修复后台安全更新。',
+    }
+  }
+  const enabledSourceCount = (reportSourcesByHotel.get(hotel.hotelId) ?? [])
+    .filter((source) => source.enabled).length
+  if (enabledSourceCount !== 3) {
+    return {
+      shouldRun: false,
+      message: '三个报表接口配置不完整，请先在备用修复后台核对。',
+    }
+  }
+  if (YILIAN_WECOM_CREDENTIAL_ERRORS.has(status.lastErrorCode)) {
+    return {
+      shouldRun: false,
+      message: '厂家已拒绝当前账号或密码，请先在备用修复后台更新凭据。',
+    }
+  }
+  if (status.active) {
+    return {
+      shouldRun: false,
+      message: '该门店已在后台恢复中，本次不会重复登录；请发送“状态”查看结果。',
+    }
+  }
+  const statusRecord = yilianRepairStatusRecordFor(hotel.hotelId)
+  if (
+    statusRecord.weComResult?.pending
+    && statusRecord.weComResult.state !== 'RUNNING'
+    && statusRecord.weComResultOutbox.length
+      >= YILIAN_WECOM_RESULT_OUTBOX_LIMIT
+  ) {
+    return {
+      shouldRun: false,
+      message: '历史恢复结果仍在等待企业微信送达，请稍后发送“状态”重试。',
+    }
+  }
+  const incident = currentPmsRepairIncidentForHotel(hotel, now)
+  if (!incident && !yilianInitialActivationPending(hotel, statusRecord)) {
+    return {
+      shouldRun: false,
+      message: '当前PMS数据正常，无需重复登录；系统会继续自动监测。',
+    }
+  }
+  const lastActivityAt = Date.parse(
+    status.lastCompletedAt ?? status.lastAttemptAt ?? '',
+  )
+  const elapsed = Number.isFinite(lastActivityAt)
+    ? now.getTime() - lastActivityAt
+    : Number.POSITIVE_INFINITY
+  if (Number.isFinite(elapsed) && elapsed < YILIAN_WECOM_REPAIR_COOLDOWN_MS) {
+    if (status.state === 'SUCCEEDED') {
+      return {
+        shouldRun: false,
+        message: `最近一次恢复已成功，接口 ${status.successfulSourceCount}/${status.sourceCount}${status.lastBusinessDate
+          ? `，营业日 ${status.lastBusinessDate}`
+          : ''}。无需重复登录。`,
+      }
+    }
+    const waitMinutes = elapsed < 0
+      ? 5
+      : Math.max(
+        1,
+        Math.ceil(
+          (YILIAN_WECOM_REPAIR_COOLDOWN_MS - elapsed) / 60_000,
+        ),
+      )
+    return {
+      shouldRun: false,
+      message: `为避免连续登录触发厂家风控，请 ${waitMinutes} 分钟后重试。`,
+    }
+  }
+  return {
+    shouldRun: true,
+    message: '已受理：正在后台自动重登并只读校验3个接口，无需登录修复后台。',
+  }
+}
+
+const yilianWeComRecoveryResultContent = (hotel, status) => {
+  if (status.state === 'SUCCEEDED') {
+    return [
+      `### ${hotel.hotelCode} 快速恢复成功`,
+      `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
+      `接口校验：${status.successfulSourceCount}/${status.sourceCount}`,
+      ...(status.lastBusinessDate
+        ? [`营业日：${status.lastBusinessDate}`]
+        : []),
+      '采集已恢复；本次仅更新会话与快照，未触发经营简报播报。',
+    ].join('\n')
+  }
+  if (status.state === 'HUMAN_AUTHORIZATION_REQUIRED') {
+    return [
+      `### ${hotel.hotelCode} 需要厂家安全确认`,
+      '驿联云要求短信、滑块或手机确认，此环节不能安全绕过。',
+      `先在驿联云官网完成确认：${YILIAN_LOGIN_URL}`,
+      `完成后回到企业微信发送“恢复 ${hotel.hotelCode}”，仍无需登录本系统。`,
+      `状态码：${status.lastErrorCode ?? 'YILIAN_HUMAN_AUTHORIZATION_REQUIRED'}`,
+    ].join('\n')
+  }
+  if (YILIAN_WECOM_CREDENTIAL_ERRORS.has(status.lastErrorCode)) {
+    return [
+      `### ${hotel.hotelCode} 快速恢复未完成`,
+      '厂家拒绝了当前账号或密码，需要更新加密凭据。',
+      `备用修复后台：${storeRepairConsoleUrlFor(hotel)}`,
+      `状态码：${status.lastErrorCode}`,
+    ].join('\n')
+  }
+  if (status.lastErrorCode === 'YILIAN_SNAPSHOT_PERSIST_FAILED') {
+    return [
+      `### ${hotel.hotelCode} 会话已恢复，快照保存待重试`,
+      '新会话与接口配置已保留，但本次快照未能持久化；系统会自动重试，不会回退到旧会话。',
+      `状态码：${status.lastErrorCode}`,
+    ].join('\n')
+  }
+  return [
+    `### ${hotel.hotelCode} 快速恢复未完成`,
+    '后台已停止本次尝试，旧令牌和接口配置均已保留。',
+    `状态码：${status.lastErrorCode ?? 'YILIAN_AUTO_REAUTH_FAILED'}`,
+    `备用修复后台：${storeRepairConsoleUrlFor(hotel)}`,
+  ].join('\n')
+}
+
+const flushYilianWeComResult = async (
+  hotelId,
+  requestedOperationIdSha256 = null,
+) => {
+  const initialRecord = yilianRepairStatusRecordFor(hotelId)
+  const result = requestedOperationIdSha256
+    ? yilianWeComResultForOperation(
+      initialRecord,
+      requestedOperationIdSha256,
+    )
+    : yilianWeComResultsForRecord(initialRecord).find((candidate) =>
+      candidate.pending
+      && candidate.state !== 'RUNNING'
+      && candidate.requesterSha256) ?? null
+  if (
+    !result?.pending
+    || result.state === 'RUNNING'
+    || !result.requesterSha256
+  ) return false
+  const deliveryLockKey = `${hotelId}:${result.operationIdSha256}`
+  const running = activeYilianWeComResultDeliveriesByHotel.get(deliveryLockKey)
+  if (running) return running
+  const operation = (async () => {
+    const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
+    if (!hotel || !weComRepairBotReady()) return false
+
+    let currentResult = yilianWeComResultForOperation(
+      yilianRepairStatusRecordFor(hotelId),
+      result.operationIdSha256,
+    )
+    if (!currentResult?.pending || currentResult.state === 'RUNNING') {
+      return false
+    }
+    const deadLetter = (deliveryFailureCode) => {
+      updateYilianWeComResultForOperation(
+        hotelId,
+        currentResult.operationIdSha256,
+        (candidate) => ({
+          ...candidate,
+          pending: false,
+          deliveryState: 'DEAD_LETTER',
+          deliveryFailureCode,
+        }),
+      )
+      process.stderr.write(`${JSON.stringify({
+        event: 'WECOM_YILIAN_REPAIR_RESULT_DEAD_LETTERED',
+        hotelId,
+        operationIdSha256: currentResult.operationIdSha256.slice(0, 16),
+        reasonCode: deliveryFailureCode,
+      })}\n`)
+      return false
+    }
+    const currentRecipientSha256s = new Set(
+      weComRepairBotActionRecipientsForHotel(hotelId)
+        .map(fingerprintWeComRepairBotValue),
+    )
+    if (!currentRecipientSha256s.has(currentResult.requesterSha256)) {
+      return deadLetter('WECOM_REPAIR_RESULT_RECIPIENT_REVOKED')
+    }
+    const completedAttempt = currentResult.deliveryAttempt
+    const messageKeyForAttempt = (attempt) =>
+      `${hotelId}:YILIAN_WECOM_REPAIR_RESULT_V1:${currentResult.operationIdSha256}:${currentResult.state}:${attempt}`
+    const prior = completedAttempt > 0
+      ? weComDeliveriesByKey.get(messageKeyForAttempt(completedAttempt))
+      : null
+    if (['DELIVERED', 'PARTIAL'].includes(prior?.deliveryStatus)) {
+      updateYilianWeComResultForOperation(
+        hotelId,
+        currentResult.operationIdSha256,
+        (candidate) => ({
+          ...candidate,
+          pending: false,
+          deliveryState: 'DELIVERED',
+          deliveryFailureCode: null,
+        }),
+      )
+      return true
+    }
+    const lastDeliveryAttemptAt = Date.parse(
+      currentResult.lastDeliveryAttemptAt ?? '',
+    )
+    if (
+      Number.isFinite(lastDeliveryAttemptAt)
+      && Date.now() - lastDeliveryAttemptAt < YILIAN_WECOM_RESULT_RETRY_MS
+    ) return false
+    if (completedAttempt >= 20) {
+      return deadLetter('WECOM_REPAIR_RESULT_DELIVERY_EXHAUSTED')
+    }
+    const deliveryAttempt = completedAttempt + 1
+    const messageKey = messageKeyForAttempt(deliveryAttempt)
+    const updatedRecord = updateYilianWeComResultForOperation(
+      hotelId,
+      currentResult.operationIdSha256,
+      (candidate) => ({
+        ...candidate,
+        deliveryAttempt,
+        deliveryState: 'PENDING',
+        deliveryFailureCode: null,
+        lastDeliveryAttemptAt: new Date().toISOString(),
+      }),
+    )
+    currentResult = updatedRecord
+      ? yilianWeComResultForOperation(
+        updatedRecord,
+        currentResult.operationIdSha256,
+      )
+      : null
+    if (!currentResult?.pending) return false
+    const delivery = await deliverWeComRepairBotDirectMessage({
+      hotelId,
+      messageKey,
+      deliveryType: 'YILIAN_WECOM_REPAIR_RESULT',
+      content: yilianWeComRecoveryResultContent(hotel, currentResult),
+      businessDate: currentResult.lastBusinessDate,
+      cutoffAt: currentResult.completedAt,
+      recipientSha256s: [currentResult.requesterSha256],
+      requireActionAuthorization: true,
+    })
+    const delivered = ['DELIVERED', 'PARTIAL'].includes(
+      delivery.deliveryStatus,
+    )
+    if (delivered) {
+      updateYilianWeComResultForOperation(
+        hotelId,
+        currentResult.operationIdSha256,
+        (candidate) => ({
+          ...candidate,
+          pending: false,
+          deliveryState: 'DELIVERED',
+          deliveryFailureCode: null,
+        }),
+      )
+    }
+    return delivered
+  })()
+  activeYilianWeComResultDeliveriesByHotel.set(deliveryLockKey, operation)
+  try {
+    return await operation
+  } finally {
+    activeYilianWeComResultDeliveriesByHotel.delete(deliveryLockKey)
+  }
+}
+
+const runYilianWeComRecovery = async ({
+  hotel,
+  messageHash,
+  requesterSha256,
+  actionSource,
+}) => {
+  const startedAt = new Date().toISOString()
+  startYilianWeComResultOperation(hotel.hotelId, {
+    operationIdSha256: messageHash,
+    requesterSha256,
+    pending: true,
+    actionSource,
+    startedAt,
+    state: 'RUNNING',
+    completedAt: null,
+    lastErrorCode: null,
+    lastBusinessDate: null,
+    sourceCount: 0,
+    successfulSourceCount: 0,
+    deliveryAttempt: 0,
+    lastDeliveryAttemptAt: null,
+  })
+  const recovery = startYilianCloudRecovery(
+    hotel.hotelId,
+    YILIAN_WECOM_REPAIR_TRIGGER,
+    { notifyOnActionRequired: false },
+  )
+  let status
+  try {
+    status = await recovery
+  } catch (error) {
+    status = {
+      ...yilianRepairStatusFor(hotel.hotelId),
+      state: 'FAILED',
+      lastErrorCode: safeYilianRepairReason(error),
+    }
+  }
+  const completedAt = status.lastCompletedAt ?? new Date().toISOString()
+  updateYilianWeComResultForOperation(
+    hotel.hotelId,
+    messageHash,
+    (candidate) => ({
+      ...candidate,
+      state: status.state,
+      completedAt,
+      lastErrorCode: status.lastErrorCode,
+      lastBusinessDate: status.lastBusinessDate,
+      sourceCount: status.sourceCount,
+      successfulSourceCount: status.successfulSourceCount,
+      deliveryAttempt: 0,
+      lastDeliveryAttemptAt: null,
+    }),
+  )
+  const resultDelivered = await flushYilianWeComResult(
+    hotel.hotelId,
+    messageHash,
+  )
+    .catch(() => false)
+  process.stdout.write(`${JSON.stringify({
+    event: 'WECOM_YILIAN_REPAIR_COMPLETED',
+    hotelId: hotel.hotelId,
+    actionSource,
+    messageSha256: messageHash,
+    requesterSha256: requesterSha256.slice(0, 16),
+    state: status.state,
+    reasonCode: status.lastErrorCode,
+    sourceCount: status.sourceCount,
+    successfulSourceCount: status.successfulSourceCount,
+    resultDelivered,
+  })}\n`)
+}
+
+const scheduledYilianWeComResultTick = async () => {
+  if (!weComRepairBotReady()) return
+  const pendingResults = [...yilianRepairStatusesByHotel.entries()]
+    .flatMap(([hotelId, status]) =>
+      yilianWeComResultsForRecord(status)
+        .filter((result) =>
+          result.pending === true
+          && result.state !== 'RUNNING')
+        .map((result) => ({
+          hotelId,
+          operationIdSha256: result.operationIdSha256,
+        })))
+  await Promise.allSettled(
+    pendingResults.map(({ hotelId, operationIdSha256 }) =>
+      flushYilianWeComResult(hotelId, operationIdSha256)),
+  )
+}
+
+const updateYilianWeComCardOperationState = (
+  operationIdSha256,
+  operationState,
+) => {
+  const matches = []
+  for (const delivery of weComDeliveriesByKey.values()) {
+    for (const part of delivery.parts ?? []) {
+      if (
+        part?.templateCardAction?.operationIdSha256 === operationIdSha256
+      ) matches.push(part.templateCardAction)
+    }
+  }
+  if (matches.length !== 1) {
+    throw new Error('WECOM_REPAIR_BOT_CARD_OPERATION_INVALID')
+  }
+  const action = matches[0]
+  const previousState = action.operationState
+  action.operationState = operationState
+  try {
+    persistWeComDeliveries()
+  } catch (error) {
+    action.operationState = previousState
+    throw error
+  }
+}
+
+const scheduledYilianWeComCardOperationTick = () => {
+  try {
+    for (const delivery of weComDeliveriesByKey.values()) {
+      if (
+        delivery.deliveryType !== 'PMS_REPAIR_REQUIRED'
+        || delivery.deliveryChannel !== 'WECOM_LONG_CONNECTION'
+      ) continue
+      for (const part of delivery.parts ?? []) {
+        const action = part?.templateCardAction
+        if (
+          action?.version !== 1
+          || action.status !== 'CONSUMED'
+          || !['PENDING', 'RUNNING'].includes(action.operationState)
+          || !/^[a-f0-9]{64}$/u.test(action.operationIdSha256 ?? '')
+          || !/^[a-f0-9]{64}$/u.test(action.recipientSha256 ?? '')
+        ) continue
+        const hotel = hotels.find((candidate) =>
+          candidate.hotelId === delivery.hotelId
+          && candidate.pmsSystemCode === 'YILIAN_CLOUD')
+        if (!hotel) continue
+        const currentRecipientSha256s = new Set(
+          weComRepairBotActionRecipientsForHotel(hotel.hotelId)
+            .map(fingerprintWeComRepairBotValue),
+        )
+        if (!currentRecipientSha256s.has(action.recipientSha256)) {
+          updateYilianWeComCardOperationState(
+            action.operationIdSha256,
+            'REVOKED',
+          )
+          continue
+        }
+        const status = yilianRepairStatusRecordFor(hotel.hotelId)
+        const existingResult = yilianWeComResultForOperation(
+          status,
+          action.operationIdSha256,
+        )
+        if (existingResult) {
+          const operationState = existingResult.state === 'RUNNING'
+            ? 'RUNNING'
+            : 'DONE'
+          if (action.operationState !== operationState) {
+            updateYilianWeComCardOperationState(
+              action.operationIdSha256,
+              operationState,
+            )
+          }
+          continue
+        }
+        if (activeYilianRepairsByHotel.has(hotel.hotelId)) continue
+        const incident = currentPmsRepairIncidentForHotel(hotel)
+        if (!incident || incident.incidentId !== action.incidentId) {
+          updateYilianWeComCardOperationState(
+            action.operationIdSha256,
+            'NOT_REQUIRED',
+          )
+          continue
+        }
+        const plan = yilianWeComRecoveryPlan(hotel)
+        if (!plan.shouldRun) {
+          updateYilianWeComCardOperationState(
+            action.operationIdSha256,
+            'NOT_REQUIRED',
+          )
+          continue
+        }
+        updateYilianWeComCardOperationState(
+          action.operationIdSha256,
+          'RUNNING',
+        )
+        const recovery = runYilianWeComRecovery({
+          hotel,
+          messageHash: action.operationIdSha256,
+          requesterSha256: action.recipientSha256,
+          actionSource: 'TEMPLATE_CARD',
+        })
+        void recovery.catch(() => {})
+      }
+    }
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({
+      event: 'WECOM_YILIAN_CARD_OPERATION_TICK_FAILED',
+      reasonCode: safeLuopanRepairReason(error),
+    })}\n`)
+  }
+}
+
+const authorizedYilianHotelForWeCom = (userId, hotelCode) => {
+  const candidates = hotels.filter((candidate) =>
+    candidate.hotelCode === hotelCode
+    && candidate.pmsSystemCode === 'YILIAN_CLOUD'
+    && weComRepairBotActionAuthorizedForHotel(userId, candidate.hotelId))
+  return candidates.length === 1 ? candidates[0] : null
+}
+
 const handleWeComRepairBotText = async (frame, replyText) => {
   const body = frame?.body
   const userId = typeof body?.from?.userid === 'string'
@@ -8287,27 +9590,14 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     return
   }
 
-  const messageId = typeof body?.msgid === 'string' ? body.msgid : ''
-  if (!messageId) {
+  const consumed = consumeWeComRepairBotMessage(body?.msgid)
+  if (!consumed.messageHash) {
     await replyText(frame, '消息格式无效，请重新发送。')
     return
   }
-  const now = Date.now()
-  for (const [messageHash, seenAt] of seenWeComRepairBotMessageHashes) {
-    if (now - seenAt > 60 * 60 * 1000) {
-      seenWeComRepairBotMessageHashes.delete(messageHash)
-    }
-  }
-  const messageHash = fingerprintWeComRepairBotValue(messageId)
-  if (seenWeComRepairBotMessageHashes.has(messageHash)) {
+  if (!consumed.accepted) {
     await replyText(frame, '本条消息已接收，请勿重复提交。')
     return
-  }
-  seenWeComRepairBotMessageHashes.set(messageHash, now)
-  while (seenWeComRepairBotMessageHashes.size > 1_000) {
-    seenWeComRepairBotMessageHashes.delete(
-      seenWeComRepairBotMessageHashes.keys().next().value,
-    )
   }
 
   const command = parseWeComRepairBotText(body?.text?.content)
@@ -8351,25 +9641,34 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         if (allowedUserIds.length > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS) {
           throw new Error('WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED')
         }
-        reply = `绑定成功。当前已保留${allowedUserIds.length}/2名全局接收人。发送“状态”可查看待处理修复任务。`
+        reply = weComRepairBotConfig.allowGlobalRepairActions
+          ? `绑定成功。当前已绑定${allowedUserIds.length}/2名全局接收人，并已显式允许处理所有门店修复任务。发送“状态”可查看待处理任务。`
+          : `绑定成功。当前已绑定${allowedUserIds.length}/2名全局接收人；默认仅接收通知，需由平台管理员显式开启跨门店处理权限。`
       }
-      weComRepairBotCredentials = normalizeWeComRepairBotCredentials({
+      const nextCredentials = normalizeWeComRepairBotCredentials({
         ...weComRepairBotCredentials,
         allowedUserIds,
         hotelAllowedUserIds,
       })
-      const allowedUserIdSha256s = weComRepairBotCredentials.allowedUserIds
+      const allowedUserIdSha256s = nextCredentials.allowedUserIds
         .map(fingerprintWeComRepairBotValue)
-      weComRepairBotConfig = {
+      const nextConfig = {
         ...weComRepairBotConfig,
+        rowVersion: weComRepairBotConfig.rowVersion + 1,
         allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
         allowedUserIdSha256s,
         hotelAllowedUserIdSha256s:
           weComRepairBotHotelUserFingerprints(hotelAllowedUserIds),
         updatedAt: new Date().toISOString(),
       }
-      persistWeComRepairBotSecret()
-      persistWeComRepairBotConfig()
+      try {
+        commitWeComRepairBotState({
+          credentials: nextCredentials,
+          config: nextConfig,
+        })
+      } catch {
+        throw new Error('WECOM_REPAIR_BOT_PAIRING_PERSIST_FAILED')
+      }
       await replyText(
         frame,
         reply,
@@ -8379,6 +9678,8 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         frame,
         error?.message === 'WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED'
           ? '该门店绑定人员已达到安全上限。'
+          : error?.message === 'WECOM_REPAIR_BOT_PAIRING_PERSIST_FAILED'
+            ? '绑定信息保存失败，请在后台重新生成配对码后重试。'
           : '配对码无效或已过期，请在后台重新生成。',
       )
     }
@@ -8396,10 +9697,44 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     return
   }
 
+  if (command.type === 'YILIAN_REPAIR') {
+    const hotel = authorizedYilianHotelForWeCom(
+      userId,
+      command.hotelCode,
+    )
+    if (!hotel) {
+      await replyText(
+        frame,
+        '未找到可由当前账号处理的驿联云门店。',
+      )
+      return
+    }
+    if (
+      yilianWeComResultForOperation(
+        yilianRepairStatusRecordFor(hotel.hotelId),
+        consumed.messageHash,
+      )
+    ) {
+      await replyText(frame, '本条恢复请求已经处理，请发送“状态”查看最新结果。')
+      return
+    }
+    const plan = yilianWeComRecoveryPlan(hotel)
+    const recovery = plan.shouldRun
+      ? runYilianWeComRecovery({
+        hotel,
+        messageHash: consumed.messageHash,
+        requesterSha256: fingerprintWeComRepairBotValue(userId),
+        actionSource: 'TEXT_COMMAND',
+      })
+      : null
+    if (recovery) void recovery.catch(() => {})
+    await replyText(frame, plan.message)
+    return
+  }
+
   if (command.type === 'HELP') {
     const authorizedForUser = (hotelId) =>
-      globalAllowedUserIds.includes(userId)
-      || userHotelIds.includes(hotelId)
+      weComRepairBotActionAuthorizedForHotel(userId, hotelId)
     const activeCaptchaHotelIds = new Set(
       [...activeLuopanRepairsByHotel.values()]
         .filter((handle) => handle.channel === 'WECOM_LONG_CONNECTION')
@@ -8440,8 +9775,33 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         `等待验证码：${captchaCodes.join('、')}。请发送“门店编号 验证码”。`,
       )
     } else if (pendingCodes.length > 0) {
-      statusLines.push('系统将在晨间处理；无需提前提交验证码。')
+      statusLines.push('驿联云门店可发送“恢复 门店编号”；罗盘门店按验证码提示处理。')
     }
+    const yilianStatusLines = hotels
+      .filter((hotel) =>
+        hotel.pmsSystemCode === 'YILIAN_CLOUD'
+        && authorizedForUser(hotel.hotelId))
+      .map((hotel) => ({
+        hotel,
+        status: yilianRepairStatusFor(hotel.hotelId),
+      }))
+      .filter(({ status }) =>
+        status.active
+        || status.state !== 'IDLE'
+        || status.lastErrorCode)
+      .map(({ hotel, status }) => {
+        if (status.active) return `${hotel.hotelCode}：恢复处理中。`
+        if (status.state === 'SUCCEEDED') {
+          return `${hotel.hotelCode}：最近恢复成功，接口 ${status.successfulSourceCount}/${status.sourceCount}${status.lastBusinessDate
+            ? `，营业日 ${status.lastBusinessDate}`
+            : ''}。`
+        }
+        if (status.state === 'HUMAN_AUTHORIZATION_REQUIRED') {
+          return `${hotel.hotelCode}：等待厂家安全确认，完成后发送“恢复 ${hotel.hotelCode}”。`
+        }
+        return `${hotel.hotelCode}：恢复未完成，状态码 ${status.lastErrorCode ?? status.state}。`
+      })
+    statusLines.push(...yilianStatusLines)
     await replyText(
       frame,
       statusLines.length > 0
@@ -8460,7 +9820,10 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     const handle = hotel
       ? activeLuopanRepairsByHotel.get(hotel.hotelId)
       : null
-    if (hotel && !weComRepairBotAuthorizedForHotel(userId, hotel.hotelId)) {
+    if (
+      hotel
+      && !weComRepairBotActionAuthorizedForHotel(userId, hotel.hotelId)
+    ) {
       await replyText(frame, '当前账号未获该门店授权。')
       return
     }
@@ -8482,12 +9845,148 @@ const handleWeComRepairBotText = async (frame, replyText) => {
 
   await replyText(
     frame,
-    '可发送“状态”查看待处理门店；罗盘门店等待验证码时，可发送“门店编号 验证码”，例如：014 5dm8。',
+    '可发送“状态”查看待处理门店；驿联云可发送“恢复 015”；罗盘等待验证码时发送“门店编号 验证码”，例如：014 5dm8。',
   )
+}
+
+const consumeYilianWeComTemplateCard = ({
+  userId,
+  taskId,
+  eventKey,
+  callbackMessageId,
+  now = new Date(),
+}) => {
+  assertWeComDeliveryLedgerReady()
+  const result = consumeWeComRepairTemplateCardAction({
+    deliveries: weComDeliveriesByKey.values(),
+    userId,
+    taskId,
+    eventKey,
+    callbackMessageId,
+    now,
+    canRepairHotel: (hotelId) => {
+      const hotel = hotels.find((candidate) =>
+        candidate.hotelId === hotelId
+        && candidate.pmsSystemCode === 'YILIAN_CLOUD')
+      return Boolean(hotel)
+        && weComRepairBotActionAuthorizedForHotel(userId, hotelId)
+    },
+    currentIncidentIdForHotel: (hotelId) => {
+      const hotel = hotels.find((candidate) => candidate.hotelId === hotelId)
+      return hotel
+        ? currentPmsRepairIncidentForHotel(hotel, now)?.incidentId ?? null
+        : null
+    },
+    lastSucceededAtForHotel: (hotelId) =>
+      yilianRepairStatusRecordFor(hotelId).lastSucceededAt,
+    persist: persistWeComDeliveries,
+  })
+  const hotel = result.hotelId
+    ? hotels.find((candidate) => candidate.hotelId === result.hotelId) ?? null
+    : null
+  return { ...result, hotel }
+}
+
+const handleWeComRepairBotTemplateCard = async (
+  frame,
+  updateTemplateCard,
+) => {
+  const body = frame?.body
+  const userId = typeof body?.from?.userid === 'string'
+    ? body.from.userid.trim()
+    : ''
+  const eventKey = String(body?.event?.event_key ?? '')
+  const taskId = String(body?.event?.task_id ?? '')
+  if (
+    (body?.chattype && body.chattype !== 'single')
+    || !userId
+    || !/^YILIAN_REPAIR_\d{3}$/u.test(eventKey)
+    || !/^sfg_[a-f0-9]{48}$/u.test(taskId)
+  ) {
+    if (taskId) {
+      await updateTemplateCard(frame, {
+        card_type: 'text_notice',
+        main_title: {
+          title: '未能受理本次操作',
+          desc: '卡片已失效，请在机器人单聊中发送“恢复 门店编号”。',
+        },
+        task_id: taskId,
+      }, userId ? [userId] : undefined)
+    }
+    return
+  }
+  const consumed = consumeYilianWeComTemplateCard({
+    userId,
+    taskId,
+    eventKey,
+    callbackMessageId: body?.msgid,
+  })
+  if (consumed.status !== 'ACCEPTED') {
+    const resultText = {
+      ALREADY_CONSUMED: {
+        title: '恢复请求已接收',
+        desc: '无需重复点击；可发送“状态”查看最新结果。',
+      },
+      RESOLVED: {
+        title: '该问题已恢复',
+        desc: '当前PMS数据正常，本卡片不会再次触发登录。',
+      },
+      EXPIRED: {
+        title: '卡片已过期',
+        desc: '请在机器人单聊中发送“恢复 门店编号”。',
+      },
+      FORBIDDEN: {
+        title: '当前账号无法处理',
+        desc: '请使用本店管理员账号，或由平台管理员显式授权。',
+      },
+      INVALID: {
+        title: '未能受理本次操作',
+        desc: '卡片无效或未由系统签发，请发送“恢复 门店编号”。',
+      },
+    }[consumed.status]
+    await updateTemplateCard(frame, {
+      card_type: 'text_notice',
+      main_title: resultText,
+      task_id: taskId,
+    }, [userId])
+    return
+  }
+  const hotel = consumed.hotel
+  const plan = yilianWeComRecoveryPlan(hotel)
+  updateYilianWeComCardOperationState(
+    consumed.messageHash,
+    plan.shouldRun ? 'RUNNING' : 'NOT_REQUIRED',
+  )
+  const recovery = plan.shouldRun
+    ? runYilianWeComRecovery({
+      hotel,
+      messageHash: consumed.messageHash,
+      requesterSha256: fingerprintWeComRepairBotValue(userId),
+      actionSource: 'TEMPLATE_CARD',
+    })
+    : null
+  if (recovery) void recovery.catch(() => {})
+  try {
+    await updateTemplateCard(frame, {
+      card_type: 'text_notice',
+      main_title: {
+        title: plan.shouldRun ? '后台恢复已受理' : '本次未重复发起恢复',
+        desc: plan.message,
+      },
+      task_id: taskId,
+    }, [userId])
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({
+      event: 'WECOM_YILIAN_REPAIR_CARD_ACK_FAILED',
+      hotelId: hotel.hotelId,
+      reasonCode: safeLuopanRepairReason(error),
+    })}\n`)
+  }
 }
 
 weComRepairBotRuntime = createWeComRepairBotRuntime({
   onTextMessage: handleWeComRepairBotText,
+  onTemplateCardEvent: handleWeComRepairBotTemplateCard,
 })
 weComRepairBotRuntime.configure({
   enabled: weComRepairBotConfig.enabled,
@@ -8586,12 +10085,56 @@ const repairNoticeChannelsFor = (hotel) => {
   })
 }
 
+const yilianQuickRepairTemplateCard = ({ hotel }) => ({
+  card_type: 'button_interaction',
+  main_title: {
+    title: `${hotel.hotelCode} · ${hotel.hotelName}需要恢复`,
+    desc: '无需登录网页；后台将自动重登并校验3个接口。',
+  },
+  button_list: [{
+    text: '一键快速恢复',
+    key: `YILIAN_REPAIR_${hotel.hotelCode}`,
+    style: 1,
+  }],
+})
+
+const planMorningRepairNoticeDeliveries = ({
+  messageKey,
+  channels,
+}) => planWeComRepairNoticeDeliveries({
+  messageKey,
+  channels,
+  deliveryForKey: (key) => weComDeliveriesByKey.get(key),
+})
+
+const planYilianCardDeliveryAttempt = (
+  item,
+  hotelId,
+  now = new Date(),
+) => {
+  return planYilianRepairCardDelivery({
+    messageKey: item.messageKey,
+    deliveries: weComDeliveriesByKey.values(),
+    now,
+    retryMs: YILIAN_WECOM_CARD_DELIVERY_RETRY_MS,
+    generationTtlMs: YILIAN_WECOM_CARD_TTL_MS,
+    maxAttempts: YILIAN_WECOM_CARD_DELIVERY_MAX_ATTEMPTS,
+    maxGenerations: YILIAN_WECOM_CARD_MAX_GENERATIONS,
+    authorizedRecipientSha256s: new Set(
+      weComRepairBotActionRecipientsForHotel(hotelId)
+        .map(fingerprintWeComRepairBotValue),
+    ),
+  })
+}
+
 const deliverMorningRepairNotice = async ({
   hotel,
   auditRecord,
   deliveryType,
   content,
   messageKey = null,
+  templateCard = null,
+  plannedDeliveries = null,
 }) => {
   const resolvedMessageKey = messageKey
     ?? `${hotel.hotelId}:${deliveryType}:${auditRecord.auditKey}`
@@ -8602,10 +10145,9 @@ const deliverMorningRepairNotice = async ({
   if (channels.length === 0) {
     throw new Error('MORNING_REPAIR_NOTICE_NOT_CONFIGURED')
   }
-  const plan = planWeComRepairNoticeDeliveries({
+  const plan = plannedDeliveries ?? planMorningRepairNoticeDeliveries({
     messageKey: resolvedMessageKey,
     channels,
-    deliveryForKey: (key) => weComDeliveriesByKey.get(key),
   })
   const outcomes = await Promise.allSettled(plan.map((item) =>
     item.channel === 'WECOM_LONG_CONNECTION'
@@ -8614,16 +10156,42 @@ const deliverMorningRepairNotice = async ({
         messageKey: item.messageKey,
         deliveryType,
         content,
+        templateCard,
+        templateIncidentId: templateCard ? auditRecord.auditKey : null,
       })
       : deliverWeComAuditNotice({
         hotelId: hotel.hotelId,
         messageKey: item.messageKey,
         deliveryType,
         content,
-        bodyPreview:
+       bodyPreview:
           `${deliveryType} · ${hotel.hotelCode} · ${auditRecord.status}`,
       })))
-  if (outcomes.every((outcome) => outcome.status === 'rejected')) {
+  const cardDeliveryIndex = templateCard
+    ? plan.findIndex((item) => item.channel === 'WECOM_LONG_CONNECTION')
+    : -1
+  if (
+    cardDeliveryIndex >= 0
+    && (
+      outcomes[cardDeliveryIndex]?.status !== 'fulfilled'
+      || !yilianRepairCardDeliveryActive(
+        outcomes[cardDeliveryIndex].value,
+        new Date(),
+      )
+    )
+  ) {
+    process.stderr.write(`${JSON.stringify({
+      event: 'YILIAN_WECOM_CARD_DELIVERY_FAILED',
+      hotelId: hotel.hotelId,
+      incidentId: auditRecord.auditKey,
+    })}\n`)
+  }
+  const succeeded = outcomes.some((outcome) =>
+    outcome.status === 'fulfilled'
+    && ['DELIVERED', 'PARTIAL'].includes(
+      outcome.value?.deliveryStatus,
+    ))
+  if (!succeeded) {
     throw new Error('MORNING_REPAIR_NOTICE_DELIVERY_FAILED')
   }
   return outcomes
@@ -8650,21 +10218,42 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
       : hotel.pmsSystemCode === 'YILIAN_CLOUD'
         ? yilianRepairStatusRecordFor(hotel.hotelId).lastErrorCode
         : null
+    const guidance = hotel.pmsSystemCode === 'YILIAN_CLOUD'
+      ? yilianPmsRepairGuidance(
+        providerLastErrorCode,
+        hotel.hotelCode,
+      )
+      : null
+    const weComQuickRecoveryReady =
+      guidance?.weComQuickRecoveryAvailable === true
+      && weComRepairBotReady()
+      && weComRepairBotActionRecipientsForHotel(hotel.hotelId).length > 0
+    const templateCard = weComQuickRecoveryReady
+      ? yilianQuickRepairTemplateCard({ hotel })
+      : null
     const messageKey = pmsRepairNoticeMessageKey({
       hotel,
       incident,
       providerLastErrorCode,
     })
-    const deliveryPlan = planWeComRepairNoticeDeliveries({
+    const baseDeliveryPlan = planMorningRepairNoticeDeliveries({
       messageKey,
       channels: repairNoticeChannelsFor(hotel),
-      deliveryForKey: (key) => weComDeliveriesByKey.get(key),
     })
-    if (
-      deliveryPlan.length > 0
-      && deliveryPlan.every((item) =>
-        weComDeliveriesByKey.has(item.messageKey))
-    ) return null
+    const deliveryPlan = baseDeliveryPlan.flatMap((item) => {
+      if (item.channel === 'WECOM_LONG_CONNECTION' && templateCard) {
+        const cardAttempt = planYilianCardDeliveryAttempt(
+          item,
+          hotel.hotelId,
+          now,
+        )
+        return cardAttempt.due
+          ? [{ ...item, messageKey: cardAttempt.messageKey }]
+          : []
+      }
+      return weComDeliveriesByKey.has(item.messageKey) ? [] : [item]
+    })
+    if (deliveryPlan.length === 0) return null
     try {
       return await deliverMorningRepairNotice({
         hotel,
@@ -8674,11 +10263,14 @@ const scheduledPmsRepairAlertTick = async (now = new Date()) => {
         },
         messageKey,
         deliveryType: 'PMS_REPAIR_REQUIRED',
+        templateCard,
+        plannedDeliveries: deliveryPlan,
         content: pmsRepairNoticeContent({
           hotel,
           incident,
           publicOrigin: trustedDevicePublicOrigin,
           providerLastErrorCode,
+          weComQuickRecoveryReady,
         }),
       })
     } catch (error) {
@@ -12284,6 +13876,7 @@ const server = createServer(async (request, response) => {
             state: 'IDLE',
             trigger: 'SOURCE_CONFIG_UPDATED',
             lastAttemptAt: null,
+            lastCompletedAt: null,
             lastErrorCode: null,
             sourceCount: savedSources.filter((source) => source.enabled).length,
             successfulSourceCount: 0,
@@ -12717,6 +14310,7 @@ const server = createServer(async (request, response) => {
             state: 'IDLE',
             trigger: 'CREDENTIALS_UPDATED',
             lastAttemptAt: null,
+            lastCompletedAt: null,
             lastErrorCode: null,
           })
         }
@@ -12883,7 +14477,9 @@ const server = createServer(async (request, response) => {
         && suffix === '/wecom-repair-bot-config'
       ) {
         json(response, 200, {
-          data: weComRepairBotStatusForHotel(hotelId),
+          data: weComRepairBotStatusForHotel(hotelId, {
+            redactGlobalDetails: !isPlatformAdmin(requestPrincipal),
+          }),
         })
         return
       }
@@ -13344,6 +14940,7 @@ const server = createServer(async (request, response) => {
         'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
         'OTA_SOURCE_VERSION_CONFLICT',
         'OTA_SOURCE_CHANGED_DURING_REFRESH',
+        'WECOM_REPAIR_BOT_CONFIG_VERSION_CONFLICT',
         'WECOM_MANUAL_REPLAY_AUTHORITATIVE_SNAPSHOT_REQUIRED',
         'WECOM_MANUAL_REPLAY_COMPLETE_SNAPSHOT_REQUIRED',
         'WECOM_MANUAL_REPLAY_LATEST_SNAPSHOT_CHANGED',
@@ -13352,7 +14949,10 @@ const server = createServer(async (request, response) => {
         ? 409
         : code === 'WECOM_DELIVERY_LEDGER_UNAVAILABLE'
           ? 503
-        : code === 'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED'
+        : [
+          'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED',
+          'WECOM_REPAIR_BOT_CONFIG_PERSIST_FAILED',
+        ].includes(code)
           ? 500
           : 400,
       { code },
@@ -13522,6 +15122,8 @@ server.listen(port, host, () => {
     if (existsSync(deploymentSchedulerPausePath)) return
     void scheduledLuopanRecoveryTick()
     void scheduledYilianRecoveryTick()
+    scheduledYilianWeComCardOperationTick()
+    void scheduledYilianWeComResultTick()
     void scheduledCollectionTick()
     void scheduledOtaSourceTick()
     scheduledAnalyticsRetentionTick()

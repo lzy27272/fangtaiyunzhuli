@@ -222,10 +222,25 @@ test('Yilian notice distinguishes automatic recovery from required human authori
     incident,
     publicOrigin: 'https://www.sfgzt.cn',
     providerLastErrorCode: 'YILIAN_SESSION_REAUTH_REQUIRED',
+    weComQuickRecoveryReady: true,
   })
   assert.match(automatic, /后台加密凭据自动重登/u)
   assert.match(automatic, /三个接口只读验证全部通过/u)
+  assert.match(automatic, /一键快速恢复/u)
+  assert.match(automatic, /恢复 015/u)
+  assert.match(automatic, /无需登录修复后台/u)
+  assert.match(automatic, /备用修复后台/u)
   assert.doesNotMatch(automatic, /验证码：/u)
+
+  const withoutAuthorizedBot = pmsRepairNoticeContent({
+    hotel,
+    incident,
+    publicOrigin: 'https://www.sfgzt.cn',
+    providerLastErrorCode: 'YILIAN_SESSION_REAUTH_REQUIRED',
+    weComQuickRecoveryReady: false,
+  })
+  assert.match(withoutAuthorizedBot, /先为本店管理员完成企业微信配对授权/u)
+  assert.doesNotMatch(withoutAuthorizedBot, /一键快速恢复/u)
 
   const human = yilianPmsRepairGuidance(
     'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
@@ -238,8 +253,17 @@ test('Yilian notice distinguishes automatic recovery from required human authori
       incident,
       providerLastErrorCode: 'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
     }),
-    /:YILIAN_GUIDANCE_V1:HUMAN$/u,
+    /:YILIAN_GUIDANCE_V2:HUMAN$/u,
   )
+  const humanNotice = pmsRepairNoticeContent({
+    hotel,
+    incident,
+    publicOrigin: 'https://www.sfgzt.cn',
+    providerLastErrorCode: 'YILIAN_HUMAN_AUTHORIZATION_REQUIRED',
+  })
+  assert.match(humanNotice, /先在驿联云官网完成人工验证/u)
+  assert.match(humanNotice, /恢复 015/u)
+  assert.match(humanNotice, /无需登录本系统/u)
 })
 
 test('scheduled Luopan repair delivery uses the versioned provider guidance key', () => {

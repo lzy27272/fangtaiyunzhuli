@@ -280,6 +280,7 @@ export interface YilianCloudRepairView {
     | 'HUMAN_AUTHORIZATION_REQUIRED'
     | 'FAILED'
   lastAttemptAt: string | null
+  lastCompletedAt: string | null
   lastValidatedAt: string | null
   lastSucceededAt: string | null
   lastBusinessDate: string | null
@@ -873,7 +874,9 @@ export interface WeComConfigView {
 }
 
 export interface WeComRepairBotConfigView {
+  rowVersion: number
   enabled: boolean
+  allowGlobalRepairActions: boolean
   credentialConfigured: boolean
   paired: boolean
   pairedUserCount: number
@@ -1807,13 +1810,17 @@ export function loadWeComRepairBotConfig(
 
 export function saveWeComRepairBotConfig(
   enabled: boolean,
+  allowGlobalRepairActions: boolean,
   credentialUpdate: WeComRepairBotCredentialUpdate,
+  expectedRowVersion: number,
 ): Promise<WeComRepairBotConfigView> {
   return postCommand<WeComRepairBotConfigView>(
     '/ota/wecom-repair-bot-config',
     {
       enabled,
+      allowGlobalRepairActions,
       credentialUpdate,
+      expectedRowVersion,
       reasonCode: 'UPDATE_WECOM_REPAIR_BOT_CONFIG',
     },
   )

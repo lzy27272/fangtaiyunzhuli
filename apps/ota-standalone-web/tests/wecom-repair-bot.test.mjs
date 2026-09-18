@@ -5,16 +5,24 @@ import test from 'node:test'
 import {
   createWeComRepairBotPairingStore,
   createWeComRepairBotRuntime,
+  consumeWeComRepairTemplateCardAction,
   deliverWeComRepairBotToAllowedUsers,
+  fingerprintWeComRepairBotValue,
   normalizeWeComRepairBotCredentials,
   parseWeComRepairBotText,
+  planYilianRepairCardDelivery,
   planWeComRepairNoticeDeliveries,
   selectWeComRepairNoticeChannels,
   shouldFanOutWeComRepairNotice,
+  weComRepairBotCanRepairHotel,
   weComRepairBotRecipientsForHotel,
+  yilianRepairCardDeliveryActive,
 } from '../../../tools/uat/wecom/src/wecom-repair-bot.mjs'
+import {
+  reconcileInterruptedWeComDelivery,
+} from '../../../tools/uat/wecom/src/delivery-state.mjs'
 
-test('parses only pairing, help and strict store captcha commands', () => {
+test('parses pairing, help, strict captcha and explicit Yilian recovery commands', () => {
   assert.deepEqual(parseWeComRepairBotText('绑定 123456'), {
     type: 'PAIR',
     pairingCode: '123456',
@@ -25,6 +33,17 @@ test('parses only pairing, help and strict store captcha commands', () => {
     captcha: '5dm8',
   })
   assert.deepEqual(parseWeComRepairBotText('帮助'), { type: 'HELP' })
+  assert.deepEqual(parseWeComRepairBotText('恢复 015'), {
+    type: 'YILIAN_REPAIR',
+    hotelCode: '015',
+  })
+  assert.deepEqual(parseWeComRepairBotText('015 一键恢复'), {
+    type: 'YILIAN_REPAIR',
+    hotelCode: '015',
+  })
+  assert.deepEqual(parseWeComRepairBotText('恢复015 删除配置'), {
+    type: 'INVALID',
+  })
   assert.deepEqual(parseWeComRepairBotText('014 密码=111111'), {
     type: 'INVALID',
   })
@@ -103,6 +122,24 @@ test('store managers are scoped to their hotel while legacy users stay global', 
       .includes('other.manager'),
     false,
   )
+  assert.equal(weComRepairBotCanRepairHotel({
+    credentials,
+    userId: 'hotel.manager',
+    hotelId: 'hotel-009',
+    allowGlobalRepairActions: false,
+  }), true)
+  assert.equal(weComRepairBotCanRepairHotel({
+    credentials,
+    userId: 'global.second',
+    hotelId: 'hotel-009',
+    allowGlobalRepairActions: false,
+  }), false)
+  assert.equal(weComRepairBotCanRepairHotel({
+    credentials,
+    userId: 'global.second',
+    hotelId: 'hotel-009',
+    allowGlobalRepairActions: true,
+  }), true)
 })
 
 test('repair notices can independently reach the scoped manager and broadcast group', () => {
@@ -131,6 +168,7 @@ test('repair notices can independently reach the scoped manager and broadcast gr
     groupWebhookConfigured: false,
   }), [])
   assert.equal(shouldFanOutWeComRepairNotice('PMS_REPAIR_REQUIRED'), true)
+  assert.equal(shouldFanOutWeComRepairNotice('YILIAN_REPAIR_REQUIRED'), true)
   assert.equal(shouldFanOutWeComRepairNotice('DAILY_MORNING_REPAIR_COMPLETE'), true)
   assert.equal(shouldFanOutWeComRepairNotice('DAILY_MORNING_REPAIR_FAILED'), true)
   assert.equal(shouldFanOutWeComRepairNotice('TODAY_OPERATING'), false)
@@ -248,6 +286,256 @@ test('delivery fans out to both authorized users without exposing ids', async ()
     'fulfilled',
     'fulfilled',
   ])
+
+  delivered.length = 0
+  const targeted = await deliverWeComRepairBotToAllowedUsers({
+    credentials: {
+      allowedUserIds: ['first.user', 'second.user'],
+    },
+    allowedUserIds: ['second.user'],
+    deliver: async (userId, partIndex) => {
+      delivered.push({ userId, partIndex })
+      return { errcode: 0 }
+    },
+  })
+  assert.deepEqual(delivered, [{ userId: 'second.user', partIndex: 0 }])
+  assert.deepEqual(targeted.map((result) => result.status), ['fulfilled'])
+})
+
+test('signed repair cards are scoped, durable and single-use', () => {
+  const taskId = `sfg_${'a'.repeat(48)}`
+  const userId = 'hotel.manager'
+  const action = {
+    version: 1,
+    eventKey: 'YILIAN_REPAIR_015',
+    taskIdSha256: fingerprintWeComRepairBotValue(taskId),
+    recipientSha256: fingerprintWeComRepairBotValue(userId),
+    incidentId: 'incident-015',
+    status: 'ACTIVE',
+    issuedAt: '2026-09-17T03:00:00.000Z',
+    expiresAt: '2026-09-18T03:00:00.000Z',
+    consumedAt: null,
+    callbackMessageSha256: null,
+  }
+  const deliveries = [{
+    hotelId: 'hotel-015',
+    deliveryType: 'PMS_REPAIR_REQUIRED',
+    deliveryChannel: 'WECOM_LONG_CONNECTION',
+    parts: [{ deliveryStatus: 'DELIVERED', templateCardAction: action }],
+  }]
+  let persistCount = 0
+  const consume = (patch = {}) => consumeWeComRepairTemplateCardAction({
+    deliveries,
+    userId,
+    taskId,
+    eventKey: 'YILIAN_REPAIR_015',
+    callbackMessageId: 'callback-001',
+    now: new Date('2026-09-17T03:05:00.000Z'),
+    canRepairHotel: () => true,
+    currentIncidentIdForHotel: () => 'incident-015',
+    lastSucceededAtForHotel: () => null,
+    persist: () => { persistCount += 1 },
+    ...patch,
+  })
+
+  assert.equal(consume({ userId: 'other.manager' }).status, 'INVALID')
+  const accepted = consume()
+  assert.equal(accepted.status, 'ACCEPTED')
+  assert.equal(accepted.hotelId, 'hotel-015')
+  assert.match(accepted.messageHash, /^[a-f0-9]{64}$/u)
+  assert.equal(action.status, 'CONSUMED')
+  assert.equal(action.operationState, 'PENDING')
+  assert.equal(action.operationIdSha256, accepted.messageHash)
+  assert.equal(persistCount, 1)
+  assert.equal(consume().status, 'ALREADY_CONSUMED')
+  assert.equal(persistCount, 1)
+  assert.doesNotMatch(JSON.stringify(deliveries), new RegExp(userId, 'u'))
+  assert.doesNotMatch(JSON.stringify(deliveries), new RegExp(taskId, 'u'))
+})
+
+test('a card with an unknown send acknowledgement remains safely consumable once', () => {
+  const taskId = `sfg_${'c'.repeat(48)}`
+  const userId = 'hotel.manager'
+  const action = {
+    version: 1,
+    eventKey: 'YILIAN_REPAIR_015',
+    taskIdSha256: fingerprintWeComRepairBotValue(taskId),
+    recipientSha256: fingerprintWeComRepairBotValue(userId),
+    incidentId: 'incident-015',
+    status: 'DELIVERY_UNKNOWN',
+    issuedAt: '2026-09-17T03:00:00.000Z',
+    expiresAt: '2026-09-18T03:00:00.000Z',
+    consumedAt: null,
+    callbackMessageSha256: null,
+  }
+  const deliveries = [{
+    hotelId: 'hotel-015',
+    deliveryType: 'PMS_REPAIR_REQUIRED',
+    deliveryChannel: 'WECOM_LONG_CONNECTION',
+    parts: [{ deliveryStatus: 'AMBIGUOUS', templateCardAction: action }],
+  }]
+  const consume = (overrides = {}) => consumeWeComRepairTemplateCardAction({
+    deliveries,
+    userId,
+    taskId,
+    eventKey: 'YILIAN_REPAIR_015',
+    callbackMessageId: 'callback-ambiguous-001',
+    now: new Date('2026-09-17T03:05:00.000Z'),
+    canRepairHotel: () => true,
+    currentIncidentIdForHotel: () => 'incident-015',
+    lastSucceededAtForHotel: () => null,
+    persist: () => {},
+    ...overrides,
+  })
+
+  assert.equal(consume({ userId: 'other.manager' }).status, 'INVALID')
+  assert.equal(consume().status, 'ACCEPTED')
+  assert.equal(action.status, 'CONSUMED')
+  assert.equal(action.operationState, 'PENDING')
+  assert.equal(consume().status, 'ALREADY_CONSUMED')
+})
+
+test('Yilian card planning reissues expired and terminal cards without duplicating running work', () => {
+  const messageKey = 'hotel-015:PMS_REPAIR_REQUIRED:incident-015'
+  const baseKey = `${messageKey}:CARD_ACTION_V2:G1`
+  const now = new Date('2026-09-18T04:00:00.000Z')
+  const delivery = (action, deliveryStatus = 'DELIVERED') => ({
+    messageKey: baseKey,
+    attemptedAt: '2026-09-17T03:00:00.000Z',
+    completedAt: '2026-09-17T03:00:01.000Z',
+    parts: [{ deliveryStatus, templateCardAction: action }],
+  })
+  const action = (patch = {}) => ({
+    version: 1,
+    status: 'ACTIVE',
+    operationState: null,
+    issuedAt: '2026-09-17T03:00:00.000Z',
+    expiresAt: '2026-09-18T03:00:00.000Z',
+    ...patch,
+  })
+  const plan = (
+    deliveries,
+    at = now,
+    authorizedRecipientSha256s = null,
+  ) => planYilianRepairCardDelivery({
+    messageKey,
+    deliveries,
+    now: at,
+    retryMs: 5 * 60_000,
+    generationTtlMs: 24 * 60 * 60_000,
+    maxAttempts: 3,
+    maxGenerations: 30,
+    authorizedRecipientSha256s,
+  })
+
+  assert.deepEqual(plan([]), {
+    due: true,
+    messageKey: baseKey,
+    reasonCode: null,
+  })
+  assert.equal(yilianRepairCardDeliveryActive(
+    delivery(action()),
+    new Date('2026-09-18T02:59:59.000Z'),
+  ), true)
+  assert.equal(plan([delivery(action())]).messageKey,
+    `${messageKey}:CARD_ACTION_V2:G2`)
+  assert.equal(plan([delivery(action())]).due, true)
+
+  const completed = delivery(action({
+    status: 'CONSUMED',
+    operationState: 'DONE',
+    expiresAt: '2026-09-19T03:00:00.000Z',
+  }))
+  assert.equal(plan([completed]).due, true)
+  assert.equal(plan([completed]).messageKey,
+    `${messageKey}:CARD_ACTION_V2:G2`)
+
+  const running = delivery(action({
+    status: 'CONSUMED',
+    operationState: 'RUNNING',
+    expiresAt: '2026-09-19T03:00:00.000Z',
+  }), 'AMBIGUOUS')
+  assert.equal(yilianRepairCardDeliveryActive(running, now), true)
+  assert.equal(plan([running]).due, false)
+
+  const priorRecipient = 'a'.repeat(64)
+  const replacementRecipient = 'b'.repeat(64)
+  const revoked = delivery(action({
+    recipientSha256: priorRecipient,
+    expiresAt: '2026-09-19T03:00:00.000Z',
+  }))
+  const replacementPlan = plan(
+    [revoked],
+    new Date('2026-09-17T03:01:00.000Z'),
+    new Set([replacementRecipient]),
+  )
+  assert.equal(replacementPlan.due, true)
+  assert.equal(
+    replacementPlan.messageKey,
+    `${messageKey}:CARD_ACTION_V2:G2`,
+  )
+})
+
+test('repair card expiry and persistence failures fail closed', () => {
+  const taskId = `sfg_${'b'.repeat(48)}`
+  const action = {
+    version: 1,
+    eventKey: 'YILIAN_REPAIR_015',
+    taskIdSha256: fingerprintWeComRepairBotValue(taskId),
+    recipientSha256: fingerprintWeComRepairBotValue('hotel.manager'),
+    incidentId: 'incident-015',
+    status: 'ACTIVE',
+    issuedAt: '2026-09-17T03:00:00.000Z',
+    expiresAt: '2026-09-17T03:10:00.000Z',
+    consumedAt: null,
+    callbackMessageSha256: null,
+  }
+  const input = (now, persist) => ({
+    deliveries: [{
+      hotelId: 'hotel-015',
+      deliveryType: 'PMS_REPAIR_REQUIRED',
+      deliveryChannel: 'WECOM_LONG_CONNECTION',
+      parts: [{ deliveryStatus: 'DELIVERED', templateCardAction: action }],
+    }],
+    userId: 'hotel.manager',
+    taskId,
+    eventKey: 'YILIAN_REPAIR_015',
+    callbackMessageId: 'callback-002',
+    now,
+    canRepairHotel: () => true,
+    currentIncidentIdForHotel: () => 'incident-015',
+    lastSucceededAtForHotel: () => null,
+    persist,
+  })
+
+  assert.throws(() => consumeWeComRepairTemplateCardAction(
+    input(new Date('2026-09-17T03:05:00.000Z'), () => {
+      throw new Error('persist failed')
+    }),
+  ), /persist failed/u)
+  assert.equal(action.status, 'ACTIVE')
+  assert.equal(action.consumedAt, null)
+  assert.equal(consumeWeComRepairTemplateCardAction(
+    input(new Date('2026-09-17T03:11:00.000Z'), () => {}),
+  ).status, 'EXPIRED')
+  assert.equal(action.status, 'EXPIRED')
+})
+
+test('interrupted card delivery keeps signed metadata and consumption state', () => {
+  const action = {
+    version: 1,
+    taskIdSha256: 'a'.repeat(64),
+    recipientSha256: 'b'.repeat(64),
+    status: 'CONSUMED',
+    consumedAt: '2026-09-17T03:05:00.000Z',
+  }
+  const reconciled = reconcileInterruptedWeComDelivery({
+    deliveryStatus: 'SENDING',
+    parts: [{ deliveryStatus: 'SENDING', templateCardAction: action }],
+  }, '2026-09-17T03:06:00.000Z')
+  assert.equal(reconciled.deliveryStatus, 'AMBIGUOUS')
+  assert.equal(reconciled.parts[0].deliveryStatus, 'AMBIGUOUS')
+  assert.deepEqual(reconciled.parts[0].templateCardAction, action)
 })
 
 test('runtime authenticates, receives text and sends captcha without logging frames', async () => {
@@ -367,4 +655,78 @@ test('runtime serializes and spaces proactive manager messages', async () => {
 
   assert.deepEqual(fake.sent, ['first.user', 'second.user', 'third.user'])
   assert.deepEqual(waits, [500, 500])
+})
+
+test('runtime sends and promptly updates a Yilian template card', async () => {
+  class FakeClient extends EventEmitter {
+    isConnected = false
+    sent = []
+    connect() {
+      this.isConnected = true
+      this.emit('authenticated')
+    }
+    disconnect() {
+      this.isConnected = false
+    }
+    async sendMessage(userId, body) {
+      this.sent.push({ type: 'message', userId, body })
+      return { errcode: 0 }
+    }
+    async updateTemplateCard(frame, templateCard, userIds) {
+      this.sent.push({
+        type: 'update',
+        frame,
+        templateCard,
+        userIds,
+      })
+      return { errcode: 0 }
+    }
+  }
+  let fake
+  const runtime = createWeComRepairBotRuntime({
+    createClient: () => {
+      fake = new FakeClient()
+      return fake
+    },
+    onTemplateCardEvent: async (frame, updateTemplateCard) => {
+      await updateTemplateCard(frame, {
+        card_type: 'text_notice',
+        main_title: { title: '已受理' },
+        task_id: frame.body.event.task_id,
+      }, ['approved.user'])
+    },
+  })
+  runtime.configure({
+    enabled: true,
+    credentials: {
+      botId: 'aib-example-bot',
+      secret: 'example_secret_value_1234567890',
+    },
+  })
+  const card = {
+    card_type: 'button_interaction',
+    main_title: { title: '015 需要恢复' },
+    button_list: [{ text: '一键快速恢复', key: 'YILIAN_REPAIR_015' }],
+    task_id: 'yilian_015_0123456789abcdef',
+  }
+  await runtime.sendTemplateCard('approved.user', card)
+  const frame = {
+    body: {
+      event: {
+        event_key: 'YILIAN_REPAIR_015',
+        task_id: card.task_id,
+      },
+    },
+  }
+  fake.emit('event.template_card_event', frame)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(fake.sent[0], {
+    type: 'message',
+    userId: 'approved.user',
+    body: { msgtype: 'template_card', template_card: card },
+  })
+  assert.equal(fake.sent[1].type, 'update')
+  assert.equal(fake.sent[1].templateCard.task_id, card.task_id)
+  assert.deepEqual(fake.sent[1].userIds, ['approved.user'])
 })

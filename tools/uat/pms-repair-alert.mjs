@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 export const PMS_REPAIR_STALE_AFTER_MS = 90 * 60 * 1000
 
 const LUOPAN_REPAIR_GUIDANCE_VERSION = 'LUOPAN_GUIDANCE_V1'
-const YILIAN_REPAIR_GUIDANCE_VERSION = 'YILIAN_GUIDANCE_V1'
+const YILIAN_REPAIR_GUIDANCE_VERSION = 'YILIAN_GUIDANCE_V2'
 const YILIAN_AUTOMATIC_GUIDANCE_ERRORS = new Set([
   'YILIAN_SESSION_REAUTH_REQUIRED',
   'YILIAN_LOGIN_TIMEOUT',
@@ -62,7 +62,7 @@ export const luopanPmsRepairGuidance = (lastErrorCode) => {
   }
 }
 
-export const yilianPmsRepairGuidance = (lastErrorCode) => {
+export const yilianPmsRepairGuidance = (lastErrorCode, hotelCode = null) => {
   const normalized = typeof lastErrorCode === 'string'
     ? lastErrorCode.trim()
     : ''
@@ -76,8 +76,11 @@ export const yilianPmsRepairGuidance = (lastErrorCode) => {
   ].includes(normalized)) {
     return {
       diagnosis: '驿联云要求验证码或额外安全确认',
+      weComQuickRecoveryAvailable: false,
       action:
-        '系统已停止自动重试；请在驿联云官网完成人工验证，再到修复后台手动重试。',
+        /^[0-9]{3}$/u.test(String(hotelCode ?? ''))
+          ? `系统已停止自动重试；请先在驿联云官网完成人工验证，再回到企业微信发送“恢复 ${hotelCode}”，无需登录本系统。`
+          : '系统已停止自动重试；请先在驿联云官网完成人工验证，再通过企业微信重试。',
     }
   }
   if ([
@@ -87,6 +90,7 @@ export const yilianPmsRepairGuidance = (lastErrorCode) => {
   ].includes(normalized)) {
     return {
       diagnosis: '驿联云后台登录凭据需要更新',
+      weComQuickRecoveryAvailable: false,
       action:
         '请在修复后台更新本门店账号密码；凭据只会加密保存，不会在页面回显。',
     }
@@ -97,14 +101,18 @@ export const yilianPmsRepairGuidance = (lastErrorCode) => {
   ) {
     return {
       diagnosis: '驿联云自动恢复条件需要人工检查',
+      weComQuickRecoveryAvailable: false,
       action:
         '自动重试已暂停；请在修复后台检查浏览器运行环境、官网页面和三个接口配置。',
     }
   }
   return {
     diagnosis: '驿联云采集会话需要云端恢复',
+    weComQuickRecoveryAvailable: true,
     action:
-      '系统会使用后台加密凭据自动重登，并在三个接口只读验证全部通过后恢复采集；无需人工提供验证码。',
+      /^[0-9]{3}$/u.test(String(hotelCode ?? ''))
+        ? `在企业微信点击“一键快速恢复”，或发送“恢复 ${hotelCode}”；系统会使用后台加密凭据自动重登，并在三个接口只读验证全部通过后恢复采集；无需登录修复后台。`
+        : '系统会使用后台加密凭据自动重登，并在三个接口只读验证全部通过后恢复采集；无需登录修复后台。',
   }
 }
 
@@ -250,6 +258,7 @@ export const pmsRepairNoticeContent = ({
   incident,
   publicOrigin,
   providerLastErrorCode = null,
+  weComQuickRecoveryReady = false,
 }) => {
   const labels = {
     PMS_SNAPSHOT_INCOMPLETE: 'PMS快照不完整',
@@ -264,7 +273,7 @@ export const pmsRepairNoticeContent = ({
   const guidance = hotel.pmsSystemCode === 'LUOPAN_CLOUD'
     ? luopanPmsRepairGuidance(providerLastErrorCode)
     : hotel.pmsSystemCode === 'YILIAN_CLOUD'
-      ? yilianPmsRepairGuidance(providerLastErrorCode)
+      ? yilianPmsRepairGuidance(providerLastErrorCode, hotel.hotelCode)
       : null
   const bieyanghongCookieGuidance =
     hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
@@ -279,12 +288,21 @@ export const pmsRepairNoticeContent = ({
       ...(guidance.captchaText
         ? [`验证码：${guidance.captchaText}`]
         : []),
-      `处理：${guidance.action}`,
+      `处理：${
+        hotel.pmsSystemCode === 'YILIAN_CLOUD'
+        && guidance.weComQuickRecoveryAvailable
+          ? weComQuickRecoveryReady
+            ? `请私聊已绑定的企业微信修复助手，点击“一键快速恢复”卡片按钮或发送“恢复 ${hotel.hotelCode}”；系统会使用后台加密凭据自动重登，并在三个接口只读验证全部通过后恢复采集，无需登录修复后台。`
+            : '系统会按策略自动重试；如需立即人工发起，请先为本店管理员完成企业微信配对授权，或使用修复后台。'
+          : guidance.action
+      }`,
     ] : [
       bieyanghongCookieGuidance
         ?? '处理：点击修复后台，登录后按页面指引操作。',
     ]),
-    `修复后台：${buildStoreRepairConsoleUrl({
+    `${guidance?.weComQuickRecoveryAvailable && weComQuickRecoveryReady
+      ? '备用修复后台'
+      : '修复后台'}：${buildStoreRepairConsoleUrl({
       publicOrigin,
       hotelCode: hotel.hotelCode,
     })}`,

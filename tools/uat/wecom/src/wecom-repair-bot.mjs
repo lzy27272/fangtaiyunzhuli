@@ -101,6 +101,25 @@ export const weComRepairBotRecipientsForHotel = (credentials, hotelId) => {
   return [...new Set([...allowedUserIds, ...scopedUserIds])]
 }
 
+export const weComRepairBotCanRepairHotel = ({
+  credentials,
+  userId,
+  hotelId,
+  allowGlobalRepairActions = false,
+}) => {
+  const normalizedUserId = String(userId ?? '').trim()
+  if (!USER_ID_PATTERN.test(normalizedUserId)) return false
+  const globalUserIds = normalizeWeComRepairBotAllowedUserIds(credentials)
+  const hotelUserIds = normalizeWeComRepairBotHotelAllowedUserIds(
+    credentials,
+  )[String(hotelId ?? '')] ?? []
+  return hotelUserIds.includes(normalizedUserId)
+    || (
+      allowGlobalRepairActions === true
+      && globalUserIds.includes(normalizedUserId)
+    )
+}
+
 export const selectWeComRepairNoticeChannels = ({
   repairBotReady = false,
   recipientCount = 0,
@@ -121,6 +140,7 @@ export const selectWeComRepairNoticeChannels = ({
 
 const REPAIR_GROUP_NOTICE_TYPES = new Set([
   'PMS_REPAIR_REQUIRED',
+  'YILIAN_REPAIR_REQUIRED',
   'DAILY_MORNING_REPAIR_COMPLETE',
   'DAILY_MORNING_REPAIR_FAILED',
 ])
@@ -167,11 +187,20 @@ export const planWeComRepairNoticeDeliveries = ({
 export const deliverWeComRepairBotToAllowedUsers = async ({
   credentials,
   hotelId = null,
+  allowedUserIds: explicitAllowedUserIds = null,
   deliver,
 }) => {
-  const allowedUserIds = hotelId
-    ? weComRepairBotRecipientsForHotel(credentials, hotelId)
-    : normalizeWeComRepairBotAllowedUserIds(credentials)
+  const allowedUserIds = Array.isArray(explicitAllowedUserIds)
+    ? [...new Set(explicitAllowedUserIds.map((value) =>
+      String(value ?? '').trim()))]
+    : hotelId
+      ? weComRepairBotRecipientsForHotel(credentials, hotelId)
+      : normalizeWeComRepairBotAllowedUserIds(credentials)
+  if (
+    allowedUserIds.length
+      > WECOM_REPAIR_BOT_MAX_ALLOWED_USERS + WECOM_REPAIR_BOT_MAX_STORE_USERS
+    || allowedUserIds.some((userId) => !USER_ID_PATTERN.test(userId))
+  ) throw new Error('WECOM_REPAIR_BOT_ALLOWED_USERS_INVALID')
   if (allowedUserIds.length === 0) {
     throw new Error('WECOM_REPAIR_BOT_PAIRING_REQUIRED')
   }
@@ -187,6 +216,17 @@ export const parseWeComRepairBotText = (value) => {
   const content = String(value ?? '').trim()
   const pairing = content.match(/^(?:绑定|\/bind)\s+(\d{6})$/iu)
   if (pairing) return { type: 'PAIR', pairingCode: pairing[1] }
+  const yilianRepair = content.match(
+    /^(?:恢复|快速恢复|一键恢复)\s*(\d{3})$/u,
+  ) ?? content.match(
+    /^(\d{3})\s*(?:恢复|快速恢复|一键恢复)$/u,
+  )
+  if (yilianRepair) {
+    return {
+      type: 'YILIAN_REPAIR',
+      hotelCode: yilianRepair[1],
+    }
+  }
   const captcha = content.match(/^(\d{3})\s+([A-Za-z0-9]{4,8})$/u)
   if (captcha) {
     return {
@@ -199,6 +239,323 @@ export const parseWeComRepairBotText = (value) => {
     return { type: 'HELP' }
   }
   return { type: 'INVALID' }
+}
+
+export const yilianRepairCardDeliveryActive = (
+  delivery,
+  now = new Date(),
+  authorizedRecipientSha256s = null,
+) => {
+  const nowAt = now instanceof Date ? now.getTime() : Number.NaN
+  if (!Number.isFinite(nowAt) || !Array.isArray(delivery?.parts)) return false
+  const authorizedRecipients = authorizedRecipientSha256s == null
+    ? null
+    : new Set(authorizedRecipientSha256s)
+  return delivery.parts.some((part) => {
+    const action = part?.templateCardAction
+    if (action?.version !== 1) return false
+    if (
+      authorizedRecipients
+      && !authorizedRecipients.has(action.recipientSha256)
+    ) return false
+    if (
+      action.status === 'CONSUMED'
+      && ['PENDING', 'RUNNING'].includes(action.operationState)
+    ) return true
+    const expiresAt = Date.parse(action.expiresAt ?? '')
+    return action.status === 'ACTIVE'
+      && part.deliveryStatus === 'DELIVERED'
+      && Number.isFinite(expiresAt)
+      && expiresAt > nowAt
+  })
+}
+
+export const planYilianRepairCardDelivery = ({
+  messageKey,
+  deliveries,
+  now = new Date(),
+  retryMs,
+  generationTtlMs,
+  maxAttempts,
+  maxGenerations,
+  authorizedRecipientSha256s = null,
+}) => {
+  const normalizedMessageKey = String(messageKey ?? '').trim()
+  const nowAt = now instanceof Date ? now.getTime() : Number.NaN
+  if (
+    normalizedMessageKey.length === 0
+    || !Number.isFinite(nowAt)
+    || !Number.isInteger(retryMs)
+    || retryMs < 1
+    || !Number.isInteger(generationTtlMs)
+    || generationTtlMs < retryMs
+    || !Number.isInteger(maxAttempts)
+    || maxAttempts < 1
+    || !Number.isInteger(maxGenerations)
+    || maxGenerations < 1
+  ) throw new Error('YILIAN_WECOM_CARD_PLAN_INVALID')
+
+  const legacyPrefix = `${normalizedMessageKey}:CARD_ACTION_V1`
+  const generationPrefix = `${normalizedMessageKey}:CARD_ACTION_V2`
+  const authorizedRecipients = authorizedRecipientSha256s == null
+    ? null
+    : new Set(authorizedRecipientSha256s)
+  const attempts = []
+  for (const delivery of deliveries ?? []) {
+    const deliveryMessageKey = String(delivery?.messageKey ?? '')
+    let generation = null
+    if (
+      deliveryMessageKey === legacyPrefix
+      || deliveryMessageKey.startsWith(`${legacyPrefix}:RETRY_`)
+    ) {
+      generation = 0
+    } else if (deliveryMessageKey.startsWith(`${generationPrefix}:G`)) {
+      const suffix = deliveryMessageKey.slice(generationPrefix.length)
+      const match = suffix.match(/^:G([1-9]\d*)(?::RETRY_([2-9]\d*))?$/u)
+      if (match) generation = Number.parseInt(match[1], 10)
+    }
+    if (generation != null) attempts.push({ delivery, generation })
+  }
+  if (attempts.some(({ delivery }) =>
+    yilianRepairCardDeliveryActive(delivery, now, authorizedRecipients))) {
+    return {
+      due: false,
+      messageKey: `${generationPrefix}:G1`,
+      reasonCode: 'YILIAN_WECOM_CARD_STILL_ACTIONABLE',
+    }
+  }
+
+  const latestGeneration = attempts.reduce(
+    (latest, attempt) => Math.max(latest, attempt.generation),
+    attempts.length > 0 ? 0 : 1,
+  )
+  const generationAttempts = attempts
+    .filter((attempt) => attempt.generation === latestGeneration)
+    .map((attempt) => attempt.delivery)
+    .sort((left, right) =>
+      String(left.attemptedAt).localeCompare(String(right.attemptedAt)))
+  const baseKeyFor = (generation) =>
+    `${generationPrefix}:G${generation}`
+  if (generationAttempts.length === 0) {
+    return { due: true, messageKey: baseKeyFor(1), reasonCode: null }
+  }
+  const generationHasAuthorizedRecipient = authorizedRecipients == null
+    || generationAttempts.some((delivery) =>
+      (delivery.parts ?? []).some((part) =>
+        part?.templateCardAction?.version === 1
+        && authorizedRecipients.has(
+          part.templateCardAction.recipientSha256,
+        )))
+  if (!generationHasAuthorizedRecipient) {
+    const nextGeneration = Math.max(1, latestGeneration + 1)
+    return nextGeneration <= maxGenerations
+      ? {
+        due: true,
+        messageKey: baseKeyFor(nextGeneration),
+        reasonCode: null,
+      }
+      : {
+        due: false,
+        messageKey: baseKeyFor(maxGenerations),
+        reasonCode: 'YILIAN_WECOM_CARD_GENERATION_LIMIT_REACHED',
+      }
+  }
+
+  const attemptTimes = generationAttempts
+    .map((delivery) => Date.parse(
+      delivery.completedAt
+      ?? delivery.attemptedAt
+      ?? delivery.parts?.find((part) => part?.templateCardAction)
+        ?.templateCardAction?.issuedAt
+      ?? '',
+    ))
+    .filter(Number.isFinite)
+  if (attemptTimes.length === 0) {
+    return {
+      due: false,
+      messageKey: baseKeyFor(Math.max(1, latestGeneration)),
+      reasonCode: 'YILIAN_WECOM_CARD_ATTEMPT_TIME_INVALID',
+    }
+  }
+  const latestAt = Math.max(...attemptTimes)
+  if (nowAt - latestAt < retryMs) {
+    return {
+      due: false,
+      messageKey: baseKeyFor(Math.max(1, latestGeneration)),
+      reasonCode: 'YILIAN_WECOM_CARD_RETRY_COOLDOWN',
+    }
+  }
+
+  const actions = generationAttempts.flatMap((delivery) =>
+    (delivery.parts ?? [])
+      .map((part) => part?.templateCardAction)
+      .filter((action) => action?.version === 1))
+  const terminalConsumption = actions.some((action) =>
+    action.status === 'CONSUMED'
+    && !['PENDING', 'RUNNING'].includes(action.operationState))
+  const expired = actions.some((action) => {
+    const expiresAt = Date.parse(action.expiresAt ?? '')
+    return action.status === 'EXPIRED'
+      || (Number.isFinite(expiresAt) && expiresAt <= nowAt)
+  })
+  const attemptsExhausted = generationAttempts.length >= maxAttempts
+  const generationStartedAt = Math.min(...attemptTimes)
+  const generationWindowElapsed = nowAt - generationStartedAt
+    >= generationTtlMs
+  const needsNewGeneration = latestGeneration === 0
+    || terminalConsumption
+    || expired
+    || (attemptsExhausted && generationWindowElapsed)
+
+  if (needsNewGeneration) {
+    const nextGeneration = Math.max(1, latestGeneration + 1)
+    if (nextGeneration > maxGenerations) {
+      return {
+        due: false,
+        messageKey: baseKeyFor(maxGenerations),
+        reasonCode: 'YILIAN_WECOM_CARD_GENERATION_LIMIT_REACHED',
+      }
+    }
+    return {
+      due: true,
+      messageKey: baseKeyFor(nextGeneration),
+      reasonCode: null,
+    }
+  }
+  if (attemptsExhausted) {
+    return {
+      due: false,
+      messageKey: baseKeyFor(Math.max(1, latestGeneration)),
+      reasonCode: 'YILIAN_WECOM_CARD_ATTEMPTS_EXHAUSTED',
+    }
+  }
+  const retryNumber = generationAttempts.length + 1
+  return {
+    due: true,
+    messageKey: `${baseKeyFor(Math.max(1, latestGeneration))}:RETRY_${retryNumber}`,
+    reasonCode: null,
+  }
+}
+
+export const consumeWeComRepairTemplateCardAction = ({
+  deliveries,
+  userId,
+  taskId,
+  eventKey,
+  callbackMessageId,
+  now = new Date(),
+  canRepairHotel,
+  currentIncidentIdForHotel,
+  lastSucceededAtForHotel,
+  persist,
+}) => {
+  const normalizedUserId = String(userId ?? '').trim()
+  const normalizedTaskId = String(taskId ?? '').trim()
+  const normalizedEventKey = String(eventKey ?? '').trim()
+  const normalizedCallbackMessageId = String(callbackMessageId ?? '').trim()
+  if (
+    !USER_ID_PATTERN.test(normalizedUserId)
+    || !/^sfg_[a-f0-9]{48}$/u.test(normalizedTaskId)
+    || !/^YILIAN_REPAIR_\d{3}$/u.test(normalizedEventKey)
+    || normalizedCallbackMessageId.length === 0
+    || typeof canRepairHotel !== 'function'
+    || typeof currentIncidentIdForHotel !== 'function'
+    || typeof lastSucceededAtForHotel !== 'function'
+    || typeof persist !== 'function'
+  ) return { status: 'INVALID', hotelId: null, messageHash: null }
+
+  const taskIdSha256 = hash(normalizedTaskId)
+  const recipientSha256 = hash(normalizedUserId)
+  const matches = []
+  for (const delivery of deliveries ?? []) {
+    if (
+      delivery?.deliveryType !== 'PMS_REPAIR_REQUIRED'
+      || delivery?.deliveryChannel !== 'WECOM_LONG_CONNECTION'
+    ) continue
+    for (const part of delivery.parts ?? []) {
+      const action = part?.templateCardAction
+      if (
+        action?.version === 1
+        && action.taskIdSha256 === taskIdSha256
+        && action.recipientSha256 === recipientSha256
+        && action.eventKey === normalizedEventKey
+      ) matches.push({ delivery, action })
+    }
+  }
+  if (matches.length !== 1) {
+    return { status: 'INVALID', hotelId: null, messageHash: null }
+  }
+  const matched = matches[0]
+  const hotelId = String(matched.delivery.hotelId ?? '')
+  if (!canRepairHotel(hotelId)) {
+    return { status: 'FORBIDDEN', hotelId, messageHash: null }
+  }
+  if (
+    matched.action.status === 'CONSUMED'
+    || matched.action.consumedAt != null
+  ) {
+    return { status: 'ALREADY_CONSUMED', hotelId, messageHash: null }
+  }
+
+  const transition = (patch) => {
+    const previous = { ...matched.action }
+    Object.assign(matched.action, patch)
+    try {
+      persist()
+    } catch (error) {
+      for (const key of Object.keys(matched.action)) delete matched.action[key]
+      Object.assign(matched.action, previous)
+      throw error
+    }
+  }
+  const nowAt = now instanceof Date ? now.getTime() : Number.NaN
+  const issuedAt = Date.parse(matched.action.issuedAt ?? '')
+  const expiresAt = Date.parse(matched.action.expiresAt ?? '')
+  if (
+    !Number.isFinite(nowAt)
+    || !Number.isFinite(issuedAt)
+    || !Number.isFinite(expiresAt)
+    || nowAt < issuedAt - 5 * 60_000
+    || nowAt >= expiresAt
+  ) {
+    transition({ status: 'EXPIRED' })
+    return { status: 'EXPIRED', hotelId, messageHash: null }
+  }
+  if (!['ISSUING', 'ACTIVE', 'DELIVERY_UNKNOWN'].includes(
+    matched.action.status,
+  )) {
+    return { status: 'INVALID', hotelId, messageHash: null }
+  }
+  const currentIncidentId = currentIncidentIdForHotel(hotelId)
+  const lastSucceededAt = Date.parse(lastSucceededAtForHotel(hotelId) ?? '')
+  const callbackMessageSha256 = hash(normalizedCallbackMessageId)
+  const operationIdSha256 = hash(`TEMPLATE_CARD:${normalizedTaskId}`)
+  if (
+    !currentIncidentId
+    || currentIncidentId !== matched.action.incidentId
+    || (Number.isFinite(lastSucceededAt) && lastSucceededAt >= issuedAt)
+  ) {
+    transition({
+      status: 'CONSUMED',
+      consumedAt: now.toISOString(),
+      callbackMessageSha256,
+      operationState: 'NOT_REQUIRED',
+      operationIdSha256: null,
+    })
+    return { status: 'RESOLVED', hotelId, messageHash: null }
+  }
+  transition({
+    status: 'CONSUMED',
+    consumedAt: now.toISOString(),
+    callbackMessageSha256,
+    operationState: 'PENDING',
+    operationIdSha256,
+  })
+  return {
+    status: 'ACCEPTED',
+    hotelId,
+    messageHash: operationIdSha256,
+  }
 }
 
 export const createWeComRepairBotPairingStore = ({
@@ -329,6 +686,7 @@ const silentLogger = Object.freeze({
 export const createWeComRepairBotRuntime = ({
   createClient = (options) => new WSClient(options),
   onTextMessage = async () => {},
+  onTemplateCardEvent = async () => {},
   onStatusChanged = () => {},
   minimumProactiveIntervalMs = 500,
   now = () => Date.now(),
@@ -381,6 +739,37 @@ export const createWeComRepairBotRuntime = ({
       msgtype: 'markdown',
       markdown: { content: String(content ?? '').slice(0, 1500) },
     })
+  }
+
+  const sendTemplateCard = async (userId, templateCard) => {
+    if (!USER_ID_PATTERN.test(String(userId ?? ''))) {
+      throw new Error('WECOM_REPAIR_BOT_USER_INVALID')
+    }
+    if (
+      !templateCard
+      || typeof templateCard !== 'object'
+      || Array.isArray(templateCard)
+    ) {
+      throw new Error('WECOM_REPAIR_BOT_TEMPLATE_CARD_INVALID')
+    }
+    if (!client || state.connectionStatus !== 'AUTHENTICATED') {
+      throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+    }
+    return client.sendMessage(userId, {
+      msgtype: 'template_card',
+      template_card: templateCard,
+    })
+  }
+
+  const updateTemplateCard = async (
+    frame,
+    templateCard,
+    userIds = undefined,
+  ) => {
+    if (!client || state.connectionStatus !== 'AUTHENTICATED') {
+      throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+    }
+    return client.updateTemplateCard(frame, templateCard, userIds)
   }
 
   const proactiveIntervalMs =
@@ -467,12 +856,29 @@ export const createWeComRepairBotRuntime = ({
           ).catch(() => {})
         })
       })
+      client.on('event.template_card_event', (frame) => {
+        Promise.resolve(
+          onTemplateCardEvent(frame, updateTemplateCard),
+        ).catch(() => {
+          const taskId = String(frame?.body?.event?.task_id ?? '')
+          const userId = String(frame?.body?.from?.userid ?? '')
+          if (!taskId || !USER_ID_PATTERN.test(userId)) return
+          void updateTemplateCard(frame, {
+            card_type: 'text_notice',
+            main_title: {
+              title: '未能受理本次操作',
+              desc: '请稍后重试，或发送“恢复 门店编号”。',
+            },
+            task_id: taskId,
+          }, [userId]).catch(() => {})
+        })
+      })
       client.on('event.enter_chat', (frame) => {
         void client.replyWelcome(frame, {
           msgtype: 'text',
           text: {
             content:
-              '罗盘简报修复助手：请发送“门店编号 验证码”。首次使用请先发送后台显示的“绑定 6位配对码”。',
+              '门店简报修复助手：已获门店处理权限的账号可发送“恢复 015”后台自动恢复；罗盘等待验证码时发送“门店编号 验证码”。首次使用请先发送后台显示的“绑定 6位配对码”。',
           },
         }).catch(() => {})
       })
@@ -492,6 +898,12 @@ export const createWeComRepairBotRuntime = ({
     },
     async sendText(userId, content) {
       return enqueueProactive(() => sendText(userId, content))
+    },
+    async sendTemplateCard(userId, templateCard) {
+      return enqueueProactive(() => sendTemplateCard(userId, templateCard))
+    },
+    async updateTemplateCard(frame, templateCard, userIds = undefined) {
+      return updateTemplateCard(frame, templateCard, userIds)
     },
     async sendCaptcha({ userId, captcha, content }) {
       return enqueueProactive(async () => {

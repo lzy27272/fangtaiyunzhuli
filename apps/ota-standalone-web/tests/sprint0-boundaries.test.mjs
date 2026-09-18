@@ -83,6 +83,25 @@ test('Sprint 0 web does not persist access tokens in browser storage', () => {
   assert.equal(sessionSource.includes('sessionStorage'), false)
 })
 
+test('repair bot configuration gates writes and rejects stale async state', () => {
+  const refreshBlock = weComRepairBotPanelSource.slice(
+    weComRepairBotPanelSource.indexOf('const refresh = useCallback'),
+    weComRepairBotPanelSource.indexOf('async function save()'),
+  )
+  const saveBlock = weComRepairBotPanelSource.slice(
+    weComRepairBotPanelSource.indexOf('async function save()'),
+    weComRepairBotPanelSource.indexOf('async function createPairingCode()'),
+  )
+  assert.match(weComRepairBotPanelSource, /const configLoaded = Boolean/)
+  assert.match(weComRepairBotPanelSource, /!configLoaded \|\| loading \|\| saving/)
+  assert.match(refreshBlock, /requestSequence !== requestSequenceRef\.current/)
+  assert.match(refreshBlock, /quiet && formDirtyRef\.current[\s\S]*rowVersion: current\.rowVersion/)
+  assert.match(refreshBlock, /if \(!quiet\) \{[\s\S]*setError\(''\)/)
+  assert.match(saveBlock, /currentConfig\.rowVersion/)
+  assert.match(saveBlock, /setConfig\(configForHotel\(next, activeContext\.hotelId\)\)/)
+  assert.match(businessApiSource, /expectedRowVersion,[\s\S]*reasonCode: 'UPDATE_WECOM_REPAIR_BOT_CONFIG'/)
+})
+
 test('people permissions expose the current roles and retire canceled roles from assignment', () => {
   const roleOptionsBlock = peoplePermissionsSource.slice(
     peoplePermissionsSource.indexOf('const ROLE_OPTIONS'),

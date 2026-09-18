@@ -123,6 +123,7 @@ const BUSINESS_CODE_LABELS: Record<string, string> = {
   BIEYANGHONG_STORE_SCOPE_INVALID: 'Cookie 不属于当前门店，旧 Cookie 未被覆盖',
   BIEYANGHONG_EXPECTED_STORE_SCOPE_UNAVAILABLE: '无法确认当前门店范围，请先保留本店已有 Cookie 或完成可信设备范围确认；旧 Cookie 未被覆盖',
   WECOM_REPAIR_BOT_CREDENTIALS_REQUIRED: '请先配置企业微信修复助手',
+  WECOM_REPAIR_BOT_CONFIG_VERSION_CONFLICT: '机器人配置已被其他管理员更新，请重新确认后再保存',
   WECOM_REPAIR_BOT_NOT_CONNECTED: '企业微信修复助手尚未连接',
   WECOM_REPAIR_BOT_PAIRING_REQUIRED: '当前门店尚未绑定修复管理员',
   WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED: '当前门店修复管理员已达上限',
