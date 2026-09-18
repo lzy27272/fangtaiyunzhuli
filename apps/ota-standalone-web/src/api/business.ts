@@ -923,7 +923,7 @@ export interface WeComRepairAdmin {
   memberId: string
   userId: string
   displayName: string
-  nameSource: 'ADMIN_REMARK' | 'UNSET'
+  nameSource: 'ADMIN_REMARK' | 'APPLICANT_PROVIDED' | 'UNSET'
   role: 'STORE_MANAGER' | 'OPERATIONS_MANAGER'
   globalRecipient: boolean
   hotelIds: string[]
@@ -947,6 +947,19 @@ export interface WeComRepairAdminsView {
   connected: boolean
   credentialConfigured: boolean
   members: WeComRepairAdmin[]
+  bindingApproval: {
+    enabled: boolean
+    approverMemberIds: string[]
+    eligibleMemberIds: string[]
+    maximumApprovers: number
+    pendingCount: number
+    requests: Array<{
+      id: string; userId: string; claimedName: string; hotels: string
+      status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
+      createdAt: string; expiresAt: string; decidedAt: string | null; decidedBy: string | null
+      cardCount: number; deliveredCount: number; deliveryUncertain: boolean
+    }>
+  }
   pairing: { active: boolean; expiresAt: string | null }
   hotels: Array<{ hotelId: string; hotelCode: string; displayName: string }>
   directory: {
@@ -964,6 +977,7 @@ export interface WeComRepairAdminsView {
 }
 
 export type WeComRepairAdminCommand =
+  | { action: 'APPROVAL_CONFIG'; approvalEnabled: boolean; approverMemberIds: string[] }
   | { action: 'AUTHORIZE'; userId: string; hotelIds: string[]; displayName: string;
       role: WeComRepairAdmin['role']; directoryUserId: string; directoryIdentityConfirmed: boolean }
   | { action: 'PAIR'; hotelIds: string[]; displayName: string; role: WeComRepairAdmin['role'] }

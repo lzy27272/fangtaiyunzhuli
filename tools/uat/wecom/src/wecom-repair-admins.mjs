@@ -50,6 +50,7 @@ export const normalizeRepairAdminState = (candidate) => {
     if (directoryUserId && !userIdPattern.test(directoryUserId)) fail('DIRECTORY_USER_INVALID')
     return [userId, {
       displayName: normalizeRepairAdminName(value.displayName),
+      nameSource: value.nameSource === 'APPLICANT_PROVIDED' ? 'APPLICANT_PROVIDED' : 'ADMIN_REMARK',
       role: value.role === 'OPERATIONS_MANAGER' ? 'OPERATIONS_MANAGER' : 'STORE_MANAGER',
       directoryUserId,
       directoryLinkedAt: validTime(value.directoryLinkedAt) ? value.directoryLinkedAt : null,
@@ -81,7 +82,7 @@ export const repairAdminRoster = (credentials, hotels) => {
       memberId: fingerprint(userId),
       // Account identifiers are visible only on the platform-admin endpoint.
       userId, displayName: profile.displayName || '待补充姓名',
-      nameSource: profile.displayName ? 'ADMIN_REMARK' : 'UNSET',
+      nameSource: profile.displayName ? profile.nameSource ?? 'ADMIN_REMARK' : 'UNSET',
       role: profile.role ?? (hotelIds.length > 1 ? 'OPERATIONS_MANAGER' : 'STORE_MANAGER'),
       globalRecipient, hotelIds,
       hotels: hotels.filter((hotel) => hotelIds.includes(hotel.hotelId))
@@ -158,7 +159,7 @@ export const updateRepairAdmin = ({ credentials, memberId, action, displayName,
   }
   return { ...credentials, hotelAllowedUserIds: scopes,
     userProfiles: { ...credentials.userProfiles, [userId]: {
-      ...profile, displayName: name, role, directoryUserId: directoryId,
+      ...profile, displayName: name, nameSource: 'ADMIN_REMARK', role, directoryUserId: directoryId,
       pendingHotelIds: [],
       directoryLinkedAt: directoryId
         ? (changedIdentity ? timestamp : profile.directoryLinkedAt ?? timestamp) : null,
@@ -211,7 +212,7 @@ export const preauthorizeRepairAdmin = ({ credentials, userId, displayName, role
   const timestamp = now.toISOString()
   const previous = credentials.userProfiles?.[userId]
   return { ...credentials, userProfiles: { ...credentials.userProfiles, [userId]: {
-    ...previous, displayName: name, role,
+    ...previous, displayName: name, nameSource: 'ADMIN_REMARK', role,
     directoryUserId, directoryLinkedAt: previous?.directoryUserId === directoryUserId
       ? previous.directoryLinkedAt ?? timestamp : timestamp,
     pendingHotelIds: selected, preauthorizedAt: timestamp,

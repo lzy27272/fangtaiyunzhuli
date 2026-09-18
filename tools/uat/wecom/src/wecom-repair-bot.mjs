@@ -8,6 +8,7 @@ import {
   normalizeRepairAdminHotelIds,
   normalizeRepairAdminName,
 } from './wecom-repair-admins.mjs'
+import { normalizeRepairApprovalState } from './wecom-repair-approvals.mjs'
 
 const { WSClient, generateReqId } = weComSdk
 
@@ -96,6 +97,7 @@ export const normalizeWeComRepairBotCredentials = (candidate) => {
     allowedUserIds,
     hotelAllowedUserIds,
     ...normalizeRepairAdminState(candidate),
+    bindingApproval: normalizeRepairApprovalState(candidate),
   }
 }
 
@@ -705,6 +707,7 @@ export const createWeComRepairBotRuntime = ({
   onTemplateCardEvent = async () => {},
   onStatusChanged = () => {},
   canSendToUser = () => true,
+  canSendBindingMessage = () => false,
   minimumProactiveIntervalMs = 500,
   now = () => Date.now(),
   wait = (milliseconds) => new Promise(
@@ -886,7 +889,9 @@ export const createWeComRepairBotRuntime = ({
             card_type: 'text_notice',
             main_title: {
               title: '未能受理本次操作',
-              desc: '请稍后重试，或发送“恢复 门店编号”。',
+              desc: taskId.startsWith('bind_')
+                ? '审批结果未确认，请联系平台管理员核对申请记录；请勿将此提示当作审批成功。'
+                : '请稍后重试，或发送“恢复 门店编号”。',
             },
             task_id: taskId,
           }, [userId]).catch(() => {})
@@ -925,6 +930,19 @@ export const createWeComRepairBotRuntime = ({
     },
     async sendTemplateCard(userId, templateCard) {
       return enqueueProactive(() => sendTemplateCard(userId, templateCard))
+    },
+    async sendBindingMessage(job) {
+      return enqueueProactive(() => {
+        // A narrow, persisted outbox grant, not a general messaging allowlist.
+        if (!canSendBindingMessage(job) || !USER_ID_PATTERN.test(job.userId)
+          || !['template_card', 'markdown'].includes(job.body?.msgtype)) {
+          throw new Error('WECOM_REPAIR_APPROVAL_FORBIDDEN')
+        }
+        if (!client || state.connectionStatus !== 'AUTHENTICATED') {
+          throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+        }
+        return client.sendMessage(job.userId, job.body)
+      })
     },
     async updateTemplateCard(frame, templateCard, userIds = undefined) {
       return updateTemplateCard(frame, templateCard, userIds)

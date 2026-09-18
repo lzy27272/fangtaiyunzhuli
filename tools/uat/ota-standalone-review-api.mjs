@@ -242,6 +242,12 @@ import {
   repairDirectoryXmlField,
   applyRepairDirectoryEvent,
 } from './wecom/src/wecom-repair-admins.mjs'
+import {
+  configureRepairApprovals, repairApprovalView, reconcileRepairApprovals,
+  parseRepairApprovalText, submitRepairApproval, ownRepairApproval,
+  cancelRepairApproval, decideRepairApproval, repairApprovalStatusText,
+  repairApprovalErrorText, createRepairApprovalOutbox,
+} from './wecom/src/wecom-repair-approvals.mjs'
 
 const host = '127.0.0.1'
 const port = Number.parseInt(process.env.OTA_REVIEW_API_PORT ?? '8091', 10)
@@ -4541,6 +4547,7 @@ const repairAdminView = () => {
       && status.connectionStatus === 'AUTHENTICATED' && status.connected,
     credentialConfigured: Boolean(weComRepairBotCredentials),
     members,
+    bindingApproval: repairApprovalView(weComRepairBotCredentials, hotels),
     pairing: weComRepairBotPairingStore.status(),
     hotels: hotels.map(({ hotelId, hotelCode, hotelName }) => ({
       hotelId, hotelCode, displayName: hotelName,
@@ -4597,6 +4604,11 @@ const applyRepairAdminCommand = (body) => {
     commitRepairAdminCredentials(preauthorizeRepairAdmin({ ...body,
       credentials: weComRepairBotCredentials, hotels }))
     weComRepairBotPairingStore.clear()
+  } else if (body.action === 'APPROVAL_CONFIG') {
+    commitRepairAdminCredentials(configureRepairApprovals({
+      credentials: weComRepairBotCredentials,
+      enabled: body.approvalEnabled, approverMemberIds: body.approverMemberIds,
+    }))
   } else if (body.action === 'DIRECTORY') {
     const previous = weComRepairBotCredentials.directorySync
     const update = body.directoryUpdate
@@ -9685,6 +9697,18 @@ const authorizedYilianHotelForWeCom = (userId, hotelCode) => {
   return candidates.length === 1 ? candidates[0] : null
 }
 
+let repairApprovalOutbox = null
+const flushRepairApprovals = () => {
+  if (existsSync(deploymentSchedulerPausePath)) return
+  void repairApprovalOutbox?.flush().catch(() => {
+    process.stderr.write(`${JSON.stringify({ event: 'WECOM_REPAIR_APPROVAL_OUTBOX_FAILED' })}\n`)
+  })
+}
+const reconcileCurrentRepairApprovals = (restarting = false) => {
+  const next = reconcileRepairApprovals(weComRepairBotCredentials, new Date(), restarting)
+  if (next !== weComRepairBotCredentials) commitRepairAdminCredentials(next)
+}
+
 const handleWeComRepairBotText = async (frame, replyText) => {
   const body = frame?.body
   const userId = typeof body?.from?.userid === 'string'
@@ -9702,6 +9726,32 @@ const handleWeComRepairBotText = async (frame, replyText) => {
   }
   if (!consumed.accepted) {
     await replyText(frame, '本条消息已接收，请勿重复提交。')
+    return
+  }
+
+  const approvalCommand = parseRepairApprovalText(body?.text?.content)
+  if (approvalCommand) {
+    let message
+    try {
+      reconcileCurrentRepairApprovals()
+      // Identity validation is also required for status and malformed commands.
+      ownRepairApproval({ credentials: weComRepairBotCredentials, frame })
+      if (approvalCommand.type === 'APPLY') {
+        const result = submitRepairApproval({ credentials: weComRepairBotCredentials,
+          frame, hotels, command: approvalCommand })
+        if (result.credentials !== weComRepairBotCredentials) commitRepairAdminCredentials(result.credentials)
+        message = `${result.duplicate ? '申请已登记，无需重复提交。' : '申请已登记，审批通过前不会授予权限。'}\n${repairApprovalStatusText(result.request, hotels)}`
+      } else if (approvalCommand.type === 'CANCEL') {
+        const next = cancelRepairApproval({ credentials: weComRepairBotCredentials, frame })
+        message = next === weComRepairBotCredentials ? '当前没有待审批申请可取消。' : '待审批申请已取消，旧卡片不再授权。可重新发送“申请 003 你的姓名”。'
+        if (next !== weComRepairBotCredentials) commitRepairAdminCredentials(next)
+      } else if (approvalCommand.type === 'STATUS') {
+        message = repairApprovalStatusText(ownRepairApproval({ credentials: weComRepairBotCredentials, frame }), hotels)
+      } else message = '请发送“申请 003 你的姓名”；一次申请多店可发送“申请 003,005 你的姓名”。也可发送“申请状态”或“取消申请”。'
+    } catch (error) { message = repairApprovalErrorText(error) }
+    // Persist first; network failures do not roll back or replay the application.
+    flushRepairApprovals()
+    await replyText(frame, message)
     return
   }
 
@@ -9828,7 +9878,11 @@ const handleWeComRepairBotText = async (frame, replyText) => {
     .filter(([, userIds]) => userIds.includes(userId))
     .map(([hotelId]) => hotelId)
   if (!globalAllowedUserIds.includes(userId) && userHotelIds.length === 0) {
-    await replyText(frame, '当前账号尚未激活或未获授权。请管理员在后台“免配对码授权”核对你的企微账号和负责门店；保存后发送“激活”。也可使用备用配对码绑定。')
+    await replyText(frame, weComRepairBotCredentials?.userProfiles?.[userId]?.revokedAt
+      ? '你的修复权限已撤销，请联系平台管理员核对人员状态。'
+      : weComRepairBotCredentials?.bindingApproval?.enabled
+        ? '当前账号尚未绑定。请发送“申请 003 你的姓名”（将003换为负责门店编号）；管理员会在企微收到审批卡片，同意后自动绑定。多店示例：“申请 003,005 你的姓名”。也可使用已有预授权或备用配对码。'
+        : '当前账号尚未激活或未获授权。请管理员在后台“免配对码授权”核对你的企微账号和负责门店；保存后发送“激活”。也可使用备用配对码绑定。')
     return
   }
 
@@ -10037,6 +10091,25 @@ const handleWeComRepairBotTemplateCard = async (
     : ''
   const eventKey = String(body?.event?.event_key ?? '')
   const taskId = String(body?.event?.task_id ?? '')
+  if (taskId.startsWith('bind_')) {
+    if (!/^[^\s\x00-\x1f\x7f]{1,128}$/u.test(userId) || !/^bind_[a-f0-9]{48}$/u.test(taskId)) return
+    let title = '审批未完成', description
+    try {
+      reconcileCurrentRepairApprovals()
+      const result = decideRepairApproval({ credentials: weComRepairBotCredentials, frame, hotels })
+      // No await between current permission checks, grant and durable decision.
+      if (result.changed) commitRepairAdminCredentials(result.credentials)
+      title = { APPROVED: '已同意绑定', REJECTED: '已拒绝申请', CANCELLED: '申请已取消', EXPIRED: '申请已过期' }[result.request.status]
+      description = `${result.changed ? '处理已保存。' : '本申请已处理，无需重复操作。'}\n${repairApprovalStatusText(result.request, hotels)}`
+    } catch (error) { description = repairApprovalErrorText(error) }
+    try {
+      await updateTemplateCard(frame, { card_type: 'text_notice', task_id: taskId,
+        main_title: { title, desc: description } }, userId ? [userId] : undefined)
+    } catch {
+      process.stderr.write(`${JSON.stringify({ event: 'WECOM_REPAIR_APPROVAL_CARD_ACK_FAILED' })}\n`)
+    } finally { flushRepairApprovals() }
+    return
+  }
   if (
     (body?.chattype && body.chattype !== 'single')
     || !userId
@@ -10137,6 +10210,7 @@ const activateWeComRepairAdmin = (frame) => {
 }
 
 weComRepairBotRuntime = createWeComRepairBotRuntime({
+  canSendBindingMessage: (job) => repairApprovalOutbox?.allowed(job) === true,
   canSendToUser: (userId) => !weComRepairBotCredentials?.userProfiles?.[userId]?.revokedAt
     && ((weComRepairBotCredentials?.allowedUserIds ?? []).includes(userId)
       || Object.values(weComRepairBotCredentials?.hotelAllowedUserIds ?? {}).some((ids) => ids.includes(userId))),
@@ -10144,8 +10218,17 @@ weComRepairBotRuntime = createWeComRepairBotRuntime({
   onEnterChat: (frame) => activateWeComRepairAdmin(frame)
     ?? (weComRepairBotCredentials?.userProfiles?.[frame?.body?.from?.userid]?.revokedAt
       ? '你的修复权限已撤销，请联系平台管理员核对人员状态。'
-      : '欢迎使用门店修复助手。管理员已预授权时会自动绑定；若尚未激活，请发送“激活”。已绑定人员发送“状态”查看任务，发送“恢复 015”处理有权限的门店。也可使用备用绑定码。'),
+      : weComRepairBotCredentials?.bindingApproval?.enabled
+        ? '欢迎使用门店修复助手。新人员发送“申请 003 你的姓名”（多店用逗号分隔），由指定管理员在企微同意后自动绑定。发送“申请状态”查询进度。已有预授权可发送“激活”，也可使用备用绑定码；已绑定人员发送“状态”查看任务。'
+        : '欢迎使用门店修复助手。管理员已预授权时会自动绑定；若尚未激活，请发送“激活”。已绑定人员发送“状态”查看任务，发送“恢复 015”处理有权限的门店。也可使用备用绑定码。'),
   onTemplateCardEvent: handleWeComRepairBotTemplateCard,
+})
+// Failed persistence stops startup rather than replaying an ambiguous send.
+reconcileCurrentRepairApprovals(true)
+repairApprovalOutbox = createRepairApprovalOutbox({
+  getCredentials: () => weComRepairBotCredentials, commit: commitRepairAdminCredentials,
+  getHotels: () => hotels, runtime: () => weComRepairBotRuntime,
+  enabled: () => weComRepairBotConfig.enabled && !shuttingDown,
 })
 weComRepairBotRuntime.configure({
   enabled: weComRepairBotConfig.enabled,
@@ -15332,6 +15415,9 @@ server.on('upgrade', (request, socket, head) => {
 })
 
 server.listen(port, host, () => {
+  // Binding approvals must work even when scheduled PMS collection is disabled.
+  const approvalTimer = setInterval(flushRepairApprovals, 5_000)
+  approvalTimer.unref()
   process.stdout.write(
     `${JSON.stringify({
       status: 'READY',

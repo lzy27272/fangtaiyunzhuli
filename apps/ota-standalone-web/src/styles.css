@@ -118,6 +118,14 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .repair-admin-directory summary { cursor: pointer; font-weight: 700; }
 .repair-admin-directory ol { padding-left: 1.3rem; }
 .repair-admin-directory .wecom-config-grid { margin-top: 1rem; }
+.repair-approval-panel { background: #f5faf7; }
+.repair-approval-panel h4 { margin: 0 0 .5rem; }
+.repair-approval-panel p, .repair-approval-person span { overflow-wrap: anywhere; }
+.repair-approval-person { padding: .75rem; border: 1px solid #c8d8d2; border-radius: .7rem; background: #fff; }
+.repair-approval-person small { display: block; color: #677b73; margin-top: .25rem; }
+.repair-approval-guide { padding: .2rem .9rem; margin: 1rem 0; border-left: 3px solid #26634e; background: #eaf4ee; }
+.repair-approval-panel summary { margin-top: 1rem; cursor: pointer; font-weight: 700; }
+.repair-approval-panel .repair-admin-hotels { max-height: 28rem; }
 @media (max-width: 640px) { .repair-admin-panel .page-heading { display: block; } .repair-admin-panel button { max-width: 100%; white-space: normal; } }
 .heading-actions select { border: 1px solid #aeb9b3; border-radius: .7rem; padding: .6rem .7rem; color: #21463c; background: #fff; }
 .state-panel { margin-top: 1.2rem; padding: 1rem; border: 1px dashed #cbd0cc; border-radius: .8rem; color: #68736f; background: #fafaf7; }

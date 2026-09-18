@@ -684,6 +684,116 @@ test('first administrator can pair multiple stores through one real API command 
   }
 })
 
+test('binding approvals work through real admin API, offline push and card callbacks, persist once and fail closed', async () => {
+  const runtimePath = await mkdtemp(join(os.tmpdir(), 'wecom-binding-approval-api-'))
+  let child
+  try {
+    const fakePath = join(runtimePath, 'fake-sdk.cjs'), preload = join(runtimePath, 'preload.mjs')
+    const inbox = join(runtimePath, 'inbox.json'), replies = join(runtimePath, 'replies.json'), messages = join(runtimePath, 'messages.json')
+    await writeFile(fakePath, `
+      const { EventEmitter } = require('node:events');
+      const { existsSync, readFileSync, writeFileSync } = require('node:fs');
+      module.exports = { generateReqId: () => 'test-request', WSClient: class extends EventEmitter {
+        isConnected = true; seen = new Set(); timer = null;
+        connect() { this.emit('authenticated'); this.timer = setInterval(() => {
+          let frame; try { frame = JSON.parse(readFileSync(${JSON.stringify(inbox)}, 'utf8')); } catch { return; }
+          if (this.seen.has(frame.body.msgid)) return;
+          this.seen.add(frame.body.msgid); this.emit(frame.body.msgtype === 'event' ? 'event.' + frame.body.event.eventtype : 'message.text', frame);
+        }, 15); }
+        disconnect() { clearInterval(this.timer); }
+        async replyStream(frame, id, content) { writeFileSync(${JSON.stringify(replies)}, JSON.stringify({ msgid: frame.body.msgid, content })); return { errcode: 0 }; }
+        async updateTemplateCard(frame, card) { writeFileSync(${JSON.stringify(replies)}, JSON.stringify({ msgid: frame.body.msgid, content: JSON.stringify(card) })); return { errcode: 0 }; }
+        async sendMessage(userId, body) {
+          const path = ${JSON.stringify(messages)};
+          const rows = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];
+          rows.push({ userId, body }); writeFileSync(path, JSON.stringify(rows)); return { errcode: 0 };
+        }
+      } };
+    `)
+    await writeFile(preload, `import { registerHooks } from 'node:module'; registerHooks({ resolve(specifier, context, nextResolve) {
+      if (specifier.endsWith('wecom-aibot-sdk-1.0.7.cjs')) return { url: ${JSON.stringify(pathToFileURL(fakePath).href)}, shortCircuit: true };
+      return nextResolve(specifier, context);
+    } });`)
+    await writeFile(join(runtimePath, 'wecom-repair-bot-config.json'), JSON.stringify({ enabled: true }))
+    await writeFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), JSON.stringify({ record: encryptCookie(JSON.stringify({
+      botId: 'fake-approval-bot', secret: 'example-offline-approval-secret', allowedUserIds: ['owner', 'ops'], hotelAllowedUserIds: {},
+      userProfiles: Object.fromEntries(['owner', 'ops'].map((id) => [id, { displayName: `测试${id}`, directoryUserId: id, directoryLinkedAt: new Date().toISOString() }])),
+      directorySync: { enabled: true, corpId: 'ww-approval-test', token: 'exampleApprovalToken',
+        encodingAesKey: Buffer.alloc(32, 19).toString('base64').slice(0, -1), verifiedAt: new Date().toISOString() },
+    }), secretKey, 'wecom-repair-bot:v1') }))
+    let started = await startApi(runtimePath, { preload }); child = started.child
+    let base = `http://127.0.0.1:${started.port}`, accessToken = started.accessToken
+    const headers = () => ({ Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' })
+    const read = async () => (await (await fetch(`${base}/api/v1/ota/wecom-repair-admins`, { headers: headers() })).json()).data
+    const post = async (body, version) => fetch(`${base}/api/v1/ota/wecom-repair-admins`, { method: 'POST', headers: headers(),
+      body: JSON.stringify({ ...body, expectedRowVersion: version ?? (await read()).rowVersion, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS' }) })
+    const until = async (fn) => {
+      for (let i = 0; i < 160; i += 1) { try { const value = await fn(); if (value) return value } catch {} await new Promise((r) => setTimeout(r, 30)) }
+      throw Error('APPROVAL_TEST_TIMEOUT')
+    }
+    const send = async (userId, text, event = null) => {
+      const msgid = randomUUID()
+      await writeFile(inbox, JSON.stringify({ headers: { req_id: msgid }, body: { aibotid: 'fake-approval-bot', msgid,
+        msgtype: event ? 'event' : 'text', chattype: 'single', from: { userid: userId, corpid: 'ww-approval-test' },
+        create_time: Math.floor(Date.now() / 1000), ...(event ? { event: { eventtype: 'template_card_event', ...event } } : { text: { content: text } }),
+      } }))
+      return until(async () => { const row = JSON.parse(await readFile(replies, 'utf8')); return row.msgid === msgid && row.content })
+    }
+    assert.equal((await read()).bindingApproval.enabled, false)
+    assert.deepEqual((await read()).bindingApproval.approverMemberIds, [])
+    assert.match(await send('employee', '申请 001,002 测试员工'), /尚未启用/)
+    assert.equal((await post({ action: 'APPROVAL_CONFIG', approvalEnabled: true, approverMemberIds: ['owner', 'ops'].map(sha256) })).status, 200)
+    assert.equal((await post({ action: 'APPROVAL_CONFIG', approvalEnabled: false, approverMemberIds: [] }, 0)).status, 409)
+    assert.match(await send('employee', '申请 001,002 测试员工'), /申请已登记/)
+    assert.equal((await read()).members.some((m) => m.userId === 'employee'), false)
+    await until(async () => (await read()).bindingApproval.requests[0]?.deliveredCount === 2)
+    const sent = JSON.parse(await readFile(messages, 'utf8'))
+    assert.equal(sent.length, 2)
+    const ownerCard = sent.find((m) => m.userId === 'owner').body.template_card
+    const opsCard = sent.find((m) => m.userId === 'ops').body.template_card
+    assert.match(await send('employee', '申请 001,002 测试员工'), /无需重复提交/)
+    assert.match(await send('employee', '申请状态'), /2\/2/)
+    const event = (card, key = 'BIND_APPROVE') => ({ task_id: card.task_id, event_key: key })
+    assert.match(await send('outsider', null, event(ownerCard)), /没有此卡片的审批权/)
+    assert.equal((await read()).bindingApproval.requests[0].status, 'PENDING')
+    // Force the same persistence failure production must survive: no granted scopes in memory.
+    const configPath = join(runtimePath, 'wecom-repair-bot-config.json')
+    await rm(configPath); await mkdir(configPath)
+    assert.match(await send('owner', null, event(ownerCard)), /结果未确认/)
+    assert.equal((await read()).members.some((m) => m.userId === 'employee'), false)
+    await rm(configPath, { recursive: true })
+    assert.match(await send('ops', null, event(opsCard)), /已同意绑定/)
+    const row = (await read()).members.find((m) => m.userId === 'employee')
+    assert.equal(row.hotels.length, 2); assert.equal(row.globalRecipient, false)
+    assert.equal(row.offboardingLinked, false); assert.equal(row.nameSource, 'APPLICANT_PROVIDED')
+    assert.match(await send('owner', null, event(ownerCard, 'BIND_REJECT')), /本申请已处理/)
+    await until(async () => JSON.parse(await readFile(messages, 'utf8')).length === 4)
+    assert.equal((await read()).bindingApproval.requests[0].status, 'APPROVED')
+    assert.match(await send('employee', '申请状态'), /绑定成功/)
+    const persisted = await readFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), 'utf8')
+    assert.equal(persisted.includes('测试员工'), false)
+    assert.equal(persisted.includes(ownerCard.task_id), false)
+    const health = await (await fetch(`${base}/health`)).text()
+    assert.equal(health.includes('测试员工'), false)
+    assert.equal(health.includes(ownerCard.task_id), false)
+    await stopApi(child); child = null
+    started = await startApi(runtimePath, { preload, loginProbe: true }); child = started.child
+    base = `http://127.0.0.1:${started.port}`; accessToken = started.accessToken
+    assert.equal((await read()).bindingApproval.requests[0].status, 'APPROVED')
+    assert.match(await send('owner', null, event(ownerCard)), /本申请已处理/)
+    assert.equal(JSON.parse(await readFile(messages, 'utf8')).length, 4)
+    assert.match(await send('declined.employee', '申请 001 待拒绝员工'), /申请已登记/)
+    await until(async () => (await read()).bindingApproval.requests[0]?.deliveredCount === 2)
+    const nextCards = JSON.parse(await readFile(messages, 'utf8')).slice(-2)
+    assert.match(await send('owner', null, event(nextCards.find((m) => m.userId === 'owner').body.template_card, 'BIND_REJECT')), /已拒绝申请/)
+    assert.equal((await read()).members.some((m) => m.userId === 'declined.employee'), false)
+    await until(async () => JSON.parse(await readFile(messages, 'utf8')).some((m) => m.userId === 'declined.employee' && m.body.markdown?.content.includes('已拒绝')))
+  } finally {
+    if (child) await stopApi(child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
 test('WeCom repair bot transaction journal completes both files after restart', async () => {
   const runtimePath = await mkdtemp(join(os.tmpdir(), 'wecom-repair-bot-tx-'))
   const configPath = join(runtimePath, 'wecom-repair-bot-config.json')
