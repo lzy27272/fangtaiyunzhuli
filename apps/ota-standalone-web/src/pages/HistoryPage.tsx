@@ -24,12 +24,13 @@ import {
   safeBusinessText,
   weComDeliveryDiagnostic,
 } from '../ui/businessDisplay'
-import { WeComRepairBotConfigPanel } from './WeComRepairBotConfigPanel'
+import { WeComStoreRepairSummary } from './WeComStoreRepairSummary'
 
 interface Props {
   context: HotelContext | null
   canConfigure: boolean
   onStatusChanged?: () => void
+  onOpenPeoplePermissions?: () => void
 }
 
 const TEMPLATE_LABELS: Record<string, string> = {
@@ -83,7 +84,7 @@ const createManualReplayOperationKey = (): string => {
 const createHotSellingRetryOperationKey = (deliveryId: string): string =>
   `HOT_SELLING_RETRY_${deliveryId.replaceAll('-', '').toUpperCase()}`
 
-export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
+export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeoplePermissions }: Props) {
   const [briefs, setBriefs] = useState<BriefView[]>([])
   const [incidents, setIncidents] = useState<IncidentView[]>([])
   const [outbox, setOutbox] = useState<OutboxPreview[]>([])
@@ -404,9 +405,10 @@ export function HistoryPage({ context, canConfigure, onStatusChanged }: Props) {
         </button>
       </div>
 
-      <WeComRepairBotConfigPanel
+      <WeComStoreRepairSummary
         canConfigure={canConfigure}
         context={context}
+        onOpenPeoplePermissions={onOpenPeoplePermissions}
       />
 
       {!context ? (

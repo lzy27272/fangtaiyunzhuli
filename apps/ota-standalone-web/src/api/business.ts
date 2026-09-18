@@ -1888,6 +1888,10 @@ export function loadWeComRepairBotConfig(
   )
 }
 
+export function loadGlobalWeComRepairBotConfig(): Promise<WeComRepairBotConfigView> {
+  return authenticatedRequest('/ota/wecom-repair-bot-config')
+}
+
 export function saveWeComRepairBotConfig(
   enabled: boolean,
   allowGlobalRepairActions: boolean,

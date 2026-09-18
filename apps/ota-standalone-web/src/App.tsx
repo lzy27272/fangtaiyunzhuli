@@ -5,7 +5,7 @@ import { clearSession, getSession, setSession, type AuthSession } from './auth/s
 import { Brand, Icon, LoadingState } from './components/ConsoleUi'
 import { ExceptionCenterPage } from './pages/ExceptionCenterPage'
 import { NewStoreWizard } from './pages/NewStoreWizard'
-import { PeoplePermissionsPage } from './pages/PeoplePermissionsPage'
+import { PeoplePermissionsPage, type PeopleTab } from './pages/PeoplePermissionsPage'
 import { PersonalSecurityPage } from './pages/PersonalSecurityPage'
 import {
   loadAuthorizedHotels,
@@ -73,6 +73,7 @@ function LoginPanel({ expired, repairHotelCode, onAuthenticated }: { expired: bo
 
 function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSignedOut }: { session: AuthSession; initialRepairHotelCode: string | null; onSessionChange: (session: AuthSession) => void; onSignedOut: () => void }) {
   const [page, setPage] = useState<AppPage>('stores')
+  const [peopleTab, setPeopleTab] = useState<PeopleTab>('accounts')
   const [hotels, setHotels] = useState<SimulationHotelView[]>([])
   const [selectedHotel, setSelectedHotel] = useState<SimulationHotelView | null>(null)
   const [selectedTab, setSelectedTab] = useState<StoreTab>('overview')
@@ -130,6 +131,12 @@ function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSign
   }, [directoryError, hotels, initialRepairHotelCode, loadingDirectory])
 
   const navigate = (next: AppPage) => { setPage(next); setAccountMenu(false); setMobileMenu(false) }
+  const openPeople = (tab: PeopleTab = 'accounts') => {
+    if (!platformAdmin) return
+    setPeopleTab(tab)
+    navigate('people')
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }
   const openHotel = (
     hotel: SimulationHotelView,
     tab: StoreTab = 'overview',
@@ -164,7 +171,7 @@ function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSign
       <nav className={mobileMenu ? 'mobile-open' : ''} aria-label="全局导航">
         <button className={activeTopPage === 'stores' ? 'active' : ''} type="button" onClick={() => navigate('stores')}><Icon name="hotel" />门店总览</button>
         <button className={activeTopPage === 'exceptions' ? 'active' : ''} type="button" onClick={() => navigate('exceptions')}><Icon name="alert" />异常处理</button>
-        {platformAdmin ? <button className={activeTopPage === 'people' ? 'active' : ''} type="button" onClick={() => navigate('people')}><Icon name="users" />人员与权限</button> : null}
+        {platformAdmin ? <button className={activeTopPage === 'people' ? 'active' : ''} type="button" onClick={() => openPeople()}><Icon name="users" />人员与权限</button> : null}
       </nav>
       <div className="header-actions">
         <span className="scope-badge">{session.account.hotelIds === null ? `全部门店 · ${hotels.length}家` : storeLabel}</span>
@@ -174,10 +181,10 @@ function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSign
     <main className="console-main">
       {loadingDirectory && page !== 'security' ? <LoadingState label="正在载入授权门店…" /> : null}
       {page === 'stores' ? <StoreOverviewPage hotels={hotels} loadingDirectory={loadingDirectory} directoryError={directoryError} canCreate={platformAdmin} onCreate={() => navigate('new-store')} onOpen={openHotel} onOpenException={() => navigate('exceptions')} onRefreshDirectory={() => void refreshHotels()} /> : null}
-      {page === 'store-detail' && selectedHotel ? <StoreDetailPage key={`${selectedHotel.hotelId}-${storeNavigationSequence}`} hotel={selectedHotel} initialTab={selectedTab} initialCollectionSection={selectedCollectionSection} initialOtaAttentionPlatformCode={selectedOtaAttentionPlatformCode} initialOtaAttentionSourceId={selectedOtaAttentionSourceId} canConfigure={canConfigure} canRevenueConfigure={canRevenueConfigure} onBack={() => navigate('stores')} onOpenExceptions={() => navigate('exceptions')} /> : null}
+      {page === 'store-detail' && selectedHotel ? <StoreDetailPage key={`${selectedHotel.hotelId}-${storeNavigationSequence}`} hotel={selectedHotel} initialTab={selectedTab} initialCollectionSection={selectedCollectionSection} initialOtaAttentionPlatformCode={selectedOtaAttentionPlatformCode} initialOtaAttentionSourceId={selectedOtaAttentionSourceId} canConfigure={canConfigure} canRevenueConfigure={canRevenueConfigure} onBack={() => navigate('stores')} onOpenExceptions={() => navigate('exceptions')} onOpenPeoplePermissions={() => openPeople('wecom')} /> : null}
       {page === 'new-store' && platformAdmin ? <NewStoreWizard session={session} onCancel={() => navigate('stores')} onCreated={(hotel) => { void refreshHotels(); openHotel(hotel, 'collection') }} /> : null}
       {page === 'exceptions' ? <ExceptionCenterPage hotels={hotels} onOpenStore={openHotel} /> : null}
-      {page === 'people' && platformAdmin ? <PeoplePermissionsPage session={session} hotels={hotels} /> : null}
+      {page === 'people' && platformAdmin ? <PeoplePermissionsPage session={session} hotels={hotels} tab={peopleTab} onTabChange={setPeopleTab} /> : null}
       {page === 'security' ? <PersonalSecurityPage session={session} onSessionChange={onSessionChange} /> : null}
     </main>
   </div>

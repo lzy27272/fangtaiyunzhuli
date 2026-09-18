@@ -75,7 +75,7 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .context-bar div, .configuration-form label, .target-grid label, .mapping-editor label, .save-row label { display: grid; gap: .35rem; color: #5c6863; font-size: .75rem; font-weight: 800; }
 .context-bar input, .context-bar select, .configuration-form input, .target-grid input, .mapping-editor input, .mapping-editor select, .save-row input { width: 100%; min-width: 0; border: 1px solid #c8cec9; border-radius: .65rem; padding: .68rem .75rem; color: #17231f; background: #fff; outline: none; }
 .context-bar input:focus, .context-bar select:focus, .configuration-form input:focus, .target-grid input:focus, .mapping-editor input:focus, .mapping-editor select:focus, .save-row input:focus { border-color: #346d5e; box-shadow: 0 0 0 3px rgba(52,109,94,.1); }
-.context-bar button, .page-card button:not(.secondary):not(.text-button) { border: 0; border-radius: .7rem; padding: .75rem 1rem; color: #fff; background: #275f51; font-weight: 800; }
+.context-bar button, .page-card button:not(.secondary):not(.text-button), .people-wecom-settings button:not(.secondary):not(.text-button) { border: 0; border-radius: .7rem; padding: .75rem 1rem; color: #fff; background: #275f51; font-weight: 800; }
 .context-error { grid-column: 1 / -1; color: #8a231b; font-size: .8rem; }
 .simulation-hotel-creator { margin-top: .6rem; border: 1px solid #d8d4c9; border-radius: .85rem; background: #fff; }
 .simulation-hotel-creator summary { padding: .75rem 1rem; color: #315b50; cursor: pointer; font-weight: 800; }
@@ -126,6 +126,11 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .repair-approval-guide { padding: .2rem .9rem; margin: 1rem 0; border-left: 3px solid #26634e; background: #eaf4ee; }
 .repair-approval-panel summary { margin-top: 1rem; cursor: pointer; font-weight: 700; }
 .repair-approval-panel .repair-admin-hotels { max-height: 28rem; }
+.people-wecom-settings { margin-top: 1.25rem; padding: clamp(1rem, 2vw, 1.5rem); background: #fff; border: 1px solid #d8e4de; border-radius: 1rem; }
+.people-wecom-settings > .repair-admin-panel { margin-top: 1rem; padding-top: 0; border-top: 0; }
+.store-repair-members { display: flex; flex-wrap: wrap; gap: .8rem; list-style: none; padding: 0; }
+.store-repair-members li { display: grid; gap: .3rem; padding: .8rem 1rem; border: 1px solid #c8d8d2; border-radius: .7rem; overflow-wrap: anywhere; }
+.store-repair-members span, .store-repair-members small { color: #677b73; font-size: .85rem; }
 @media (max-width: 640px) { .repair-admin-panel .page-heading { display: block; } .repair-admin-panel button { max-width: 100%; white-space: normal; } }
 .heading-actions select { border: 1px solid #aeb9b3; border-radius: .7rem; padding: .6rem .7rem; color: #21463c; background: #fff; }
 .state-panel { margin-top: 1.2rem; padding: 1rem; border: 1px dashed #cbd0cc; border-radius: .8rem; color: #68736f; background: #fafaf7; }

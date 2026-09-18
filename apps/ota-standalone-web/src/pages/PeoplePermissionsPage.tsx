@@ -9,8 +9,10 @@ import type { SimulationHotelView } from '../api/business'
 import type { AuthSession, OtaRole } from '../auth/session'
 import { EmptyState, Icon, LoadingState, Status } from '../components/ConsoleUi'
 import { businessErrorMessage } from '../ui/businessDisplay'
+import { WeComRepairAdminsPanel } from './WeComRepairAdminsPanel'
+import { WeComRepairBotConfigPanel } from './WeComRepairBotConfigPanel'
 
-type PeopleTab = 'accounts' | 'roles' | 'audit'
+export type PeopleTab = 'accounts' | 'wecom' | 'roles' | 'audit'
 const ROLE_LABELS: Record<OtaRole, string> = {
   PLATFORM_ADMIN: '管理员', OTA_OPERATION_ASSISTANT: 'OTA 运营助理',
   OTA_OPERATION_MANAGER: '运营总监', CEO: '总经理',
@@ -50,8 +52,9 @@ function fmt(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
-export function PeoplePermissionsPage({ session, hotels }: { session: AuthSession; hotels: SimulationHotelView[] }) {
-  const [tab, setTab] = useState<PeopleTab>('accounts')
+export function PeoplePermissionsPage({ session, hotels, tab, onTabChange: setTab }: {
+  session: AuthSession; hotels: SimulationHotelView[]; tab: PeopleTab; onTabChange: (tab: PeopleTab) => void
+}) {
   const [accounts, setAccounts] = useState<ManagedAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -112,12 +115,18 @@ export function PeoplePermissionsPage({ session, hotels }: { session: AuthSessio
 
   return (
     <section className="console-page people-page">
-      <div className="page-title-row"><div><p className="section-kicker">账号与门店权限</p><h1>人员与权限</h1><p>账号、角色和门店范围由服务端逐请求校验。</p></div><button className="primary-button" type="button" onClick={openCreate}><Icon name="plus" />新增账号</button></div>
-      <div className="summary-strip"><div><span>全部账号</span><strong>{accounts.length}</strong><small>含管理员</small></div><div><span>启用账号</span><strong>{enabledCount}</strong><small>可正常登录</small></div><div><span>管理员</span><strong>{platformAdmins}</strong><small>拥有全部门店及采集配置权限</small></div></div>
-      <nav className="store-tabs"><button className={tab === 'accounts' ? 'active' : ''} onClick={() => setTab('accounts')} type="button">账号与门店</button><button className={tab === 'roles' ? 'active' : ''} onClick={() => setTab('roles')} type="button">角色模板</button><button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')} type="button">权限变更记录</button></nav>
-      {notice ? <div className="inline-message success" role="status">{notice}</div> : null}
-      {error && !drawer ? <div className="inline-message error" role="alert">{error}</div> : null}
-      {loading ? <LoadingState label="正在读取人员账号…" /> : null}
+      <div className="page-title-row"><div><p className="section-kicker">全平台权限管理</p><h1>人员与权限</h1><p>统一管理后台账号、企微人员、审批人和门店授权；两类账号权限独立，不会相互自动升级。</p></div>{tab === 'accounts' ? <button className="primary-button" type="button" onClick={openCreate}><Icon name="plus" />新增账号</button> : null}</div>
+      {tab !== 'wecom' ? <div className="summary-strip"><div><span>全部账号</span><strong>{accounts.length}</strong><small>含管理员</small></div><div><span>启用账号</span><strong>{enabledCount}</strong><small>可正常登录</small></div><div><span>管理员</span><strong>{platformAdmins}</strong><small>拥有全部门店及采集配置权限</small></div></div> : null}
+      <nav className="store-tabs" aria-label="权限分类"><button className={tab === 'accounts' ? 'active' : ''} onClick={() => setTab('accounts')} type="button">账号与门店</button><button className={tab === 'wecom' ? 'active' : ''} onClick={() => setTab('wecom')} type="button">企微管理与审批</button><button className={tab === 'roles' ? 'active' : ''} onClick={() => setTab('roles')} type="button">角色模板</button><button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')} type="button">权限变更记录</button></nav>
+      {notice && tab !== 'wecom' ? <div className="inline-message success" role="status">{notice}</div> : null}
+      {error && !drawer && tab !== 'wecom' ? <div className="inline-message error" role="alert">{error}</div> : null}
+      {loading && tab !== 'wecom' ? <LoadingState label="正在读取人员账号…" /> : null}
+
+      {tab === 'wecom' ? <section className="people-wecom-settings" aria-label="全平台企微管理与审批">
+        <div className="inline-message info">此处的审批人、跨店授权和离职解绑设置对全平台生效。各门店仅保留本店播报设置与已绑定人员展示。</div>
+        <WeComRepairAdminsPanel />
+        <details className="repair-admin-directory"><summary>机器人连接与全局修复权限 · 全平台配置</summary><WeComRepairBotConfigPanel canConfigure={session.account.roles.includes('PLATFORM_ADMIN')} /></details>
+      </section> : null}
 
       {!loading && tab === 'accounts' ? <>
         <div className="table-toolbar"><div><strong>{filtered.length} 个账号</strong></div><label className="search-field"><Icon name="search" /><input placeholder="搜索人员、账号或角色" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div>

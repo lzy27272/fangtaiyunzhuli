@@ -6,10 +6,10 @@ import {
 import { businessErrorMessage } from '../ui/businessDisplay'
 import { WeComRepairApprovalPanel } from './WeComRepairApprovalPanel'
 
-interface Props { hotelId: string; onChanged: () => void }
+interface Props { onChanged?: () => void }
 const timeLabel = (value: string | null) => value ? new Date(value).toLocaleString('zh-CN') : '尚无记录'
 
-export function WeComRepairAdminsPanel({ hotelId, onChanged }: Props) {
+export function WeComRepairAdminsPanel({ onChanged }: Props) {
   const [data, setData] = useState<WeComRepairAdminsView | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -22,7 +22,7 @@ export function WeComRepairAdminsPanel({ hotelId, onChanged }: Props) {
   const [formVersion, setFormVersion] = useState(0)
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState<WeComRepairAdmin['role']>('STORE_MANAGER')
-  const [selected, setSelected] = useState<string[]>([hotelId])
+  const [selected, setSelected] = useState<string[]>([])
   const [directoryUserId, setDirectoryUserId] = useState('')
   const [identityConfirmed, setIdentityConfirmed] = useState(false)
   const [pairing, setPairing] = useState<WeComRepairAdminsView['createdPairing']>()
@@ -89,7 +89,7 @@ export function WeComRepairAdminsPanel({ hotelId, onChanged }: Props) {
           : input.action === 'DIRECTORY'
             ? '通讯录接入配置已加密保存，请在企业微信后台保存回调地址并完成验证。'
             : '人员信息和门店权限已保存。')
-      onChanged()
+      onChanged?.()
       return true
     } catch (cause) {
       if (!mounted.current) return
@@ -110,13 +110,13 @@ export function WeComRepairAdminsPanel({ hotelId, onChanged }: Props) {
     setEditing(member); setPendingRevoke(null); setFormVersion(data.rowVersion)
     setNewMode(mode); setUserId(member === 'NEW' ? '' : member.userId)
     setDisplayName(member === 'NEW' || member.nameSource === 'UNSET' ? '' : member.displayName)
-    setSelected(member === 'NEW' ? [hotelId] : member.activationStatus === 'PENDING' ? member.pendingHotelIds : member.hotelIds)
+    setSelected(member === 'NEW' ? [] : member.activationStatus === 'PENDING' ? member.pendingHotelIds : member.hotelIds)
     setRole(member === 'NEW' ? 'STORE_MANAGER' : member.role)
     setDirectoryUserId(member === 'NEW' ? '' : member.directoryUserId)
     setIdentityConfirmed(false); setPairing(undefined); setError(''); setNotice('')
   }
   const matchesSearch = (m: WeComRepairAdmin) => `${m.displayName} ${m.userId} ${m.directoryUserId}`.toLowerCase().includes(search.trim().toLowerCase())
-  const members = (data?.members ?? []).filter((m) => (showAll || m.globalRecipient || m.hotelIds.includes(hotelId) || m.pendingHotelIds?.includes(hotelId)) && matchesSearch(m))
+  const members = (data?.members ?? []).filter((m) => (showAll || m.active || m.activationStatus === 'PENDING') && matchesSearch(m))
   const linked = data?.directory
   const directoryReady = linked?.enabled && Boolean(linked.verifiedAt)
   const existing = editing && editing !== 'NEW' ? editing : null
@@ -128,22 +128,22 @@ export function WeComRepairAdminsPanel({ hotelId, onChanged }: Props) {
   return (
     <section className="repair-admin-panel" aria-label="播报修复管理员管理">
       <div className="page-heading">
-        <div><h3>已绑定人员与多店授权</h3><p>已绑定人员：选择人员 → 勾选门店 → 保存即生效。新人员可使用下方企微简易审批，也保留预授权和备用配对码。</p></div>
+        <div><h3>已绑定人员与多店授权</h3><p>全平台统一管理，不属于某一家门店。选择人员并明确勾选负责门店；新人员可使用下方企微简易审批，也保留预授权和备用配对码。</p></div>
         <div className="heading-actions"><button type="button" disabled={!data || busy || !data.credentialConfigured} onClick={() => edit('NEW')}>免配对码授权</button><button className="secondary" type="button" disabled={!data || busy || !data.credentialConfigured} onClick={() => edit('NEW', 'PAIR')}>备用配对码 / 多店绑定</button></div>
       </div>
       <p>机器人只需由平台统一配置一次，员工无需配置机器人密钥。企业微信消息中打开“播报推送修复助手”；未添加的员工仍需获得机器人的分享入口。</p>
       {data ? <WeComRepairApprovalPanel data={data} busy={busy} onSave={command} /> : null}
       <label className="repair-admin-search">搜索人员姓名或企微账号<input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="已保存的人员名单，不是全企业通讯录" /></label>
-      <label className="inline-toggle"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />查看全部门店人员（含已解绑记录）</label>
+      <label className="inline-toggle"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />同时显示已解绑及尚未授权人员</label>
       {!data ? <p role="status">正在读取管理员名单…</p> : null}
-      {data && members.length === 0 ? <p>当前门店暂无已绑定人员，也没有全局接收人。</p> : null}
+      {data && members.length === 0 ? <p>没有符合条件的企微人员，请调整搜索或新增授权。</p> : null}
       <div className="repair-admin-roster">
         {members.map((member) => (
           <article className="repair-admin-member" key={member.memberId}>
             <div><strong>{member.displayName}</strong><span className={member.active ? 'source-complete' : 'source-partial'}>{member.active ? (member.globalRecipient ? '全局接收人' : member.role === 'OPERATIONS_MANAGER' ? '运营经理' : '门店管理员') : member.activationStatus === 'PENDING' ? '待首次激活' : member.activationStatus === 'UNASSIGNED' ? '尚未授权' : '已解绑'}</span></div>
             <p className="repair-admin-account">企微机器人账号：{member.userId}</p>
             {member.nameSource === 'APPLICANT_PROVIDED' ? <small>姓名由员工申请时填写，非通讯录自动核验；可编辑核对姓名与离职关联。</small> : null}
-            <p>{member.globalRecipient ? '接收所有门店通知；跨店处理权限取决于上方全局授权开关。' : null}</p>
+            <p>{member.globalRecipient ? '接收所有门店通知；跨店处理权限在本页“机器人连接与全局修复权限”中单独设置。' : null}</p>
             <p>门店授权：{member.hotels.map((h) => `${h.hotelCode} ${h.displayName}`).join('、') || '无单独门店授权'}</p>
             {member.activationStatus === 'PENDING' ? <p>待激活门店：{member.pendingHotels.map((h) => `${h.hotelCode} ${h.displayName}`).join('、')}。尚不能接收或处理任务；进入机器人或发送“激活”完成绑定。</p> : null}
             {member.activatedAt ? <small>自动绑定成功：{timeLabel(member.activatedAt)}</small> : null}
@@ -187,7 +187,7 @@ export function WeComRepairAdminsPanel({ hotelId, onChanged }: Props) {
           <label>岗位标记<select disabled={busy} value={role} onChange={(e) => setRole(e.target.value as WeComRepairAdmin['role'])}><option value="STORE_MANAGER">门店管理员</option><option value="OPERATIONS_MANAGER">运营经理</option></select></label>
         </div>
         <fieldset disabled={busy}><legend>负责门店 · 已选择 {selected.length} 家</legend>
-          <div className="heading-actions"><button className="secondary" type="button" onClick={() => setSelected(data?.hotels.map((h) => h.hotelId) ?? [])}>全选门店</button><button className="secondary" type="button" onClick={() => setSelected([hotelId])}>仅当前门店</button></div>
+          <div className="heading-actions"><button className="secondary" type="button" onClick={() => setSelected(data?.hotels.map((h) => h.hotelId) ?? [])}>全选门店</button><button className="secondary" type="button" onClick={() => setSelected([])}>清空选择</button></div>
           <div className="repair-admin-hotels">{data?.hotels.map((hotel) => <label className="inline-toggle" key={hotel.hotelId}><input type="checkbox" checked={selected.includes(hotel.hotelId)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, hotel.hotelId] : current.filter((id) => id !== hotel.hotelId))} />{hotel.hotelCode} · {hotel.displayName}</label>)}</div>
         </fieldset>
         {existing && !direct ? <div className="wecom-config-grid">

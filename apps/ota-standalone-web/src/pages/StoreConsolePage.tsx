@@ -410,6 +410,7 @@ export function StoreDetailPage({
   canRevenueConfigure,
   onBack,
   onOpenExceptions,
+  onOpenPeoplePermissions,
 }: {
   hotel: SimulationHotelView
   initialTab?: StoreTab
@@ -420,6 +421,7 @@ export function StoreDetailPage({
   canRevenueConfigure: boolean
   onBack: () => void
   onOpenExceptions: () => void
+  onOpenPeoplePermissions: () => void
 }) {
   const context = useMemo<HotelContext>(() => ({ tenantId: hotel.tenantId, hotelId: hotel.hotelId }), [hotel])
   const authorizedInitialTab = initialTab === 'collection'
@@ -805,7 +807,7 @@ export function StoreDetailPage({
         </div>
       ) : null}
 
-      {!loading && tab === 'broadcast' ? <div className="embedded-legacy-page"><HistoryPage context={context} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /></div> : null}
+      {!loading && tab === 'broadcast' ? <div className="embedded-legacy-page"><HistoryPage context={context} canConfigure={canConfigure} onStatusChanged={() => void refresh()} onOpenPeoplePermissions={onOpenPeoplePermissions} /></div> : null}
     </section>
   )
 }

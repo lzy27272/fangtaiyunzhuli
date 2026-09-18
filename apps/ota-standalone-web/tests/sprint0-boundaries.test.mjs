@@ -15,6 +15,8 @@ const weComRepairBotPanelSource = await readFile(
 const accountSecuritySource = await readFile(new URL('../src/pages/AccountSecurityPage.tsx', import.meta.url), 'utf8')
 const personalSecuritySource = await readFile(new URL('../src/pages/PersonalSecurityPage.tsx', import.meta.url), 'utf8')
 const peoplePermissionsSource = await readFile(new URL('../src/pages/PeoplePermissionsPage.tsx', import.meta.url), 'utf8')
+const repairAdminsSource = await readFile(new URL('../src/pages/WeComRepairAdminsPanel.tsx', import.meta.url), 'utf8')
+const storeRepairSummarySource = await readFile(new URL('../src/pages/WeComStoreRepairSummary.tsx', import.meta.url), 'utf8')
 const storeConsoleSource = await readFile(new URL('../src/pages/StoreConsolePage.tsx', import.meta.url), 'utf8')
 const hotSellingRoomSource = await readFile(new URL('../src/pages/HotSellingRoomConfigPanel.tsx', import.meta.url), 'utf8')
 const newStoreWizardSource = await readFile(new URL('../src/pages/NewStoreWizard.tsx', import.meta.url), 'utf8')
@@ -90,7 +92,7 @@ test('repair bot configuration gates writes and rejects stale async state', () =
   )
   const saveBlock = weComRepairBotPanelSource.slice(
     weComRepairBotPanelSource.indexOf('async function save()'),
-    weComRepairBotPanelSource.indexOf('async function createPairingCode()'),
+    weComRepairBotPanelSource.indexOf('if (!canConfigure) return null'),
   )
   assert.match(weComRepairBotPanelSource, /const configLoaded = Boolean/)
   assert.match(weComRepairBotPanelSource, /!configLoaded \|\| loading \|\| saving/)
@@ -98,8 +100,36 @@ test('repair bot configuration gates writes and rejects stale async state', () =
   assert.match(refreshBlock, /quiet && formDirtyRef\.current[\s\S]*rowVersion: current\.rowVersion/)
   assert.match(refreshBlock, /if \(!quiet\) \{[\s\S]*setError\(''\)/)
   assert.match(saveBlock, /currentConfig\.rowVersion/)
-  assert.match(saveBlock, /setConfig\(configForHotel\(next, activeContext\.hotelId\)\)/)
+  assert.match(saveBlock, /setConfig\(next\)/)
+  assert.match(saveBlock, /requestSequence = \+\+requestSequenceRef\.current[\s\S]*loadingRef\.current = false/)
+  assert.match(weComRepairBotPanelSource, /loadGlobalWeComRepairBotConfig\(\)/)
+  assert.doesNotMatch(weComRepairBotPanelSource, /HotelContext|configForHotel|startWeComRepairBotPairing/)
   assert.match(businessApiSource, /expectedRowVersion,[\s\S]*reasonCode: 'UPDATE_WECOM_REPAIR_BOT_CONFIG'/)
+})
+
+test('global WeCom approvals and grants live in People & Permissions without a selected hotel', () => {
+  assert.match(peoplePermissionsSource, /tab === 'wecom'[\s\S]*全平台企微管理与审批/)
+  assert.match(peoplePermissionsSource, /<WeComRepairAdminsPanel\s*\/>/)
+  assert.match(peoplePermissionsSource, /<WeComRepairBotConfigPanel canConfigure=\{session\.account\.roles\.includes\('PLATFORM_ADMIN'\)\}/)
+  assert.match(appSource, /page === 'people' && platformAdmin/)
+  assert.match(appSource, /onOpenPeoplePermissions=\{\(\) => openPeople\('wecom'\)\}/)
+  assert.match(appSource, /tab=\{peopleTab\} onTabChange=\{setPeopleTab\}/)
+  assert.doesNotMatch(repairAdminsSource, /hotelId: string|\[hotelId\]|仅当前门店/)
+  assert.match(repairAdminsSource, /member === 'NEW' \? \[\]/)
+  assert.match(repairAdminsSource, /m\.active \|\| m\.activationStatus === 'PENDING'/)
+  assert.match(repairAdminsSource, /expectedRowVersion|manageWeComRepairAdmins\(input, version\)/)
+})
+
+test('store repair people are scoped and read-only with an exact global-permissions jump', () => {
+  assert.doesNotMatch(historySource, /WeComRepairBotConfigPanel|WeComRepairAdminsPanel/)
+  assert.match(historySource, /<WeComStoreRepairSummary[\s\S]*onOpenPeoplePermissions=\{onOpenPeoplePermissions\}/)
+  assert.match(storeConsoleSource, /<HistoryPage[^\n]*onOpenPeoplePermissions=\{onOpenPeoplePermissions\}/)
+  assert.match(storeRepairSummarySource, /canConfigure \? loadWeComRepairAdmins\(\) : Promise\.resolve\(null\)/)
+  assert.match(storeRepairSummarySource, /member\.active && member\.hotelIds\.includes\(hotelId\)/)
+  assert.match(storeRepairSummarySource, /summary\?\.key === key/)
+  assert.match(storeRepairSummarySource, /canConfigure && onOpenPeoplePermissions/)
+  assert.match(storeRepairSummarySource, /onClick=\{onOpenPeoplePermissions\}/)
+  assert.doesNotMatch(storeRepairSummarySource, /saveWeCom|manageWeCom|startWeCom|type="checkbox"|type="password"/)
 })
 
 test('people permissions expose the current roles and retire canceled roles from assignment', () => {
@@ -159,14 +189,14 @@ test('operations console exposes store, exception, people and scoped store-detai
   assert.match(historySource, /saveWeComConfig/)
   assert.match(
     historySource,
-    /WeComRepairBotConfigPanel[\s\S]*context=\{context\}/,
+    /WeComStoreRepairSummary[\s\S]*context=\{context\}/,
   )
   assert.match(
     weComRepairBotPanelSource,
-    /快捷配对仅绑定当前门店/,
+    /所有门店共用此机器人/,
   )
-  assert.match(weComRepairBotPanelSource, /门店播报与PMS修复助手/)
-  assert.match(weComRepairBotPanelSource, /播报设置中独立开启或停止/)
+  assert.match(weComRepairBotPanelSource, /企微机器人连接与全局修复权限/)
+  assert.match(weComRepairBotPanelSource, /各店播报频率及群机器人地址仍在对应门店配置/)
   assert.match(historySource, /群内推送修复链接/)
   assert.match(historySource, /每日播报开始时间/)
   assert.match(historySource, /每日静默时间/)
