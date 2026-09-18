@@ -97,6 +97,26 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .page-heading p:not(.eyebrow) { max-width: 52rem; margin: 0; color: #68736f; line-height: 1.65; }
 .mode-chip { flex: 0 0 auto; border: 1px solid #d6b66f; border-radius: 999px; padding: .45rem .7rem; color: #6f541c; background: #fff7df; font-size: .7rem; font-weight: 900; letter-spacing: .08em; }
 .heading-actions { display: flex; gap: .6rem; }
+.repair-admin-panel { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #c8d8d2; min-width: 0; }
+.repair-admin-panel .heading-actions { flex-wrap: wrap; margin-top: .6rem; }
+.repair-admin-roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr)); gap: .8rem; margin: 1rem 0; }
+.repair-admin-member, .repair-admin-editor, .repair-admin-confirm, .repair-admin-directory { padding: 1rem; border: 1px solid #c8d8d2; border-radius: .9rem; background: #fff; min-width: 0; }
+.repair-admin-member > div:first-child { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: space-between; }
+.repair-admin-member p, .repair-admin-member small { overflow-wrap: anywhere; }
+.repair-admin-member p { margin: .5rem 0; }
+.repair-admin-member small { display: block; color: #677b73; }
+.repair-admin-account { font-size: .85rem; }
+.repair-admin-editor, .repair-admin-confirm { margin: 1rem 0; }
+.repair-admin-editor fieldset { border: 1px solid #c8d8d2; border-radius: .7rem; min-width: 0; margin: 1rem 0; }
+.repair-admin-hotels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: .6rem; padding: .8rem 0; max-height: 20rem; overflow-y: auto; }
+.repair-admin-panel .inline-toggle { display: flex; align-items: center; gap: .5rem; }
+.repair-admin-panel input[type=checkbox] { width: auto; flex: 0 0 auto; }
+.repair-admin-editor input:not([type=checkbox]), .repair-admin-directory input, .repair-admin-editor select { width: 100%; min-width: 0; border: 1px solid #c8cec9; border-radius: .55rem; padding: .65rem; font: inherit; box-sizing: border-box; }
+.repair-admin-directory { margin-top: 1rem; }
+.repair-admin-directory summary { cursor: pointer; font-weight: 700; }
+.repair-admin-directory ol { padding-left: 1.3rem; }
+.repair-admin-directory .wecom-config-grid { margin-top: 1rem; }
+@media (max-width: 640px) { .repair-admin-panel .page-heading { display: block; } .repair-admin-panel button { max-width: 100%; white-space: normal; } }
 .heading-actions select { border: 1px solid #aeb9b3; border-radius: .7rem; padding: .6rem .7rem; color: #21463c; background: #fff; }
 .state-panel { margin-top: 1.2rem; padding: 1rem; border: 1px dashed #cbd0cc; border-radius: .8rem; color: #68736f; background: #fafaf7; }
 .error-state { border-color: #e2aaa1; color: #84291f; background: #fff0ed; }

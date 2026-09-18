@@ -919,6 +919,64 @@ export type WeComRepairBotCredentialUpdate =
   | { action: 'CLEAR' }
   | { action: 'REPLACE'; botId: string; secret: string }
 
+export interface WeComRepairAdmin {
+  memberId: string
+  userId: string
+  displayName: string
+  nameSource: 'ADMIN_REMARK' | 'UNSET'
+  role: 'STORE_MANAGER' | 'OPERATIONS_MANAGER'
+  globalRecipient: boolean
+  hotelIds: string[]
+  hotels: Array<{ hotelId: string; hotelCode: string; displayName: string }>
+  active: boolean
+  directoryUserId: string
+  offboardingLinked: boolean
+  boundAt: string | null
+  revokedAt: string | null
+  revokeReason: 'MANUAL' | 'MEMBER_DELETED' | 'MEMBER_DISABLED' | null
+}
+
+export interface WeComRepairAdminsView {
+  rowVersion: number
+  connected: boolean
+  credentialConfigured: boolean
+  members: WeComRepairAdmin[]
+  pairing: { active: boolean; expiresAt: string | null }
+  hotels: Array<{ hotelId: string; hotelCode: string; displayName: string }>
+  directory: {
+    configured: boolean
+    enabled: boolean
+    corpId: string
+    verifiedAt: string | null
+    lastEventAt: string | null
+    lastEventResult: 'REVOKED' | 'UPDATED' | 'UNMATCHED' | 'IGNORED' | null
+    linkedCount: number
+    unlinkedCount: number
+    callbackPath: string
+  }
+  createdPairing?: { pairingCode: string; expiresAt: string; attemptsRemaining: number }
+}
+
+export type WeComRepairAdminCommand =
+  | { action: 'PAIR'; hotelIds: string[]; displayName: string; role: WeComRepairAdmin['role'] }
+  | { action: 'EDIT'; memberId: string; hotelIds: string[]; displayName: string;
+      role: WeComRepairAdmin['role']; directoryUserId: string; directoryIdentityConfirmed: boolean }
+  | { action: 'REVOKE'; memberId: string }
+  | { action: 'DIRECTORY'; directoryUpdate: { action: 'DISABLE' }
+      | { action: 'REPLACE'; corpId: string; token: string; encodingAesKey: string } }
+
+export function loadWeComRepairAdmins(): Promise<WeComRepairAdminsView> {
+  return authenticatedRequest('/ota/wecom-repair-admins')
+}
+
+export function manageWeComRepairAdmins(
+  command: WeComRepairAdminCommand, expectedRowVersion: number,
+): Promise<WeComRepairAdminsView> {
+  return postCommand('/ota/wecom-repair-admins', {
+    ...command, expectedRowVersion, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS',
+  })
+}
+
 export interface WeComRepairBotPairingView {
   pairingCode: string
   expiresAt: string

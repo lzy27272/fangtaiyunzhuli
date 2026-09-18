@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { createCipheriv, createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import {
   mkdir,
@@ -13,7 +13,7 @@ import { createServer } from 'node:http'
 import os from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { encryptCookie } from '../../../tools/uat/report-source-cookie-crypto.mjs'
 
 const apiScript = fileURLToPath(
@@ -36,9 +36,9 @@ const availablePort = async () => {
   return port
 }
 
-const startApi = async (runtimePath, { loginProbe = false } = {}) => {
+const startApi = async (runtimePath, { loginProbe = false, preload = null } = {}) => {
   const port = await availablePort()
-  const child = spawn(process.execPath, [apiScript], {
+  const child = spawn(process.execPath, [...(preload ? ['--import', pathToFileURL(preload).href] : []), apiScript], {
     cwd: repoRoot,
     env: {
       ...process.env,
@@ -363,6 +363,14 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     )
     assert.equal(managerLoginResponse.status, 200)
     const managerSession = await managerLoginResponse.json()
+    for (const method of ['GET', 'POST']) {
+      const forbiddenRoster = await fetch(`http://127.0.0.1:${started.port}/api/v1/ota/wecom-repair-admins`, {
+        method, headers: { Authorization: `Bearer ${managerSession.accessToken}`, 'Content-Type': 'application/json' },
+        ...(method === 'POST' ? { body: JSON.stringify({ action: 'REVOKE', memberId: 'untrusted' }) } : {}),
+      })
+      assert.equal(forbiddenRoster.status, 403)
+      assert.equal((await forbiddenRoster.text()).includes('userProfiles'), false)
+    }
     const managerScopedResponse = await fetch(
       `${scopedEndpoint}/wecom-repair-bot-config`,
       {
@@ -403,6 +411,213 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     assert.equal(cleared.credentialConfigured, false)
     assert.equal(cleared.allowGlobalRepairActions, false)
     assert.equal(cleared.botIdFingerprint, null)
+  } finally {
+    if (child) await stopApi(child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
+test('admin roster edits are encrypted, versioned, restart-safe and verified departures revoke all grants', async () => {
+  const runtimePath = await mkdtemp(join(os.tmpdir(), 'wecom-admin-api-'))
+  const hotelIds = ['20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000002']
+  const robotUser = 'robot.admin.account'
+  const contactUser = 'directory.member.account'
+  const credentials = { botId: 'test-admin-bot', secret: 'example-robot-test-secret-1234',
+    allowedUserIds: [robotUser], hotelAllowedUserIds: { [hotelIds[0]]: [robotUser] } }
+  const directory = { corpId: 'ww-admin-test', token: 'exampleCallbackToken',
+    encodingAesKey: Buffer.alloc(32, 19).toString('base64').slice(0, -1) }
+  let child
+  try {
+    await writeFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), JSON.stringify({
+      record: encryptCookie(JSON.stringify(credentials), secretKey, 'wecom-repair-bot:v1'),
+    }))
+    let started = await startApi(runtimePath)
+    child = started.child
+    let accessToken = started.accessToken
+    let base = `http://127.0.0.1:${started.port}`
+    const read = async () => (await (await fetch(`${base}/api/v1/ota/wecom-repair-admins`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })).json()).data
+    const post = async (body) => fetch(`${base}/api/v1/ota/wecom-repair-admins`, {
+      method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS' }),
+    })
+    const initial = await read()
+    assert.equal(initial.members[0].userId, robotUser)
+    assert.equal(initial.members[0].displayName, '待补充姓名')
+    assert.equal((await fetch(`${base}/api/v1/ota/wecom-repair-admins`)).status, 401)
+    const edited = await post({ action: 'EDIT', expectedRowVersion: initial.rowVersion,
+      memberId: initial.members[0].memberId, displayName: '测试运营经理', role: 'OPERATIONS_MANAGER',
+      hotelIds, directoryUserId: contactUser, directoryIdentityConfirmed: true })
+    assert.equal(edited.status, 200)
+    const next = (await edited.json()).data
+    assert.equal(next.members[0].globalRecipient, true)
+    assert.equal(next.members[0].offboardingLinked, true)
+    assert.deepEqual(next.members[0].hotelIds, hotelIds)
+    assert.equal((await post({ action: 'REVOKE', expectedRowVersion: initial.rowVersion,
+      memberId: initial.members[0].memberId })).status, 409)
+    const badStore = await post({ action: 'EDIT', expectedRowVersion: next.rowVersion,
+      memberId: initial.members[0].memberId, displayName: '测试运营经理', role: 'OPERATIONS_MANAGER',
+      hotelIds: ['out-of-scope-store'], directoryUserId: contactUser })
+    assert.equal(badStore.status, 400)
+    assert.deepEqual((await read()).members[0].hotelIds, hotelIds)
+    const configured = await post({ action: 'DIRECTORY', expectedRowVersion: next.rowVersion,
+      directoryUpdate: { action: 'REPLACE', ...directory } })
+    assert.equal(configured.status, 200)
+    const configuredView = (await configured.json()).data
+    assert.equal(configuredView.directory.enabled, true)
+    assert.equal(configuredView.directory.verifiedAt, null)
+    assert.equal(JSON.stringify(configuredView).includes(directory.token), false)
+    const encryptedFile = await readFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), 'utf8')
+    for (const raw of [robotUser, contactUser, '测试运营经理', directory.token, directory.encodingAesKey]) {
+      assert.equal(encryptedFile.includes(raw), false)
+    }
+
+    // Same-bot credential rotation must not silently discard the roster or contact settings.
+    const rotated = await fetch(`${base}/api/v1/ota/wecom-repair-bot-config`, {
+      method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false, expectedRowVersion: configuredView.rowVersion,
+        reasonCode: 'ROTATE_TEST_CREDENTIAL', credentialUpdate: { action: 'REPLACE',
+          botId: credentials.botId, secret: 'example-rotated-bot-secret-1234' } }),
+    })
+    assert.equal(rotated.status, 200)
+    await stopApi(child)
+    started = await startApi(runtimePath, { loginProbe: true })
+    child = started.child; accessToken = started.accessToken; base = `http://127.0.0.1:${started.port}`
+    const reloaded = await read()
+    assert.equal(reloaded.members[0].displayName, '测试运营经理')
+    assert.equal(reloaded.directory.linkedCount, 1)
+
+    const sign = (message) => {
+      const bytes = Buffer.from(message), size = Buffer.alloc(4); size.writeUInt32BE(bytes.length)
+      const raw = Buffer.concat([Buffer.alloc(16, 3), size, bytes, Buffer.from(directory.corpId)])
+      const pad = 32 - raw.length % 32, key = Buffer.from(`${directory.encodingAesKey}=`, 'base64')
+      const cipher = createCipheriv('aes-256-cbc', key, key.subarray(0, 16)); cipher.setAutoPadding(false)
+      const encrypted = Buffer.concat([cipher.update(Buffer.concat([raw, Buffer.alloc(pad, pad)])), cipher.final()]).toString('base64')
+      const timestamp = String(Math.floor(Date.now() / 1000)), nonce = 'integration-test'
+      const signature = createHash('sha1').update([directory.token, timestamp, nonce, encrypted].sort().join('')).digest('hex')
+      const params = new URLSearchParams({ timestamp, nonce, msg_signature: signature })
+      return { encrypted, params }
+    }
+    const callbackUrl = `${base}/api/v1/wecom-repair-directory/callback`
+    const verification = sign('challenge-verified')
+    verification.params.set('echostr', verification.encrypted)
+    const challenge = await fetch(`${callbackUrl}?${verification.params}`)
+    assert.equal(challenge.status, 200)
+    assert.equal(await challenge.text(), 'challenge-verified')
+    assert.ok((await read()).directory.verifiedAt)
+    const event = `<xml><ToUserName>${directory.corpId}</ToUserName><MsgType>event</MsgType>`
+      + `<CreateTime>${Math.floor(Date.now() / 1000)}</CreateTime><Event>change_contact</Event>`
+      + `<ChangeType>delete_user</ChangeType><UserID>${contactUser}</UserID></xml>`
+    const departure = sign(event)
+    const forgedParams = new URLSearchParams(departure.params); forgedParams.set('msg_signature', '0'.repeat(40))
+    const send = (params) => fetch(`${callbackUrl}?${params}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/xml' },
+      body: `<xml><Encrypt><![CDATA[${departure.encrypted}]]></Encrypt></xml>`,
+    })
+    assert.equal((await send(forgedParams)).status, 400)
+    assert.equal((await read()).members[0].active, true)
+    const configPath = join(runtimePath, 'wecom-repair-bot-config.json')
+    await rm(configPath)
+    await mkdir(configPath)
+    assert.equal((await send(departure.params)).status, 500)
+    assert.equal((await read()).members[0].active, true)
+    await rm(configPath, { recursive: true })
+    assert.equal((await send(departure.params)).status, 200)
+    const removed = await read()
+    assert.equal(removed.members[0].active, false)
+    assert.equal(removed.members[0].globalRecipient, false)
+    assert.deepEqual(removed.members[0].hotelIds, [])
+    assert.equal(removed.members[0].revokeReason, 'MEMBER_DELETED')
+    assert.equal((await send(departure.params)).status, 200)
+    assert.equal((await read()).directory.lastEventResult, 'REVOKED')
+    const regularStatus = await fetch(`${base}/api/v1/ota/wecom-repair-bot-config`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const regular = (await regularStatus.json()).data
+    assert.equal(regular.paired, false)
+    assert.equal(JSON.stringify(regular).includes(contactUser), false)
+    await stopApi(child)
+    started = await startApi(runtimePath, { loginProbe: true })
+    child = started.child; accessToken = started.accessToken; base = `http://127.0.0.1:${started.port}`
+    assert.equal((await read()).members[0].active, false)
+  } finally {
+    if (child) await stopApi(child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
+test('first administrator can pair multiple stores through one real API command and one offline bot message', async () => {
+  const runtimePath = await mkdtemp(join(os.tmpdir(), 'wecom-batch-pair-api-'))
+  const hotelIds = ['20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000002']
+  let child
+  try {
+    // Test-only module interception: no production test endpoint or real WeCom connection.
+    const fakePath = join(runtimePath, 'fake-sdk.cjs')
+    const preload = join(runtimePath, 'preload.mjs')
+    const inbox = join(runtimePath, 'fake-inbox.json')
+    const replies = join(runtimePath, 'fake-replies.json')
+    await writeFile(fakePath, `
+      const { EventEmitter } = require('node:events');
+      const { existsSync, readFileSync, writeFileSync } = require('node:fs');
+      module.exports = { generateReqId: () => 'test-request', WSClient: class extends EventEmitter {
+        isConnected = true; timer = null; seen = new Set();
+        connect() { this.emit('authenticated'); this.timer = setInterval(() => {
+          if (!existsSync(${JSON.stringify(inbox)})) return;
+          let frame; try { frame = JSON.parse(readFileSync(${JSON.stringify(inbox)}, 'utf8')); } catch { return; }
+          if (this.seen.has(frame.body.msgid)) return;
+          this.seen.add(frame.body.msgid); this.emit('message.text', frame);
+        }, 15); }
+        disconnect() { clearInterval(this.timer); }
+        async replyStream(frame, id, content) { writeFileSync(${JSON.stringify(replies)}, JSON.stringify({ msgid: frame.body.msgid, content })); }
+      } };
+    `)
+    await writeFile(preload, `import { registerHooks } from 'node:module';
+      registerHooks({ resolve(specifier, context, nextResolve) {
+        if (specifier.endsWith('wecom-aibot-sdk-1.0.7.cjs')) return { url: ${JSON.stringify(pathToFileURL(fakePath).href)}, shortCircuit: true };
+        return nextResolve(specifier, context);
+      } });`)
+    await writeFile(join(runtimePath, 'wecom-repair-bot-config.json'), JSON.stringify({ enabled: true }))
+    await writeFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), JSON.stringify({ record: encryptCookie(
+      JSON.stringify({ botId: 'fake-offline-bot', secret: 'example-offline-robot-secret', allowedUserIds: [], hotelAllowedUserIds: {} }),
+      secretKey, 'wecom-repair-bot:v1',
+    ) }))
+    const started = await startApi(runtimePath, { preload }); child = started.child
+    const endpoint = `http://127.0.0.1:${started.port}/api/v1/ota/wecom-repair-admins`
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+    const read = async () => (await (await fetch(endpoint, { headers })).json()).data
+    const before = await read()
+    assert.equal(before.connected, true)
+    assert.deepEqual(before.members, [])
+    const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({
+      action: 'PAIR', expectedRowVersion: before.rowVersion, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS',
+      hotelIds, displayName: '离线测试运营经理', role: 'OPERATIONS_MANAGER',
+    }) })
+    assert.equal(response.status, 200)
+    const created = (await response.json()).data
+    assert.match(created.createdPairing.pairingCode, /^\d{6}$/)
+    const send = async (msgid, userId) => {
+      await writeFile(inbox, JSON.stringify({ headers: { req_id: msgid }, body: {
+        msgid, chattype: 'single', from: { userid: userId },
+        text: { content: `绑定 ${created.createdPairing.pairingCode}` },
+      } }))
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        try {
+          const reply = JSON.parse(await readFile(replies, 'utf8'))
+          if (reply.msgid === msgid) return reply.content
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      throw new Error('OFFLINE_BOT_REPLY_TIMEOUT')
+    }
+    assert.match(await send('pair-test-1', 'operations.manager'), /绑定成功.*共2家门店/)
+    const bound = await read()
+    assert.equal(bound.members.length, 1)
+    assert.deepEqual(bound.members[0].hotelIds, hotelIds)
+    assert.equal(bound.members[0].displayName, '离线测试运营经理')
+    assert.equal(bound.members[0].globalRecipient, false)
+    assert.match(await send('pair-test-2', 'uninvited.user'), /无效或已过期/)
+    assert.equal((await read()).members.length, 1)
   } finally {
     if (child) await stopApi(child)
     await rm(runtimePath, { recursive: true, force: true })

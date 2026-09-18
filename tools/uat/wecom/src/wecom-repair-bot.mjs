@@ -3,6 +3,11 @@ import {
   randomInt,
 } from 'node:crypto'
 import weComSdk from '../../vendor/wecom-aibot-sdk-1.0.7.cjs'
+import {
+  normalizeRepairAdminState,
+  normalizeRepairAdminHotelIds,
+  normalizeRepairAdminName,
+} from './wecom-repair-admins.mjs'
 
 const { WSClient, generateReqId } = weComSdk
 
@@ -90,6 +95,7 @@ export const normalizeWeComRepairBotCredentials = (candidate) => {
     allowedUserId: allowedUserIds[0] ?? null,
     allowedUserIds,
     hotelAllowedUserIds,
+    ...normalizeRepairAdminState(candidate),
   }
 }
 
@@ -586,6 +592,15 @@ export const createWeComRepairBotPairingStore = ({
 
   const pairingScope = (candidate) => {
     if (candidate == null) return { type: 'GLOBAL' }
+    if (candidate?.type === 'HOTELS') {
+      const hotelIds = normalizeRepairAdminHotelIds(candidate.hotelIds)
+      const displayName = normalizeRepairAdminName(candidate.displayName)
+      if (!hotelIds.length || !displayName) {
+        throw new Error('WECOM_REPAIR_BOT_PAIRING_SCOPE_INVALID')
+      }
+      return { type: 'HOTELS', hotelIds, displayName,
+        role: candidate.role === 'OPERATIONS_MANAGER' ? 'OPERATIONS_MANAGER' : 'STORE_MANAGER' }
+    }
     if (
       candidate?.type === 'HOTEL'
       && HOTEL_ID_PATTERN.test(String(candidate.hotelId ?? ''))
@@ -688,6 +703,7 @@ export const createWeComRepairBotRuntime = ({
   onTextMessage = async () => {},
   onTemplateCardEvent = async () => {},
   onStatusChanged = () => {},
+  canSendToUser = () => true,
   minimumProactiveIntervalMs = 500,
   now = () => Date.now(),
   wait = (milliseconds) => new Promise(
@@ -729,6 +745,7 @@ export const createWeComRepairBotRuntime = ({
   }
 
   const sendText = async (userId, content) => {
+    if (!canSendToUser(userId)) throw new Error('WECOM_REPAIR_BOT_USER_REVOKED')
     if (!USER_ID_PATTERN.test(String(userId ?? ''))) {
       throw new Error('WECOM_REPAIR_BOT_USER_INVALID')
     }
@@ -742,6 +759,7 @@ export const createWeComRepairBotRuntime = ({
   }
 
   const sendTemplateCard = async (userId, templateCard) => {
+    if (!canSendToUser(userId)) throw new Error('WECOM_REPAIR_BOT_USER_REVOKED')
     if (!USER_ID_PATTERN.test(String(userId ?? ''))) {
       throw new Error('WECOM_REPAIR_BOT_USER_INVALID')
     }
@@ -907,6 +925,7 @@ export const createWeComRepairBotRuntime = ({
     },
     async sendCaptcha({ userId, captcha, content }) {
       return enqueueProactive(async () => {
+        if (!canSendToUser(userId)) throw new Error('WECOM_REPAIR_BOT_USER_REVOKED')
         if (!Buffer.isBuffer(captcha) || captcha.length < 16) {
           throw new Error('WECOM_REPAIR_BOT_CAPTCHA_INVALID')
         }
@@ -917,6 +936,7 @@ export const createWeComRepairBotRuntime = ({
           type: 'image',
           filename: 'luopan-captcha.png',
         })
+        if (!canSendToUser(userId)) throw new Error('WECOM_REPAIR_BOT_USER_REVOKED')
         await client.sendMediaMessage(userId, 'image', uploaded.media_id)
         return sendText(userId, content)
       })

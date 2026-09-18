@@ -163,7 +163,7 @@ test('operations console exposes store, exception, people and scoped store-detai
   )
   assert.match(
     weComRepairBotPanelSource,
-    /当前页面只能为此门店新增修复管理员/,
+    /快捷配对仅绑定当前门店/,
   )
   assert.match(weComRepairBotPanelSource, /门店播报与PMS修复助手/)
   assert.match(weComRepairBotPanelSource, /播报设置中独立开启或停止/)

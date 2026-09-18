@@ -229,6 +229,17 @@ import {
   weComRepairBotRecipientsForHotel,
   yilianRepairCardDeliveryActive,
 } from './wecom/src/wecom-repair-bot.mjs'
+import {
+  repairAdminRoster,
+  bindRepairAdminToHotels,
+  updateRepairAdmin,
+  normalizeRepairDirectory,
+  normalizeRepairAdminHotelIds,
+  normalizeRepairAdminName,
+  decryptRepairDirectoryCallback,
+  repairDirectoryXmlField,
+  applyRepairDirectoryEvent,
+} from './wecom/src/wecom-repair-admins.mjs'
 
 const host = '127.0.0.1'
 const port = Number.parseInt(process.env.OTA_REVIEW_API_PORT ?? '8091', 10)
@@ -4434,6 +4445,8 @@ const applyWeComRepairBotConfigUpdate = (body) => {
         ? weComRepairBotCredentials?.hotelAllowedUserIds ?? {}
         : {}
     nextCredentials = normalizeWeComRepairBotCredentials({
+      ...(candidateBotIdSha256 === weComRepairBotConfig.botIdSha256
+        ? weComRepairBotCredentials : {}),
       botId: candidateBotId,
       secret: credentialUpdate.secret,
       allowedUserIds: preservePairing,
@@ -4514,6 +4527,92 @@ const startWeComRepairBotPairing = (hotelId) => {
     pairedUserCount: hotelUserCount,
     pairedUserCapacity: WECOM_REPAIR_BOT_MAX_STORE_USERS,
   }
+}
+
+const repairAdminView = () => {
+  const status = weComRepairBotStatus()
+  const directory = weComRepairBotCredentials?.directorySync
+  const members = repairAdminRoster(weComRepairBotCredentials, hotels)
+  return {
+    rowVersion: weComRepairBotConfig.rowVersion,
+    connected: status.enabled && status.credentialConfigured
+      && status.connectionStatus === 'AUTHENTICATED' && status.connected,
+    credentialConfigured: Boolean(weComRepairBotCredentials),
+    members,
+    pairing: weComRepairBotPairingStore.status(),
+    hotels: hotels.map(({ hotelId, hotelCode, hotelName }) => ({
+      hotelId, hotelCode, displayName: hotelName,
+    })).sort((a, b) => a.hotelCode.localeCompare(b.hotelCode)),
+    directory: {
+      configured: Boolean(directory), enabled: directory?.enabled === true,
+      corpId: directory?.corpId ?? '',
+      verifiedAt: directory?.verifiedAt ?? null,
+      lastEventAt: directory?.lastEventAt ?? null,
+      lastEventResult: directory?.lastEventResult ?? null,
+      linkedCount: members.filter((m) => m.active && m.offboardingLinked).length,
+      unlinkedCount: members.filter((m) => m.active && !m.offboardingLinked).length,
+      callbackPath: '/api/v1/ota-console/wecom-repair-directory/callback',
+    },
+  }
+}
+
+const commitRepairAdminCredentials = (candidate) => {
+  const credentials = normalizeWeComRepairBotCredentials(candidate)
+  const allowedUserIdSha256s = credentials.allowedUserIds.map(fingerprintWeComRepairBotValue)
+  commitWeComRepairBotState({ credentials, config: {
+    ...weComRepairBotConfig,
+    rowVersion: weComRepairBotConfig.rowVersion + 1,
+    allowedUserIdSha256: allowedUserIdSha256s[0] ?? null,
+    allowedUserIdSha256s,
+    hotelAllowedUserIdSha256s: weComRepairBotHotelUserFingerprints(credentials.hotelAllowedUserIds),
+    updatedAt: new Date().toISOString(),
+  } })
+}
+
+const applyRepairAdminCommand = (body) => {
+  if (body?.reasonCode !== 'MANAGE_WECOM_REPAIR_ADMINS'
+    || !Number.isInteger(body.expectedRowVersion)) throw new Error('WECOM_REPAIR_ADMIN_REQUEST_INVALID')
+  if (body.expectedRowVersion !== weComRepairBotConfig.rowVersion) {
+    throw new Error('WECOM_REPAIR_BOT_CONFIG_VERSION_CONFLICT')
+  }
+  if (!weComRepairBotCredentials) throw new Error('WECOM_REPAIR_BOT_CREDENTIALS_REQUIRED')
+  if (body.action === 'PAIR') {
+    if (!repairAdminView().connected) throw new Error('WECOM_REPAIR_BOT_NOT_CONNECTED')
+    const hotelIds = normalizeRepairAdminHotelIds(body.hotelIds)
+    const displayName = normalizeRepairAdminName(body.displayName)
+    if (!hotelIds.length || !displayName || hotelIds.some((id) => !hotels.some((h) => h.hotelId === id))) {
+      throw new Error('WECOM_REPAIR_ADMIN_HOTELS_INVALID')
+    }
+    if (hotelIds.some((id) => (weComRepairBotCredentials.hotelAllowedUserIds[id]?.length ?? 0) >= WECOM_REPAIR_BOT_MAX_STORE_USERS)) {
+      throw new Error('WECOM_REPAIR_ADMIN_CAPACITY_REACHED')
+    }
+    const pairing = weComRepairBotPairingStore.start({ scope: {
+      type: 'HOTELS', hotelIds, displayName, role: body.role,
+    } })
+    return { ...repairAdminView(), createdPairing: pairing }
+  }
+  if (body.action === 'DIRECTORY') {
+    const previous = weComRepairBotCredentials.directorySync
+    const update = body.directoryUpdate
+    let next
+    if (update?.action === 'DISABLE' && previous) next = { ...previous, enabled: false }
+    else if (update?.action === 'REPLACE') {
+      next = normalizeRepairDirectory({ ...update, enabled: true, verifiedAt: null,
+        lastEventAt: null, lastEventResult: null })
+      if (previous && next.corpId !== previous.corpId
+        && Object.values(weComRepairBotCredentials.userProfiles).some((p) => p.directoryUserId && !p.revokedAt)) {
+        throw new Error('WECOM_REPAIR_ADMIN_CORP_CHANGE_REQUIRES_UNLINK')
+      }
+    } else throw new Error('WECOM_REPAIR_ADMIN_DIRECTORY_CONFIG_INVALID')
+    commitRepairAdminCredentials({ ...weComRepairBotCredentials, directorySync: next })
+  } else {
+    commitRepairAdminCredentials(updateRepairAdmin({
+      ...body, credentials: weComRepairBotCredentials, hotels,
+    }))
+    // An outstanding code must not undo a newly revoked or changed permission.
+    weComRepairBotPairingStore.clear()
+  }
+  return repairAdminView()
 }
 
 if (weComConfigPath && existsSync(weComConfigPath)) {
@@ -9606,6 +9705,9 @@ const handleWeComRepairBotText = async (frame, replyText) => {
       if (!weComRepairBotCredentials) {
         throw new Error('WECOM_REPAIR_BOT_CREDENTIALS_REQUIRED')
       }
+      if (weComRepairBotCredentials.userProfiles?.[userId]?.revokedAt) {
+        throw new Error('WECOM_REPAIR_ADMIN_MEMBER_REVOKED')
+      }
       const pairing = weComRepairBotPairingStore.submit({
         pairingCode: command.pairingCode,
         userId,
@@ -9615,8 +9717,20 @@ const handleWeComRepairBotText = async (frame, replyText) => {
       let hotelAllowedUserIds = {
         ...weComRepairBotCredentials.hotelAllowedUserIds,
       }
+      let userProfiles = weComRepairBotCredentials.userProfiles
       let reply
-      if (pairing.scope?.type === 'HOTEL') {
+      if (pairing.scope?.type === 'HOTELS') {
+        const candidate = bindRepairAdminToHotels({
+          credentials: weComRepairBotCredentials, userId: pairing.userId,
+          hotelIds: pairing.scope.hotelIds, displayName: pairing.scope.displayName,
+          role: pairing.scope.role, hotels,
+        })
+        hotelAllowedUserIds = candidate.hotelAllowedUserIds
+        userProfiles = candidate.userProfiles
+        const labels = hotels.filter((h) => pairing.scope.hotelIds.includes(h.hotelId))
+          .map((h) => `${h.hotelCode} ${h.hotelName}`).join('、')
+        reply = `绑定成功。你已获授权处理 ${labels}（共${pairing.scope.hotelIds.length}家门店）。发送“状态”可查看负责门店的待处理任务。`
+      } else if (pairing.scope?.type === 'HOTEL') {
         const hotel = hotels.find((candidate) =>
           candidate.hotelId === pairing.scope.hotelId)
         if (!hotel) {
@@ -9649,6 +9763,7 @@ const handleWeComRepairBotText = async (frame, replyText) => {
         ...weComRepairBotCredentials,
         allowedUserIds,
         hotelAllowedUserIds,
+        userProfiles,
       })
       const allowedUserIdSha256s = nextCredentials.allowedUserIds
         .map(fingerprintWeComRepairBotValue)
@@ -9677,7 +9792,10 @@ const handleWeComRepairBotText = async (frame, replyText) => {
       await replyText(
         frame,
         error?.message === 'WECOM_REPAIR_BOT_PAIRING_LIMIT_REACHED'
+          || error?.message === 'WECOM_REPAIR_ADMIN_CAPACITY_REACHED'
           ? '该门店绑定人员已达到安全上限。'
+          : error?.message === 'WECOM_REPAIR_ADMIN_MEMBER_REVOKED'
+            ? '该账号的修复权限已撤销，请联系平台管理员核对人员状态。'
           : error?.message === 'WECOM_REPAIR_BOT_PAIRING_PERSIST_FAILED'
             ? '绑定信息保存失败，请在后台重新生成配对码后重试。'
           : '配对码无效或已过期，请在后台重新生成。',
@@ -9985,6 +10103,9 @@ const handleWeComRepairBotTemplateCard = async (
 }
 
 weComRepairBotRuntime = createWeComRepairBotRuntime({
+  canSendToUser: (userId) => !weComRepairBotCredentials?.userProfiles?.[userId]?.revokedAt
+    && ((weComRepairBotCredentials?.allowedUserIds ?? []).includes(userId)
+      || Object.values(weComRepairBotCredentials?.hotelAllowedUserIds ?? {}).some((ids) => ids.includes(userId))),
   onTextMessage: handleWeComRepairBotText,
   onTemplateCardEvent: handleWeComRepairBotTemplateCard,
 })
@@ -12515,6 +12636,51 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', `http://${host}:${port}`)
     const path = url.pathname
 
+    // Public only for WeCom's signed, encrypted contact-change protocol; not a login bypass.
+    if (path === '/api/v1/wecom-repair-directory/callback'
+      && ['GET', 'POST'].includes(request.method)) {
+      if (!weComRepairBotCredentials?.directorySync?.enabled) {
+        json(response, 404, { code: 'WECOM_REPAIR_ADMIN_DIRECTORY_DISABLED' })
+        return
+      }
+      let encrypted = url.searchParams.get('echostr')
+      if (request.method === 'POST') {
+        const chunks = []
+        let size = 0
+        for await (const chunk of request) {
+          size += chunk.length
+          if (size > 65_536) throw new Error('REQUEST_TOO_LARGE')
+          chunks.push(chunk)
+        }
+        encrypted = repairDirectoryXmlField(Buffer.concat(chunks).toString('utf8'), 'Encrypt')
+      }
+      const message = decryptRepairDirectoryCallback({
+        config: weComRepairBotCredentials.directorySync,
+        encrypted, signature: url.searchParams.get('msg_signature'),
+        timestamp: url.searchParams.get('timestamp'), nonce: url.searchParams.get('nonce'),
+      })
+      if (request.method === 'GET') {
+        commitRepairAdminCredentials({ ...weComRepairBotCredentials, directorySync: {
+          ...weComRepairBotCredentials.directorySync, verifiedAt: new Date().toISOString(),
+        } })
+        response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' })
+        response.end(message)
+        return
+      }
+      const result = applyRepairDirectoryEvent({ credentials: weComRepairBotCredentials, xml: message })
+      if (result.changed) commitRepairAdminCredentials(result.credentials)
+      if (result.revoked.length) {
+        weComRepairBotPairingStore.clear()
+        for (const memberId of result.revoked) auditSecurityEvent({
+          action: 'WECOM_REPAIR_ADMIN_OFFBOARD', outcome: 'SUCCEEDED', request,
+          targetAccountId: memberId, reasonCode: 'WECOM_SIGNED_CONTACT_EVENT',
+        })
+      }
+      response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' })
+      response.end('success')
+      return
+    }
+
     if (request.method === 'GET' && path === '/health') {
       const outboundDeliveryConfigured =
         [...weComConfigsByHotel.values()]
@@ -13394,6 +13560,23 @@ const server = createServer(async (request, response) => {
         return
       }
       json(response, 200, { data: weComRepairBotStatus() })
+      return
+    }
+
+    if (path === '/api/v1/ota/wecom-repair-admins' && ['GET', 'POST'].includes(request.method)) {
+      if (!isPlatformAdmin(requestPrincipal)) {
+        rejectForbidden(response)
+        return
+      }
+      if (request.method === 'GET') json(response, 200, { data: repairAdminView() })
+      else {
+        const body = await readBody(request)
+        const result = applyRepairAdminCommand(body)
+        auditSecurityEvent({ action: `WECOM_REPAIR_ADMIN_${body.action}`, outcome: 'SUCCEEDED',
+          request, principal: requestPrincipal, targetAccountId: body.memberId ?? null,
+          reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS' })
+        json(response, 200, { data: result })
+      }
       return
     }
 

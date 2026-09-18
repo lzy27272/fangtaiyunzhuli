@@ -8,6 +8,7 @@ import {
   type WeComRepairBotPairingView,
 } from '../api/business'
 import { businessErrorMessage } from '../ui/businessDisplay'
+import { WeComRepairAdminsPanel } from './WeComRepairAdminsPanel'
 
 interface Props {
   canConfigure: boolean
@@ -318,7 +319,7 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
             是否同时向门店群推送本店修复入口，可在下方播报设置中独立开启或停止。
             罗盘验证码可在企微回复；别样红门店直接在修复页更新 Cookie，无需安装门店软件。
             现有全局接收人默认只接收通知；仅在平台管理员显式授权后，才可处理所有门店；
-            当前页面只能为已进入的门店新增本店修复管理员。
+            下方人员管理可查看绑定名单、填写姓名，并为运营经理批量授权多家门店。
           </p>
         </div>
         <b className={config?.paired && config.connected ? 'source-complete' : 'source-partial'}>
@@ -451,7 +452,7 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
             }
           />
           <small>
-            当前页面只能为此门店新增修复管理员；新人员仅接收和处理此门店任务，不会替换现有全局接收人。
+            快捷配对仅绑定当前门店；多店授权和人员身份维护请使用下方“已绑定人员与多店授权”。
           </small>
         </label>
       </div>
@@ -491,6 +492,13 @@ export function WeComRepairBotConfigPanel({ canConfigure, context }: Props) {
                   : '当前门店管理员状态不可用'}
         </button>
       </div>
+      {canConfigure && context ? (
+        <WeComRepairAdminsPanel
+          key={context.hotelId}
+          hotelId={context.hotelId}
+          onChanged={() => void refresh(true)}
+        />
+      ) : null}
     </section>
   )
 }
