@@ -244,6 +244,9 @@ import {
   applyRepairDirectoryEvent,
 } from './wecom/src/wecom-repair-admins.mjs'
 import {
+  normalizeDirectoryRead, directoryReadView, directoryReadDue, readDirectoryNames, directoryReadErrorCode,
+} from './wecom/src/wecom-directory-read.mjs'
+import {
   configureRepairApprovals, repairApprovalView, reconcileRepairApprovals,
   parseRepairApprovalText, submitRepairApproval, ownRepairApproval,
   cancelRepairApproval, decideRepairApproval, repairApprovalStatusText,
@@ -4548,6 +4551,10 @@ const repairAdminView = () => {
       && status.connectionStatus === 'AUTHENTICATED' && status.connected,
     credentialConfigured: Boolean(weComRepairBotCredentials),
     members,
+    directoryRead: { ...directoryReadView(weComRepairBotCredentials?.directoryRead),
+      syncing: directoryNamesSyncing,
+      matchedCount: members.filter((m) => m.active && m.wecomName).length,
+      unmatchedCount: members.filter((m) => m.active && !m.wecomName).length },
     bindingApproval: repairApprovalView(weComRepairBotCredentials, hotels),
     pairing: weComRepairBotPairingStore.status(),
     hotels: hotels.map(({ hotelId, hotelCode, hotelName }) => ({
@@ -4579,7 +4586,35 @@ const commitRepairAdminCredentials = (candidate) => {
   } })
 }
 
-const applyRepairAdminCommand = (body) => {
+let directoryNamesSyncing = false
+const syncRepairDirectoryNames = async () => {
+  if (directoryNamesSyncing) throw new Error('WECOM_DIRECTORY_READ_BUSY')
+  const start = weComRepairBotCredentials?.directoryRead
+  if (!start?.enabled) throw new Error('WECOM_DIRECTORY_READ_NOT_CONFIGURED')
+  if (start.corpId !== weComRepairBotCredentials?.directorySync?.corpId) {
+    throw new Error('WECOM_DIRECTORY_READ_CORP_MISMATCH')
+  }
+  directoryNamesSyncing = true
+  try {
+    let members, lastErrorCode = null
+    try { members = await readDirectoryNames(start) }
+    catch (error) { lastErrorCode = directoryReadErrorCode(error) }
+    const current = weComRepairBotCredentials?.directoryRead
+    // A concurrent edit/revoke must survive the awaited network operation.
+    // Discard results if the read configuration or enterprise changed.
+    if (!current?.enabled || current.corpId !== start.corpId || current.appSecret !== start.appSecret
+      || current.corpId !== weComRepairBotCredentials?.directorySync?.corpId) {
+      throw new Error('WECOM_REPAIR_BOT_CONFIG_VERSION_CONFLICT')
+    }
+    const finished = new Date().toISOString()
+    commitRepairAdminCredentials({ ...weComRepairBotCredentials, directoryRead: { ...current,
+      lastAttemptAt: finished, lastErrorCode,
+      ...(lastErrorCode ? {} : { members, lastSyncedAt: finished }),
+    } })
+  } finally { directoryNamesSyncing = false }
+}
+
+const applyRepairAdminCommand = async (body) => {
   if (body?.reasonCode !== 'MANAGE_WECOM_REPAIR_ADMINS'
     || !Number.isInteger(body.expectedRowVersion)) throw new Error('WECOM_REPAIR_ADMIN_REQUEST_INVALID')
   if (body.expectedRowVersion !== weComRepairBotConfig.rowVersion) {
@@ -4601,7 +4636,25 @@ const applyRepairAdminCommand = (body) => {
     } })
     return { ...repairAdminView(), createdPairing: pairing }
   }
-  if (body.action === 'AUTHORIZE') {
+  if (body.action === 'DIRECTORY_READ') {
+    const previous = weComRepairBotCredentials.directoryRead
+    const update = body.directoryReadUpdate
+    let next
+    if (update?.action === 'DISABLE' && previous) next = { ...previous, enabled: false }
+    else if (update?.action === 'REPLACE') {
+      next = normalizeDirectoryRead({ ...(previous?.corpId === update.corpId ? previous : {}),
+        enabled: true, corpId: update.corpId, appSecret: update.appSecret,
+        lastAttemptAt: null, lastErrorCode: null })
+      if (next.corpId !== weComRepairBotCredentials.directorySync?.corpId) {
+        throw new Error('WECOM_DIRECTORY_READ_CORP_MISMATCH')
+      }
+    } else throw new Error('WECOM_DIRECTORY_READ_CONFIG_INVALID')
+    if (directoryNamesSyncing) throw new Error('WECOM_DIRECTORY_READ_BUSY')
+    commitRepairAdminCredentials({ ...weComRepairBotCredentials, directoryRead: next })
+    if (next.enabled) await syncRepairDirectoryNames()
+  } else if (body.action === 'SYNC_DIRECTORY_NAMES') {
+    await syncRepairDirectoryNames()
+  } else if (body.action === 'AUTHORIZE') {
     commitRepairAdminCredentials(preauthorizeRepairAdmin({ ...body,
       credentials: weComRepairBotCredentials, hotels }))
     weComRepairBotPairingStore.clear()
@@ -13721,7 +13774,7 @@ const server = createServer(async (request, response) => {
       if (request.method === 'GET') json(response, 200, { data: repairAdminView() })
       else {
         const body = await readBody(request)
-        const result = applyRepairAdminCommand(body)
+        const result = await applyRepairAdminCommand(body)
         auditSecurityEvent({ action: `WECOM_REPAIR_ADMIN_${body.action}`, outcome: 'SUCCEEDED',
           request, principal: requestPrincipal, targetAccountId: body.memberId ?? null,
           reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS' })
@@ -15456,6 +15509,10 @@ server.listen(port, host, () => {
   )
   const runScheduledTasks = () => {
     if (existsSync(deploymentSchedulerPausePath)) return
+    if (!directoryNamesSyncing && directoryReadDue(weComRepairBotCredentials?.directoryRead)
+      && weComRepairBotCredentials.directoryRead.corpId === weComRepairBotCredentials.directorySync?.corpId) {
+      void syncRepairDirectoryNames().catch(() => {})
+    }
     void scheduledLuopanRecoveryTick()
     void scheduledYilianRecoveryTick()
     scheduledYilianWeComCardOperationTick()

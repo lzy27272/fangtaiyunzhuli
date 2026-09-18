@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  loadWeComRepairAdmins, manageWeComRepairAdmins,
+  loadWeComRepairAdmins, manageWeComRepairAdmins, repairAdminLabel,
   type WeComRepairAdmin, type WeComRepairAdminCommand, type WeComRepairAdminsView,
 } from '../api/business'
 import { businessErrorMessage } from '../ui/businessDisplay'
 import { WeComRepairApprovalPanel } from './WeComRepairApprovalPanel'
 import { WeComPairingResult, type WeComPairingDetails } from './WeComPairingResult'
+import { WeComDirectoryNames } from './WeComDirectoryNames'
 
 interface Props { onChanged?: () => void }
 const timeLabel = (value: string | null) => value ? new Date(value).toLocaleString('zh-CN') : '尚无记录'
@@ -101,7 +102,11 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
       if (input.action === 'DIRECTORY') {
         setCallbackToken(''); setAesKey(''); setDirectoryVersion(null)
       }
-      setNotice(input.action === 'APPROVE_REGISTRATION'
+      setNotice(input.action === 'DIRECTORY_READ' || input.action === 'SYNC_DIRECTORY_NAMES'
+        ? next.directoryRead.lastErrorCode && next.directoryRead.enabled
+          ? '配置已加密保存，但名称同步未成功。请查看“人员名单”中的具体原因。'
+          : next.directoryRead.enabled ? `名称已同步：已匹配 ${next.directoryRead.matchedCount} 人，待匹配 ${next.directoryRead.unmatchedCount} 人。门店授权和姓名备注未改变。` : '已停用名称同步，人员授权保持不变。'
+        : input.action === 'APPROVE_REGISTRATION'
         ? '已批准并立即绑定所选门店，无需填写机器人账号或再次激活。员工发送“状态”即可查看；离职自动解绑仍需核对通讯录关联。'
         : input.action === 'APPROVAL_CONFIG'
         ? '企微简易审批设置已保存。仅勾选的人员获得绑定审批权；变更前的待审批申请已取消。'
@@ -142,7 +147,7 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
     setDirectoryUserId(member === 'NEW' ? '' : member.directoryUserId)
     setIdentityConfirmed(false); setError(''); setNotice('')
   }
-  const matchesSearch = (m: WeComRepairAdmin) => `${m.displayName} ${m.userId} ${m.directoryUserId}`.toLowerCase().includes(search.trim().toLowerCase())
+  const matchesSearch = (m: WeComRepairAdmin) => `${m.wecomName ?? ''} ${m.displayName} ${m.userId} ${m.directoryUserId}`.toLowerCase().includes(search.trim().toLowerCase())
   const members = (data?.members ?? []).filter((m) => m.activationStatus !== 'REQUESTED'
     && (showAll || m.active || m.activationStatus === 'PENDING') && matchesSearch(m))
   const linked = data?.directory
@@ -228,7 +233,7 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
         <p>{data?.bindingApproval.enabled ? '也可让员工发送“申请 003 真实姓名”，直接走已启用的企微简易审批，审批人在企微操作即可。' : '如需负责人直接在企微审批，可在下方“审批与高级设置”中启用企业微信简易绑定审批。'}</p>
         {!requestedMembers.length ? <p>暂无待授权人员。员工发送后会自动显示；旧消息不会补录，请重新发送一次。无需填写机器人账号。</p> : null}
         <div className="repair-admin-roster">{requestedMembers.map((member) => <article className="repair-admin-member" key={member.memberId}>
-          <strong>{member.displayName}</strong><p className="repair-admin-account">自动识别账号：{member.userId}</p>
+          <strong>{repairAdminLabel(member)}</strong><p className="repair-admin-account">自动识别账号：{member.userId}</p>
           <small>登记时间：{timeLabel(member.registrationRequestedAt)} · {member.registrationCurrent ? '待选择门店，有效期24小时' : '已失效，请本人重新发送“激活”'}</small>
           <div className="heading-actions"><button type="button" disabled={busy || !member.registrationCurrent} onClick={() => edit(member)}>选择门店并批准</button>
           <button type="button" className="secondary" disabled={busy} onClick={() => { setPendingRevoke(member); setFormVersion(data!.rowVersion); setEditing(null) }}>拒绝并阻止激活</button></div>
@@ -236,13 +241,17 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
       </details>
       <section className="repair-members-section" aria-label="人员名单">
         <h3>人员名单 <span className="repair-section-hint">{members.length} 人</span></h3>
+        {data ? <WeComDirectoryNames data={data} busy={busy} onSave={command} /> : null}
         <label className="repair-admin-search">搜索人员姓名或企微账号<input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="在已保存的人员名单中搜索" /></label>
         <label className="inline-toggle"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />同时显示已解绑及尚未授权人员</label>
         {data && members.length === 0 ? <p>没有符合条件的企微人员，请调整搜索或新增授权。</p> : null}
         <div className="repair-admin-roster">
           {members.map((member) => (
             <article className="repair-admin-member" key={member.memberId}>
-              <div><strong>{member.displayName}</strong><span className={member.active ? 'source-complete' : 'source-partial'}>{member.active ? (member.globalRecipient ? '全局接收人' : member.role === 'OPERATIONS_MANAGER' ? '运营经理' : '门店管理员') : member.activationStatus === 'PENDING' ? '待首次激活' : member.activationStatus === 'UNASSIGNED' ? '尚未授权' : '已解绑'}</span></div>
+              <div><strong>{repairAdminLabel(member)}</strong><span className={member.active ? 'source-complete' : 'source-partial'}>{member.active ? (member.globalRecipient ? '全局接收人' : member.role === 'OPERATIONS_MANAGER' ? '运营经理' : '门店管理员') : member.activationStatus === 'PENDING' ? '待首次激活' : member.activationStatus === 'UNASSIGNED' ? '尚未授权' : '已解绑'}</span></div>
+              <small>{member.wecomName ? '企业微信通讯录名称' : '尚未匹配企微名称，请核对通讯录账号'}</small>
+              <p className="repair-admin-account">企微账号：{member.userId}</p>
+              {member.nameSource !== 'UNSET' ? <small>{member.nameSource === 'APPLICANT_PROVIDED' ? '员工填写' : '姓名备注'}：{member.displayName}</small> : null}
               <p>门店授权：{member.hotels.map((h) => `${h.hotelCode} ${h.displayName}`).join('、') || (member.globalRecipient ? '全局接收人，无单独门店授权' : '无单独门店授权')}</p>
               {member.activationStatus === 'PENDING' ? <p>待激活门店：{member.pendingHotels.map((h) => `${h.hotelCode} ${h.displayName}`).join('、')}。进入机器人或发送“激活”完成绑定。</p> : null}
               {member.identityReviewRequired ? <p className="error">通讯录身份发生变化，已暂停自动激活；请重新核对身份。</p> : null}

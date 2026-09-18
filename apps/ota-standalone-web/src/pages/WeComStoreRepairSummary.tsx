@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { loadWeComRepairAdmins, loadWeComRepairBotConfig, type HotelContext, type WeComRepairAdmin, type WeComRepairBotConfigView } from '../api/business'
+import { loadWeComRepairAdmins, loadWeComRepairBotConfig, repairAdminLabel, type HotelContext, type WeComRepairAdmin, type WeComRepairBotConfigView } from '../api/business'
 import { businessErrorMessage } from '../ui/businessDisplay'
 
 interface Props { context: HotelContext | null; canConfigure: boolean; onOpenPeoplePermissions?: () => void }
 interface Summary {
   key: string; config: WeComRepairBotConfigView | null
-  members: Pick<WeComRepairAdmin, 'memberId' | 'displayName' | 'userId' | 'nameSource'>[] | null
+  members: Pick<WeComRepairAdmin, 'memberId' | 'displayName' | 'userId' | 'nameSource' | 'wecomName'>[] | null
   error: string
 }
 
@@ -31,7 +31,7 @@ export function WeComStoreRepairSummary({ context, canConfigure, onOpenPeoplePer
       setSummary({ key, config: results[0].status === 'fulfilled' ? results[0].value : null,
         members: results[1].status === 'fulfilled' && results[1].value ? results[1].value.members
           .filter((member) => member.active && member.hotelIds.includes(hotelId))
-          .map(({ memberId, displayName, userId, nameSource }) => ({ memberId, displayName, userId, nameSource })) : null,
+          .map(({ memberId, displayName, userId, nameSource, wecomName }) => ({ memberId, displayName, userId, nameSource, wecomName })) : null,
         error: failures.map((r) => r.status === 'rejected' ? businessErrorMessage(r.reason, '读取本店修复人员失败') : '').join('；'),
       })
     }
@@ -52,7 +52,7 @@ export function WeComStoreRepairSummary({ context, canConfigure, onOpenPeoplePer
       <div className="wecom-status-row"><span>共用机器人｜{current.config?.connected ? '已连接' : current.config ? '尚未连接' : '状态未载入'}</span>
         <span>{binding ? `${binding.hotelCode} · ${binding.displayName}｜已绑定 ${binding.pairedUserCount} 人` : '本店绑定人数尚未载入'}</span></div>
       {canConfigure && current.members ? current.members.length ? <ul className="store-repair-members">{current.members.map((member) => <li key={member.memberId}>
-        <strong>{member.displayName}</strong><span>{member.userId}</span>{member.nameSource === 'APPLICANT_PROVIDED' ? <small>姓名由员工填写</small> : null}
+        <strong>{repairAdminLabel(member)}</strong><span>{member.userId}</span>{member.wecomName ? <small>企微通讯录名称</small> : member.nameSource === 'APPLICANT_PROVIDED' ? <small>姓名由员工填写</small> : null}
       </li>)}</ul> : <p>本店暂无单独绑定的企微人员。全局接收人由平台统一管理，不计入本店名单。</p> : null}
       {!canConfigure ? <p>人员授权调整请联系平台管理员。</p> : null}
     </>}

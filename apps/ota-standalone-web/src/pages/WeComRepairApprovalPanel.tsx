@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { WeComRepairAdminCommand, WeComRepairAdminsView } from '../api/business'
+import { repairAdminLabel } from '../api/business'
 
 interface Props {
   data: WeComRepairAdminsView
@@ -28,7 +29,7 @@ export function WeComRepairApprovalPanel({ data, busy, onSave }: Props) {
       <div><h4>企业微信简易绑定审批</h4><p>员工发申请 → 指定审批人收到私聊卡片 → 任一人同意后自动绑定。日常审批无需进入后台。</p></div>
       <span className={config.enabled ? 'source-complete' : 'source-partial'}>{config.enabled ? '已启用' : '未启用'}</span>
     </div>
-    <p>审批人：{current.map((m) => `${m.displayName}（${m.userId}）`).join('、') || '尚未选择'}。最多两人，审批权与播报接收权限分开配置。</p>
+    <p>审批人：{current.map((m) => `${repairAdminLabel(m)}（${m.userId}）`).join('、') || '尚未选择'}。最多两人，审批权与播报接收权限分开配置。</p>
     {config.enabled && (!directoryReady || !current.some((m) => eligible.includes(m.memberId))) ? <p className="error">审批暂不可用：请恢复通讯录通知并重新核对审批人的在职身份与绑定。</p> : null}
     {!draft ? <button type="button" className="secondary" disabled={busy || !data.credentialConfigured} onClick={() => {
       setDraft({ enabled: config.enabled, ids: [...config.approverMemberIds], version: data.rowVersion }); setNotice('')
@@ -45,10 +46,10 @@ export function WeComRepairApprovalPanel({ data, busy, onSave }: Props) {
         <div className="repair-admin-hotels">{candidates.map((member) => {
           const selected = draft.ids.includes(member.memberId), selectable = eligible.includes(member.memberId)
           return <label className="inline-toggle repair-approval-person" key={member.memberId}>
-            <input type="checkbox" aria-label={`审批人 ${member.displayName} ${member.userId}`} checked={selected}
+            <input type="checkbox" aria-label={`审批人 ${repairAdminLabel(member)} ${member.userId}`} checked={selected}
               disabled={!selected && (!selectable || draft.ids.length >= 2)} onChange={(e) => setDraft({ ...draft,
                 ids: e.target.checked ? [...draft.ids, member.memberId] : draft.ids.filter((id) => id !== member.memberId) })} />
-            <span><strong>{member.displayName}</strong><small>{member.userId}</small><small>{selectable ? '通讯录身份已关联，可授予审批权' : '需先完成绑定并核对通讯录账号'}</small></span>
+            <span><strong>{repairAdminLabel(member)}</strong><small>{member.userId}</small><small>{selectable ? '通讯录身份已关联，可授予审批权' : '需先完成绑定并核对通讯录账号'}</small></span>
           </label>
         })}</div>
         {!candidates.length ? <p>暂无已绑定人员，请先为两位负责人完成绑定并关联通讯录身份。</p> : null}

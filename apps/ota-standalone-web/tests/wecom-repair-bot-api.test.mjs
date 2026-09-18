@@ -14,7 +14,7 @@ import os from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { encryptCookie } from '../../../tools/uat/report-source-cookie-crypto.mjs'
+import { encryptCookie, decryptCookie } from '../../../tools/uat/report-source-cookie-crypto.mjs'
 
 const apiScript = fileURLToPath(
   new URL('../../../tools/uat/ota-standalone-review-api.mjs', import.meta.url),
@@ -411,6 +411,101 @@ test('WeCom repair bot config encrypts credentials and never returns them', asyn
     assert.equal(cleared.credentialConfigured, false)
     assert.equal(cleared.allowGlobalRepairActions, false)
     assert.equal(cleared.botIdFingerprint, null)
+  } finally {
+    if (child) await stopApi(child)
+    await rm(runtimePath, { recursive: true, force: true })
+  }
+})
+
+test('directory read config and sync are private, versioned, failure-safe and preserve concurrent revocation', async () => {
+  const runtimePath = await mkdtemp(join(os.tmpdir(), 'wecom-directory-read-api-'))
+  const preload = join(runtimePath, 'read-preload.mjs'), modePath = join(runtimePath, 'read-mode.txt')
+  const corpId = 'ww-directory-read-test', appSecret = 'example-directory-read-secret'
+  const hotelId = '20000000-0000-4000-8000-000000000001'
+  let child
+  try {
+    await writeFile(modePath, 'success')
+    await writeFile(preload, `import { readFileSync } from 'node:fs';
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (input, options) => {
+ const url = new URL(input);
+ if (url.hostname !== 'qyapi.weixin.qq.com') return realFetch(input, options);
+ const mode = readFileSync(${JSON.stringify(modePath)}, 'utf8');
+ if (mode === 'failure') return Response.json({errcode:60020,errmsg:'secret-must-not-leak'});
+ if (url.pathname.endsWith('/gettoken')) return Response.json({errcode:0,access_token:'test-only-access-token'});
+ if (url.pathname.endsWith('/department/simplelist')) return Response.json({errcode:0,department_id:[{id:1}]});
+ if (url.pathname.endsWith('/user/simplelist')) {
+   if (mode === 'slow') await new Promise(resolve=>setTimeout(resolve,500));
+   return Response.json({errcode:0,userlist:[{userid:'owner',name:'通讯录张三',mobile:'ignored-contact-field'}, {userid:'manager',name:'通讯录李四'}]});
+ }
+ throw new Error('unexpected-test-api');
+};`)
+    await writeFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), JSON.stringify({ record: encryptCookie(JSON.stringify({
+      botId: 'test-directory-bot', secret: 'example-test-bot-secret', allowedUserIds: ['owner'],
+      hotelAllowedUserIds: { [hotelId]: ['manager'] }, userProfiles: { owner: { displayName: '现有备注' } },
+      directorySync: { enabled: true, corpId, token: 'testDirectoryToken', encodingAesKey: Buffer.alloc(32, 21).toString('base64').slice(0, -1) },
+    }), secretKey, 'wecom-repair-bot:v1') }))
+    let started = await startApi(runtimePath, { preload }); child = started.child
+    let base = `http://127.0.0.1:${started.port}`, accessToken = started.accessToken
+    const read = async () => (await (await fetch(`${base}/api/v1/ota/wecom-repair-admins`, { headers: { Authorization: `Bearer ${accessToken}` } })).json()).data
+    const post = async (body, version) => fetch(`${base}/api/v1/ota/wecom-repair-admins`, { method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, expectedRowVersion: version, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS' }) })
+    let view = await read()
+    assert.equal(view.directoryRead.configured, false)
+    assert.equal((await post({ action: 'DIRECTORY_READ', directoryReadUpdate: { action: 'REPLACE', corpId: 'foreign-corp', appSecret } }, view.rowVersion)).status, 400)
+    const configured = await post({ action: 'DIRECTORY_READ', directoryReadUpdate: { action: 'REPLACE', corpId, appSecret,
+      members: [{ userId: 'owner', name: 'injected-name' }] } }, view.rowVersion)
+    assert.equal(configured.status, 200)
+    view = (await configured.json()).data
+    assert.equal(view.directoryRead.matchedCount, 2)
+    assert.equal(view.members.find((m) => m.userId === 'owner').wecomName, '通讯录张三')
+    assert.equal(view.members.find((m) => m.userId === 'owner').displayName, '现有备注')
+    assert.equal(view.members.every((m) => !m.offboardingLinked), true)
+    for (const privateValue of [appSecret, 'test-only-access-token', 'ignored-contact-field', 'injected-name']) assert.equal(JSON.stringify(view).includes(privateValue), false)
+    const encrypted = await readFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), 'utf8')
+    assert.equal(encrypted.includes(appSecret), false)
+    assert.equal(encrypted.includes('通讯录张三'), false)
+    const stored = JSON.parse(decryptCookie(JSON.parse(encrypted).record, secretKey, 'wecom-repair-bot:v1'))
+    assert.deepEqual(stored.directoryRead.members, [{ userId: 'owner', name: '通讯录张三' }, { userId: 'manager', name: '通讯录李四' }])
+    assert.deepEqual(stored.allowedUserIds, ['owner'])
+    assert.deepEqual(stored.hotelAllowedUserIds, { [hotelId]: ['manager'] })
+    assert.equal(JSON.stringify(stored).includes('ignored-contact-field'), false)
+    assert.equal((await post({ action: 'SYNC_DIRECTORY_NAMES' }, 0)).status, 409)
+    await writeFile(modePath, 'failure')
+    view = (await (await post({ action: 'SYNC_DIRECTORY_NAMES' }, view.rowVersion)).json()).data
+    assert.equal(view.directoryRead.lastErrorCode, 'WECOM_DIRECTORY_READ_IP_FORBIDDEN')
+    assert.equal(view.directoryRead.matchedCount, 2)
+    assert.equal(JSON.stringify(view).includes('secret-must-not-leak'), false)
+    view = (await (await post({ action: 'DIRECTORY_READ', directoryReadUpdate: {
+      action: 'REPLACE', corpId, appSecret: 'example-rotated-application-secret',
+    } }, view.rowVersion)).json()).data
+    assert.equal(view.directoryRead.matchedCount, 2)
+    assert.equal(view.directoryRead.lastErrorCode, 'WECOM_DIRECTORY_READ_IP_FORBIDDEN')
+    await writeFile(modePath, 'slow')
+    const sync = post({ action: 'SYNC_DIRECTORY_NAMES' }, view.rowVersion)
+    for (let attempt = 0; attempt < 20; attempt++) {
+      view = await read()
+      if (view.directoryRead.syncing) break
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    assert.equal(view.directoryRead.syncing, true)
+    assert.equal((await post({ action: 'SYNC_DIRECTORY_NAMES' }, view.rowVersion)).status, 400)
+    const manager = view.members.find((m) => m.userId === 'manager')
+    assert.equal((await post({ action: 'REVOKE', memberId: manager.memberId }, view.rowVersion)).status, 200)
+    view = (await (await sync).json()).data
+    assert.equal(view.directoryRead.lastErrorCode, null)
+    assert.equal(view.members.find((m) => m.userId === 'manager').active, false)
+    assert.equal(view.members.find((m) => m.userId === 'manager').wecomName, null)
+    await stopApi(child)
+    started = await startApi(runtimePath, { preload, loginProbe: true }); child = started.child
+    base = `http://127.0.0.1:${started.port}`; accessToken = started.accessToken
+    view = await read()
+    assert.equal(view.directoryRead.enabled, true)
+    assert.equal(view.members.find((m) => m.userId === 'owner').wecomName, '通讯录张三')
+    view = (await (await post({ action: 'DIRECTORY_READ', directoryReadUpdate: { action: 'DISABLE' } }, view.rowVersion)).json()).data
+    assert.equal(view.members.every((m) => !m.wecomName), true)
+    assert.equal(view.members.find((m) => m.userId === 'owner').globalRecipient, true)
   } finally {
     if (child) await stopApi(child)
     await rm(runtimePath, { recursive: true, force: true })

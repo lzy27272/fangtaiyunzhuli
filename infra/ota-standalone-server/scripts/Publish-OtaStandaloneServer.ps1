@@ -141,6 +141,7 @@ $runtimeSourcePaths = @(
     'tools/uat/wecom/src/wecom-group-robot.mjs',
     'tools/uat/wecom/src/wecom-repair-bot.mjs',
     'tools/uat/wecom/src/wecom-repair-admins.mjs',
+    'tools/uat/wecom/src/wecom-directory-read.mjs',
     'tools/uat/wecom/src/wecom-repair-approvals.mjs',
     'tools/uat/wecom/src/wecom-test-suite.mjs',
     'tools/uat/vendor/wecom-aibot-sdk-1.0.7.cjs',

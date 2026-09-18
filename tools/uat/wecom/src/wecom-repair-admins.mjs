@@ -1,4 +1,5 @@
 import { createHash, createDecipheriv, timingSafeEqual } from 'node:crypto'
+import { normalizeDirectoryRead } from './wecom-directory-read.mjs'
 
 const userIdPattern = /^[^\s\x00-\x1f\x7f]{1,128}$/u
 const hotelIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u
@@ -79,24 +80,33 @@ export const normalizeRepairAdminState = (candidate) => {
       ...(value.registration == null ? {} : { registration: normalizeRegistration(value.registration) }),
     }]
   }))
-  return { userProfiles, directorySync: normalizeRepairDirectory(candidate?.directorySync) }
+  return { userProfiles, directorySync: normalizeRepairDirectory(candidate?.directorySync),
+    directoryRead: normalizeDirectoryRead(candidate?.directoryRead) }
 }
 
 export const repairAdminRoster = (credentials, hotels, now = new Date()) => {
   const profiles = credentials?.userProfiles ?? {}
   const globalUsers = credentials?.allowedUserIds ?? []
   const scopes = credentials?.hotelAllowedUserIds ?? {}
+  const directoryRead = credentials?.directoryRead
+  const names = new Map(directoryRead?.enabled && directoryRead.corpId === credentials?.directorySync?.corpId
+    ? directoryRead.members.map((m) => [m.userId, m.name]) : [])
   const allUsers = new Set([...globalUsers, ...Object.values(scopes).flat(), ...Object.keys(profiles)])
   return [...allUsers].map((userId) => {
     const profile = profiles[userId] ?? {}
     const hotelIds = Object.entries(scopes).filter(([, ids]) => ids.includes(userId)).map(([id]) => id)
     const globalRecipient = globalUsers.includes(userId)
     const pendingHotelIds = profile.revokedAt ? [] : profile.pendingHotelIds ?? []
+    // Names are presentation only: never infer an offboarding link or a grant.
+    // A reviewed directory ID takes precedence; never fall back if it is missing.
+    const linkedAccount = profile.directoryUserId && profile.directoryLinkedAt ? profile.directoryUserId : null
+    const wecomName = profile.revokedAt ? null : names.get(linkedAccount || userId) ?? null
     return {
       memberId: fingerprint(userId),
       // Account identifiers are visible only on the platform-admin endpoint.
       userId, displayName: profile.displayName || '待补充姓名',
       nameSource: profile.displayName ? profile.nameSource ?? 'ADMIN_REMARK' : 'UNSET',
+      wecomName, wecomNameMatch: wecomName ? linkedAccount ? 'LINKED_ACCOUNT' : 'EXACT_ACCOUNT' : 'UNMATCHED',
       role: profile.role ?? (hotelIds.length > 1 ? 'OPERATIONS_MANAGER' : 'STORE_MANAGER'),
       globalRecipient, hotelIds,
       hotels: hotels.filter((hotel) => hotelIds.includes(hotel.hotelId))

@@ -105,6 +105,11 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 .repair-admin-member p, .repair-admin-member small { overflow-wrap: anywhere; }
 .repair-admin-member p { margin: .5rem 0; }
 .repair-admin-member small { display: block; color: #677b73; }
+.repair-directory-names { margin: .5rem 0 1rem; }
+.repair-directory-names .page-heading { align-items: center; gap: .75rem; }
+.repair-directory-names .page-heading p { margin: 0; }
+.repair-directory-names .page-heading button { flex-shrink: 0; }
+.repair-directory-names .repair-admin-directory { margin-top: .75rem; }
 .repair-admin-account { font-size: .85rem; }
 .repair-admin-editor, .repair-admin-confirm { margin: 1rem 0; }
 .repair-admin-editor fieldset { border: 1px solid #c8d8d2; border-radius: .7rem; min-width: 0; margin: 1rem 0; }

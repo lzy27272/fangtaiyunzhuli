@@ -924,6 +924,8 @@ export interface WeComRepairAdmin {
   userId: string
   displayName: string
   nameSource: 'ADMIN_REMARK' | 'APPLICANT_PROVIDED' | 'UNSET'
+  wecomName: string | null
+  wecomNameMatch: 'LINKED_ACCOUNT' | 'EXACT_ACCOUNT' | 'UNMATCHED'
   role: 'STORE_MANAGER' | 'OPERATIONS_MANAGER'
   globalRecipient: boolean
   hotelIds: string[]
@@ -949,6 +951,11 @@ export interface WeComRepairAdminsView {
   connected: boolean
   credentialConfigured: boolean
   members: WeComRepairAdmin[]
+  directoryRead: {
+    configured: boolean; enabled: boolean; corpId: string; memberCount: number
+    lastSyncedAt: string | null; lastAttemptAt: string | null; lastErrorCode: string | null
+    syncing: boolean; matchedCount: number; unmatchedCount: number
+  }
   bindingApproval: {
     enabled: boolean
     approverMemberIds: string[]
@@ -979,6 +986,9 @@ export interface WeComRepairAdminsView {
 }
 
 export type WeComRepairAdminCommand =
+  | { action: 'SYNC_DIRECTORY_NAMES' }
+  | { action: 'DIRECTORY_READ'; directoryReadUpdate: { action: 'DISABLE' }
+      | { action: 'REPLACE'; corpId: string; appSecret: string } }
   | { action: 'APPROVE_REGISTRATION'; memberId: string; hotelIds: string[]; displayName: string;
       role: WeComRepairAdmin['role']; identityConfirmed: boolean }
   | { action: 'APPROVAL_CONFIG'; approvalEnabled: boolean; approverMemberIds: string[] }
@@ -990,6 +1000,9 @@ export type WeComRepairAdminCommand =
   | { action: 'REVOKE'; memberId: string }
   | { action: 'DIRECTORY'; directoryUpdate: { action: 'DISABLE' }
       | { action: 'REPLACE'; corpId: string; token: string; encodingAesKey: string } }
+
+export const repairAdminLabel = (member: Pick<WeComRepairAdmin, 'displayName' | 'wecomName' | 'nameSource'>) =>
+  member.wecomName || (member.nameSource !== 'UNSET' ? member.displayName : '企微名称待匹配')
 
 export function loadWeComRepairAdmins(): Promise<WeComRepairAdminsView> {
   return authenticatedRequest('/ota/wecom-repair-admins')
