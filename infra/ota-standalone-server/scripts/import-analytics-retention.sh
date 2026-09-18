@@ -55,10 +55,34 @@ for batch_file in "${batches[@]}"; do
   rm -f -- "${batch_file}"
 done
 
+target_decisions=/var/lib/sifangguan-ota/occupancy-targets.json
+if [[ -f ${target_decisions} ]]; then
+  test "$(readlink -f "${target_decisions}")" = "${target_decisions}"
+  {
+    printf '%s\n' 'BEGIN;' \
+      'CREATE TEMP TABLE occupancy_target_batch (payload_base64 text NOT NULL) ON COMMIT DROP;' \
+      '\copy occupancy_target_batch (payload_base64) FROM STDIN WITH (FORMAT text)'
+    base64 --wrap=0 -- "${target_decisions}"
+    printf '\n%s\n' '\.' \
+      "SELECT ota_analytics.archive_occupancy_targets(convert_from(decode(payload_base64, 'base64'), 'UTF8')::jsonb) FROM occupancy_target_batch;" \
+      'COMMIT;'
+  } | sudo -u postgres psql -X --dbname hotel_ai_os --set ON_ERROR_STOP=1
+fi
+
 sudo -u postgres psql --dbname hotel_ai_os --set ON_ERROR_STOP=1 <<'SQL'
 SELECT ota_analytics.refresh_rollups();
+SELECT ota_analytics.refresh_occupancy_reviews();
 SELECT ota_analytics.apply_retention();
 SQL
+
+# Only aggregate occupancy data is exported; the API never gains a database
+# credential or access to guest/order details. Atomic replace keeps readers safe.
+review_tmp="${analytics_root}/.occupancy-history.${RANDOM}.tmp"
+sudo -u postgres psql -X --dbname hotel_ai_os --tuples-only --no-align \
+  --set ON_ERROR_STOP=1 --command 'SELECT ota_analytics.occupancy_review_export();' >"${review_tmp}"
+chown sifangguan-ota:sifangguan-ota "${review_tmp}"
+chmod 0600 "${review_tmp}"
+mv -f -- "${review_tmp}" "${analytics_root}/occupancy-history.json"
 
 import_summary="$(sudo -u postgres psql --dbname hotel_ai_os \
   --tuples-only --no-align --field-separator='|' --set ON_ERROR_STOP=1 \

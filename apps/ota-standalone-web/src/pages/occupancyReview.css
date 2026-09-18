@@ -1,0 +1,59 @@
+.occupancy-review { display: grid; gap: 22px; min-width: 0; }
+.occupancy-review h2 { margin: 0 0 6px; }
+.occupancy-heading-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.occupancy-heading-actions a { text-decoration: none; white-space: nowrap; }
+.occupancy-plan { scroll-margin-top: 88px; }
+.occupancy-review .section-heading { align-items: flex-start; }
+.occupancy-review .section-heading p { max-width: 850px; }
+.occupancy-live, .occupancy-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid #d7e6e0; border-radius: 16px; background: #d7e6e0; }
+.occupancy-live > div, .occupancy-summary > div { display: grid; align-content: start; gap: 9px; padding: 22px; background: #f1f8f5; }
+.occupancy-summary { margin: 20px 0; }
+.occupancy-summary > div { background: white; }
+.occupancy-live strong { font-size: 32px; color: #126b50; font-variant-numeric: tabular-nums; }
+.occupancy-live strong.occupancy-date { font-size: 24px; }
+.occupancy-summary strong { font-size: 23px; }
+.occupancy-live small, .occupancy-summary small, .occupancy-help, .occupancy-toolbar > span { color: #57716b; font-size: 13px; line-height: 1.65; }
+.occupancy-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin: 18px 0; }
+.occupancy-toolbar label, .occupancy-decision label { display: grid; gap: 7px; font-weight: 600; }
+.occupancy-toolbar input, .occupancy-toolbar select, .occupancy-decision input { padding: 10px 12px; border-radius: 8px; border: 1px solid #b9cdc5; background: white; color: #123c32; font: inherit; min-width: 0; }
+.occupancy-segment { display: flex; padding: 4px; border-radius: 10px; background: #edf3f0; }
+.occupancy-segment button { border: 0; background: transparent; color: #49645b; border-radius: 8px; padding: 10px 16px; cursor: pointer; font: inherit; }
+.occupancy-segment button[aria-pressed="true"] { background: #17634f; color: white; }
+.occupancy-table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid #dce7e3; border-radius: 12px; }
+.occupancy-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.occupancy-table th, .occupancy-table td { text-align: left; padding: 13px 14px; border-bottom: 1px solid #e2ebe7; vertical-align: top; }
+.occupancy-table thead { background: #f2f6f4; color: #466257; }
+.occupancy-table tr:last-child > * { border-bottom: none; }
+.occupancy-table th:first-child { width: 135px; }
+.occupancy-table tbody th { position: sticky; left: 0; background: #fff; z-index: 1; }
+.occupancy-table small { display: block; color: #6a8078; margin-top: 5px; font-weight: normal; font-size: 12px; }
+.occupancy-target-input { position: relative; display: flex; align-items: center; gap: 4px; font-weight: 600; }
+.occupancy-target-input input { width: 77px; padding: 8px 6px; border: 1px solid #aebfb8; border-radius: 6px; background: white; color: #173f32; font: inherit; }
+.occupancy-target-input input:disabled { color: #577269; border-color: #e1e8e5; background: #f4f6f5; }
+.occupancy-table td.occupancy-behind { background: #fff5ed; }
+.occupancy-table td.occupancy-met { background: #f0f8f1; }
+.occupancy-point-status { display: block; margin-top: 6px; font-size: 12px; color: #64776f; }
+.occupancy-behind .occupancy-point-status { color: #a34813; }
+.occupancy-met .occupancy-point-status { color: #176340; }
+.occupancy-decision { display: flex; align-items: flex-end; gap: 16px; margin-top: 22px; }
+.occupancy-decision label { flex: 1; }
+.occupancy-decision button { white-space: nowrap; }
+.occupancy-advice { margin-top: 16px; border-top: 1px solid #e0e9e5; padding-top: 14px; }
+.occupancy-advice summary { cursor: pointer; color: #286853; font-weight: 600; }
+.occupancy-advice ul { padding-left: 20px; color: #50675c; line-height: 1.8; font-size: 14px; }
+.occupancy-advice li + li { margin-top: 8px; }
+.occupancy-week-picker { margin: 4px 0 -6px; }
+.occupancy-review .content-panel { min-width: 0; }
+.occupancy-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 720px) {
+  .occupancy-live, .occupancy-summary { grid-template-columns: 1fr; }
+  .occupancy-live > div, .occupancy-summary > div { padding: 16px; }
+  .occupancy-live strong { font-size: 26px; }
+  .occupancy-review .section-heading { gap: 12px; flex-wrap: wrap; }
+  .occupancy-review .content-panel { padding: 18px 14px; }
+  .occupancy-toolbar { align-items: stretch; }
+  .occupancy-toolbar > label { width: 100%; }
+  .occupancy-toolbar select { width: 100%; }
+  .occupancy-decision { flex-direction: column; align-items: stretch; }
+  .occupancy-review { gap: 16px; }
+}

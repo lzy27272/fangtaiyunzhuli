@@ -106,6 +106,7 @@ import {
   ANALYTICS_RETENTION_POLICY,
   createAnalyticsRetentionStore,
 } from './analytics-retention.mjs'
+import { createOccupancyReviewService } from './occupancy-review.mjs'
 import {
   normalizeBieyanghongCookieHeader,
   validateBieyanghongCookieAccess,
@@ -283,6 +284,11 @@ const analyticsRetention = analyticsRetentionEnabled
   : null
 const automaticHourlyCollectionEnabled =
   process.env.OTA_REVIEW_AUTO_COLLECTION_ENABLED === 'true'
+const occupancyReviews = createOccupancyReviewService({
+  historyPath: process.env.OTA_OCCUPANCY_HISTORY_PATH?.trim()
+    || (dataPath ? join(process.env.OTA_ANALYTICS_RETENTION_ROOT?.trim() || join(dirname(dataPath), 'analytics-retention'), 'occupancy-history.json') : null),
+  targetPath: dataPath ? join(dirname(dataPath), 'occupancy-targets.json') : null,
+})
 const runtimeMode =
   process.env.OTA_REVIEW_RUNTIME_MODE === 'LOCAL_LIVE_LONG_RUNNING'
     ? 'LOCAL_LIVE_LONG_RUNNING'
@@ -12791,6 +12797,7 @@ const canConfigureRevenue = (principal) =>
   || Boolean(principal?.roles?.includes('OTA_OPERATION_MANAGER'))
 
 const REVENUE_WRITE_SUFFIXES = new Set([
+  '/occupancy-targets',
   '/hot-selling-room-types',
   '/room-type-configuration',
 ])
@@ -14200,6 +14207,27 @@ const server = createServer(async (request, response) => {
         return
       }
 
+      if (request.method === 'GET' && suffix === '/occupancy-review') {
+        json(response, 200, { data: occupancyReviews.view(
+          { tenantId: selected.tenantId, hotelId },
+          { type: url.searchParams.get('type') ?? 'WEEK', date: url.searchParams.get('date') ?? undefined,
+            planWeek: url.searchParams.get('planWeek') ?? undefined,
+            snapshot: (liveSnapshotStore[hotelId] ?? []).at(-1) },
+        ) })
+        return
+      }
+      if (request.method === 'POST' && suffix === '/occupancy-targets') {
+        if (!canConfigureRevenue(requestPrincipal)) { rejectForbidden(response); return }
+        const body = await readBody(request)
+        if (body.reasonCode !== 'APPROVE_OCCUPANCY_TARGETS') throw new Error('OCCUPANCY_TARGET_INVALID')
+        const decision = occupancyReviews.approve(
+          { tenantId: selected.tenantId, hotelId }, body, requestPrincipal.username ?? requestPrincipal.userId,
+        )
+        auditSecurityEvent({ action: 'OCCUPANCY_TARGET_APPROVED', outcome: 'SUCCESS', request,
+          principal: requestPrincipal, hotelId, reasonCode: 'APPROVE_OCCUPANCY_TARGETS' })
+        json(response, 200, { data: decision })
+        return
+      }
       if (request.method === 'GET' && suffix === '/configuration') {
         if (!canConfigureRevenue(requestPrincipal)) {
           rejectForbidden(response)
@@ -15317,12 +15345,14 @@ const server = createServer(async (request, response) => {
                     || error.message.startsWith('YILIAN_')
                     || error.message.startsWith('TRUSTED_DEVICE_')
                     || error.message.startsWith('REVIEW_AUTH_')
+                    || error.message.startsWith('OCCUPANCY_')
                   )
                     ? error.message
            : 'REVIEW_API_FAILED_CLOSED'
     json(
       response,
       [
+        'OCCUPANCY_TARGET_VERSION_CONFLICT',
         'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
         'OTA_SOURCE_VERSION_CONFLICT',
         'OTA_SOURCE_CHANGED_DURING_REFRESH',
@@ -15336,6 +15366,8 @@ const server = createServer(async (request, response) => {
         : code === 'WECOM_DELIVERY_LEDGER_UNAVAILABLE'
           ? 503
         : [
+          'OCCUPANCY_TARGET_PERSIST_FAILED',
+          'OCCUPANCY_TARGET_STORE_UNAVAILABLE',
           'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED',
           'WECOM_REPAIR_BOT_CONFIG_PERSIST_FAILED',
         ].includes(code)

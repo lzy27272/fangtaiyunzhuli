@@ -41,6 +41,7 @@ const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu
 const IDENTITY_PATTERN = /(?<!\d)\d{17}[0-9X](?!\d)/giu
 
 const finiteNumber = (value) => {
+  if (value === null || value === undefined || (typeof value === 'string' && !value.trim()) || typeof value === 'boolean') return null
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : null
 }
@@ -100,6 +101,7 @@ const snapshotMeasures = (snapshot) => {
   )
   const availableRooms = finiteNumber(overview.availableRooms)
   const explicitRoomCount = finiteNumber(overview.roomCount)
+  const combinedSoldRooms = finiteNumber(overview.soldRooms)
   const effectiveSellableRoomNights = explicitRoomCount ?? (
     soldRoomNights !== null && availableRooms !== null
       ? soldRoomNights + availableRooms
@@ -110,7 +112,12 @@ const snapshotMeasures = (snapshot) => {
     soldRoomNights,
     effectiveSellableRoomNights,
     availableRooms,
-    occupancyRate: normalizedOccupancy(overview.occupancyRate),
+    occupancyRate: combinedSoldRooms !== null && explicitRoomCount > 0
+      ? combinedSoldRooms >= 0 && combinedSoldRooms <= explicitRoomCount
+        ? combinedSoldRooms / explicitRoomCount : null
+      : snapshot.sourceSystem === 'LUOPAN_CLOUD'
+        ? normalizedOccupancy(finiteNumber(overview.occupancyRate) === null ? null : Number(overview.occupancyRate) / 100)
+        : normalizedOccupancy(overview.occupancyRate),
     adr: finiteNumber(overview.adr),
     revPar: finiteNumber(overview.revPar),
   }

@@ -42,6 +42,7 @@ protected_paths=(
   /var/lib/sifangguan-ota/luopan-session-secrets.json
   /var/lib/sifangguan-ota/hot-selling-room-types.json
   /var/lib/sifangguan-ota/room-type-mappings.json
+  /var/lib/sifangguan-ota/occupancy-targets.json
   /var/lib/sifangguan-ota/ota-room-type-catalogs.json
   /var/lib/sifangguan-ota/business-day-controls.json
   /var/lib/sifangguan-ota/luopan-browser-configs.json

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   listSimulationHotels,
   loadBriefs,
@@ -64,6 +64,7 @@ import {
 } from './ReportSourceConfigPage'
 import { OtaSourceConfigPanel } from './OtaSourceConfigPanel'
 import { StoreRepairPanel } from './StoreRepairPanel'
+const OccupancyReviewPanel = lazy(() => import('./OccupancyReviewPanel').then((module) => ({ default: module.OccupancyReviewPanel })))
 
 export interface HotelSummary {
   hotel: SimulationHotelView
@@ -76,7 +77,7 @@ export interface HotelSummary {
   unavailable: boolean
 }
 
-type StoreTab = 'overview' | 'repair' | 'collection' | 'operations' | 'broadcast'
+type StoreTab = 'overview' | 'repair' | 'collection' | 'operations' | 'broadcast' | 'occupancy'
 
 export interface StoreOpenOptions {
   collectionSection?: CollectionSection
@@ -720,6 +721,7 @@ export function StoreDetailPage({
       <nav className="store-tabs" aria-label="门店功能">
         {([
           ['overview', '门店概览'],
+          ['occupancy', '出租率复盘'],
           ['repair', repairTabLabel],
           ...(canConfigure || tab === 'collection'
             ? [[
@@ -783,6 +785,7 @@ export function StoreDetailPage({
       ) : null}
 
       {!loading && tab === 'repair' ? <div id="store-repair-panel" tabIndex={-1}><StoreRepairPanel context={context} hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /></div> : null}
+      {!loading && tab === 'occupancy' ? <Suspense fallback={<LoadingState label="正在打开出租率复盘…" />}><OccupancyReviewPanel key={hotel.hotelId} context={context} canConfigure={canRevenueConfigure} /></Suspense> : null}
 
       {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} pmsSystemName={hotel.pmsSystemName} attentionItems={pmsAttentionItems} initialSection={collectionSection} navigationSequence={collectionNavigationSequence} onSectionChange={setCollectionSection} otaAttentionPlatformCode={otaAttentionPlatformCode} otaAttentionSourceId={otaAttentionSourceId} /></div> : null}
 

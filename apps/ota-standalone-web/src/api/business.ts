@@ -1196,7 +1196,7 @@ export interface HotelContext {
   hotelId: string
 }
 
-function scopedPath(context: HotelContext, suffix: string): string {
+export function scopedPath(context: HotelContext, suffix: string): string {
   const tenantId = encodeURIComponent(context.tenantId)
   const hotelId = encodeURIComponent(context.hotelId)
   return `/ota/tenants/${tenantId}/hotels/${hotelId}${suffix}`
@@ -1215,7 +1215,7 @@ async function parseFailure(response: Response): Promise<string> {
   }
 }
 
-async function authenticatedRequest<T>(
+export async function authenticatedRequest<T>(
   path: string,
   init: RequestInit = {},
   allowRefresh = true,
@@ -1661,7 +1661,7 @@ export function submitOtaControlledLoginVerification(
   )
 }
 
-function postCommand<T>(
+export function postCommand<T>(
   path: string,
   body: Record<string, unknown>,
   options: { signal?: AbortSignal } = {},

@@ -75,6 +75,32 @@ test('retention policy matches the approved business windows', () => {
   })
 })
 
+test('missing operating metrics stay null in archives instead of becoming zero occupancy', () => {
+  const root = mkdtempSync(join(tmpdir(), 'sfg-analytics-null-'))
+  try {
+    const store = createAnalyticsRetentionStore({ rootPath: root, encryptionKey: key })
+    const missing = snapshot()
+    missing.overview = { roomCount: 50, occupancyRate: null, roomNights: null, availableRooms: null }
+    const [event] = store.recordSnapshot({ snapshot: missing, previousSnapshots: [] })
+    assert.equal(event.measures.occupancyRate, null)
+    assert.equal(event.measures.soldRoomNights, null)
+    assert.equal(event.measures.availableRooms, null)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('Luopan low occupancy is not mistaken for 100 percent', () => {
+  const root = mkdtempSync(join(tmpdir(), 'sfg-analytics-occupancy-'))
+  try {
+    const store = createAnalyticsRetentionStore({ rootPath: root, encryptionKey: key })
+    const value = snapshot()
+    value.sourceSystem = 'LUOPAN_CLOUD'
+    value.overview = { roomCount: 100, soldRooms: 1, roomNights: 1, occupancyRate: 1 }
+    assert.equal(store.recordSnapshot({ snapshot: value, previousSnapshots: [] })[0].measures.occupancyRate, 0.01)
+    value.overview.soldRooms = null
+    assert.equal(store.recordSnapshot({ snapshot: value, previousSnapshots: [] })[0].measures.occupancyRate, 0.01)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
 test('snapshot journal appends hourly facts and finalizes the prior business day', () => {
   const root = mkdtempSync(join(tmpdir(), 'sfg-analytics-'))
   try {

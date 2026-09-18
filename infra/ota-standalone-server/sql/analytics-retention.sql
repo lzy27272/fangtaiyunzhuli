@@ -489,12 +489,188 @@ LEFT JOIN ota_analytics.period_rollup prior_year
  AND prior_year.period_type = current_period.period_type
  AND prior_year.period_start = current_period.period_start - interval '1 year';
 
+-- Stay-date occupancy reviews are separate from financial/room-night rollups.
+-- A PMS occupancy ratio already includes in-house + reserved rooms. Never add
+-- order/check-in counts here, nor average daily percentages without room weights.
+CREATE TABLE IF NOT EXISTS ota_analytics.occupancy_target_decision (
+  tenant_id text NOT NULL,
+  hotel_id text NOT NULL,
+  week_start date NOT NULL,
+  version integer NOT NULL CHECK (version > 0),
+  decision jsonb NOT NULL,
+  archived_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, hotel_id, week_start, version)
+);
+
+-- Mirror the atomic runtime decision journal into PostgreSQL so the existing
+-- encrypted 30 daily / 12 monthly / 3 yearly backups cover approved targets too.
+CREATE OR REPLACE FUNCTION ota_analytics.archive_occupancy_targets(document jsonb)
+RETURNS bigint LANGUAGE plpgsql
+SET search_path = pg_catalog, ota_analytics
+AS $$
+DECLARE item jsonb; previous jsonb; affected bigint := 0; inserted integer;
+BEGIN
+  IF document->>'schemaVersion' IS DISTINCT FROM '1' OR jsonb_typeof(document->'plans') IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'OCCUPANCY_TARGET_ARCHIVE_INVALID';
+  END IF;
+  FOR item IN SELECT value FROM jsonb_array_elements(document->'plans') LOOP
+    IF COALESCE(item->>'tenantId', '') = '' OR COALESCE(item->>'hotelId', '') = ''
+      OR item->>'weekStart' IS NULL OR item->>'version' IS NULL
+      OR jsonb_typeof(item->'points') IS DISTINCT FROM 'array' THEN
+      RAISE EXCEPTION 'OCCUPANCY_TARGET_ARCHIVE_INVALID';
+    END IF;
+    SELECT decision INTO previous FROM ota_analytics.occupancy_target_decision
+      WHERE tenant_id = item->>'tenantId' AND hotel_id = item->>'hotelId'
+        AND week_start = (item->>'weekStart')::date AND version = (item->>'version')::integer;
+    IF previous IS NOT NULL AND previous <> item THEN
+      RAISE EXCEPTION 'OCCUPANCY_TARGET_ARCHIVE_VERSION_CONFLICT';
+    END IF;
+    INSERT INTO ota_analytics.occupancy_target_decision (tenant_id, hotel_id, week_start, version, decision)
+      VALUES (item->>'tenantId', item->>'hotelId', (item->>'weekStart')::date, (item->>'version')::integer, item)
+      ON CONFLICT DO NOTHING;
+    GET DIAGNOSTICS inserted = ROW_COUNT;
+    affected := affected + inserted;
+  END LOOP;
+  DELETE FROM ota_analytics.occupancy_target_decision
+    WHERE week_start < (now() AT TIME ZONE 'Asia/Shanghai')::date - interval '5 years';
+  RETURN affected;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS ota_analytics.occupancy_review_period (
+  tenant_id text NOT NULL,
+  hotel_id text NOT NULL,
+  period_type text NOT NULL CHECK (period_type IN ('WEEK', 'MONTH')),
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  available_day_count integer NOT NULL,
+  expected_day_count integer NOT NULL,
+  weighted_occupancy_percent numeric(12,6) NOT NULL,
+  room_capacity numeric(18,2) NOT NULL CHECK (room_capacity > 0),
+  refreshed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, hotel_id, period_type, period_start)
+);
+
+CREATE OR REPLACE FUNCTION ota_analytics.refresh_occupancy_reviews(reference_time timestamptz DEFAULT now())
+RETURNS bigint LANGUAGE plpgsql
+SET search_path = pg_catalog, ota_analytics
+AS $$
+DECLARE affected bigint;
+BEGIN
+  WITH latest AS (
+    SELECT DISTINCT ON (tenant_id, hotel_id, business_date)
+      tenant_id, hotel_id, business_date, effective_sellable_room_nights,
+      CASE WHEN source_system = 'LUOPAN_CLOUD' AND effective_sellable_room_nights > 0
+        AND sold_room_nights BETWEEN 0 AND effective_sellable_room_nights
+        THEN sold_room_nights / effective_sellable_room_nights ELSE occupancy_rate END AS occupancy_rate
+    FROM ota_analytics.daily_operating_fact
+    WHERE business_date >= (reference_time AT TIME ZONE 'Asia/Shanghai')::date - interval '2 years'
+      AND business_date < (reference_time AT TIME ZONE 'Asia/Shanghai')::date
+    ORDER BY tenant_id, hotel_id, business_date, revision DESC
+  ), expanded AS (
+    SELECT d.*, p.period_type,
+      date_trunc(lower(p.period_type), d.business_date)::date AS period_start
+    FROM latest d CROSS JOIN (VALUES ('WEEK'), ('MONTH')) p(period_type)
+    WHERE occupancy_rate BETWEEN 0 AND 1 AND effective_sellable_room_nights > 0
+  ), grouped AS (
+    SELECT tenant_id, hotel_id, period_type, period_start,
+      (period_start + CASE period_type WHEN 'WEEK' THEN interval '7 days' ELSE interval '1 month' END - interval '1 day')::date AS period_end,
+      count(*)::integer AS available_day_count,
+      sum(occupancy_rate * effective_sellable_room_nights) * 100 / sum(effective_sellable_room_nights) AS weighted_occupancy_percent,
+      sum(effective_sellable_room_nights) AS room_capacity
+    FROM expanded GROUP BY tenant_id, hotel_id, period_type, period_start
+  )
+  INSERT INTO ota_analytics.occupancy_review_period AS existing (
+    tenant_id, hotel_id, period_type, period_start, period_end,
+    available_day_count, expected_day_count, weighted_occupancy_percent, room_capacity, refreshed_at
+  ) SELECT tenant_id, hotel_id, period_type, period_start, period_end,
+    available_day_count, period_end - period_start + 1, weighted_occupancy_percent, room_capacity, reference_time
+  FROM grouped
+  ON CONFLICT (tenant_id, hotel_id, period_type, period_start) DO UPDATE SET
+    available_day_count = EXCLUDED.available_day_count,
+    weighted_occupancy_percent = EXCLUDED.weighted_occupancy_percent,
+    room_capacity = EXCLUDED.room_capacity,
+    refreshed_at = EXCLUDED.refreshed_at
+  -- Daily retention must never erase part of an already archived review.
+  WHERE EXCLUDED.available_day_count >= existing.available_day_count;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  DELETE FROM ota_analytics.occupancy_review_period
+    WHERE period_end < (reference_time AT TIME ZONE 'Asia/Shanghai')::date - interval '5 years';
+  RETURN affected;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION ota_analytics.occupancy_review_export(reference_time timestamptz DEFAULT now())
+RETURNS jsonb LANGUAGE sql STABLE
+SET search_path = pg_catalog, ota_analytics
+AS $$
+  WITH daily AS MATERIALIZED (
+    SELECT DISTINCT ON (tenant_id, hotel_id, business_date)
+      tenant_id, hotel_id, business_date, observed_at, effective_sellable_room_nights,
+      CASE WHEN source_system = 'LUOPAN_CLOUD' AND effective_sellable_room_nights > 0
+        AND sold_room_nights BETWEEN 0 AND effective_sellable_room_nights
+        THEN sold_room_nights / effective_sellable_room_nights ELSE occupancy_rate END AS occupancy_rate
+    FROM ota_analytics.daily_operating_fact
+    WHERE business_date >= (reference_time AT TIME ZONE 'Asia/Shanghai')::date - interval '2 years'
+      AND business_date < (reference_time AT TIME ZONE 'Asia/Shanghai')::date
+    ORDER BY tenant_id, hotel_id, business_date, revision DESC
+  ), pace AS MATERIALIZED (
+    SELECT DISTINCT ON (h.tenant_id, h.hotel_id, h.business_date, t.cutoff_time)
+      h.tenant_id, h.hotel_id, h.business_date, t.cutoff_time, h.observed_at,
+      CASE WHEN h.source_system = 'LUOPAN_CLOUD' AND h.effective_sellable_room_nights > 0
+        AND h.sold_room_nights BETWEEN 0 AND h.effective_sellable_room_nights
+        THEN h.sold_room_nights / h.effective_sellable_room_nights ELSE h.occupancy_rate END AS occupancy_rate
+    FROM ota_analytics.hourly_operating_fact h
+    CROSS JOIN (VALUES ('12:00'), ('15:00'), ('18:00'), ('21:00'), ('23:00')) t(cutoff_time)
+    WHERE h.business_date >= (reference_time AT TIME ZONE 'Asia/Shanghai')::date - interval '2 years'
+      AND h.business_date <= (reference_time AT TIME ZONE 'Asia/Shanghai')::date
+      AND h.observed_at <= reference_time
+      AND h.completeness <> 'UNAVAILABLE'
+      AND h.occupancy_rate BETWEEN 0 AND 1 AND h.effective_sellable_room_nights > 0
+      -- Strict as-of selection, no look-ahead or stale carry-forward.
+      AND h.observed_at <= (h.business_date + t.cutoff_time::time) AT TIME ZONE 'Asia/Shanghai'
+      AND h.observed_at >= ((h.business_date + t.cutoff_time::time) AT TIME ZONE 'Asia/Shanghai') - interval '90 minutes'
+    ORDER BY h.tenant_id, h.hotel_id, h.business_date, t.cutoff_time, h.observed_at DESC, h.id DESC
+  ), daily_group AS (
+    SELECT tenant_id, hotel_id, min(business_date) AS first_date,
+      jsonb_agg(jsonb_build_object('date', business_date, 'observedAt', observed_at,
+        'occupancyPercent', CASE WHEN effective_sellable_room_nights > 0 THEN occupancy_rate * 100 END,
+        'roomCount', effective_sellable_room_nights) ORDER BY business_date) AS records
+    FROM daily GROUP BY tenant_id, hotel_id
+  ), pace_group AS (
+    SELECT tenant_id, hotel_id,
+      jsonb_agg(jsonb_build_object('date', business_date, 'time', cutoff_time,
+        'observedAt', observed_at, 'occupancyPercent', occupancy_rate * 100)
+        ORDER BY business_date, cutoff_time) AS records
+    FROM pace GROUP BY tenant_id, hotel_id
+  ), period_group AS (
+    SELECT tenant_id, hotel_id,
+      jsonb_agg(jsonb_build_object('type', period_type, 'start', period_start, 'end', period_end,
+        'availableDays', available_day_count, 'expectedDays', expected_day_count,
+        'occupancyPercent', weighted_occupancy_percent) ORDER BY period_start, period_type) AS records
+    FROM ota_analytics.occupancy_review_period GROUP BY tenant_id, hotel_id
+  ), scopes AS (
+    SELECT tenant_id, hotel_id FROM daily_group UNION
+    SELECT tenant_id, hotel_id FROM pace_group UNION
+    SELECT tenant_id, hotel_id FROM period_group
+  )
+  SELECT jsonb_build_object('schemaVersion', 1, 'generatedAt', reference_time,
+    'hotels', COALESCE(jsonb_agg(jsonb_build_object('tenantId', s.tenant_id, 'hotelId', s.hotel_id,
+      'firstDate', d.first_date, 'daily', COALESCE(d.records, '[]'::jsonb),
+      'pace', COALESCE(p.records, '[]'::jsonb), 'periods', COALESCE(r.records, '[]'::jsonb))), '[]'::jsonb))
+  FROM scopes s
+  LEFT JOIN daily_group d USING (tenant_id, hotel_id)
+  LEFT JOIN pace_group p USING (tenant_id, hotel_id)
+  LEFT JOIN period_group r USING (tenant_id, hotel_id);
+$$;
+
 REVOKE ALL ON ALL TABLES IN SCHEMA ota_analytics FROM PUBLIC;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA ota_analytics FROM PUBLIC;
 GRANT USAGE ON SCHEMA ota_analytics TO ota_analytics_reader, ota_analytics_ingester;
 GRANT SELECT ON ota_analytics.retention_policy,
   ota_analytics.hourly_operating_fact, ota_analytics.daily_operating_fact,
   ota_analytics.ota_source_fact, ota_analytics.period_rollup,
-  ota_analytics.period_comparison TO ota_analytics_reader;
+  ota_analytics.period_comparison, ota_analytics.occupancy_review_period,
+  ota_analytics.occupancy_target_decision TO ota_analytics_reader;
 GRANT EXECUTE ON FUNCTION ota_analytics.ingest_event(jsonb) TO ota_analytics_ingester;
 GRANT EXECUTE ON FUNCTION ota_analytics.ingest_base64_event(text) TO ota_analytics_ingester;
