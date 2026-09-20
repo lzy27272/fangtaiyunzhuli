@@ -248,10 +248,13 @@ test('collector creates a safe real baseline from all three PMS reports', async 
     true,
   )
   assert.deepEqual(result.snapshot.dailyOrderSummary.byChannel, {
+    CTRIP: { active: 4, today: 0, future: 4, canceled: 0 },
     MEITUAN: { active: 1, today: 1, future: 0, canceled: 0 },
     FEIZHU: { active: 0, today: 0, future: 0, canceled: 0 },
     DOUYIN: { active: 1, today: 0, future: 1, canceled: 0 },
-    OTHER: { active: 4, today: 0, future: 4, canceled: 0 },
+    FRONT_DESK: { active: 0, today: 0, future: 0, canceled: 0 },
+    WEDDING: { active: 0, today: 0, future: 0, canceled: 0 },
+    OTHER: { active: 0, today: 0, future: 0, canceled: 0 },
   })
   assert.equal(JSON.stringify(result.snapshot).includes('"A"'), false)
   assert.equal(JSON.stringify(result.snapshot).includes('"B"'), false)

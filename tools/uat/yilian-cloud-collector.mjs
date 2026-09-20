@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { createDailyOrderSummary } from './daily-order-summary.mjs'
+import { createDailyOrderSummary, detectPmsOrderChannel } from './daily-order-summary.mjs'
 import {
   finalizeLiveSnapshot,
   monitorFromSnapshot,
@@ -384,16 +384,9 @@ const forecastState = (root, reportDate, secretKey) => {
 
 const dateOnly = (value) => canonicalDate(value)
 
-const detectChannel = (row) => {
-  const text = [row?.channelName, row?.rentClassName, row?.protocolName]
-    .filter((value) => typeof value === 'string')
-    .join('\n')
-  if (/(?:携程|ctrip|trip\.com)/iu.test(text)) return 'CTRIP'
-  if (/(?:美团|meituan)/iu.test(text)) return 'MEITUAN'
-  if (/(?:飞猪|fliggy|alitrip)/iu.test(text)) return 'FEIZHU'
-  if (/(?:抖音|douyin)/iu.test(text)) return 'DOUYIN'
-  return 'UNKNOWN'
-}
+const detectChannel = (row) => detectPmsOrderChannel([
+  row?.channelName, row?.rentClassName, row?.protocolName,
+])
 
 const orderRoomNights = (row) => {
   const lines = Array.isArray(row?.list) ? row.list : []

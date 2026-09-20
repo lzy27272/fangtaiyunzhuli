@@ -5,6 +5,8 @@ import {
   reportMonitorBriefLimits,
 } from '../../../tools/uat/wecom/src/report-monitor-brief.mjs'
 import {
+  DAILY_ORDER_CHANNELS,
+  LEGACY_DAILY_ORDER_SUMMARY_BASIS,
   createDailyOrderSummary,
 } from '../../../tools/uat/daily-order-summary.mjs'
 
@@ -168,7 +170,7 @@ test('confirmed 1900-byte monitor template omits removed broadcast decorations',
   assert.doesNotMatch(content, /售罄｜/)
   assert.doesNotMatch(content, /热销库存｜/)
   assert.doesNotMatch(content, /TAI-PLUS大床房|TAI-PRO双床房/)
-  assert.match(content, /今日有效｜64（33\/0\/29\/2）/)
+  assert.match(content, /渠道顺序｜美团\/抖音\/其他\n今日有效｜64（33\/29\/2）/)
   assert.match(content, /新增｜4（2\/1\/1\/0）/)
   assert.match(content, /P1｜暂无法判断/)
   assert.ok(
@@ -209,7 +211,7 @@ test('trusted-device brief uses redacted daily order aggregates', () => {
     orderDataRedacted: true,
   })
   const content = payloads[0].text.content
-  assert.match(content, /今日有效｜64（33\/0\/29\/2）/u)
+  assert.match(content, /今日有效｜64（33\/29\/2）/u)
   assert.doesNotMatch(content, /订单数据｜待设备更新后重新采集/u)
 })
 
@@ -289,4 +291,152 @@ test('hot-selling room names stay out of the today brief', () => {
     Buffer.byteLength(payload.text.content, 'utf8')
       <= reportMonitorBriefLimits.maxMessageBytes,
   )
+})
+
+const dailySection = (content) => content.split('【订单汇报')[1].split('\n\n')[0]
+const hourlySection = (content) => content.split('✅小时进单')[1].split('\n\n')[0]
+const legacySummaryFor = (value) => {
+  const summary = structuredClone(createDailyOrderSummary({
+    orders: value.orders, businessDate: value.businessDate,
+  }))
+  for (const channel of ['CTRIP', 'FRONT_DESK', 'WEDDING']) {
+    for (const field of Object.keys(summary.byChannel.OTHER)) {
+      summary.byChannel.OTHER[field] += summary.byChannel[channel][field]
+    }
+    delete summary.byChannel[channel]
+  }
+  summary.basis = LEGACY_DAILY_ORDER_SUMMARY_BASIS
+  return summary
+}
+
+const yilianDailySnapshot = {
+  ...snapshot,
+  orders: [
+    { channel: 'CTRIP', roomNights: 2, arrivalClass: 'TODAY' },
+    { channel: 'CTRIP', roomNights: 6, arrivalClass: 'FUTURE' },
+    { channel: 'DOUYIN', roomNights: 1, arrivalClass: 'TODAY' },
+  ].map((row) => ({ ...row, orderDate: snapshot.businessDate, status: 'ACTIVE' })),
+}
+
+test('015-style legacy snapshots show Ctrip and Douyin from details, not zero channels or OTHER', () => {
+  const input = {
+    ...yilianDailySnapshot,
+    dailyOrderSummary: legacySummaryFor(yilianDailySnapshot),
+  }
+  const before = structuredClone(input)
+  const content = createReportMonitorWeComPayloads(monitor, { snapshot: input })[0].text.content
+  const daily = dailySection(content)
+  assert.match(daily, /渠道顺序｜携程\/抖音/)
+  assert.match(daily, /今日有效｜9（8\/1）/)
+  assert.match(daily, /当日入住｜3（2\/1）/)
+  assert.match(daily, /远期入住｜6（6\/0）/)
+  assert.match(daily, /当前取消｜0（0\/0）/)
+  assert.doesNotMatch(daily, /美团|飞猪|其他/)
+  assert.deepEqual(input, before)
+})
+
+test('redacted V2 snapshots show separate Ctrip without requiring order identities', () => {
+  const content = createReportMonitorWeComPayloads(monitor, {
+    snapshot: {
+      ...yilianDailySnapshot,
+      dailyOrderSummary: createDailyOrderSummary({
+        orders: yilianDailySnapshot.orders,
+        businessDate: yilianDailySnapshot.businessDate,
+      }),
+      orders: [],
+    },
+    orderDataRedacted: true,
+  })[0].text.content
+  assert.match(dailySection(content), /渠道顺序｜携程\/抖音\n今日有效｜9（8\/1）/)
+})
+
+test('legacy aggregates without details show totals and an explicit collection-upgrade notice', () => {
+  for (const orderDataRedacted of [true, false]) {
+    const content = createReportMonitorWeComPayloads(monitor, {
+      snapshot: {
+        ...yilianDailySnapshot,
+        dailyOrderSummary: legacySummaryFor(yilianDailySnapshot),
+        orders: [],
+      },
+      orderDataRedacted,
+    })[0].text.content
+    const daily = dailySection(content)
+    assert.match(daily, /旧汇总未拆分携程/)
+    assert.match(daily, /今日有效｜9\n/)
+    assert.doesNotMatch(daily, /渠道顺序|其他|（8\/1）/)
+  }
+})
+
+test('channels appear after their first same-day order, including cancellation-only and unknown channels', () => {
+  const input = structuredClone(yilianDailySnapshot)
+  input.orders.push({
+    channel: 'MEITUAN', roomNights: 99, arrivalClass: 'TODAY',
+    status: 'ACTIVE', orderDate: '2026-07-24',
+  })
+  let daily = dailySection(createReportMonitorWeComPayloads(monitor, { snapshot: input })[0].text.content)
+  assert.doesNotMatch(daily, /美团|飞猪|其他/)
+  input.orders.push(
+    { channel: 'MEITUAN', roomNights: 0.5, arrivalClass: 'TODAY', status: 'ACTIVE', orderDate: snapshot.businessDate },
+    { channel: 'FEIZHU', roomNights: 1, arrivalClass: 'TODAY', status: 'CANCELLED', orderDate: snapshot.businessDate },
+    { channel: 'UNKNOWN', roomNights: 2, arrivalClass: 'FUTURE', status: 'ACTIVE', orderDate: snapshot.businessDate },
+  )
+  daily = dailySection(createReportMonitorWeComPayloads(monitor, { snapshot: input })[0].text.content)
+  assert.match(daily, /渠道顺序｜携程\/美团\/飞猪\/抖音\/其他/)
+  assert.match(daily, /今日有效｜11\.50（8\/0\.50\/0\/1\/2）/)
+  assert.match(daily, /当前取消｜1（0\/0\/1\/0\/0）/)
+})
+
+test('all-zero daily and hourly data omit channel placeholders without hiding the zero totals', () => {
+  const zeroDelta = {
+    newRoomNights: 0, todayRoomNights: 0, futureRoomNights: 0, canceledRoomNights: 0,
+  }
+  const content = createReportMonitorWeComPayloads({
+    ...monitor,
+    hourlyDelta: {
+      ...monitor.hourlyDelta,
+      totals: zeroDelta,
+      byChannel: Object.fromEntries(DAILY_ORDER_CHANNELS.map((channel) => [channel, zeroDelta])),
+    },
+  }, { snapshot: { ...snapshot, orders: [] } })[0].text.content
+  assert.match(content, /订单渠道｜今日暂无订单\n今日有效｜0/)
+  assert.match(content, /本时段暂无订单变动\n新增｜0｜当日｜0/)
+  assert.doesNotMatch(content, /渠道顺序|美团|飞猪|抖音|携程|其他|（0\/0/)
+})
+
+test('hourly Ctrip stays separate, with cancellations retained and empty channels omitted', () => {
+  const content = createReportMonitorWeComPayloads({
+    ...monitor,
+    hourlyDelta: {
+      ...monitor.hourlyDelta,
+      totals: { newRoomNights: 3, todayRoomNights: 1, futureRoomNights: 2, canceledRoomNights: 1 },
+      byChannel: {
+        CTRIP: { newRoomNights: 3, todayRoomNights: 1, futureRoomNights: 2, canceledRoomNights: 0 },
+        FEIZHU: { newRoomNights: 0, todayRoomNights: 0, futureRoomNights: 0, canceledRoomNights: 1 },
+        MEITUAN: { newRoomNights: 0, todayRoomNights: 0, futureRoomNights: 0, canceledRoomNights: 0 },
+      },
+    },
+  }, { snapshot: yilianDailySnapshot })[0].text.content
+  const hourly = hourlySection(content)
+  assert.match(hourly, /渠道顺序｜携程\/飞猪/)
+  assert.match(hourly, /新增｜3（3\/0）｜当日｜1（1\/0）/)
+  assert.match(hourly, /远期｜2（2\/0）｜取消｜1（0\/1）/)
+  assert.doesNotMatch(hourly, /美团|抖音|其他/)
+})
+
+test('all supported display buckets fit the confirmed WeCom byte budget', () => {
+  const orders = DAILY_ORDER_CHANNELS.map((channel) => ({
+    channel, status: 'ACTIVE', roomNights: 12, arrivalClass: 'TODAY', orderDate: snapshot.businessDate,
+  }))
+  const content = createReportMonitorWeComPayloads({
+    ...monitor,
+    hourlyDelta: {
+      ...monitor.hourlyDelta,
+      totals: { newRoomNights: 84, todayRoomNights: 84, futureRoomNights: 0, canceledRoomNights: 0 },
+      byChannel: Object.fromEntries(DAILY_ORDER_CHANNELS.map((channel) => [channel, {
+        newRoomNights: 12, todayRoomNights: 12, futureRoomNights: 0, canceledRoomNights: 0,
+      }])),
+    },
+  }, { snapshot: { ...snapshot, orders } })[0].text.content
+  assert.equal(content.match(/渠道顺序｜携程\/美团\/飞猪\/抖音\/前台\/婚宴\/其他/g).length, 2)
+  assert.ok(Buffer.byteLength(content, 'utf8') <= reportMonitorBriefLimits.maxMessageBytes)
 })

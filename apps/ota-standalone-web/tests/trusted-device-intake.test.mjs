@@ -321,6 +321,45 @@ test('trusted-device canonical JSON rejects non-finite number aliases', () => {
   assert.notEqual(stableJson({ value: null }), stableJson({ value: 1 }))
 })
 
+test('trusted-device intake accepts both legacy and Ctrip-separated aggregates without weakening validation', () => {
+  const now = new Date()
+  const snapshot = minimalSnapshot(now)
+  const requiredSourceContracts = snapshot.sources.map(({ sourceId, sourceCode, reportType }) => ({
+    sourceId, sourceCode, reportType,
+  }))
+  const validate = (dailyOrderSummary) => validateTrustedDeviceSnapshot({
+    snapshot: { ...snapshot, dailyOrderSummary }, hotel, requiredSourceContracts, now,
+  })
+  assert.doesNotThrow(() => validate(snapshot.dailyOrderSummary))
+  const legacy = structuredClone(snapshot.dailyOrderSummary)
+  legacy.basis = 'PMS_ORDER_DETAIL_AGGREGATE_V1'
+  delete legacy.byChannel.CTRIP
+  delete legacy.byChannel.FRONT_DESK
+  delete legacy.byChannel.WEDDING
+  assert.doesNotThrow(() => validate(legacy))
+  assert.throws(() => validate({ ...legacy, basis: 'PMS_ORDER_DETAIL_AGGREGATE_V2' }),
+    /TRUSTED_DEVICE_SNAPSHOT_ORDER_SUMMARY_INVALID/u)
+  assert.throws(() => validate({ ...legacy, guestName: 'must-not-pass' }),
+    /TRUSTED_DEVICE_SNAPSHOT_ORDER_SUMMARY_INVALID/u)
+  const emptyDelta = { newRoomNights: 0, todayRoomNights: 0, futureRoomNights: 0, canceledRoomNights: 0 }
+  const originalChannels = Object.fromEntries(['CTRIP', 'MEITUAN', 'FEIZHU', 'DOUYIN', 'UNKNOWN']
+    .map((channel) => [channel, emptyDelta]))
+  const validateDelta = (byChannel) => validateTrustedDeviceSnapshot({
+    snapshot: {
+      ...snapshot,
+      hourlyDelta: {
+        ...snapshot.hourlyDelta, basis: 'HOURLY_SNAPSHOT_DIFF', aggregationWindow: 'HOURLY',
+        intervalStartAt: new Date(now.getTime() - 3_600_000).toISOString(),
+        totals: emptyDelta, byChannel,
+      },
+    }, hotel, requiredSourceContracts, now,
+  })
+  assert.doesNotThrow(() => validateDelta(originalChannels))
+  assert.doesNotThrow(() => validateDelta({ ...originalChannels, FRONT_DESK: emptyDelta, WEDDING: emptyDelta }))
+  assert.throws(() => validateDelta({ ...originalChannels, arbitraryPersonalLabel: emptyDelta }),
+    /TRUSTED_DEVICE_SNAPSHOT_DELTA_INVALID/u)
+})
+
 test('trusted-device COMPLETE requires exact configured business payload', () => {
   const now = new Date()
   const snapshot = minimalSnapshot(now)

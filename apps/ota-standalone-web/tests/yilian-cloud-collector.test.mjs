@@ -6,6 +6,8 @@ import {
   normalizeYilianAccessToken,
   validateYilianAccessToken,
 } from '../../../tools/uat/yilian-cloud-collector.mjs'
+import { createReportMonitorWeComPayloads } from '../../../tools/uat/wecom/src/report-monitor-brief.mjs'
+import { finalizeLiveSnapshot } from '../../../tools/uat/live-report-collector.mjs'
 
 const hotel = {
   tenantId: 'tenant-015',
@@ -196,6 +198,46 @@ test('Yilian validation is read-only and returns only non-secret control metadat
     outboundDeliveryAttempted: false,
   })
   assert.equal(JSON.stringify(result).includes(token), false)
+})
+
+test('Yilian actual Ctrip, Douyin, front desk and wedding channels survive collection through the brief', async () => {
+  const result = await collectYilianCloudReports({
+    hotel,
+    sources,
+    accessTokensBySourceId: Object.fromEntries(sources.map((source) => [source.sourceId, token])),
+    secretKey: 'synthetic-yilian-channel-test',
+    now: new Date('2026-09-07T02:00:00Z'),
+    fetchImpl: async (url) => {
+      const fixture = fixtureFor(url)
+      if (new URL(url).pathname.endsWith('/selectAll')) {
+        fixture.data.total = 4
+        const page = Number(new URL(url).searchParams.get('pageNum'))
+        for (const row of fixture.data.list) {
+          row.createTime = '2026-09-07 09:00:00'
+          row.channelName = ['携程预付', '抖音', '前台', '婚宴'][page - 1]
+        }
+      }
+      return new Response(JSON.stringify(fixture), { status: 200 })
+    },
+  })
+  assert.equal(result.snapshot.dailyOrderSummary.byChannel.CTRIP.active, 1)
+  assert.equal(result.snapshot.dailyOrderSummary.byChannel.DOUYIN.active, 1)
+  assert.equal(result.snapshot.dailyOrderSummary.byChannel.FRONT_DESK.active, 1)
+  assert.equal(result.snapshot.dailyOrderSummary.byChannel.WEDDING.active, 1)
+  assert.equal(result.snapshot.dailyOrderSummary.byChannel.OTHER.active, 0)
+  const content = createReportMonitorWeComPayloads(result.monitor, { snapshot: result.snapshot })[0].text.content
+  assert.match(content, /渠道顺序｜携程\/抖音\/前台\/婚宴\n今日有效｜4（1\/1\/1\/1）/)
+  assert.doesNotMatch(content, /渠道顺序｜.*(?:美团|飞猪|其他)/)
+  assert.equal(result.run.outboundDeliveryAttempted, false)
+  const withBaseline = finalizeLiveSnapshot({
+    snapshot: result.snapshot,
+    previousSnapshots: [{
+      ...result.snapshot, observedAt: '2026-09-07T09:00:00+08:00', orders: [],
+    }],
+    now: new Date('2026-09-07T02:00:00Z'),
+  })
+  assert.equal(withBaseline.hourlyDelta.byChannel.FRONT_DESK.newRoomNights, 1)
+  assert.equal(withBaseline.hourlyDelta.byChannel.WEDDING.newRoomNights, 1)
 })
 
 test('Yilian order pagination retries once when the live total changes', async () => {

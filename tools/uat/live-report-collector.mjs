@@ -13,7 +13,11 @@ import {
   pmsCollectionSlotFor,
   reportScheduleFor,
 } from './report-schedule.mjs'
-import { createDailyOrderSummary } from './daily-order-summary.mjs'
+import {
+  createDailyOrderSummary,
+  detectPmsOrderChannel,
+  PMS_ORDER_CHANNELS,
+} from './daily-order-summary.mjs'
 
 const MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 const SNAPSHOT_RETENTION = 50
@@ -479,22 +483,13 @@ const roomNightsFor = (row) => {
   return roomCount * Math.max(1, nights)
 }
 
-const detectChannel = (row) => {
-  const text = [
-    row?.orderSource,
-    row?.source,
-    row?.customerLevel,
-    row?.roomPriceType,
-    row?.prePaymentType,
-  ]
-    .filter((value) => typeof value === 'string')
-    .join('\n')
-  if (/(?:携程|ctrip|trip\.com)/i.test(text)) return 'CTRIP'
-  if (/(?:美团|meituan)/i.test(text)) return 'MEITUAN'
-  if (/(?:飞猪|fliggy|alitrip)/i.test(text)) return 'FEIZHU'
-  if (/(?:抖音|douyin)/i.test(text)) return 'DOUYIN'
-  return 'UNKNOWN'
-}
+const detectChannel = (row) => detectPmsOrderChannel([
+  row?.orderSource,
+  row?.source,
+  row?.customerLevel,
+  row?.roomPriceType,
+  row?.prePaymentType,
+])
 
 const orderState = (root, reportDate, secretKey, legacySecretKey = null) => {
   const rows = root?.data?.dataList
@@ -898,7 +893,7 @@ const hourlyDeltaFor = (snapshot, previousSnapshots, observedAtMs) => {
   }
 
   const byChannel = Object.fromEntries(
-    ['CTRIP', 'MEITUAN', 'FEIZHU', 'DOUYIN', 'UNKNOWN']
+    PMS_ORDER_CHANNELS
       .map((channel) => [channel, emptyChannelDelta()]),
   )
   const previousOrders = new Map(

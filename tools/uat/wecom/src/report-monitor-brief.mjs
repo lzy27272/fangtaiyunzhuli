@@ -1,5 +1,7 @@
 import {
   DAILY_ORDER_CHANNELS,
+  DAILY_ORDER_CHANNEL_LABELS,
+  DAILY_ORDER_SUMMARY_BASIS,
   createDailyOrderSummary,
   normalizeDailyOrderSummary,
 } from '../../daily-order-summary.mjs'
@@ -143,20 +145,24 @@ const sourceStatus = (monitor) => {
 }
 
 const reportChannel = (channel) => {
-  if (channel === 'MEITUAN') return 'MEITUAN'
-  if (channel === 'FEIZHU') return 'FEIZHU'
-  if (channel === 'DOUYIN') return 'DOUYIN'
-  return 'OTHER'
+  return CHANNEL_ORDER.includes(channel) ? channel : 'OTHER'
 }
 
-const orderTuple = (summary, field) =>
-  CHANNEL_ORDER
-    .map((channel) => numberText(summary[channel][field]))
+const populatedChannels = (summary) => CHANNEL_ORDER.filter((channel) =>
+  Object.values(summary[channel] ?? {}).some((value) => value > 0),
+)
+
+const channelOrderLine = (channels) =>
+  `渠道顺序｜${channels.map((channel) => DAILY_ORDER_CHANNEL_LABELS[channel]).join('/')}`
+
+const orderTuple = (summary, field, channels) =>
+  channels
+    .map((channel) => compactNumber(summary[channel][field], 2))
     .join('/')
 
 const orderTotal = (summary, field) =>
-  CHANNEL_ORDER.reduce(
-    (total, channel) => total + summary[channel][field],
+  Object.values(summary).reduce(
+    (total, bucket) => total + bucket[field],
     0,
   )
 
@@ -165,26 +171,37 @@ const dailyOrderLines = (snapshot, { orderDataRedacted = false } = {}) => {
     snapshot?.dailyOrderSummary,
     { businessDate: snapshot?.businessDate ?? null },
   )
-  let summary = aggregate?.byChannel ?? null
-  if (!summary && Array.isArray(snapshot?.orders)) {
+  let resolved = aggregate
+  if (
+    resolved?.basis !== DAILY_ORDER_SUMMARY_BASIS
+    && Array.isArray(snapshot?.orders)
+    && (snapshot.orders.length > 0 || !aggregate)
+  ) {
     if (orderDataRedacted && snapshot.orders.length === 0) {
       return ['订单数据｜待设备更新后重新采集']
     }
-    summary = createDailyOrderSummary({
+    resolved = createDailyOrderSummary({
       orders: snapshot.orders,
       businessDate: snapshot.businessDate,
-    }).byChannel
+    })
   }
+  const summary = resolved?.byChannel
   if (!summary) return ['订单数据｜不可用']
+  const legacy = resolved.basis !== DAILY_ORDER_SUMMARY_BASIS
+  const channels = legacy ? [] : populatedChannels(summary)
+  const tupleSuffix = (field) => channels.length > 0
+    ? `（${orderTuple(summary, field, channels)}）`
+    : ''
   return [
-    `今日有效｜${numberText(orderTotal(summary, 'active'))}`
-      + `（${orderTuple(summary, 'active')}）`,
-    `当日入住｜${numberText(orderTotal(summary, 'today'))}`
-      + `（${orderTuple(summary, 'today')}）`,
-    `远期入住｜${numberText(orderTotal(summary, 'future'))}`
-      + `（${orderTuple(summary, 'future')}）`,
-    `当前取消｜${numberText(orderTotal(summary, 'canceled'))}`
-      + `（${orderTuple(summary, 'canceled')}）`,
+    legacy
+      ? '订单渠道｜旧汇总未拆分携程，待更新采集端后重新采集'
+      : channels.length > 0 ? channelOrderLine(channels) : '订单渠道｜今日暂无订单',
+    ...[
+      ['active', '今日有效'], ['today', '当日入住'],
+      ['future', '远期入住'], ['canceled', '当前取消'],
+    ].map(([field, label]) =>
+      `${label}｜${compactNumber(orderTotal(summary, field), 2)}${tupleSuffix(field)}`,
+    ),
   ]
 }
 
@@ -208,11 +225,6 @@ const aggregateHourlyChannels = (hourlyDelta) => {
   return result
 }
 
-const hourlyTuple = (summary, field) =>
-  CHANNEL_ORDER
-    .map((channel) => numberText(summary[channel][field]))
-    .join('/')
-
 const hourlyOrderLines = (hourlyDelta) => {
   if (
     hourlyDelta?.basis !== 'HOURLY_SNAPSHOT_DIFF'
@@ -222,6 +234,10 @@ const hourlyOrderLines = (hourlyDelta) => {
   }
   const totals = hourlyDelta.totals
   const summary = aggregateHourlyChannels(hourlyDelta)
+  const channels = populatedChannels(summary)
+  const tupleSuffix = (field) => channels.length > 0
+    ? `（${orderTuple(summary, field, channels)}）`
+    : ''
   const heading =
     hourlyDelta.aggregationWindow === 'PAUSE_TO_FIRST_BRIEF'
       ? '✅停播汇总'
@@ -231,15 +247,15 @@ const hourlyOrderLines = (hourlyDelta) => {
   return [
     `${heading}｜${localHour(hourlyDelta.intervalStartAt)}→`
       + `${localHour(hourlyDelta.intervalEndAt)}`,
-    '渠道顺序｜美团/飞猪/抖音/其他',
-    `新增｜${numberText(totals.newRoomNights)}`
-      + `（${hourlyTuple(summary, 'newRoomNights')}）`
-      + `｜当日｜${numberText(totals.todayRoomNights)}`
-      + `（${hourlyTuple(summary, 'todayRoomNights')}）`,
-    `远期｜${numberText(totals.futureRoomNights)}`
-      + `（${hourlyTuple(summary, 'futureRoomNights')}）`
-      + `｜取消｜${numberText(totals.canceledRoomNights)}`
-      + `（${hourlyTuple(summary, 'canceledRoomNights')}）`,
+    channels.length > 0 ? channelOrderLine(channels) : '本时段暂无订单变动',
+    `新增｜${compactNumber(totals.newRoomNights, 2)}`
+      + tupleSuffix('newRoomNights')
+      + `｜当日｜${compactNumber(totals.todayRoomNights, 2)}`
+      + tupleSuffix('todayRoomNights'),
+    `远期｜${compactNumber(totals.futureRoomNights, 2)}`
+      + tupleSuffix('futureRoomNights')
+      + `｜取消｜${compactNumber(totals.canceledRoomNights, 2)}`
+      + tupleSuffix('canceledRoomNights'),
   ]
 }
 
@@ -446,7 +462,6 @@ export const createReportMonitorWeComPayloads = (
     p1Risk,
     '',
     `【订单汇报｜统计日${shortDate(monitor.businessDate)}】`,
-    '渠道顺序｜美团/飞猪/抖音/其他',
     ...dailyOrderLines(snapshot, {
       orderDataRedacted: options.orderDataRedacted === true,
     }),

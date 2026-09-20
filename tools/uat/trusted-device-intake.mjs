@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname } from 'node:path'
-import { normalizeDailyOrderSummary } from './daily-order-summary.mjs'
+import { normalizeDailyOrderSummary, PMS_ORDER_CHANNELS } from './daily-order-summary.mjs'
 
 export const TRUSTED_DEVICE_PILOT_HOTEL_CODE = '001'
 export const TRUSTED_DEVICE_ENROLLMENT_TTL_MS = 15 * 60_000
@@ -332,9 +332,10 @@ const assertHourlyDelta = (value) => {
   ) throw new Error('TRUSTED_DEVICE_SNAPSHOT_DELTA_INVALID')
   if (value.totals !== null) assertChannelDelta(value.totals)
   if (value.byChannel !== null) {
-    const channels = new Set(['CTRIP', 'MEITUAN', 'FEIZHU', 'DOUYIN', 'UNKNOWN'])
-    assertExactKeys(value.byChannel, channels, 'TRUSTED_DEVICE_SNAPSHOT_DELTA_INVALID')
-    if ([...channels].some((channel) => !Object.hasOwn(value.byChannel, channel))) {
+    assertExactKeys(value.byChannel, new Set(PMS_ORDER_CHANNELS), 'TRUSTED_DEVICE_SNAPSHOT_DELTA_INVALID')
+    // Existing devices send the original five keys until their next upgrade.
+    const requiredChannels = ['CTRIP', 'MEITUAN', 'FEIZHU', 'DOUYIN', 'UNKNOWN']
+    if (requiredChannels.some((channel) => !Object.hasOwn(value.byChannel, channel))) {
       throw new Error('TRUSTED_DEVICE_SNAPSHOT_DELTA_INVALID')
     }
     for (const channel of Object.values(value.byChannel)) assertChannelDelta(channel)
