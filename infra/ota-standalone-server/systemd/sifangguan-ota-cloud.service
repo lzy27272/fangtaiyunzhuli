@@ -1,0 +1,39 @@
+[Unit]
+Description=Sifangguan isolated OTA cloud browser pilot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=sifangguan-ota-cloud
+Group=sifangguan-ota-cloud
+WorkingDirectory=/opt/sifangguan-ota/current
+Environment=LANG=zh_CN.UTF-8
+Environment=OTA_CLOUD_CHROME_PATH=/usr/bin/google-chrome
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1280x800x24 -nolisten tcp" /opt/sifangguan-ota/runtime/node/bin/node /opt/sifangguan-ota/current/tools/uat/ota-cloud-browser-worker.mjs
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+RuntimeDirectory=sifangguan-ota-cloud
+RuntimeDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=/var/lib/sifangguan-ota-cloud /run/sifangguan-ota-cloud
+InaccessiblePaths=-/var/lib/sifangguan-ota -/etc/sifangguan-ota -/var/lib/sifangguan-login -/etc/sifangguan-ota-ctrip-pilot
+MemoryMax=2300M
+TasksMax=384
+
+[Install]
+WantedBy=multi-user.target

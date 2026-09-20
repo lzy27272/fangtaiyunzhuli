@@ -1264,6 +1264,34 @@ export function listAdapters(): Promise<AdapterSummary[]> {
   return authenticatedRequest('/ota/connector-adapters')
 }
 
+export interface OtaCloudBrowserView {
+  platformCode: 'CTRIP' | 'MEITUAN'
+  label: string
+  status: string
+  sessionId: string | null
+  nextSequence?: number | null
+  controlledByOther?: boolean
+  expiresAt?: string | null
+  busy?: boolean
+  lastErrorCode?: string | null
+  progress?: { phase?: string } | null
+  frame?: string
+  binding?: { propertyName: string } | null
+  latest?: { status: string; completedAt?: string; datasets: Record<string, unknown> } | null
+  automationEnabled: boolean
+  alertsEnabled: boolean
+}
+export function loadOtaCloudBrowsers(context: HotelContext, signal?: AbortSignal): Promise<OtaCloudBrowserView[]> {
+  return authenticatedRequest(scopedPath(context, '/ota-cloud-browser'), { signal })
+}
+export function commandOtaCloudBrowser(context: HotelContext, body: {
+  platformCode: 'CTRIP' | 'MEITUAN'; action: string; sessionId?: string; sequence?: number; input?: unknown
+}, signal?: AbortSignal): Promise<OtaCloudBrowserView> {
+  return authenticatedRequest(scopedPath(context, '/ota-cloud-browser'), {
+    method: 'POST', headers: writeHeaders(), body: JSON.stringify(body), signal,
+  })
+}
+
 export function listConnectorOnboardingTemplates(): Promise<ConnectorOnboardingTemplate[]> {
   return authenticatedRequest('/ota/connector-onboarding/templates')
 }

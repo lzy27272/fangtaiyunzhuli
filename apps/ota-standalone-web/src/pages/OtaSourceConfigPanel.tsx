@@ -17,6 +17,7 @@ import {
 } from '../api/business'
 import { businessCodeLabel, businessErrorMessage } from '../ui/businessDisplay'
 import { otaSourceGuidance } from './otaSourceGuidance'
+import { OtaCloudBrowserPanel } from './OtaCloudBrowserPanel'
 
 interface Props {
   context: HotelContext
@@ -1077,6 +1078,8 @@ export function OtaSourceConfigPanel({
           {enabledCount}/{sources.length} 已启用
         </span>
       </div>
+
+      <OtaCloudBrowserPanel key={context.hotelId} context={context} canConfigure={canConfigure} />
 
       <div className="security-note report-source-note">
         飞猪账号密码仅在管理员主动点击“账号登录并刷新”后提交给飞猪官方登录页，

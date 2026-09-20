@@ -26,6 +26,8 @@ import {
   encryptCookie,
 } from './report-source-cookie-crypto.mjs'
 import { createReviewAuthStore } from './review-auth-store.mjs'
+import { CLOUD_PILOTS, cloudPilotFor, cloudError } from './ota-cloud-browser-policy.mjs'
+import { cloudBrowserRequest } from './ota-cloud-browser-client.mjs'
 import { collectOtaSource } from './ota-source-collector.mjs'
 import {
   mergeRoomTypeCatalogs,
@@ -14021,6 +14023,48 @@ const server = createServer(async (request, response) => {
           principal: requestPrincipal,
           hotelId,
         })
+      }
+
+      if (request.method === 'GET' && suffix === '/ota-cloud-browser') {
+        const pilots = CLOUD_PILOTS.filter(p => p.tenantId === selected.tenantId && p.hotelId === hotelId)
+        const data = await Promise.all(pilots.map(async pilot => {
+          try {
+            const result = await cloudBrowserRequest({ tenantId: selected.tenantId, hotelId,
+              platformCode: pilot.platformCode, actorId: requestPrincipal.id, action: 'status' }, { timeoutMs: 5000 })
+            if (!canConfigureHotels(requestPrincipal)) {
+              result.sessionId = null; result.nextSequence = null; result.blockedOrigins = []
+            }
+            return result
+          } catch {
+            return { platformCode: pilot.platformCode, label: pilot.label, status: 'UNAVAILABLE',
+              sessionId: null, latest: null, lastErrorCode: 'OTA_CLOUD_UNAVAILABLE',
+              automationEnabled: false, alertsEnabled: false }
+          }
+        }))
+        json(response, 200, { data })
+        return
+      }
+      if (request.method === 'POST' && suffix === '/ota-cloud-browser') {
+        // Interactive cloud browsers are administrator-only, in addition to the
+        // existing tenant/hotel authorization above. Never accept actor IDs from clients.
+        if (!canConfigureHotels(requestPrincipal)) { rejectForbidden(response); return }
+        const body = await readBody(request)
+        const allowed = new Set(['platformCode', 'action', 'sessionId', 'sequence', 'input'])
+        if (!body || Object.keys(body).some(key => !allowed.has(key))
+          || !cloudPilotFor({ tenantId: selected.tenantId, hotelId, platformCode: body.platformCode })) {
+          json(response, 400, { code: 'OTA_CLOUD_REQUEST_INVALID' }); return
+        }
+        try {
+          const data = await cloudBrowserRequest({ ...body, tenantId: selected.tenantId, hotelId, actorId: requestPrincipal.id })
+          json(response, 200, { data })
+        } catch (error) {
+          const code = cloudError(error)
+          json(response, ['OTA_CLOUD_BUSY', 'OTA_CLOUD_IN_USE'].includes(code) ? 409
+            : code === 'OTA_CLOUD_UNAVAILABLE' ? 503 : 400, { code })
+        } finally {
+          if (body.input?.type === 'text') body.input.text = ''
+        }
+        return
       }
 
       if (

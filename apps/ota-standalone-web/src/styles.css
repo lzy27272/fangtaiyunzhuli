@@ -1637,3 +1637,23 @@ details.history-card { display: block; }
     width: 100%;
   }
 }
+.ota-cloud-panel { margin: 24px 0; padding: 20px; border: 1px solid #b7d4cb; border-radius: 16px; background: #f5fbf8; }
+.ota-cloud-heading { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+.ota-cloud-heading h4 { margin: 0; }
+.ota-cloud-heading span { color: #19694f; font-weight: 650; }
+.ota-cloud-actions, .ota-cloud-input { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 14px 0; }
+.ota-cloud-actions button, .ota-cloud-input button { min-height: 42px; padding: 9px 14px; border: 1px solid #aac8ba; border-radius: 8px; background: #fff; color: #194d3d; cursor: pointer; }
+.ota-cloud-actions button:disabled, .ota-cloud-input button:disabled { opacity: .5; cursor: wait; }
+.ota-cloud-remote { background: white; padding: 14px; border: 1px solid #d1ded7; border-radius: 12px; }
+.ota-cloud-screen { overflow: auto; border: 1px solid #d1ded7; background: #f1f5f3; min-height: 160px; max-height: 820px; }
+.ota-cloud-screen img { display: block; width: 100%; height: auto; touch-action: none; user-select: none; }
+.ota-cloud-screen.zoomed img { width: 1280px; max-width: none; }
+.ota-cloud-input label { display: grid; gap: 6px; flex: 1 1 280px; }
+.ota-cloud-input input { min-height: 44px; width: 100%; box-sizing: border-box; }
+.ota-cloud-remote small { display: block; color: #5d7167; }
+.ota-cloud-results { display: grid; gap: 12px; margin-top: 20px; }
+.ota-cloud-results section { border-top: 1px solid #d1ded7; padding-top: 8px; }
+.ota-cloud-results h5 { margin: 6px 0; font-size: 15px; }
+.ota-cloud-results dl { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.ota-cloud-results dd { margin: 4px 0; font-weight: 650; }
+@media (max-width: 640px) { .ota-cloud-panel { padding: 12px; } .ota-cloud-remote { padding: 8px; } .ota-cloud-actions button { flex: 1 1 140px; } }
