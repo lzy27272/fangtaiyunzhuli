@@ -156,10 +156,20 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
   const registration = existing?.activationStatus === 'REQUESTED'
   const requestedMembers = (data?.members ?? []).filter((m) => m.activationStatus === 'REQUESTED')
   const direct = (!existing && newMode === 'DIRECT') || existing?.activationStatus === 'PENDING'
-  const formValid = Boolean(displayName.trim()) && (selected.length > 0 || existing?.globalRecipient)
-    && (!existing || !directoryUserId.trim() || directoryUserId.trim() === existing.directoryUserId || identityConfirmed)
-    && (!direct || (userId.trim() && directoryUserId.trim() && identityConfirmed && directoryReady))
-    && (!registration || (identityConfirmed && existing?.registrationCurrent))
+  const nameRequired = !existing?.active || Boolean(direct || registration)
+  const saveBlockers = [
+    nameRequired && !displayName.trim() ? '请填写姓名备注，用于核对新增授权人员。' : null,
+    !selected.length && !existing?.globalRecipient ? '请至少选择一家负责门店；如需撤销全部权限，请使用“解绑此人”。' : null,
+    existing && directoryUserId.trim() && directoryUserId.trim() !== existing.directoryUserId && !identityConfirmed
+      ? '修改通讯录账号后，请勾选“已核实为同一个人”。' : null,
+    direct && (!userId.trim() || !directoryUserId.trim()) ? '手工预授权需要填写机器人账号和通讯录成员账号。' : null,
+    direct && !identityConfirmed ? '请勾选已核对两种账号属于同一位在职员工。' : null,
+    direct && !directoryReady ? '请先完成“离职自动解绑”的通讯录回调验证，或使用绑定码。' : null,
+    registration && !identityConfirmed ? '请先核对申请人在职身份和所选门店权限，并勾选确认。' : null,
+    registration && !existing?.registrationCurrent ? '申请已失效，请员工重新发送“激活”后再批准。' : null,
+    !existing && !direct && !data?.connected ? '机器人尚未连接，连接恢复后才能生成绑定码。' : null,
+  ].filter((message): message is string => Boolean(message))
+  const formValid = saveBlockers.length === 0
 
   return (
     <section className="repair-admin-panel" aria-label="播报修复管理员管理">
@@ -198,6 +208,7 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
           : { action: 'PAIR', displayName, role, hotelIds: selected }, formVersion)
       }}>
         <h4>{registration ? '免输账号 · 选择门店并批准' : existing ? '编辑管理员' : direct ? '手工预授权（备用方式，需填写账号）' : '生成绑定码 · 24小时有效'}</h4>
+        {existing?.active ? <p className="repair-admin-account">当前员工：<strong>{repairAdminLabel(existing)}</strong>（企微账号：{existing.userId}）。调整门店后保存即可生效，无需重新绑定。</p> : null}
         {!existing && !direct ? <p>填写姓名 → 勾选负责门店 → 生成并复制绑定指令。无需输入企微账号。{data?.pairing.active ? <strong> 生成新码后，当前旧码立即失效。</strong> : null}</p> : null}
         {registration && existing ? <><p className="repair-admin-account">账号已从员工本人消息自动识别：<strong>{existing.userId}</strong>。无需输入或复制。</p>
           <label className="inline-toggle"><input type="checkbox" disabled={busy} checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />我已核对此申请人为公司在职员工，并确认所选门店权限</label>
@@ -212,7 +223,7 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
           <label className="inline-toggle wide-field"><input type="checkbox" disabled={busy} checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />已核对上述账号属于本企业同一位在职员工，机器人账号与通讯录账号可能不同；不确定时使用备用配对码。</label>
         </div> : null}
         <div className="wecom-config-grid">
-          <label>姓名备注<input required maxLength={60} disabled={busy} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="填写真实姓名，便于识别" /></label>
+          <label>姓名备注{!nameRequired ? '（选填）' : '（必填）'}<input aria-label="姓名备注" required={nameRequired} maxLength={60} disabled={busy} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={nameRequired ? '填写真实姓名，便于识别' : '选填，不影响门店权限保存'} />{!nameRequired ? <small>留空保留原备注；没有备注也能保存，企微通讯录名称不受影响。</small> : null}</label>
           <label>岗位标记<select disabled={busy} value={role} onChange={(e) => setRole(e.target.value as WeComRepairAdmin['role'])}><option value="STORE_MANAGER">门店管理员</option><option value="OPERATIONS_MANAGER">运营经理</option></select></label>
         </div>
         <fieldset disabled={busy}><legend>负责门店 · 已选择 {selected.length} 家</legend>
@@ -223,9 +234,9 @@ export function WeComRepairAdminsPanel({ onChanged }: Props) {
           <label className="wide-field">通讯录成员账号（离职自动解绑使用）<input disabled={busy} value={directoryUserId} maxLength={128} onChange={(e) => { setDirectoryUserId(e.target.value); setIdentityConfirmed(false) }} placeholder="企业微信管理后台 → 通讯录 → 成员 → 账号" /><small>填写通讯录 UserID，不是手机号、姓名或 open_userid。机器人账号与通讯录账号可能不同，必须核对为同一人。留空则取消离职关联。</small></label>
           {directoryUserId.trim() && directoryUserId.trim() !== existing.directoryUserId ? <label className="inline-toggle wide-field"><input type="checkbox" disabled={busy} checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />已核实该通讯录成员与上方机器人账号是同一个人</label> : null}
         </div> : direct ? <p>保存后为“待首次激活”，只有指定账号进入机器人或发送“激活”才会获得所选门店权限。已离职或已解绑人员不能重新激活。</p> : <p>对方发送配对码后，名单会自动显示账号；再编辑该人员，核对通讯录账号以接通离职自动解绑。</p>}
-        <div className="heading-actions"><button type="submit" disabled={busy || !formValid || (!existing && !direct && !data?.connected)}>{busy ? '处理中…' : registration ? `批准并绑定 ${selected.length} 家门店` : direct ? `保存 ${selected.length} 家门店预授权` : existing ? '保存人员与门店权限' : `生成绑定码（${selected.length}家门店）`}</button><button className="secondary" type="button" disabled={busy} onClick={() => setEditing(null)}>取消</button></div>
-        {direct && !directoryReady ? <p className="error">请先完成下方“离职自动解绑”的通讯录回调验证，或选择备用配对码。</p> : null}
-        {!existing && !data?.connected ? <p>{direct ? '机器人尚未连接：预授权可以保存，但需等待机器人连接成功才能激活。' : '机器人尚未连接，连接恢复后才能生成绑定码。'}</p> : null}
+        {!formValid ? <div id="repair-admin-save-blockers" className="inline-message info" role="status"><strong>暂不能保存：</strong><ul>{saveBlockers.map((message) => <li key={message}>{message}</li>)}</ul></div> : null}
+        <div className="heading-actions"><button type="submit" aria-describedby={!formValid ? 'repair-admin-save-blockers' : undefined} disabled={busy || !formValid}>{busy ? '处理中…' : registration ? `批准并绑定 ${selected.length} 家门店` : direct ? `保存 ${selected.length} 家门店预授权` : existing ? '保存人员与门店权限' : `生成绑定码（${selected.length}家门店）`}</button><button className="secondary" type="button" disabled={busy} onClick={() => setEditing(null)}>取消</button></div>
+        {!existing && direct && !data?.connected ? <p>机器人尚未连接：预授权可以保存，但需等待机器人连接成功才能激活。</p> : null}
       </form> : null}
       <details ref={registrationPanel} className="repair-admin-directory repair-registration-panel" aria-label="待授权人员">
         <summary>待授权人员 · {requestedMembers.length} 人 <span className="repair-section-hint">员工先发“激活”，无需绑定码</span></summary>

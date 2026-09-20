@@ -136,7 +136,8 @@ test('sender-discovered registration is the primary no-account-input grant path'
   assert.match(repairAdminsSource, /aria-label="待授权人员"/)
   assert.match(repairAdminsSource, /m\.activationStatus === 'REQUESTED'/)
   assert.match(repairAdminsSource, /action: 'APPROVE_REGISTRATION', memberId: existing\.memberId/)
-  assert.match(repairAdminsSource, /identityConfirmed && existing\?\.registrationCurrent/)
+  assert.match(repairAdminsSource, /registration && !identityConfirmed/)
+  assert.match(repairAdminsSource, /registration && !existing\?\.registrationCurrent/)
   assert.match(repairAdminsSource, /账号已从员工本人消息自动识别/)
   assert.match(repairAdminsSource, /registration \? null : existing && !direct/)
   assert.match(repairAdminsSource, /备用方式：手工预授权（需账号）/)
@@ -148,6 +149,17 @@ test('WeCom binding generation and result stay above the roster and advanced set
   assert.ok(repairAdminsSource.indexOf('aria-label="人员门店授权表单"') < repairAdminsSource.indexOf('aria-label="人员名单"'))
   assert.match(repairAdminsSource, /<details className="repair-admin-directory repair-advanced-settings">/)
   assert.match(repairAdminsSource, /明文仅在生成时展示/)
+})
+
+test('bound staff can edit stores without a name while new grants keep identity checks and visible blockers', () => {
+  assert.match(repairAdminsSource, /const nameRequired = !existing\?\.active \|\| Boolean\(direct \|\| registration\)/)
+  assert.match(repairAdminsSource, /required=\{nameRequired\}/)
+  assert.match(repairAdminsSource, /const formValid = saveBlockers\.length === 0/)
+  assert.match(repairAdminsSource, /nameRequired && !displayName\.trim\(\)/)
+  assert.match(repairAdminsSource, /留空保留原备注/)
+  assert.match(repairAdminsSource, /id="repair-admin-save-blockers"[\s\S]*暂不能保存/)
+  assert.match(repairAdminsSource, /disabled=\{busy \|\| !formValid\}/)
+  assert.match(repairAdminsSource, /当前员工：[\s\S]*existing\.userId/)
 })
 
 test('people permissions expose the current roles and retire canceled roles from assignment', () => {

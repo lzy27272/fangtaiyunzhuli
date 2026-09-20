@@ -512,6 +512,56 @@ globalThis.fetch = async (input, options) => {
   }
 })
 
+test('store-only edits for unnamed bound staff persist and preserve authorization boundaries', async () => {
+  const runtimePath = await mkdtemp(join(os.tmpdir(), 'wecom-unnamed-edit-api-'))
+  const hotelIds = ['20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000002']
+  const credentials = { botId: 'test-unnamed-edit-bot', secret: 'example-unnamed-edit-secret',
+    allowedUserIds: ['global.owner'], hotelAllowedUserIds: { [hotelIds[0]]: ['unnamed.staff', 'unchanged.staff'] } }
+  let child
+  try {
+    await writeFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), JSON.stringify({
+      record: encryptCookie(JSON.stringify(credentials), secretKey, 'wecom-repair-bot:v1'),
+    }))
+    let started = await startApi(runtimePath); child = started.child
+    let accessToken = started.accessToken, base = `http://127.0.0.1:${started.port}`
+    const read = async () => (await (await fetch(`${base}/api/v1/ota/wecom-repair-admins`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })).json()).data
+    const post = async (body) => fetch(`${base}/api/v1/ota/wecom-repair-admins`, { method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, reasonCode: 'MANAGE_WECOM_REPAIR_ADMINS' }),
+    })
+    const initial = await read()
+    const member = initial.members.find((m) => m.userId === 'unnamed.staff')
+    const body = { action: 'EDIT', memberId: member.memberId, expectedRowVersion: initial.rowVersion,
+      displayName: '', role: 'OPERATIONS_MANAGER', hotelIds, directoryUserId: '' }
+    const saved = await post(body)
+    assert.equal(saved.status, 200)
+    const view = (await saved.json()).data
+    const edited = view.members.find((m) => m.memberId === member.memberId)
+    assert.deepEqual(edited.hotelIds, hotelIds)
+    assert.equal(edited.nameSource, 'UNSET')
+    assert.equal(edited.globalRecipient, false)
+    assert.equal(edited.offboardingLinked, false)
+    assert.deepEqual(view.members.filter((m) => m.memberId !== member.memberId), initial.members.filter((m) => m.memberId !== member.memberId))
+    assert.equal((await post(body)).status, 409)
+    assert.equal((await post({ ...body, hotelIds: [], expectedRowVersion: view.rowVersion })).status, 400)
+    const encrypted = await readFile(join(runtimePath, 'wecom-repair-bot-secrets.json'), 'utf8')
+    assert.equal(encrypted.includes('unnamed.staff'), false)
+    const stored = JSON.parse(decryptCookie(JSON.parse(encrypted).record, secretKey, 'wecom-repair-bot:v1'))
+    assert.deepEqual(stored.allowedUserIds, credentials.allowedUserIds)
+    assert.deepEqual(stored.hotelAllowedUserIds[hotelIds[0]], ['unchanged.staff', 'unnamed.staff'])
+    assert.deepEqual(stored.hotelAllowedUserIds[hotelIds[1]], ['unnamed.staff'])
+    await stopApi(child)
+    started = await startApi(runtimePath, { loginProbe: true }); child = started.child
+    base = `http://127.0.0.1:${started.port}`; accessToken = started.accessToken
+    const reloaded = (await read()).members.find((m) => m.memberId === member.memberId)
+    assert.deepEqual(reloaded.hotelIds, hotelIds)
+    assert.equal(reloaded.nameSource, 'UNSET')
+    assert.equal(reloaded.active, true)
+  } finally { if (child) await stopApi(child); await rm(runtimePath, { recursive: true, force: true }) }
+})
+
 test('admin roster edits are encrypted, versioned, restart-safe and verified departures revoke all grants', async () => {
   const runtimePath = await mkdtemp(join(os.tmpdir(), 'wecom-admin-api-'))
   const hotelIds = ['20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000002']

@@ -169,9 +169,14 @@ export const updateRepairAdmin = ({ credentials, memberId, action, displayName,
   const selected = normalizeRepairAdminHotelIds(hotelIds)
   if ((!member.globalRecipient && !selected.length)
     || selected.some((id) => !hotels.some((h) => h.hotelId === id))) fail('HOTELS_INVALID')
-  const name = normalizeRepairAdminName(displayName)
-  if (!name || !['STORE_MANAGER', 'OPERATIONS_MANAGER'].includes(role)) fail('NAME_INVALID')
-  const directoryId = String(directoryUserId ?? '').trim()
+  const submittedName = normalizeRepairAdminName(displayName)
+  // An already-bound account is the immutable identity. A store-only edit
+  // needs no new name, and blank/omitted remarks must not erase prior metadata.
+  const name = submittedName || profile.displayName || ''
+  const nameSource = submittedName && submittedName !== profile.displayName
+    ? 'ADMIN_REMARK' : profile.nameSource ?? 'ADMIN_REMARK'
+  if (!['STORE_MANAGER', 'OPERATIONS_MANAGER'].includes(role)) fail('NAME_INVALID')
+  const directoryId = String(directoryUserId ?? profile.directoryUserId ?? '').trim()
   if (directoryId && !userIdPattern.test(directoryId)) fail('DIRECTORY_USER_INVALID')
   const changedIdentity = directoryId !== (profile.directoryUserId ?? '')
   if (changedIdentity && directoryId && directoryIdentityConfirmed !== true) fail('IDENTITY_CONFIRM_REQUIRED')
@@ -186,10 +191,10 @@ export const updateRepairAdmin = ({ credentials, memberId, action, displayName,
   }
   return { ...credentials, hotelAllowedUserIds: scopes,
     userProfiles: { ...credentials.userProfiles, [userId]: {
-      ...profile, displayName: name, nameSource: 'ADMIN_REMARK', role, directoryUserId: directoryId,
+      ...profile, displayName: name, nameSource, role, directoryUserId: directoryId,
       pendingHotelIds: [],
       directoryLinkedAt: directoryId
-        ? (changedIdentity ? timestamp : profile.directoryLinkedAt ?? timestamp) : null,
+        ? (changedIdentity ? timestamp : profile.directoryLinkedAt ?? null) : null,
       updatedAt: timestamp,
     } } }
 }

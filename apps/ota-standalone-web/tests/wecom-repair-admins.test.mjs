@@ -163,6 +163,69 @@ test('scope edit replaces only chosen user permissions and explicitly confirms d
   assert.throws(() => updateRepairAdmin({ ...input, memberId: memberId('other'), directoryUserId: 'zhangsan', directoryIdentityConfirmed: true }), /DIRECTORY_USER_DUPLICATE/)
 })
 
+test('legacy bound staff can replace stores without a name or directory account and without touching other grants', () => {
+  const before = credentials()
+  const copy = structuredClone(before)
+  const next = normalizeWeComRepairBotCredentials(updateRepairAdmin({ credentials: before,
+    memberId: memberId('other'), action: 'EDIT', displayName: '   ', role: 'OPERATIONS_MANAGER',
+    hotelIds: ['hotel-1', 'hotel-3'], hotels, now }))
+  assert.deepEqual(before, copy)
+  assert.deepEqual(next.allowedUserIds, before.allowedUserIds)
+  assert.deepEqual(next.hotelAllowedUserIds, { 'hotel-1': ['manager', 'other'], 'hotel-2': [], 'hotel-3': ['other'] })
+  assert.deepEqual(next.userProfiles.manager, before.userProfiles.manager)
+  assert.deepEqual(next.bindingApproval, before.bindingApproval)
+  assert.equal(next.userProfiles.other.displayName, '')
+  assert.equal(next.userProfiles.other.directoryUserId, '')
+  assert.equal(next.userProfiles.other.directoryLinkedAt, null)
+  assert.equal(repairAdminRoster(next, hotels).find((m) => m.userId === 'other').nameSource, 'UNSET')
+})
+
+test('blank or unchanged remarks preserve name provenance and existing offboarding identity', () => {
+  const before = credentials()
+  before.userProfiles.manager.nameSource = 'APPLICANT_PROVIDED'
+  const input = { credentials: before, memberId: memberId('manager'), action: 'EDIT',
+    role: 'STORE_MANAGER', hotelIds: ['hotel-2'], hotels, now }
+  for (const displayName of [undefined, '', '   ', '张经理']) {
+    const next = updateRepairAdmin({ ...input, displayName })
+    assert.equal(next.userProfiles.manager.displayName, '张经理')
+    assert.equal(next.userProfiles.manager.nameSource, 'APPLICANT_PROVIDED')
+    assert.equal(next.userProfiles.manager.directoryUserId, 'zhangsan')
+    assert.equal(next.userProfiles.manager.directoryLinkedAt, before.userProfiles.manager.directoryLinkedAt)
+  }
+  const renamed = updateRepairAdmin({ ...input, displayName: '张店长' })
+  assert.equal(renamed.userProfiles.manager.nameSource, 'ADMIN_REMARK')
+  assert.equal(renamed.userProfiles.manager.displayName, '张店长')
+  const unlinked = updateRepairAdmin({ ...input, directoryUserId: '' })
+  assert.equal(unlinked.userProfiles.manager.directoryUserId, '')
+  assert.equal(unlinked.userProfiles.manager.directoryLinkedAt, null)
+  const unverified = structuredClone(before)
+  unverified.userProfiles.manager.directoryLinkedAt = null
+  assert.equal(updateRepairAdmin({ ...input, credentials: unverified }).userProfiles.manager.directoryLinkedAt, null)
+  assert.throws(() => updateRepairAdmin({ ...input, directoryUserId: 'another.directory' }), /IDENTITY_CONFIRM_REQUIRED/)
+  assert.throws(() => updateRepairAdmin({ ...input, displayName: 'bad\nname' }), /NAME_INVALID/)
+  assert.throws(() => updateRepairAdmin({ ...input, displayName: 'a'.repeat(61) }), /NAME_INVALID/)
+})
+
+test('optional remarks do not relax scope, role, capacity, revocation or new-authorization validation', () => {
+  const before = credentials()
+  const input = { credentials: before, memberId: memberId('other'), action: 'EDIT', displayName: '',
+    role: 'STORE_MANAGER', hotelIds: ['hotel-1'], hotels, now }
+  assert.throws(() => updateRepairAdmin({ ...input, hotelIds: [] }), /HOTELS_INVALID/)
+  assert.throws(() => updateRepairAdmin({ ...input, hotelIds: ['unknown'] }), /HOTELS_INVALID/)
+  assert.throws(() => updateRepairAdmin({ ...input, role: 'PLATFORM_ADMIN' }), /NAME_INVALID/)
+  const full = structuredClone(before)
+  full.hotelAllowedUserIds['hotel-1'] = Array.from({ length: 20 }, (_, i) => `full-${i}`)
+  const copy = structuredClone(full)
+  assert.throws(() => updateRepairAdmin({ ...input, credentials: full }), /CAPACITY_REACHED/)
+  assert.deepEqual(full, copy)
+  const revoked = updateRepairAdmin({ ...input, action: 'REVOKE' })
+  assert.throws(() => updateRepairAdmin({ ...input, credentials: revoked }), /MEMBER_NOT_FOUND/)
+  assert.throws(() => preauthorizeRepairAdmin({ credentials: { ...before,
+    directorySync: { ...before.directorySync, verifiedAt: now.toISOString() } }, userId: 'new.user',
+    displayName: '', directoryUserId: 'new.directory', directoryIdentityConfirmed: true,
+    role: 'STORE_MANAGER', hotelIds: ['hotel-1'], hotels, now }), /NAME_INVALID/)
+})
+
 test('manual revoke removes every global and store grant and blocks old pairing', () => {
   const current = credentials(); current.allowedUserIds.push('manager')
   const next = normalizeWeComRepairBotCredentials(updateRepairAdmin({ credentials: current,
