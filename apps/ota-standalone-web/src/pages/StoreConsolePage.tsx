@@ -168,6 +168,14 @@ function broadcastDiagnosis(summary: HotelSummary): { tone: Tone; label: string;
     && Boolean(summary.monitor.collectionRunId)
   const briefReady = latestBrief?.completenessCode === 'COMPLETE'
 
+  if (summary.wecom && !summary.wecom.enabled) {
+    return {
+      tone: 'warning',
+      label: summary.wecom.webhookConfigured ? '已暂停' : '未配置',
+      tab: 'broadcast',
+    }
+  }
+
   if ((failedIncident || failedDelivery) && !monitorReady) {
     return { tone: 'warning', label: '上游数据待处理', tab: 'collection' }
   }
@@ -227,6 +235,12 @@ function directTarget(summary: HotelSummary): {
   }
   if (broadcast.tone === 'error') {
     return { tab: broadcast.tab, label: '检查播报' }
+  }
+  if (broadcast.label === '已暂停') {
+    return { tab: 'broadcast', label: '开启门店播报' }
+  }
+  if (broadcast.label === '未配置') {
+    return { tab: 'broadcast', label: '配置门店播报' }
   }
   return null
 }
@@ -371,7 +385,7 @@ export function StoreOverviewPage({
                   const state = otaState(source)
                   return <button aria-label={`打开${sourceDisplayName(source.platformCode)}配置，当前${state.label}`} className="channel-status-link" key={source.platformCode} onClick={() => onOpen(summary.hotel, 'collection', { collectionSection: 'ota', otaAttentionSourceId: source.sourceId, otaAttentionPlatformCode: source.platformCode })} type="button"><PlatformIcon name={source.platformCode as PlatformIconName} /><Status tone={state.tone}>{sourceDisplayName(source.platformCode)} · {state.label}</Status></button>
                 })}
-                <button aria-label={`打开${broadcast.tab === 'collection' ? '采集配置' : '播报记录'}，当前${broadcast.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, broadcast.tab)} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
+                <button aria-label={`打开${broadcast.tab === 'collection' ? '采集配置' : '播报设置'}，当前${broadcast.label}`} className="channel-status-link" onClick={() => onOpen(summary.hotel, broadcast.tab)} type="button"><PlatformIcon name="BROADCAST" /><Status tone={broadcast.tone}>播报 · {broadcast.label}</Status></button>
               </div>
               <div className="store-meta"><strong>{formatTime(summary.monitor?.cutoffAt)}</strong><small>{openIncidents ? `${openIncidents}项异常待处理` : '最近检查'}</small></div>
               <button className={`row-action${direct ? ' direct' : ''}`} type="button" onClick={() => onOpen(summary.hotel, direct?.tab, direct?.options)}>{direct ? <><Icon name="arrow" />一键直达<small>{direct.label}</small></> : <>进入门店<Icon name="chevron" /></>}</button>
@@ -730,7 +744,7 @@ export function StoreDetailPage({
               ] as [StoreTab, string]]
             : []),
           ['operations', '运营配置'],
-          ['broadcast', '播报记录'],
+          ['broadcast', canConfigure ? '播报设置' : '播报记录'],
         ] as Array<[StoreTab, string]>).map(([code, label]) => <button key={code} className={tab === code ? 'active' : ''} onClick={() => setTab(code)} type="button">{label}</button>)}
       </nav>
 
@@ -777,7 +791,7 @@ export function StoreDetailPage({
               </div>
             </section>
             <section className="content-panel">
-              <div className="section-heading small"><div><h2>播报状态</h2><p>最新数据与企业微信送达分别记录</p></div><button className="text-link" onClick={() => setTab(broadcast.tab)} type="button">{broadcast.tab === 'collection' ? '检查上游数据' : canConfigure ? '查看及补发' : '查看记录'}</button></div>
+              <div className="section-heading small"><div><h2>播报状态</h2><p>最新数据与企业微信送达分别记录</p></div><button className="text-link" onClick={() => setTab(broadcast.tab)} type="button">{broadcast.tab === 'collection' ? '检查上游数据' : canConfigure ? '设置播报' : '查看记录'}</button></div>
               <div className="broadcast-summary"><Status tone={broadcast.tone}>{broadcast.label}</Status><dl><div><dt>最新数据时间</dt><dd>{formatTime(lastCollectionAt)}</dd></div><div><dt>最新简报状态</dt><dd>{businessCodeLabel(latestBrief?.deliveryStatus, '尚未生成')}</dd></div><div><dt>最近企微送达</dt><dd>{formatTime(latestDelivered?.createdAt)}</dd></div></dl></div>
             </section>
           </div>

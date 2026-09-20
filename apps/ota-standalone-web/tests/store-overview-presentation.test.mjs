@@ -94,6 +94,29 @@ test('store detail separates collection time from confirmed WeCom delivery', asy
   assert.match(storePage, /HistoryPage[\s\S]*onStatusChanged/u)
 })
 
+test('paused store broadcasting is visible and configurable before repair details', async () => {
+  const [storePage, historyPage] = await Promise.all([
+    readFile(storePageUrl, 'utf8'),
+    readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8'),
+  ])
+
+  assert.match(
+    storePage,
+    /summary\.wecom && !summary\.wecom\.enabled[\s\S]*label: summary\.wecom\.webhookConfigured \? '已暂停' : '未配置'/u,
+  )
+  assert.match(storePage, /label: '开启门店播报'/u)
+  assert.match(storePage, /canConfigure \? '播报设置' : '播报记录'/u)
+  assert.match(storePage, /canConfigure \? '设置播报' : '查看记录'/u)
+  assert.match(historyPage, /启用当前门店自动播报/u)
+  assert.match(historyPage, /保存播报设置/u)
+  assert.match(historyPage, /下一次计划播报/u)
+  assert.ok(
+    historyPage.indexOf('className={broadcastEnabled ? \'broadcast-master-toggle enabled\'')
+      < historyPage.indexOf('<WeComStoreRepairSummary'),
+  )
+  assert.match(historyPage, /onStatusChanged\?\.\(\)/u)
+})
+
 test('manual formal replay is admin-only, confirmed and independent from the test suite', async () => {
   const [historyPage, businessApi] = await Promise.all([
     readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8'),

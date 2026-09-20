@@ -57,18 +57,58 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
 
 const BROADCAST_INTERVAL_OPTIONS: Array<{
   label: string
-  value: BroadcastIntervalHours
+  value: Exclude<BroadcastIntervalHours, 0>
 }> = [
   { label: '每小时播报', value: 1 },
   { label: '每2小时播报', value: 2 },
   { label: '每3小时播报', value: 3 },
   { label: '每4小时播报', value: 4 },
-  { label: '暂停播报', value: 0 },
 ]
 
 const broadcastIntervalLabel = (value: BroadcastIntervalHours) =>
-  BROADCAST_INTERVAL_OPTIONS.find((option) => option.value === value)?.label
-  ?? '暂停播报'
+  value === 0
+    ? '暂停播报'
+    : BROADCAST_INTERVAL_OPTIONS.find((option) => option.value === value)?.label
+      ?? '暂停播报'
+
+const nextBroadcastLabel = (
+  startHour: number,
+  quietHour: number,
+  intervalHours: BroadcastIntervalHours,
+  sendMinute: number,
+  now = new Date(),
+) => {
+  if (intervalHours === 0) return '暂停期间不会发送'
+  const activeHours = (quietHour - startHour + 24) % 24
+  if (activeHours === 0) return '播报时段待修正'
+
+  const chinaWallClock = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+  const dayStart = Date.UTC(
+    chinaWallClock.getUTCFullYear(),
+    chinaWallClock.getUTCMonth(),
+    chinaWallClock.getUTCDate(),
+  )
+  for (let dayOffset = 0; dayOffset < 3; dayOffset += 1) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      const hoursFromStart = (hour - startHour + 24) % 24
+      if (
+        hoursFromStart >= activeHours
+        || hoursFromStart % intervalHours !== 0
+      ) continue
+      const candidate = new Date(
+        dayStart + dayOffset * 24 * 60 * 60 * 1000
+        + hour * 60 * 60 * 1000
+        + sendMinute * 60 * 1000,
+      )
+      if (candidate.getTime() <= chinaWallClock.getTime()) continue
+      return `${String(candidate.getUTCMonth() + 1).padStart(2, '0')}`
+        + `-${String(candidate.getUTCDate()).padStart(2, '0')}`
+        + ` ${String(candidate.getUTCHours()).padStart(2, '0')}`
+        + `:${String(candidate.getUTCMinutes()).padStart(2, '0')}`
+    }
+  }
+  return '等待下一播报时段'
+}
 
 const configuredBroadcastInterval = (
   config: WeComConfigView,
@@ -168,7 +208,10 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
 
   async function saveAutomation() {
     if (!context) return
-    if (broadcastStartHour === broadcastQuietHour) {
+    if (
+      broadcastIntervalHours > 0
+      && broadcastStartHour === broadcastQuietHour
+    ) {
       setNotice('')
       setError('每日播报开始时间与静默时间不能相同。')
       return
@@ -208,6 +251,7 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
           ? `播报设置已保存：每日 ${String(savedStartHour).padStart(2, '0')}:00 开始、${String(savedQuietHour).padStart(2, '0')}:00 静默，${broadcastIntervalLabel(savedInterval)}；群内修复链接${savedRepairLinkEnabled ? '已开启' : '已停止'}。`
           : `门店播报已暂停；群内修复链接${savedRepairLinkEnabled ? '仍保持开启' : '已停止'}。PMS 数据仍每小时采集一次。`,
       )
+      onStatusChanged?.()
     } catch (cause) {
       setError(businessErrorMessage(cause, '保存企微配置失败'))
     } finally {
@@ -328,6 +372,24 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
   const legacyBroadcastSchedule = Boolean(weComConfig)
     && (weComConfig?.broadcastScheduleMode ?? 'LEGACY_DYNAMIC')
       === 'LEGACY_DYNAMIC'
+  const broadcastEnabled = broadcastIntervalHours > 0
+  const scheduleChanged = Boolean(weComConfig) && (
+    broadcastIntervalHours !== savedBroadcastInterval
+    || broadcastStartHour !== savedBroadcastStartHour
+    || broadcastQuietHour !== savedBroadcastQuietHour
+    || groupRepairLinkEnabled
+      !== (weComConfig?.groupRepairLinkEnabled ?? false)
+    || Boolean(webhookDraft.trim())
+    || clearWebhook
+  )
+  const nextSavedBroadcast = legacyBroadcastSchedule
+    ? '沿用原播报时段；保存本页设置后显示'
+    : nextBroadcastLabel(
+        savedBroadcastStartHour,
+        savedBroadcastQuietHour,
+        savedBroadcastInterval,
+        weComConfig?.sendMinute ?? 6,
+      )
 
   async function replayLatestBrief() {
     if (
@@ -396,20 +458,14 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
     <section className="page-card">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">播报与记录</p>
-          <h2>简报与异常记录</h2>
-          <p>集中查看经营简报、异常任务和企业微信发送结果；机器人地址仅加密保存。</p>
+          <p className="eyebrow">门店播报设置</p>
+          <h2>播报设置与记录</h2>
+          <p>优先设置当前门店的播报开关和时段，再查看企业微信发送记录。</p>
         </div>
         <button className="secondary" disabled={!context || loading} type="button" onClick={refresh}>
           刷新记录
         </button>
       </div>
-
-      <WeComStoreRepairSummary
-        canConfigure={canConfigure}
-        context={context}
-        onOpenPeoplePermissions={onOpenPeoplePermissions}
-      />
 
       {!context ? (
         <div className="state-panel">请先在顶部载入租户和门店。</div>
@@ -418,17 +474,29 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
           <section className="wecom-automation-card">
             <div className="page-heading">
               <div>
-                <p className="eyebrow">企业微信自动播报</p>
-                <h3>企业微信群机器人自动推送</h3>
+                <p className="eyebrow">当前门店独立设置</p>
+                <h3>播报开关与频率</h3>
                 <p>
-                  每家门店可独立设置每日开始、静默时间和播报频率；选择暂停播报后仅停止群消息，
+                  在这里直接开启或暂停当前门店播报，并设置每日开始、静默时间和播报频率。暂停后仅停止群消息，
                   PMS 数据仍按每小时一次采集。群内修复链接使用独立开关，关闭后不影响已绑定管理员私聊接手。
-                  今日经营、远期房态和热销房型提醒仍按既定模板顺序发送；热销房型售罄预警固定 @所有人，例行简报不触发全员提醒。
+                  热销房型售罄预警固定 @所有人，例行简报不提醒全员。
                 </p>
               </div>
-              <b className={savedBroadcastInterval > 0 ? 'source-complete' : 'source-partial'}>
-                {savedBroadcastInterval > 0 ? '自动推送已启用' : '自动推送已暂停'}
+              <b className={savedBroadcastInterval > 0 ? 'broadcast-state-pill enabled' : 'broadcast-state-pill paused'}>
+                {savedBroadcastInterval > 0 ? '当前：播报已开启' : '当前：播报已暂停'}
               </b>
+            </div>
+
+            <div className={savedBroadcastInterval > 0 ? 'broadcast-current-state enabled' : 'broadcast-current-state paused'}>
+              <div>
+                <strong>{savedBroadcastInterval > 0 ? '企业微信群会按计划收到播报' : '企业微信群目前不会收到自动播报'}</strong>
+                <span>
+                  {savedBroadcastInterval > 0
+                    ? `下一次计划播报：${nextSavedBroadcast}（北京时间）`
+                    : '采集没有停止，恢复播报后会继续使用最新 PMS 数据。'}
+                </span>
+              </div>
+              {scheduleChanged ? <b role="status">有修改尚未保存</b> : <b>设置已生效</b>}
             </div>
 
             {legacyBroadcastSchedule ? (
@@ -437,12 +505,30 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
               </div>
             ) : null}
 
+            <label className={broadcastEnabled ? 'broadcast-master-toggle enabled' : 'broadcast-master-toggle paused'}>
+              <span>
+                <strong>启用当前门店自动播报</strong>
+                <small>{broadcastEnabled ? '保存后按下方时段自动发送' : '关闭时只采集数据，不发送企业微信群消息'}</small>
+              </span>
+              <input
+                aria-label="启用当前门店自动播报"
+                checked={broadcastEnabled}
+                disabled={!canConfigure || savingWeCom || clearWebhook}
+                type="checkbox"
+                onChange={(event) => setBroadcastIntervalHours(
+                  event.target.checked
+                    ? (savedBroadcastInterval > 0 ? savedBroadcastInterval : 1)
+                    : 0,
+                )}
+              />
+            </label>
+
             <div className="wecom-config-grid">
               <label>
                 播报频率
                 <select
-                  disabled={!canConfigure || savingWeCom}
-                  value={broadcastIntervalHours}
+                  disabled={!canConfigure || savingWeCom || !broadcastEnabled}
+                  value={broadcastEnabled ? broadcastIntervalHours : 1}
                   onChange={(event) => setBroadcastIntervalHours(
                     Number(event.target.value) as BroadcastIntervalHours,
                   )}
@@ -453,12 +539,12 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
                     </option>
                   ))}
                 </select>
-                <small>暂停播报不影响 PMS 每小时采集。</small>
+                <small>需要暂停时使用上方门店播报开关。</small>
               </label>
               <label>
                 每日播报开始时间（北京时间）
                 <select
-                  disabled={!canConfigure || savingWeCom}
+                  disabled={!canConfigure || savingWeCom || !broadcastEnabled}
                   value={broadcastStartHour}
                   onChange={(event) => setBroadcastStartHour(
                     Number(event.target.value),
@@ -474,7 +560,7 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
               <label>
                 每日静默时间（北京时间，暂停）
                 <select
-                  disabled={!canConfigure || savingWeCom}
+                  disabled={!canConfigure || savingWeCom || !broadcastEnabled}
                   value={broadcastQuietHour}
                   onChange={(event) => setBroadcastQuietHour(
                     Number(event.target.value),
@@ -546,6 +632,7 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
                 播报时段｜{String(savedBroadcastStartHour).padStart(2, '0')}:00 开始 · {String(savedBroadcastQuietHour).padStart(2, '0')}:00 静默
               </span>
               <span>播报频率｜{broadcastIntervalLabel(savedBroadcastInterval)}</span>
+              <span>下次播报｜{nextSavedBroadcast}</span>
               <span>
                 修复链接｜{weComConfig?.groupRepairLinkEnabled ? '群内已开启' : '群内已停止'}
               </span>
@@ -563,12 +650,12 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
 
             <div className="heading-actions">
               <button
-                className="secondary"
+                className="primary-button"
                 disabled={!canConfigure || savingWeCom}
                 type="button"
                 onClick={saveAutomation}
               >
-                {savingWeCom ? '保存中…' : '保存企微配置'}
+                {savingWeCom ? '正在保存…' : '保存播报设置'}
               </button>
               <button
                 disabled={
@@ -589,6 +676,12 @@ export function HistoryPage({ context, canConfigure, onStatusChanged, onOpenPeop
               @所有人 模板不会由此按钮发送。
             </p>
           </section>
+
+          <WeComStoreRepairSummary
+            canConfigure={canConfigure}
+            context={context}
+            onOpenPeoplePermissions={onOpenPeoplePermissions}
+          />
 
           {canConfigure ? (
             <section className="wecom-automation-card">

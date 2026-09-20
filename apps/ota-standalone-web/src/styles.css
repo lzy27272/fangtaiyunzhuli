@@ -306,6 +306,51 @@ button:disabled { cursor: not-allowed; opacity: .62; }
 }
 .wecom-automation-card .page-heading { margin-bottom: 0; }
 .wecom-automation-card .page-heading h3 { margin: .25rem 0 .35rem; }
+.broadcast-state-pill {
+  align-self: flex-start;
+  padding: .45rem .7rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  white-space: nowrap;
+}
+.broadcast-state-pill.enabled { color: #176347; background: #dff1e9; }
+.broadcast-state-pill.paused { color: #8b5b04; background: #fff0c5; }
+.broadcast-current-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .9rem 1rem;
+  border: 1px solid;
+  border-radius: .8rem;
+}
+.broadcast-current-state.enabled { border-color: #a9d0c1; background: #e8f5f0; }
+.broadcast-current-state.paused { border-color: #e4c26d; background: #fff7df; }
+.broadcast-current-state > div { display: grid; gap: .2rem; }
+.broadcast-current-state strong { color: #19372f; font-size: .9rem; }
+.broadcast-current-state span { color: #60716b; font-size: .74rem; }
+.broadcast-current-state > b { color: #586861; font-size: .72rem; white-space: nowrap; }
+.broadcast-master-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 2px solid #d9c27e;
+  border-radius: .85rem;
+  background: #fffaf0;
+  cursor: pointer;
+}
+.broadcast-master-toggle.enabled { border-color: #2f8668; background: #f0f8f5; }
+.broadcast-master-toggle > span { display: grid; gap: .2rem; }
+.broadcast-master-toggle strong { color: #17372e; font-size: .92rem; }
+.broadcast-master-toggle small { color: #67756f; font-size: .74rem; }
+.broadcast-master-toggle input {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  accent-color: #14694f;
+}
 .wecom-config-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1551,6 +1596,8 @@ details.history-card { display: block; }
   .context-bar { grid-template-columns: 1fr; }
   .simulation-hotel-creator > div { grid-template-columns: 1fr; }
   .configuration-form, .target-grid, .history-columns, .real-prep-fields, .secret-input-row, .wecom-config-grid, .account-security-grid, .managed-account-fields, .managed-account-card .managed-account-fields { grid-template-columns: 1fr; }
+  .broadcast-current-state, .broadcast-master-toggle { align-items: flex-start; flex-direction: column; }
+  .broadcast-current-state > b { white-space: normal; }
   .real-prep-heading, .rehearsal-heading { flex-direction: column; }
   .rehearsal-boundary-grid { grid-template-columns: 1fr; }
   .monitor-summary { grid-template-columns: repeat(2, 1fr); }
