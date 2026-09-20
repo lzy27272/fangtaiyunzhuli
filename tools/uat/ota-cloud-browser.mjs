@@ -16,6 +16,10 @@ const privateDirectory = path => {
   }
 }
 const compactName = s => String(s ?? '').replace(/\s+/g, '').replace(/[()]/g, c => c === '(' ? '（' : '）')
+export const cloudBrowserEnvironment = (environment = process.env) => Object.fromEntries(
+  ['PATH', 'HOME', 'DISPLAY', 'XAUTHORITY', 'TMPDIR', 'LANG', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME']
+    .filter(key => environment[key]).map(key => [key, environment[key]]),
+)
 export const inspectCloudHotel = async (page, pilot) => {
   if (!cloudNetworkAllowed(pilot.platformCode, page.url())) return { state: 'LOGIN_REQUIRED' }
   if (pilot.platformCode === 'CTRIP') {
@@ -51,8 +55,7 @@ export const launchCloudBrowser = async ({ chromium, directory, pilot, onBlocked
     locale: 'zh-CN', timezoneId: 'Asia/Shanghai', viewport: CLOUD_VIEWPORT,
     serviceWorkers: 'block', timeout: 30_000,
     // Do not inherit application secrets into Chrome's environment.
-    env: Object.fromEntries(['PATH', 'HOME', 'DISPLAY', 'TMPDIR', 'LANG', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME']
-      .filter(k => process.env[k]).map(k => [k, process.env[k]])),
+    env: cloudBrowserEnvironment(),
     args: ['--no-first-run', '--no-default-browser-check', '--disable-save-password-bubble'],
   })
   try {

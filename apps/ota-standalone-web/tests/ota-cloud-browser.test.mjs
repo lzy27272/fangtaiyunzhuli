@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createCloudBrowserManager, inspectCloudHotel } from '../../../tools/uat/ota-cloud-browser.mjs'
+import { createCloudBrowserManager, inspectCloudHotel, cloudBrowserEnvironment } from '../../../tools/uat/ota-cloud-browser.mjs'
 import { CLOUD_PILOTS, cloudNetworkAllowed, cloudPilotFor, cloudProfileId, cloudError,
   validateCloudInput, validateCloudEnvelope } from '../../../tools/uat/ota-cloud-browser-policy.mjs'
 
@@ -31,6 +31,12 @@ const fixture = async (options = {}) => {
     collect: async () => ({ status: 'COMPLETE', completedAt: new Date().toISOString(), datasets: {} }), ...options })
   return { manager, root, opened, input, cleanup: async () => { await manager.closeAll(); await rm(root, { recursive: true, force: true }) } }
 }
+
+test('cloud Chrome retains Xvfb authorization but never inherits application secrets', () => {
+  const result = cloudBrowserEnvironment({ DISPLAY: ':99', XAUTHORITY: '/tmp/synthetic-Xauthority',
+    PATH: '/usr/bin', OTA_REVIEW_SECRET_KEY: 'never-forward', OTA_CLOUD_TOKEN: 'never-forward' })
+  assert.deepEqual(result, { PATH: '/usr/bin', DISPLAY: ':99', XAUTHORITY: '/tmp/synthetic-Xauthority' })
+})
 
 test('cloud pilot scopes use confirmed UUIDs, separate profiles, and no unenrolled channels', () => {
   assert.notEqual(cloudProfileId(CLOUD_PILOTS[0]), cloudProfileId(CLOUD_PILOTS[1]))
