@@ -7,21 +7,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 
 test('cloud gateway authenticates, checks hotel scope, restricts interactive access, and refuses forged scope', { timeout: 20000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'ota-cloud-api-'))
+  const accessToken = randomUUID()
   const allocator = createServer(); allocator.listen(0, '127.0.0.1'); await once(allocator, 'listening')
   const port = allocator.address().port; allocator.close(); await once(allocator, 'close')
   const repo = fileURLToPath(new URL('../../../', import.meta.url))
   const child = spawn(process.execPath, [join(repo, 'tools/uat/ota-standalone-review-api.mjs')], { cwd: repo,
     env: { ...process.env, OTA_REVIEW_API_PORT: String(port), OTA_REVIEW_USERNAME: 'cloud-test-admin',
-      OTA_REVIEW_PASSWORD: 'example-Cloud-Test-Password-42', OTA_REVIEW_ACCESS_TOKEN: 'cloud-test-token',
+      OTA_REVIEW_PASSWORD: 'example-Cloud-Test-Password-42', OTA_REVIEW_ACCESS_TOKEN: accessToken,
       OTA_REVIEW_DATA_PATH: join(root, 'report-sources.json'), OTA_REVIEW_COOKIE_SECRETS_PATH: join(root, 'cookies.json'),
       OTA_REVIEW_SECRET_KEY: Buffer.alloc(32, 18).toString('base64url'),
       OTA_REVIEW_PSEUDONYM_SECRET_KEY: Buffer.alloc(32, 19).toString('base64url'), OTA_REVIEW_AUTO_COLLECTION_ENABLED: 'false' },
     stdio: ['ignore', 'ignore', 'ignore'] })
   const api = `http://127.0.0.1:${port}`
-  const auth = { Authorization: 'Bearer cloud-test-token', 'Content-Type': 'application/json' }
+  const auth = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
   try {
     let healthy = false
     for (let n = 0; n < 60; n++) {
