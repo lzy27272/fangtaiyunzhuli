@@ -7,6 +7,13 @@ redir @ota_console_exact /ota-console/ 308
 @ota_console_assets path /ota-console/assets/*
 header @ota_console_assets Cache-Control "public, max-age=31536000, immutable"
 
+# Revalidate the app shell after each deployment; only hashed assets are immutable.
+@ota_console_document {
+	path /ota-console/*
+	not path /ota-console/assets/*
+}
+header @ota_console_document Cache-Control "no-cache"
+
 handle_path /ota-console/* {
 	root * /opt/sifangguan-ota/current/apps/ota-standalone-web/dist
 	try_files {path} /index.html

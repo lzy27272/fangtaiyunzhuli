@@ -20,6 +20,13 @@ http://127.0.0.1:5180 {
 	@ota_console_exact path /ota-console
 	redir @ota_console_exact /ota-console/ 308
 
+	# Both the SSH-tunnel root and public-style subpath serve the app shell.
+	# Keep API responses and fingerprinted assets outside this cache policy.
+	@ota_console_document {
+		not path /assets/* /ota-console/assets/* /api /api/*
+	}
+	header @ota_console_document Cache-Control "no-cache"
+
 	@ota_console_health path /api/v1/ota-console/health
 	handle @ota_console_health {
 		rewrite * /health
