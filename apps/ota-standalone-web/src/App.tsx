@@ -3,6 +3,7 @@ import { hasRefreshContext, login, logout, refreshSession } from './api/auth'
 import type { OtaPlatformCode, SimulationHotelView } from './api/business'
 import { clearSession, getSession, setSession, type AuthSession } from './auth/session'
 import { Brand, Icon, LoadingState } from './components/ConsoleUi'
+import { CollectionNavigation } from './components/CollectionNavigation'
 import { ExceptionCenterPage } from './pages/ExceptionCenterPage'
 import { NewStoreWizard } from './pages/NewStoreWizard'
 import { PeoplePermissionsPage, type PeopleTab } from './pages/PeoplePermissionsPage'
@@ -170,6 +171,7 @@ function ConsoleShell({ session, initialRepairHotelCode, onSessionChange, onSign
       <button className="mobile-menu-button" type="button" onClick={() => setMobileMenu((value) => !value)} aria-label="打开导航">☰</button>
       <nav className={mobileMenu ? 'mobile-open' : ''} aria-label="全局导航">
         <button className={activeTopPage === 'stores' ? 'active' : ''} type="button" onClick={() => navigate('stores')}><Icon name="hotel" />门店总览</button>
+        <CollectionNavigation />
         <button className={activeTopPage === 'exceptions' ? 'active' : ''} type="button" onClick={() => navigate('exceptions')}><Icon name="alert" />异常处理</button>
         {platformAdmin ? <button className={activeTopPage === 'people' ? 'active' : ''} type="button" onClick={() => openPeople()}><Icon name="users" />人员与权限</button> : null}
       </nav>

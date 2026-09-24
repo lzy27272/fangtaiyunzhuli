@@ -91,6 +91,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .console-header nav button { position: relative; display: flex; align-items: center; gap: .45rem; padding: 0 .8rem; border: 0; color: #61706a; background: transparent; font-size: .82rem; font-weight: 700; }
 .console-header nav button.active { color: var(--console-green); }
 .console-header nav button.active::after { position: absolute; right: .65rem; bottom: 0; left: .65rem; height: 3px; border-radius: 3px 3px 0 0; background: var(--console-green); content: ''; }
+.collection-navigation { position: relative; }
+.collection-navigation > summary { display: flex; align-items: center; gap: .45rem; height: 100%; min-height: 42px; padding: 0 .8rem; border-radius: 5px; color: #61706a; font-size: .82rem; font-weight: 700; list-style: none; cursor: pointer; }
+.collection-navigation > summary::-webkit-details-marker { display: none; }
+.collection-navigation > summary > svg:last-child { transform: rotate(90deg); }
+.collection-navigation[open] > summary > svg:last-child { transform: rotate(-90deg); }
+.collection-navigation[open] > summary, .collection-navigation > summary:hover { color: var(--console-green); background: var(--console-green-soft); }
+.collection-submenu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 1; width: 180px; padding: 6px; border: 1px solid var(--console-line); border-radius: 7px; background: #fff; box-shadow: 0 12px 28px rgba(19,43,34,.12); }
+.collection-submenu a { display: flex; align-items: center; justify-content: space-between; gap: .55rem; min-height: 42px; padding: .65rem .7rem; border-radius: 4px; color: var(--console-green); font-size: .82rem; font-weight: 700; text-decoration: none; }
+.collection-submenu a:hover { background: var(--console-green-soft); }
+.collection-navigation > summary:focus-visible, .collection-submenu a:focus-visible { outline: 3px solid var(--console-green); outline-offset: -3px; }
+@media (max-width: 820px) {
+  .collection-navigation > summary { height: auto; }
+  .collection-submenu { position: static; width: auto; margin: 4px 0 4px 24px; box-shadow: none; }
+}
 .header-actions { display: flex; align-items: center; gap: .8rem; }
 .scope-badge { padding: .45rem .65rem; border: 1px solid var(--console-line); border-radius: 5px; color: #53625c; background: #fff; font-size: .72rem; }
 .account-menu-wrap { position: relative; }
