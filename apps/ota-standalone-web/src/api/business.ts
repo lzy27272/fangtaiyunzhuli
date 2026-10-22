@@ -1811,6 +1811,22 @@ export function listSimulationHotels(): Promise<SimulationHotelDirectory> {
   return authenticatedRequest('/ota/simulation/hotels')
 }
 
+export function loadPmsSystem(context: HotelContext): Promise<SimulationHotelView> {
+  return authenticatedRequest(scopedPath(context, '/pms-system'))
+}
+
+export function changePmsSystem(context: HotelContext, input: {
+  pmsSystemCode: PmsSystemCode
+  pmsSystemName?: string
+  expectedRowVersion: number
+}): Promise<SimulationHotelView> {
+  return postCommand(scopedPath(context, '/pms-system'), {
+    ...input,
+    confirmChange: true,
+    reasonCode: 'CHANGE_HOTEL_PMS_SYSTEM',
+  })
+}
+
 export function initializeSimulationHotel(input: {
   hotelDisplayName: string
   ownershipType: HotelOwnershipType

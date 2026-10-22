@@ -385,6 +385,9 @@ const otaRoomTypeCatalogPath = dataPath
 const simulationHotelPath = dataPath
   ? join(dirname(dataPath), 'simulation-hotels.json')
   : null
+const pmsSystemChangeJournalPath = dataPath
+  ? join(dirname(dataPath), 'pms-system-change-transaction.json')
+  : null
 const pmsLoginSecretPath = dataPath
   ? join(dirname(dataPath), 'pms-login-secrets.json')
   : null
@@ -636,6 +639,8 @@ const luopanBrowserConfigsByHotel = new Map()
 const luopanSessionStatesByHotel = new Map()
 const liveCollectionLocks = new Map()
 const pmsCookieValidationLocks = new Map()
+const pmsSystemChangeBlockedHotelIds = new Set()
+const pmsHotelWriteRequestsByHotel = new Map()
 const bieyanghongTargetedRecoveryLocks = new Map()
 const bieyanghongTargetedRecoveryResults = new Map()
 const liveSnapshotStore = loadSnapshotStore(liveSnapshotPath)
@@ -831,6 +836,10 @@ const normalizeSimulationHotel = (candidate) => {
     rowVersion: Number.isInteger(candidate.rowVersion) && candidate.rowVersion > 0
       ? candidate.rowVersion
       : 1,
+    ...(typeof candidate.pmsChangedAt === 'string'
+      && Number.isFinite(Date.parse(candidate.pmsChangedAt))
+      ? { pmsChangedAt: candidate.pmsChangedAt }
+      : {}),
   }
 }
 
@@ -948,6 +957,7 @@ if (simulationHotelPath && existsSync(simulationHotelPath)) {
 
 const trustedDeviceEligible = (hotel) =>
   trustedDeviceEnabled
+  && !pmsSystemChangeBlockedHotelIds.has(hotel?.hotelId)
   && !bieyanghongServerCookieModeEnabled
   && hotel?.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
   && trustedDeviceAllowedHotelCodes.has(hotel.hotelCode)
@@ -957,6 +967,12 @@ const trustedDeviceEligible = (hotel) =>
 const trustedDeviceIntakeStores = new Map()
 const trustedDeviceStatePathFor = (hotel) => {
   if (!trustedDeviceStateDirectory) return null
+  // A PMS change creates a fresh device authorization generation. Returning
+  // to an old manufacturer must not reactivate a previously enrolled device.
+  if (hotel.pmsChangedAt) return join(
+    trustedDeviceStateDirectory,
+    `trusted-device-registry-${hotel.hotelCode.toLowerCase()}-${createHash('sha256').update(hotel.pmsChangedAt).digest('hex').slice(0, 12)}.json`,
+  )
   return hotel.hotelCode === TRUSTED_DEVICE_PILOT_HOTEL_CODE
     ? join(trustedDeviceStateDirectory, 'trusted-device-registry.json')
     : join(
@@ -1196,7 +1212,7 @@ const cloneReportSourceDefinitions = (
 const ensurePrimaryReportSourceTemplate = () => {
   const primary = primaryReportSourceHotel()
   if (!primary) throw new Error('REPORT_SOURCE_TEMPLATE_HOTEL_NOT_FOUND')
-  const primaryUsesReportTemplate = primary.pmsSystemCode !== 'YILIAN_CLOUD'
+  const primaryUsesReportTemplate = primary.pmsSystemCode === 'MEITUAN_BIEYANGHONG'
   if (
     primaryUsesReportTemplate
     && !reportSourcesByHotel.has(primary.hotelId)
@@ -5186,12 +5202,52 @@ const readBody = async (request) => {
     if (bytes > 512 * 1024) throw new Error('REQUEST_TOO_LARGE')
     chunks.push(chunk)
   }
+  if (request.pmsSystemWriteScope) {
+    const { hotelId, changedAt } = request.pmsSystemWriteScope
+    if ((selectedHotel(hotelId).pmsChangedAt ?? null) !== changedAt) {
+      throw new Error('PMS_SYSTEM_VERSION_CONFLICT')
+    }
+  }
   if (chunks.length === 0) return {}
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-const selectedHotel = (hotelId) =>
-  hotels.find((hotel) => hotel.hotelId === hotelId) ?? hotels[0]
+const selectedHotel = (hotelId) => {
+  if (pmsSystemChangeBlockedHotelIds.has(hotelId)) {
+    throw new Error('PMS_SYSTEM_CHANGE_RECOVERY_REQUIRED')
+  }
+  return hotels.find((hotel) => hotel.hotelId === hotelId) ?? hotels[0]
+}
+
+const assertCurrentPmsSnapshot = (hotelId, snapshot) => {
+  const hotel = selectedHotel(hotelId)
+  if (hotel.pmsChangedAt && (
+    snapshot?.sourceSystem !== hotel.pmsSystemCode
+    || !Number.isFinite(Date.parse(snapshot?.observedAt ?? ''))
+    || Date.parse(snapshot.observedAt) < Date.parse(hotel.pmsChangedAt)
+  )) throw new Error('PMS_SYSTEM_SNAPSHOT_OBSOLETE')
+}
+
+const activateChangedPmsFromCompleteSnapshot = (hotelId, snapshot) => {
+  const hotel = selectedHotel(hotelId)
+  if (!hotel.pmsChangedAt || hotel.collectionEnabled || snapshot?.completeness !== 'COMPLETE') return
+  assertCurrentPmsSnapshot(hotelId, snapshot)
+  const previousVersion = hotel.rowVersion
+  hotel.collectionEnabled = true
+  hotel.rowVersion += 1
+  try { persistSimulationHotels() } catch {
+    hotel.collectionEnabled = false
+    hotel.rowVersion = previousVersion
+    throw new Error('PMS_SYSTEM_CHANGE_PERSIST_FAILED')
+  }
+}
+
+const bieyanghongProfileDirectoryFor = (hotelId, hotelCode) => {
+  const hotel = selectedHotel(hotelId)
+  const generation = hotel.pmsChangedAt
+    ? `-${sha256(hotel.pmsChangedAt).slice(0, 12)}` : ''
+  return join(bieyanghongBrowserProfileBase, `hotel-${hotelCode}${generation}`)
+}
 
 const configurationFor = (hotelId) => {
   const selected = selectedHotel(hotelId)
@@ -5279,7 +5335,7 @@ const configurationFor = (hotelId) => {
       displayName: selected.hotelName,
       timezone: selected.timezone,
       lifecycleStatus: selected.lifecycleStatus,
-      collectionEnabled: true,
+      collectionEnabled: selected.collectionEnabled,
       messageEnabled: false,
       rowVersion: selected.rowVersion,
     },
@@ -6679,7 +6735,16 @@ const collectLiveFor = async (
   })
   liveCollectionLocks.set(collectionLockKey, operation)
   try {
-    return await operation
+    const result = await operation
+    const hotel = selectedHotel(hotelId)
+    if (publishSnapshot && hotel.pmsChangedAt && !hotel.collectionEnabled
+      && result?.run?.status === 'SUCCEEDED'
+      && result.run.sourceCount > 0
+      && result.run.successfulSourceCount === result.run.sourceCount
+      && result?.snapshot?.completeness === 'COMPLETE') {
+      activateChangedPmsFromCompleteSnapshot(hotelId, result.snapshot)
+    }
+    return result
   } finally {
     liveCollectionLocks.delete(collectionLockKey)
   }
@@ -6810,6 +6875,7 @@ const deliverWeComSnapshot = async ({
   retryOperationKey = null,
   beforeNetwork = null,
 }) => {
+  assertCurrentPmsSnapshot(hotelId, snapshot)
   assertWeComDeliveryLedgerReady()
   const existing = weComDeliveriesByKey.get(messageKey)
   if (existing) return existing
@@ -6852,6 +6918,9 @@ const deliverWeComSnapshot = async ({
             },
           )
     const messageSha256 = sha256(JSON.stringify(payloads))
+    // Payload generation may await an AI response. Recheck after that await
+    // so a previously queued old-PMS snapshot cannot be sent after cutover.
+    assertCurrentPmsSnapshot(hotelId, snapshot)
     const partMessageSha256s = payloads.map((payload) =>
       sha256(JSON.stringify(payload)))
     const attemptedAt = new Date().toISOString()
@@ -8754,10 +8823,7 @@ const processBieyanghongRepairCodeRequest = ({
     let credentials = requested.credentials
     try {
       handle.login = await startBieyanghongAssistedLogin({
-        profileRoot: join(
-          bieyanghongBrowserProfileBase,
-          `hotel-${challenge.hotelCode}`,
-        ),
+        profileRoot: bieyanghongProfileDirectoryFor(challenge.hotelId, challenge.hotelCode),
         phone: credentials.phone,
       })
       credentials.phone = ''
@@ -8878,10 +8944,7 @@ const processBieyanghongOfficialLoginStart = ({ token }) => {
       handle.login = bieyanghongRemoteDesktopConfig.enabled
         ? await startBieyanghongBrokeredLogin()
         : await startBieyanghongAssistedLogin({
-            profileRoot: join(
-              bieyanghongBrowserProfileBase,
-              `hotel-${challenge.hotelCode}`,
-            ),
+            profileRoot: bieyanghongProfileDirectoryFor(challenge.hotelId, challenge.hotelCode),
             officialLogin: true,
             remoteDesktopConfig: bieyanghongRemoteDesktopConfig,
           })
@@ -11784,6 +11847,7 @@ const deliverFutureDemandRisks = async (
   snapshot,
   { messageKey = null } = {},
 ) => queueFutureDemandRiskDelivery(hotelId, async () => {
+  assertCurrentPmsSnapshot(hotelId, snapshot)
   const config = weComConfigFor(hotelId)
   const observedAt = new Date(snapshot?.observedAt ?? '')
   const scheduleTime = Number.isNaN(observedAt.getTime())
@@ -12548,6 +12612,7 @@ const acceptTrustedDeviceSnapshot = ({
     return { duplicate: false, authoritative: false }
   }
   if (existing && !statusBefore?.cutoverPending) {
+    activateChangedPmsFromCompleteSnapshot(hotel.hotelId, snapshot)
     return { duplicate: true, authoritative: true }
   }
   if (!existing) {
@@ -12590,6 +12655,7 @@ const acceptTrustedDeviceSnapshot = ({
     })
     persistBusinessDayControls()
   }
+  activateChangedPmsFromCompleteSnapshot(hotel.hotelId, snapshot)
   process.stdout.write(`${JSON.stringify({
     event: existing
       ? 'TRUSTED_DEVICE_SNAPSHOT_REPLAYED'
@@ -12842,6 +12908,188 @@ const canAccessHotel = (principal, hotelId) =>
 const rejectForbidden = (response) => {
   json(response, 403, { code: 'REVIEW_ACCOUNT_SCOPE_FORBIDDEN' })
 }
+
+const pmsSystemSourceTemplate = (code) => code === 'MEITUAN_BIEYANGHONG'
+  ? defaultReportSources().map((source) => ({
+      ...source,
+      // First-time manufacturer setup has no verified local room-type IDs.
+      // Keep the fixed forecast entry visible but inactive until configured.
+      enabled: source.endpointUrl.includes('/batchSearchBaseRoomForcasting')
+        ? false : source.enabled,
+    }))
+  : code === 'YILIAN_CLOUD' ? defaultYilianReportSources() : []
+
+const pmsSystemChangeBusy = (hotelId) => {
+  const scopedLocks = [
+    liveCollectionLocks, pmsCookieValidationLocks, activeLuopanRepairsByHotel,
+    activeBieyanghongRepairsByHotel, activeYilianRepairsByHotel,
+    activeYilianWeComResultDeliveriesByHotel, weComDeliveryLocks,
+    otaSourceRefreshLocks, otaControlledLoginLocks, otaControlledLoginCleanupLocks,
+    futureDemandRiskDeliveryQueues,
+  ]
+  return (pmsHotelWriteRequestsByHotel.get(hotelId) ?? 0) > 0
+    || scopedLocks.some((locks) => [...locks.keys()].some((key) =>
+    key === hotelId || String(key).startsWith(`${hotelId}:`)))
+    // These operations use client operation keys rather than hotel keys.
+    || weComManualReplayLocks.size > 0 || weComHotSellingRetryLocks.size > 0
+    || bieyanghongTargetedRecoveryLocks.size > 0
+    || scheduledHotSellingDeliveryWorkflowRunning
+}
+
+const applyPmsSystemChangeState = (transaction) => {
+  const { hotelId, nextHotel, changedAt, roomTypeRowVersion } = transaction
+  const index = hotels.findIndex((hotel) => hotel.hotelId === hotelId)
+  if (index < 0 || hotels[index].tenantId !== nextHotel.tenantId) {
+    throw new Error('PMS_SYSTEM_CHANGE_TRANSACTION_INVALID')
+  }
+  pmsSystemChangeBlockedHotelIds.add(hotelId)
+  hotels[index] = { ...nextHotel }
+  reportSourcesByHotel.set(hotelId, pmsSystemSourceTemplate(nextHotel.pmsSystemCode))
+  cookieSecretsByHotel.delete(hotelId)
+  pmsLoginSecretsByHotel.delete(hotelId)
+  luopanBrowserConfigsByHotel.delete(hotelId)
+  luopanSessionStatesByHotel.delete(hotelId)
+  if (nextHotel.pmsSystemCode === 'LUOPAN_CLOUD') {
+    luopanBrowserConfigsByHotel.set(hotelId, defaultLuopanBrowserConfig())
+  }
+  yilianRepairStatusesByHotel.delete(hotelId)
+  if (nextHotel.pmsSystemCode === 'YILIAN_CLOUD') {
+    yilianRepairStatusesByHotel.set(hotelId, {
+      ...defaultYilianRepairStatus(),
+      trigger: YILIAN_INITIAL_ACTIVATION_TRIGGER,
+      sourceCount: 3,
+    })
+  }
+  // The encrypted archive retains all former PMS snapshots. Remove them from
+  // active state so every current-data consumer (including manual replay and
+  // physical-room catalogs) starts with the new manufacturer's first read.
+  liveSnapshotStore[hotelId] = []
+  businessDayControlsByHotel.delete(hotelId)
+  hotSellingRoomTypesByHotel.set(hotelId, {
+    roomTypeCodes: [], mappings: [], rowVersion: roomTypeRowVersion,
+    updatedAt: changedAt,
+  })
+  trustedDeviceIntakeStores.delete(hotelId)
+  latestLuopanRepairChallengeHashByHotel.delete(hotelId)
+  lastScheduledCollectionSlotByHotel.delete(hotelId)
+  lastScheduledLuopanRecoveryAtByHotel.delete(hotelId)
+  lastScheduledYilianRecoveryAtByHotel.delete(hotelId)
+  for (const key of Object.keys(futureDemandRiskStates)) {
+    if (key.startsWith(`${hotelId}:`)) delete futureDemandRiskStates[key]
+  }
+  // Write the cleared authorization documents before the new hotel record.
+  // A durable pending journal replays this exact per-hotel reset on restart
+  // if any write fails, preserving other hotels' most recent documents.
+  persistCookieSecrets()
+  persistPmsLoginSecrets()
+  persistLuopanSessionStates()
+  persistLuopanBrowserConfigs()
+  persistYilianRepairStatuses()
+  persistBusinessDayControls()
+  persistRoomTypeMappings()
+  persistHotSellingRoomTypes()
+  persistFutureDemandRiskStates()
+  atomicWritePrivateJson(liveSnapshotPath, liveSnapshotStore)
+  persistReportSources()
+  persistSimulationHotels()
+}
+
+const normalizePmsSystemChangeTransaction = (candidate) => {
+  const nextHotel = normalizeSimulationHotel(candidate?.nextHotel)
+  if (candidate?.version !== 1 || !SIMULATION_HOTEL_ID.test(candidate?.transactionId ?? '')
+    || !nextHotel || candidate.hotelId !== nextHotel.hotelId
+    || candidate.changedAt !== nextHotel.pmsChangedAt
+    || nextHotel.collectionEnabled !== false
+    || !Number.isInteger(candidate.roomTypeRowVersion) || candidate.roomTypeRowVersion < 1) {
+    throw new Error('PMS_SYSTEM_CHANGE_TRANSACTION_INVALID')
+  }
+  return { ...candidate, nextHotel }
+}
+
+const recoverPmsSystemChangeTransaction = () => {
+  if (!pmsSystemChangeJournalPath || !existsSync(pmsSystemChangeJournalPath)) return
+  try {
+    const transaction = normalizePmsSystemChangeTransaction(JSON.parse(
+      readFileSync(pmsSystemChangeJournalPath, 'utf8'),
+    ))
+    applyPmsSystemChangeState(transaction)
+    unlinkSync(pmsSystemChangeJournalPath)
+    pmsSystemChangeBlockedHotelIds.delete(transaction.hotelId)
+    process.stdout.write('PMS_SYSTEM_CHANGE_TRANSACTION_RECOVERED\n')
+  } catch {
+    // Never start HTTP handlers or schedulers with partially switched files.
+    throw new Error('PMS_SYSTEM_CHANGE_RECOVERY_REQUIRED')
+  }
+}
+
+const changeHotelPmsSystem = (hotelId, body) => {
+  const hotel = selectedHotel(hotelId)
+  const code = body?.pmsSystemCode
+  const name = code === 'OTHER' && typeof body?.pmsSystemName === 'string'
+    ? body.pmsSystemName.trim() : PMS_SYSTEM_NAMES[code]
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || body.reasonCode !== 'CHANGE_HOTEL_PMS_SYSTEM' || body.confirmChange !== true
+    || !PMS_SYSTEM_CODES.has(code) || typeof name !== 'string' || !name || name.length > 80
+    || !Number.isInteger(body.expectedRowVersion) || body.expectedRowVersion < 1) {
+    throw new Error('PMS_SYSTEM_CHANGE_INVALID')
+  }
+  if (hotel.rowVersion !== body.expectedRowVersion) {
+    throw new Error('PMS_SYSTEM_VERSION_CONFLICT')
+  }
+  if (hotel.pmsSystemCode === code && (code !== 'OTHER' || hotel.pmsSystemName === name)) return hotel
+  if (pmsSystemChangeJournalPath && existsSync(pmsSystemChangeJournalPath)) {
+    throw new Error('PMS_SYSTEM_CHANGE_RECOVERY_REQUIRED')
+  }
+  if (pmsSystemChangeBusy(hotelId)) throw new Error('PMS_SYSTEM_CHANGE_BUSY')
+  const transactionId = randomUUID()
+  const changedAt = new Date().toISOString()
+  const transaction = {
+    version: 1, transactionId, hotelId, changedAt,
+    roomTypeRowVersion: hotSellingRoomTypesFor(hotelId).rowVersion + 1,
+    nextHotel: {
+      ...hotel, pmsSystemCode: code, pmsSystemName: name, pmsChangedAt: changedAt,
+      collectionEnabled: false, configuredMockConnectors: 0,
+      rowVersion: hotel.rowVersion + 1,
+    },
+  }
+  if (!pmsSystemChangeJournalPath || !liveSnapshotPath) {
+    throw new Error('PMS_SYSTEM_CHANGE_PERSIST_FAILED')
+  }
+  try {
+    const archivePath = join(dirname(pmsSystemChangeJournalPath), 'pms-system-history',
+      hotelId, `${transactionId}.json`)
+    const formerPmsState = {
+      hotel, reportSources: reportSourcesByHotel.get(hotelId) ?? [],
+      cookieSecrets: cookieSecretsByHotel.get(hotelId) ?? {},
+      pmsLoginSecret: pmsLoginSecretsByHotel.get(hotelId) ?? null,
+      luopanBrowserConfig: luopanBrowserConfigsByHotel.get(hotelId) ?? null,
+      luopanSession: luopanSessionStatesByHotel.get(hotelId) ?? null,
+      yilianRepairStatus: yilianRepairStatusesByHotel.get(hotelId) ?? null,
+      snapshots: liveSnapshotStore[hotelId] ?? [],
+      businessDayControl: businessDayControlsByHotel.get(hotelId) ?? null,
+      hotSellingRoomTypes: hotSellingRoomTypesFor(hotelId),
+      futureDemandRiskStates: Object.fromEntries(Object.entries(futureDemandRiskStates)
+        .filter(([key]) => key.startsWith(`${hotelId}:`))),
+    }
+    atomicWritePrivateJson(archivePath, {
+      version: 1, transactionId, archivedAt: changedAt,
+      record: encryptCookie(JSON.stringify(formerPmsState), cookieSecretKey,
+        `pms-system-archive:${hotelId}:${transactionId}`),
+    })
+    atomicWritePrivateJson(pmsSystemChangeJournalPath, transaction)
+    applyPmsSystemChangeState(transaction)
+    unlinkSync(pmsSystemChangeJournalPath)
+    pmsSystemChangeBlockedHotelIds.delete(hotelId)
+    return hotels.find((candidate) => candidate.hotelId === hotelId)
+  } catch {
+    // If preparation failed no live state was changed. Once the journal was
+    // committed, keep this hotel blocked until recovery completes on restart.
+    if (existsSync(pmsSystemChangeJournalPath)) pmsSystemChangeBlockedHotelIds.add(hotelId)
+    throw new Error('PMS_SYSTEM_CHANGE_PERSIST_FAILED')
+  }
+}
+
+recoverPmsSystemChangeTransaction()
 
 const server = createServer(async (request, response) => {
   try {
@@ -13994,6 +14242,28 @@ const server = createServer(async (request, response) => {
         return
       }
 
+      if (pmsSystemChangeBlockedHotelIds.has(hotelId)) {
+        throw new Error('PMS_SYSTEM_CHANGE_RECOVERY_REQUIRED')
+      }
+      request.pmsSystemWriteScope = {
+        hotelId, changedAt: selected.pmsChangedAt ?? null,
+      }
+
+      if (suffix === '/pms-system' && ['GET', 'POST'].includes(request.method)) {
+        if (!isPlatformAdmin(requestPrincipal)) {
+          rejectForbidden(response)
+          return
+        }
+        if (request.method === 'GET') json(response, 200, { data: selected })
+        else {
+          const updated = changeHotelPmsSystem(hotelId, await readBody(request))
+          auditSecurityEvent({ action: 'HOTEL_PMS_SYSTEM_CHANGED', outcome: 'SUCCEEDED',
+            request, principal: requestPrincipal, hotelId, reasonCode: 'CHANGE_HOTEL_PMS_SYSTEM' })
+          json(response, 200, { data: updated })
+        }
+        return
+      }
+
       if (
         !['GET', 'HEAD'].includes(request.method ?? '')
         && !canConfigureHotels(requestPrincipal)
@@ -14016,6 +14286,18 @@ const server = createServer(async (request, response) => {
       }
 
       if (!['GET', 'HEAD'].includes(request.method ?? '')) {
+        pmsHotelWriteRequestsByHotel.set(hotelId,
+          (pmsHotelWriteRequestsByHotel.get(hotelId) ?? 0) + 1)
+        let released = false
+        const releasePmsWrite = () => {
+          if (released) return
+          released = true
+          const count = (pmsHotelWriteRequestsByHotel.get(hotelId) ?? 1) - 1
+          if (count > 0) pmsHotelWriteRequestsByHotel.set(hotelId, count)
+          else pmsHotelWriteRequestsByHotel.delete(hotelId)
+        }
+        response.once('finish', releasePmsWrite)
+        response.once('close', releasePmsWrite)
         auditSecurityEvent({
           action: 'HOTEL_WRITE',
           outcome: 'REQUESTED',
@@ -15375,6 +15657,7 @@ const server = createServer(async (request, response) => {
                   && (
                     error.message.startsWith('SIMULATION_')
                     || error.message === 'PMS_ADAPTER_NOT_READY'
+                    || error.message.startsWith('PMS_SYSTEM_')
                     || error.message.startsWith('PMS_LOGIN_')
                     || error.message.startsWith('PMS_BUSINESS_DATE_')
                     || error.message.startsWith('PMS_COOKIE_')
@@ -15397,6 +15680,9 @@ const server = createServer(async (request, response) => {
       response,
       [
         'OCCUPANCY_TARGET_VERSION_CONFLICT',
+        'PMS_SYSTEM_VERSION_CONFLICT',
+        'PMS_SYSTEM_CHANGE_BUSY',
+        'PMS_SYSTEM_SNAPSHOT_OBSOLETE',
         'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
         'OTA_SOURCE_VERSION_CONFLICT',
         'OTA_SOURCE_CHANGED_DURING_REFRESH',
@@ -15407,13 +15693,14 @@ const server = createServer(async (request, response) => {
         'WECOM_MANUAL_REPLAY_SNAPSHOT_REQUIRED',
       ].includes(code)
         ? 409
-        : code === 'WECOM_DELIVERY_LEDGER_UNAVAILABLE'
+        : ['WECOM_DELIVERY_LEDGER_UNAVAILABLE', 'PMS_SYSTEM_CHANGE_RECOVERY_REQUIRED'].includes(code)
           ? 503
         : [
           'OCCUPANCY_TARGET_PERSIST_FAILED',
           'OCCUPANCY_TARGET_STORE_UNAVAILABLE',
           'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED',
           'WECOM_REPAIR_BOT_CONFIG_PERSIST_FAILED',
+          'PMS_SYSTEM_CHANGE_PERSIST_FAILED',
         ].includes(code)
           ? 500
           : 400,

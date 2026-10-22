@@ -1139,6 +1139,17 @@ details.history-card { display: block; }
   background: #f8fcfa;
 }
 .pms-endpoint-card > header { background: #eaf4f0; }
+.pms-system-selection { scroll-margin-top: 5.5rem; }
+.pms-system-selection .cookie-clear-option {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+}
+.pms-system-selection .cookie-clear-option input {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: .15rem;
+}
 .pms-vendor-selection {
   padding: 1rem 1rem 0;
 }
@@ -1150,7 +1161,8 @@ details.history-card { display: block; }
   font-size: .75rem;
   font-weight: 800;
 }
-.pms-vendor-selection select {
+.pms-vendor-selection select,
+.pms-vendor-selection input {
   min-height: 2.7rem;
   border: 1px solid #aac9bd;
   border-radius: .65rem;

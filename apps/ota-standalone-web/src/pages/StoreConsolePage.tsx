@@ -426,6 +426,7 @@ export function StoreDetailPage({
   onBack,
   onOpenExceptions,
   onOpenPeoplePermissions,
+  onHotelChanged,
 }: {
   hotel: SimulationHotelView
   initialTab?: StoreTab
@@ -437,6 +438,7 @@ export function StoreDetailPage({
   onBack: () => void
   onOpenExceptions: () => void
   onOpenPeoplePermissions: () => void
+  onHotelChanged: (hotel: SimulationHotelView) => void
 }) {
   const context = useMemo<HotelContext>(() => ({ tenantId: hotel.tenantId, hotelId: hotel.hotelId }), [hotel])
   const authorizedInitialTab = initialTab === 'collection'
@@ -801,7 +803,17 @@ export function StoreDetailPage({
       {!loading && tab === 'repair' ? <div id="store-repair-panel" tabIndex={-1}><StoreRepairPanel context={context} hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} canConfigure={canConfigure} onStatusChanged={() => void refresh()} /></div> : null}
       {!loading && tab === 'occupancy' ? <Suspense fallback={<LoadingState label="正在打开出租率复盘…" />}><OccupancyReviewPanel key={hotel.hotelId} context={context} canConfigure={canRevenueConfigure} /></Suspense> : null}
 
-      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage context={context} canConfigure hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} pmsSystemName={hotel.pmsSystemName} attentionItems={pmsAttentionItems} initialSection={collectionSection} navigationSequence={collectionNavigationSequence} onSectionChange={setCollectionSection} otaAttentionPlatformCode={otaAttentionPlatformCode} otaAttentionSourceId={otaAttentionSourceId} /></div> : null}
+      {!loading && tab === 'collection' && canConfigure ? <div className="embedded-legacy-page"><ReportSourceConfigPage key={`${hotel.hotelId}:${hotel.pmsSystemCode}:${hotel.rowVersion}`} context={context} canConfigure hotelCode={hotel.hotelCode} pmsSystemCode={hotel.pmsSystemCode} pmsSystemName={hotel.pmsSystemName} attentionItems={pmsAttentionItems} initialSection={collectionSection} navigationSequence={collectionNavigationSequence} onSectionChange={setCollectionSection} otaAttentionPlatformCode={otaAttentionPlatformCode} otaAttentionSourceId={otaAttentionSourceId} onPmsSystemChanged={(updated) => {
+        setData(emptyDetail)
+        setLoading(true)
+        setNotice(`PMS 厂家已保存为${updated.pmsSystemName}，请完成新系统登录和采集验证。`)
+        onHotelChanged(updated)
+      }} onPmsSystemRefreshed={(updated) => {
+        setData(emptyDetail)
+        setLoading(true)
+        setNotice('已刷新当前门店的 PMS 配置。')
+        onHotelChanged(updated)
+      }} /></div> : null}
 
       {!loading && tab === 'collection' && !canConfigure ? <div className="embedded-legacy-page"><OtaSourceConfigPanel attentionPlatformCode={otaAttentionPlatformCode} attentionRequestSequence={collectionNavigationSequence} attentionSourceId={otaAttentionSourceId} canConfigure={false} canRepairLogin context={context} onStatusChanged={() => void refresh()} /></div> : null}
 

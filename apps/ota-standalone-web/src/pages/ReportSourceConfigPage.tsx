@@ -12,6 +12,7 @@ import {
   type ReportSourceInput,
   type ReportSourceView,
   type ReportType,
+  type SimulationHotelView,
 } from '../api/business'
 import { StatePanel } from '../components/StatePanel'
 import { LuopanBrowserConfigPanel } from './LuopanBrowserConfigPanel'
@@ -25,6 +26,7 @@ import { TrustedDevicePanel } from './TrustedDevicePanel'
 import { loadTrustedDeviceStatus } from '../api/trustedDevice'
 import { businessErrorMessage } from '../ui/businessDisplay'
 import { BieyanghongCookieRepairPanel } from './BieyanghongCookieRepairPanel'
+import { PMS_VENDOR_LABELS, PmsSystemSelectionPanel } from './PmsSystemSelectionPanel'
 
 interface Props {
   context: HotelContext | null
@@ -38,6 +40,8 @@ interface Props {
   otaAttentionSourceId: string | null
   otaAttentionPlatformCode?: OtaPlatformCode | null
   navigationSequence?: number
+  onPmsSystemChanged: (hotel: SimulationHotelView) => void
+  onPmsSystemRefreshed: (hotel: SimulationHotelView) => void
 }
 
 export type CollectionSection = 'overview' | 'pms' | 'ota'
@@ -54,13 +58,6 @@ const REPORT_TYPE_LABELS: Record<ReportType, string> = {
 const CALCULATION_ROLE_LABELS: Record<CalculationRole, string> = {
   PRIMARY_CALCULATION: '主计算来源',
   AUXILIARY_CALCULATION: '辅助计算来源',
-}
-
-const PMS_VENDOR_LABELS: Record<PmsSystemCode, string> = {
-  MEITUAN_BIEYANGHONG: '美团别样红 PMS',
-  LUOPAN_CLOUD: '罗盘 PMS',
-  YILIAN_CLOUD: '驿联云 PMS',
-  OTHER: '其他 PMS 厂家',
 }
 
 const LUOPAN_MANAGED_DATA_ENTRIES = [
@@ -146,6 +143,8 @@ export function ReportSourceConfigPage({
   otaAttentionSourceId,
   otaAttentionPlatformCode = null,
   navigationSequence = 0,
+  onPmsSystemChanged,
+  onPmsSystemRefreshed,
 }: Props) {
   const [sources, setSources] = useState<ReportSourceView[]>([])
   const [cookieDrafts, setCookieDrafts] = useState<Record<string, string>>({})
@@ -462,6 +461,14 @@ export function ReportSourceConfigPage({
       {!context ? (
         <div className="state-panel">请先在顶部选择门店。</div>
       ) : (
+        <>
+        {collectionSection === 'pms' ? <PmsSystemSelectionPanel
+          key={`${context.hotelId}:${pmsSystemCode}`}
+          context={context}
+          canConfigure={canConfigure}
+          onSaved={onPmsSystemChanged}
+          onRefreshed={onPmsSystemRefreshed}
+        /> : null}
         <StatePanel loading={loading} error={error}>
           {collectionSection === 'overview' ? <>
             <DataAccessOverviewPanel
@@ -479,11 +486,7 @@ export function ReportSourceConfigPage({
             </div>
           </> : null}
 
-          {collectionSection === 'pms' ? <div
-            className="pms-system-config"
-            id="pms-system-config-panel"
-            tabIndex={-1}
-          >
+          {collectionSection === 'pms' ? <div className="pms-system-config">
             <article className="report-source-card pms-endpoint-card">
               <header>
                 <div>
@@ -494,25 +497,6 @@ export function ReportSourceConfigPage({
                   系统已匹配 · {selectedPmsVendorLabel}
                 </span>
               </header>
-              <div className="pms-vendor-selection">
-                <label>
-                  系统自动选择的 PMS 厂家
-                  <select
-                    aria-label="当前门店 PMS 厂家"
-                    disabled
-                    value={pmsSystemCode}
-                  >
-                    {Object.entries(PMS_VENDOR_LABELS).map(([code, label]) => (
-                      <option key={code} value={code}>
-                        {code === 'OTHER' ? selectedPmsVendorLabel : label}
-                      </option>
-                    ))}
-                  </select>
-                  <small>
-                    已根据门店档案自动选择；进入本页即加载该厂家的登录方式、已有链接和数据入口。
-                  </small>
-                </label>
-              </div>
               <p>
                 {pmsSystemCode === 'OTHER'
                   ? '该厂家尚未内置适配，可在下方录入厂家提供的数据入口；保存内容只属于当前门店。'
@@ -973,6 +957,7 @@ export function ReportSourceConfigPage({
           </> : null}
           {notice ? <p className="success-note">{notice}</p> : null}
         </StatePanel>
+        </>
       )}
     </section>
   )
