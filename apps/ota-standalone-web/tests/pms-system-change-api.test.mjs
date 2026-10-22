@@ -89,6 +89,7 @@ async function start(root, { expectFailure = false, collectorFixture = false } =
     OTA_REVIEW_TRUSTED_DEVICE_ENABLED: 'false' }
   env.PMS_SYSTEM_TEST_COLLECTOR_STATE_PATH = join(root, 'collector-test-state.json')
   env.PMS_SYSTEM_TEST_SEND_SPY_PATH = join(root, 'wecom-network-test-spy.jsonl')
+  env.PMS_SYSTEM_TEST_COLLECTOR_SPY_PATH = join(root, 'collector-test-spy.jsonl')
   const args = collectorFixture
     ? ['--import', new URL('./fixtures/pms-system-collector-loader.mjs', import.meta.url).href, apiScript]
     : [apiScript]
@@ -441,5 +442,283 @@ test('old-PMS snapshots cannot reach the WeCom network boundary after manufactur
     assert.equal(stale.body.data.overallStatus, 'PARTIAL')
     assert.deepEqual(stale.body.data.failedTemplates, [{ templateCode: 'TODAY_REVENUE', reasonCode: 'PMS_SYSTEM_SNAPSHOT_OBSOLETE' }])
     assert.equal(await sendCount(), sentBeforeCutover)
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+const initialCookie = (id = '9009') => `hotelpms_login_hotel_id=${id}; hotelpms_login_org_id=900; hotelpms_tenant_id=90; hotelpms_token=example-test-only-pms-token; _lxsdk_cuid=example-client-id`
+const initialCookieCommand = (version = 5, overrides = {}) => ({
+  reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE', cookieHeader: initialCookie(),
+  initialStoreBinding: { independentExpectedPmsHotelId: '9009', confirmStoreIdentity: true, expectedRowVersion: version },
+  ...overrides,
+})
+const fixtureReadCount = async root => {
+  try { return (await readFile(join(root, 'collector-test-spy.jsonl'), 'utf8')).split('\n').filter(Boolean).length }
+  catch (error) { if (error.code === 'ENOENT') return 0; throw error }
+}
+async function waitForFixtureReads(root, minimum) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await fixtureReadCount(root) >= minimum) return
+    await new Promise(resolve => setTimeout(resolve, 15))
+  }
+  assert.fail('Synthetic provider read did not start')
+}
+async function prepareInitialCookieStore(root) {
+  await seed(root)
+  await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE' })
+  await writeFile(join(root, 'wecom-network-test-spy.jsonl'), '', 'utf8')
+  const app = await start(root, { collectorFixture: true })
+  assert.equal((await call(app, '/pms-system', change('MEITUAN_BIEYANGHONG'))).status, 200)
+  return app
+}
+
+test('initial Cookie authorization requires an independent confirmed ID and complete reads, then survives restart', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-cookie-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    const unbound = await call(app, '/pms-cookie-validation')
+    assert.equal(unbound.status, 200)
+    assert.deepEqual(unbound.body.data, { status: 'NOT_BOUND', firstTimeSetupRequired: true, canInitialize: true,
+      hotelRowVersion: 5, hotelCode: '009', hotelName: 'Synthetic hotel 009', collectionEnabled: false,
+      automaticHourlyCollectionEnabled: false, enabledSourceCount: 3, roomForecastConfigured: false })
+    const secretsBefore = await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8')
+    const otherSecrets = (await readJson(root, 'report-source-cookie-secrets.json'))[otherHotelId]
+    const account = await fetch(`${app.origin}/api/v1/auth/accounts`, { method: 'POST',
+      headers: { Authorization: `Bearer ${app.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'initial-cookie-operator', displayName: 'Synthetic operator',
+        password: 'example-Initial-Operator-Password-42', roles: ['OTA_OPERATION_MANAGER'], hotelIds: [hotelId] }) })
+    assert.equal(account.status, 201)
+    const login = await fetch(`${app.origin}/api/v1/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'initial-cookie-operator', password: 'example-Initial-Operator-Password-42' }) })
+    const operator = (await login.json()).accessToken
+    assert.equal((await call(app, '/pms-cookie-validation', undefined, operator)).status, 403)
+    assert.equal((await call(app, '/pms-cookie-validation', initialCookieCommand(), operator)).status, 403)
+    for (const id of ['0', '09009', ' 9009', '9009 ', '', 9009]) {
+      const rejected = await call(app, '/pms-cookie-validation', initialCookieCommand(5, {
+        initialStoreBinding: { independentExpectedPmsHotelId: id, confirmStoreIdentity: true, expectedRowVersion: 5 },
+      }))
+      assert.equal(rejected.status, 400)
+      assert.equal(rejected.body.code, 'BIEYANGHONG_INITIAL_BINDING_INVALID')
+    }
+    const missingConfirmation = await call(app, '/pms-cookie-validation', initialCookieCommand(5, {
+      initialStoreBinding: { independentExpectedPmsHotelId: '9009', confirmStoreIdentity: false, expectedRowVersion: 5 },
+    }))
+    assert.equal(missingConfirmation.body.code, 'BIEYANGHONG_INITIAL_BINDING_INVALID')
+    const stale = await call(app, '/pms-cookie-validation', initialCookieCommand(4))
+    assert.equal(stale.status, 409)
+    assert.equal(stale.body.code, 'BIEYANGHONG_INITIAL_BINDING_VERSION_CONFLICT')
+    const wrongStore = await call(app, '/pms-cookie-validation', initialCookieCommand(5, { cookieHeader: initialCookie('9010') }))
+    assert.equal(wrongStore.body.code, 'BIEYANGHONG_STORE_SCOPE_INVALID')
+    const duplicateStore = await call(app, '/pms-cookie-validation', initialCookieCommand(5, {
+      cookieHeader: `${initialCookie()}; hotelpms_login_hotel_id=9010`,
+    }))
+    assert.equal(duplicateStore.body.code, 'BIEYANGHONG_STORE_SCOPE_INVALID')
+    const noIndependentBinding = await call(app, '/pms-cookie-validation', {
+      reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE', cookieHeader: initialCookie(),
+    })
+    assert.equal(noIndependentBinding.body.code, 'BIEYANGHONG_EXPECTED_STORE_SCOPE_UNAVAILABLE')
+    assert.equal(await fixtureReadCount(root), 0, 'invalid scope must fail before provider access')
+    assert.equal(await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8'), secretsBefore)
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'PARTIAL' })
+    const partial = await call(app, '/pms-cookie-validation', initialCookieCommand())
+    assert.equal(partial.status, 400)
+    assert.equal(partial.body.code, 'PMS_COOKIE_VALIDATION_INCOMPLETE')
+    assert.equal(await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8'), secretsBefore)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    assert.equal((await call(app, '/pms-system')).body.data.collectionEnabled, false)
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE' })
+    const accepted = await call(app, '/pms-cookie-validation', initialCookieCommand())
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body))
+    assert.equal(accepted.body.data.initialStoreBindingAccepted, true)
+    assert.equal(accepted.body.data.successfulSourceCount, 3)
+    assert.equal(accepted.body.data.outboundDeliveryAttempted, false)
+    const bound = (await call(app, '/pms-cookie-validation')).body.data
+    assert.equal(bound.status, 'BOUND')
+    assert.equal(bound.canInitialize, false)
+    assert.equal(bound.expectedPmsHotelId, '9009')
+    assert.equal(bound.collectionEnabled, false)
+    assert.equal(bound.roomForecastConfigured, false)
+    const encryptedStore = await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8')
+    assert.doesNotMatch(encryptedStore, /hotelpms_login_hotel_id|example-test-only-pms-token/)
+    assert.deepEqual((await readJson(root, 'report-source-cookie-secrets.json'))[otherHotelId], otherSecrets)
+    const cannotRebind = await call(app, '/pms-cookie-validation', initialCookieCommand(5, {
+      initialStoreBinding: { independentExpectedPmsHotelId: '9010', confirmStoreIdentity: true, expectedRowVersion: 5 },
+      cookieHeader: initialCookie('9010'),
+    }))
+    assert.equal(cannotRebind.status, 409)
+    assert.equal(cannotRebind.body.code, 'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED')
+    const oldContract = { reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE', cookieHeader: initialCookie() }
+    assert.equal((await call(app, '/pms-cookie-validation', oldContract)).status, 200)
+    assert.equal((await call(app, '/pms-cookie-validation', { ...oldContract, cookieHeader: initialCookie('9010') })).body.code,
+      'BIEYANGHONG_STORE_SCOPE_INVALID')
+    assert.equal((await call(app, '/live-collection-runs', {})).status, 200)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.collectionEnabled, true)
+    assert.equal(await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8'), '', 'setup and collection must not send messages')
+    const audits = await readFile(join(root, 'security-audit.jsonl'), 'utf8')
+    assert.match(audits, /BIEYANGHONG_INITIAL_STORE_SCOPE_CONFIRMED/)
+    assert.doesNotMatch(audits + app.errors, /hotelpms_login_hotel_id|example-test-only-pms-token/)
+    await stop(app)
+    app = await start(root, { collectorFixture: true })
+    const restarted = (await call(app, '/pms-cookie-validation')).body.data
+    assert.equal(restarted.status, 'BOUND')
+    assert.equal(restarted.expectedPmsHotelId, '9009')
+    assert.equal(restarted.collectionEnabled, true)
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('initial Cookie authorization rolls back memory on persistence failure and refuses in-flight setup races', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-cookie-atomic-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    const secretFile = join(root, 'report-source-cookie-secrets.json')
+    await rename(secretFile, `${secretFile}.saved`)
+    await mkdir(secretFile)
+    const failed = await call(app, '/pms-cookie-validation', initialCookieCommand())
+    assert.equal(failed.status, 500)
+    assert.equal(failed.body.code, 'PMS_COOKIE_PERSIST_FAILED')
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    assert.equal((await call(app, '/pms-login-config')).body.data.configured, false)
+    await rm(secretFile, { recursive: true })
+    await rename(`${secretFile}.saved`, secretFile)
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE', delayMs: 400 })
+    const first = call(app, '/pms-cookie-validation', initialCookieCommand())
+    await waitForFixtureReads(root, 2)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.canInitialize, false)
+    const concurrent = await call(app, '/pms-cookie-validation', initialCookieCommand())
+    assert.equal(concurrent.body.code, 'PMS_COOKIE_VALIDATION_IN_PROGRESS')
+    assert.equal((await call(app, '/pms-system', change('LUOPAN_CLOUD', 5))).body.code, 'PMS_SYSTEM_CHANGE_BUSY')
+    assert.equal((await first).status, 200)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'BOUND')
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('mixed, unparseable, and corrupt old Cookie records cannot be overridden by initial authorization', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-cookie-conflict-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    await stop(app)
+    const secretStore = await readJson(root, 'report-source-cookie-secrets.json')
+    const sources = (await readJson(root, 'report-sources.json'))[hotelId]
+    const otherBefore = secretStore[otherHotelId]
+    for (const variant of ['MIXED', 'UNPARSEABLE', 'CORRUPT']) {
+      secretStore[hotelId] = Object.fromEntries(sources.slice(0, 2).map((source, index) => [source.sourceId,
+        encryptCookie(variant === 'UNPARSEABLE' && index === 1 ? 'synthetic_session=without-hotel-id'
+          : initialCookie(variant === 'MIXED' && index === 1 ? '9010' : '9009'), secretKey, `${hotelId}:${source.sourceId}`),
+      ]))
+      if (variant === 'CORRUPT') secretStore[hotelId][sources[1].sourceId].authTag = Buffer.alloc(16).toString('base64url')
+      await jsonFile(root, 'report-source-cookie-secrets.json', secretStore)
+      app = await start(root, { collectorFixture: true })
+      const conflict = (await call(app, '/pms-cookie-validation')).body.data
+      assert.equal(conflict.status, 'CONFLICT', variant)
+      assert.equal(conflict.canInitialize, false)
+      assert.equal(Object.hasOwn(conflict, 'expectedPmsHotelId'), false)
+      const blocked = await call(app, '/pms-cookie-validation', initialCookieCommand())
+      assert.equal(blocked.status, 409)
+      assert.equal(blocked.body.code, 'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED')
+      assert.equal(await fixtureReadCount(root), 0)
+      assert.deepEqual((await readJson(root, 'report-source-cookie-secrets.json'))[otherHotelId], otherBefore)
+      await stop(app)
+    }
+    // An explicit manufacturer change retires only this hotel's old corrupt
+    // generation; it must not leave a permanent conflict marker behind.
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-system', change('LUOPAN_CLOUD', 5))).status, 200)
+    const historyDirectory = join(root, 'pms-system-history', hotelId)
+    const archivedStates = await Promise.all((await readdir(historyDirectory)).map(async name => {
+      const envelope = JSON.parse(await readFile(join(historyDirectory, name), 'utf8'))
+      return JSON.parse(decryptCookie(envelope.record, secretKey, `pms-system-archive:${hotelId}:${envelope.transactionId}`))
+    }))
+    assert.deepEqual(archivedStates.find(state => state.unreadableCookieSecretDocument)?.unreadableCookieSecretDocument,
+      secretStore[hotelId], 'retiring a corrupt generation must archive its original encrypted document')
+    assert.equal((await call(app, '/pms-system', change('MEITUAN_BIEYANGHONG', 6))).status, 200)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('three-source initial authorization enables collection but cannot send an empty future forecast', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-cookie-future-'))
+  let app
+  try {
+    await seed(root)
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE', todayOnlyFutureChange: true })
+    const webhook = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=example-not-a-real-webhook-000009'
+    await jsonFile(root, 'wecom-configs.json', { [hotelId]: { enabled: true, broadcastIntervalHours: 1,
+      endpointSha256: fingerprintWeComWebhook(webhook) } })
+    await jsonFile(root, 'wecom-webhook-secrets.json', { [hotelId]: encryptCookie(webhook, secretKey, `wecom-webhook:${hotelId}`) })
+    await jsonFile(root, 'wecom-deliveries.json', [])
+    await writeFile(join(root, 'wecom-network-test-spy.jsonl'), '', 'utf8')
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-system', change('MEITUAN_BIEYANGHONG'))).status, 200)
+    assert.equal((await call(app, '/pms-cookie-validation', initialCookieCommand())).status, 200)
+    assert.equal((await call(app, '/live-collection-runs', {})).status, 200)
+    const status = (await call(app, '/pms-cookie-validation')).body.data
+    assert.equal(status.status, 'BOUND')
+    assert.equal(status.collectionEnabled, true)
+    assert.equal(status.roomForecastConfigured, false)
+    assert.equal(status.enabledSourceCount, 3)
+    assert.equal(await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8'), '')
+    const snapshot = (await readJson(root, 'live-report-snapshots.json'))[hotelId].at(-1)
+    assert.deepEqual(snapshot.futureDaily, [])
+    assert.equal(snapshot.futureBookingChanges.daily.length, 1)
+    const replay = await call(app, '/wecom-manual-replay-deliveries', { reasonCode: 'MANUAL_REPLAY_LATEST_COMPLETE',
+      expectedCollectionRunId: snapshot.collectionRunId, operationKey: randomUUID() })
+    assert.equal(replay.status, 200)
+    assert.equal(replay.body.data.overallStatus, 'PARTIAL')
+    assert.deepEqual(replay.body.data.failedTemplates, [{ templateCode: 'FUTURE_14D', reasonCode: 'PMS_FUTURE_DATA_NOT_READY' }])
+    const sends = (await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)
+    assert.ok(sends.length > 0, 'the current-day template is a positive control at the mocked network boundary')
+    assert.ok(sends.every(send => send.futureTemplate === false))
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('saving an initial authorization preserves another hotel corrupt encrypted document and conflict across restart', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-cookie-other-corrupt-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    await stop(app)
+    const store = await readJson(root, 'report-source-cookie-secrets.json')
+    store[otherHotelId][sourceId].authTag = Buffer.alloc(16).toString('base64url')
+    const corruptOther = store[otherHotelId]
+    await jsonFile(root, 'report-source-cookie-secrets.json', store)
+    app = await start(root, { collectorFixture: true })
+    const otherApp = { ...app, scoped: app.scoped.replace(hotelId, otherHotelId) }
+    assert.equal((await call(otherApp, '/pms-cookie-validation')).body.data.status, 'CONFLICT')
+    assert.equal((await call(app, '/pms-cookie-validation', initialCookieCommand())).status, 200)
+    assert.deepEqual((await readJson(root, 'report-source-cookie-secrets.json'))[otherHotelId], corruptOther)
+    await stop(app)
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'BOUND')
+    const otherAfterRestart = { ...app, scoped: app.scoped.replace(hotelId, otherHotelId) }
+    const conflict = (await call(otherAfterRestart, '/pms-cookie-validation')).body.data
+    assert.equal(conflict.status, 'CONFLICT')
+    assert.equal(conflict.canInitialize, false)
+    assert.equal((await call(otherAfterRestart, '/pms-cookie-validation', initialCookieCommand(4))).body.code,
+      'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED')
+    assert.deepEqual((await readJson(root, 'report-source-cookie-secrets.json'))[otherHotelId], corruptOther)
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('an unreadable whole Cookie store remains unchanged when legacy configuration attempts to save', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-cookie-store-corrupt-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    await stop(app)
+    const corruptDocument = '{"synthetic-unreadable-original":'
+    await writeFile(join(root, 'report-source-cookie-secrets.json'), corruptDocument, 'utf8')
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'CONFLICT')
+    assert.equal((await call(app, '/pms-cookie-validation', initialCookieCommand())).body.code,
+      'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED')
+    const sources = (await call(app, '/report-sources')).body.data
+    const attemptedSave = await call(app, '/report-sources', { reasonCode: 'UPDATE_COLLECTION_CONFIGURATION',
+      sources: sources.map(source => ({ ...source, cookieUpdate: { action: 'REPLACE', value: initialCookie() } })) })
+    assert.ok(attemptedSave.status >= 400)
+    assert.equal(await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8'), corruptDocument)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'CONFLICT')
+    assert.equal(await fixtureReadCount(root), 0)
   } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
 })

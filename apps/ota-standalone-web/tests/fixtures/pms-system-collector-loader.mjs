@@ -10,8 +10,10 @@ globalThis.fetch = async (input, options) => {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
   if (['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return originalFetch(input, options)
   if (url.hostname === 'qyapi.weixin.qq.com' && url.pathname === '/cgi-bin/webhook/send') {
+    const payload = JSON.parse(options?.body ?? '{}')
     appendFileSync(process.env.PMS_SYSTEM_TEST_SEND_SPY_PATH, `${JSON.stringify({
       host: url.hostname, path: url.pathname, method: options?.method,
+      futureTemplate: String(payload?.text?.content ?? '').includes('｜远期房态'),
     })}\n`)
     return new Response(JSON.stringify({ errcode: 0, errmsg: 'ok' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
@@ -20,8 +22,13 @@ globalThis.fetch = async (input, options) => {
   throw new Error('PMS_SYSTEM_TEST_EXTERNAL_NETWORK_BLOCKED')
 }
 
-function syntheticPmsCollection({ hotel, previousSnapshots = [], sources = [] }) {
+async function syntheticPmsCollection({ hotel, previousSnapshots = [], sources = [] }) {
   const state = JSON.parse(readPmsFixture(process.env.PMS_SYSTEM_TEST_COLLECTOR_STATE_PATH, 'utf8'))
+  if (process.env.PMS_SYSTEM_TEST_COLLECTOR_SPY_PATH) {
+    appendPmsFixture(process.env.PMS_SYSTEM_TEST_COLLECTOR_SPY_PATH,
+      `${JSON.stringify({ hotelId: hotel.hotelId, sourceCount: sources.filter(source => source.enabled).length })}\n`)
+  }
+  if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs))
   if (state.completeness === 'FAILED') throw new Error('LIVE_TEST_UPSTREAM_REJECTED')
   const completeness = state.completeness
   const observedAt = new Date().toISOString()
@@ -30,12 +37,14 @@ function syntheticPmsCollection({ hotel, previousSnapshots = [], sources = [] })
     collectionRunId: crypto.randomUUID(), observedAt,
     businessDate: observedAt.slice(0, 10), businessDateBasis: 'PMS_CONFIRMED',
     completeness, physicalInventory: [], roomForecast: [], orders: [], sources: [],
-    futureDaily: [], futureBookingChanges: { daily: [] },
+    futureDaily: [], futureBookingChanges: { daily: state.todayOnlyFutureChange ? [{ stayDate: observedAt.slice(0, 10) }] : [] },
     overview: { roomCount: 10, availableRooms: 6, soldRooms: 4, roomNights: 4, roomFee: 400, adr: 100, revPar: 40 },
     testBaselineSnapshotCount: previousSnapshots.length,
   }
   const sourceCount = sources.filter(source => source.enabled).length || 3
-  return { snapshot, monitor: {}, run: { status: completeness === 'COMPLETE' ? 'SUCCEEDED' : 'PARTIAL',
+  return { snapshot, monitor: {}, run: { runId: snapshot.collectionRunId,
+    requestedAt: observedAt, startedAt: observedAt, completedAt: observedAt, businessDate: snapshot.businessDate,
+    status: completeness === 'COMPLETE' ? 'SUCCEEDED' : 'PARTIAL',
     sourceCount, successfulSourceCount: completeness === 'COMPLETE' ? sourceCount : sourceCount - 1,
     outboundDeliveryAttempted: false } }
 }
@@ -49,7 +58,7 @@ registerHooks({
     if (!externalBoundary.length) return result
     let source = String(result.source)
     for (const name of externalBoundary) source = source.replace(`export const ${name} =`, `const original_${name} =`)
-    source += `\nimport { readFileSync as readPmsFixture } from 'node:fs';\n${syntheticPmsCollection.toString()}\n`
+    source += `\nimport { readFileSync as readPmsFixture, appendFileSync as appendPmsFixture } from 'node:fs';\n${syntheticPmsCollection.toString()}\n`
     if (externalBoundary.includes('collectLiveReports')) source += '\nexport const collectLiveReports = syntheticPmsCollection;\n'
     else source += `
 export const collectLuopanControlledBrowser = syntheticPmsCollection;

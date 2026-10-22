@@ -628,6 +628,9 @@ const reportSourcesByHotel = new Map()
 const reportSourceHotelIdsRestoredAtStartup = new Set()
 let reportSourceStoreInvalid = false
 const cookieSecretsByHotel = new Map()
+const invalidCookieSecretHotelIds = new Set()
+const unreadableCookieSecretsByHotel = new Map()
+let cookieSecretStoreInvalid = false
 const pmsLoginSecretsByHotel = new Map()
 const otaSourcesByHotel = new Map()
 const otaSourceSecretsByHotel = new Map()
@@ -1435,11 +1438,12 @@ const persistReportSources = () => {
 }
 
 const persistCookieSecrets = () => {
+  if (cookieSecretStoreInvalid) throw new Error('COOKIE_SECRET_STORE_INVALID')
   mkdirSync(dirname(cookieSecretsPath), { recursive: true })
   const temporaryPath = `${cookieSecretsPath}.${process.pid}.tmp`
   writeFileSync(
     temporaryPath,
-    `${JSON.stringify(Object.fromEntries(cookieSecretsByHotel), null, 2)}\n`,
+    `${JSON.stringify(Object.fromEntries([...cookieSecretsByHotel, ...unreadableCookieSecretsByHotel]), null, 2)}\n`,
     { encoding: 'utf8', mode: 0o600 },
   )
   renameSync(temporaryPath, cookieSecretsPath)
@@ -2726,33 +2730,33 @@ if (existsSync(cookieSecretsPath)) {
     const persistedSecrets = JSON.parse(
       readFileSync(cookieSecretsPath, 'utf8'),
     )
-    if (
-      persistedSecrets
-      && typeof persistedSecrets === 'object'
-      && !Array.isArray(persistedSecrets)
-    ) {
+    if (!persistedSecrets || typeof persistedSecrets !== 'object' || Array.isArray(persistedSecrets)) {
+      throw new Error('COOKIE_SECRET_STORE_INVALID')
+    }
+    {
       for (const [hotelId, sourceSecrets] of Object.entries(persistedSecrets)) {
-        if (
-          !hotels.some((hotel) => hotel.hotelId === hotelId)
-          || sourceSecrets === null
-          || typeof sourceSecrets !== 'object'
-          || Array.isArray(sourceSecrets)
-        ) {
+        if (!hotels.some((hotel) => hotel.hotelId === hotelId)) continue
+        if (!sourceSecrets || typeof sourceSecrets !== 'object' || Array.isArray(sourceSecrets)) {
+          invalidCookieSecretHotelIds.add(hotelId)
+          unreadableCookieSecretsByHotel.set(hotelId, sourceSecrets)
           continue
         }
         const verified = {}
-        for (const [sourceId, record] of Object.entries(sourceSecrets)) {
-          decryptCookie(
-            record,
-            cookieSecretKey,
-            cookieScope(hotelId, sourceId),
-          )
-          verified[sourceId] = record
+        try {
+          for (const [sourceId, record] of Object.entries(sourceSecrets)) {
+            decryptCookie(record, cookieSecretKey, cookieScope(hotelId, sourceId))
+            verified[sourceId] = record
+          }
+          cookieSecretsByHotel.set(hotelId, verified)
+        } catch {
+          invalidCookieSecretHotelIds.add(hotelId)
+          unreadableCookieSecretsByHotel.set(hotelId, sourceSecrets)
+          process.stderr.write('REVIEW_COOKIE_SECRET_HOTEL_STORE_IGNORED\n')
         }
-        cookieSecretsByHotel.set(hotelId, verified)
       }
     }
   } catch {
+    cookieSecretStoreInvalid = true
     process.stderr.write('REVIEW_COOKIE_SECRET_STORE_IGNORED\n')
   }
 }
@@ -6876,6 +6880,10 @@ const deliverWeComSnapshot = async ({
   beforeNetwork = null,
 }) => {
   assertCurrentPmsSnapshot(hotelId, snapshot)
+  if (selectedHotel(hotelId).pmsChangedAt && deliveryType === 'FUTURE_14D'
+    && (!Array.isArray(snapshot?.futureDaily) || snapshot.futureDaily.length === 0)) {
+    throw new Error('PMS_FUTURE_DATA_NOT_READY')
+  }
   assertWeComDeliveryLedgerReady()
   const existing = weComDeliveriesByKey.get(messageKey)
   if (existing) return existing
@@ -8437,40 +8445,77 @@ const pmsCookieValue = (cookieHeader, name) => {
   return values[0]
 }
 
-const expectedBieyanghongHotelScope = (hotelId) => {
-  const hotel = selectedHotel(hotelId)
-  const sources = reportSourcesByHotel.get(hotelId) ?? []
-  const encryptedSecrets = secretsForHotel(hotelId)
-  const expectedHotelIds = new Set()
-  const approvedTrustedScope = trustedDeviceStoreFor(hotel)
-    ?.approvedPmsLoginHotelId()
-  if (approvedTrustedScope) expectedHotelIds.add(approvedTrustedScope)
-  for (const source of sources) {
-    const record = encryptedSecrets[source.sourceId]
-    if (!record) continue
-    const existingCookie = decryptCookie(
-      record,
-      cookieSecretKey,
-      cookieScope(hotelId, source.sourceId),
-    )
-    const expectedHotelId = pmsCookieValue(
-      existingCookie,
-      'hotelpms_login_hotel_id',
-    )
-    if (expectedHotelId) expectedHotelIds.add(expectedHotelId)
-  }
-  if (expectedHotelIds.size !== 1) {
-    throw new Error('BIEYANGHONG_EXPECTED_STORE_SCOPE_UNAVAILABLE')
-  }
-  return [...expectedHotelIds][0]
-}
-
-const replaceBieyanghongReportCookies = (hotelId, cookieHeader) => {
+const bieyanghongStoreBindingFor = (hotelId) => {
   const hotel = selectedHotel(hotelId)
   if (hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG') {
     throw new Error('BIEYANGHONG_PMS_SCOPE_INVALID')
   }
-  const expectedHotelId = expectedBieyanghongHotelScope(hotelId)
+  const sources = reportSourcesByHotel.get(hotelId) ?? []
+  const encryptedSecrets = secretsForHotel(hotelId)
+  const expectedHotelIds = new Set()
+  const positiveHotelId = /^[1-9][0-9]{0,63}$/u
+  let invalidExistingScope = cookieSecretStoreInvalid || invalidCookieSecretHotelIds.has(hotelId)
+  try {
+    const approvedTrustedScope = trustedDeviceStoreFor(hotel)?.approvedPmsLoginHotelId()
+    if (approvedTrustedScope) {
+      if (positiveHotelId.test(approvedTrustedScope)) expectedHotelIds.add(approvedTrustedScope)
+      else invalidExistingScope = true
+    }
+    // Every existing authorization must be understood. Orphan, malformed, or
+    // mixed records must never be mistaken for an unbound store.
+    const sourceIds = new Set(sources.map(source => source.sourceId))
+    for (const [sourceId, record] of Object.entries(encryptedSecrets)) {
+      const existingCookie = decryptCookie(record, cookieSecretKey, cookieScope(hotelId, sourceId))
+      const expectedHotelId = pmsCookieValue(existingCookie, 'hotelpms_login_hotel_id')
+      if (!sourceIds.has(sourceId) || !positiveHotelId.test(expectedHotelId ?? '')) invalidExistingScope = true
+      else expectedHotelIds.add(expectedHotelId)
+    }
+  } catch { invalidExistingScope = true }
+  const hasExistingCredentials = Object.keys(encryptedSecrets).length > 0
+    || pmsLoginSecretsByHotel.has(hotelId) || luopanSessionStatesByHotel.has(hotelId)
+  const status = !invalidExistingScope && expectedHotelIds.size === 1
+    ? 'BOUND' : invalidExistingScope || hasExistingCredentials || expectedHotelIds.size > 0
+      ? 'CONFLICT' : 'NOT_BOUND'
+  const roomForecastConfigured = sources.some(source => {
+    if (!source.enabled) return false
+    try {
+      const endpoint = new URL(source.endpointUrl)
+      if (endpoint.hostname !== 'pms.meituan.com'
+        || endpoint.pathname !== '/hotelpms/api/v2/report/roomState/batchSearchBaseRoomForcasting') return false
+      const payload = JSON.parse(source.requestPayloadJson)
+      return Array.isArray(payload?.roomTypes) && payload.roomTypes.length > 0 && payload.roomTypes.length <= 100
+        && payload.roomTypes.every(room => typeof room?.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/u.test(room.id)
+          && typeof room.roomTypeName === 'string' && room.roomTypeName.trim().length > 0 && room.roomTypeName.trim().length <= 80)
+    } catch { return false }
+  })
+  return {
+    status, firstTimeSetupRequired: status === 'NOT_BOUND',
+    canInitialize: status === 'NOT_BOUND' && bieyanghongServerCookieModeEnabled
+      && !pmsCookieValidationLocks.has(hotelId),
+    hotelRowVersion: hotel.rowVersion, hotelCode: hotel.hotelCode, hotelName: hotel.hotelName,
+    collectionEnabled: hotel.collectionEnabled,
+    automaticHourlyCollectionEnabled,
+    enabledSourceCount: sources.filter(source => source.enabled).length,
+    roomForecastConfigured,
+    ...(status === 'BOUND' ? { expectedPmsHotelId: [...expectedHotelIds][0] } : {}),
+  }
+}
+
+const expectedBieyanghongHotelScope = (hotelId) => {
+  const binding = bieyanghongStoreBindingFor(hotelId)
+  if (binding.status === 'CONFLICT') throw new Error('BIEYANGHONG_STORE_SCOPE_INVALID')
+  if (binding.status !== 'BOUND') {
+    throw new Error('BIEYANGHONG_EXPECTED_STORE_SCOPE_UNAVAILABLE')
+  }
+  return binding.expectedPmsHotelId
+}
+
+const replaceBieyanghongReportCookies = (hotelId, cookieHeader, validatedInitialExpectedHotelId = null) => {
+  const hotel = selectedHotel(hotelId)
+  if (hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG') {
+    throw new Error('BIEYANGHONG_PMS_SCOPE_INVALID')
+  }
+  const expectedHotelId = validatedInitialExpectedHotelId ?? expectedBieyanghongHotelScope(hotelId)
   const authenticatedHotelId = pmsCookieValue(
     cookieHeader,
     'hotelpms_login_hotel_id',
@@ -8479,6 +8524,8 @@ const replaceBieyanghongReportCookies = (hotelId, cookieHeader) => {
     throw new Error('BIEYANGHONG_STORE_SCOPE_INVALID')
   }
   const sources = reportSourcesByHotel.get(hotelId) ?? []
+  const hadPrevious = cookieSecretsByHotel.has(hotelId)
+  const previousRecord = cookieSecretsByHotel.get(hotelId)
   const previous = { ...secretsForHotel(hotelId) }
   const next = { ...previous }
   let replaced = 0
@@ -8501,13 +8548,18 @@ const replaceBieyanghongReportCookies = (hotelId, cookieHeader) => {
     throw new Error('BIEYANGHONG_REPORT_SOURCE_NOT_CONFIGURED')
   }
   cookieSecretsByHotel.set(hotelId, next)
-  persistCookieSecrets()
+  try { persistCookieSecrets() } catch {
+    if (hadPrevious) cookieSecretsByHotel.set(hotelId, previousRecord)
+    else cookieSecretsByHotel.delete(hotelId)
+    throw new Error('PMS_COOKIE_PERSIST_FAILED')
+  }
   return { previous, replaced }
 }
 
 const validateAndReplaceBieyanghongReportCookies = async (
   hotelId,
   cookieHeader,
+  initialStoreBinding,
 ) => {
   if (pmsCookieValidationLocks.has(hotelId)) {
     throw new Error('PMS_COOKIE_VALIDATION_IN_PROGRESS')
@@ -8522,8 +8574,45 @@ const validateAndReplaceBieyanghongReportCookies = async (
       ensureReportSourcesForEveryHotel()
     }
     const sources = reportSourcesByHotel.get(hotelId) ?? []
-    const secretsBeforeValidation = secretsForHotel(hotelId)
-    const expectedHotelId = expectedBieyanghongHotelScope(hotelId)
+    // Use the raw Map reference: secretsForHotel creates a new {} each call
+    // when no authorization has ever been stored for this hotel.
+    const secretsBeforeValidation = cookieSecretsByHotel.get(hotelId)
+    const binding = bieyanghongStoreBindingFor(hotelId)
+    let initialExpectedHotelId = null
+    if (initialStoreBinding !== undefined) {
+      if (!initialStoreBinding || typeof initialStoreBinding !== 'object' || Array.isArray(initialStoreBinding)
+        || Object.keys(initialStoreBinding).sort().join(',')
+          !== 'confirmStoreIdentity,expectedRowVersion,independentExpectedPmsHotelId'
+        || initialStoreBinding.confirmStoreIdentity !== true
+        || typeof initialStoreBinding.independentExpectedPmsHotelId !== 'string'
+        || !/^[1-9][0-9]{0,63}$/u.test(initialStoreBinding.independentExpectedPmsHotelId)
+        || !Number.isInteger(initialStoreBinding.expectedRowVersion) || initialStoreBinding.expectedRowVersion < 1) {
+        throw new Error('BIEYANGHONG_INITIAL_BINDING_INVALID')
+      }
+      if (binding.status !== 'NOT_BOUND' || !binding.canInitialize) {
+        throw new Error('BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED')
+      }
+      if (initialStoreBinding.expectedRowVersion !== hotel.rowVersion) {
+        throw new Error('BIEYANGHONG_INITIAL_BINDING_VERSION_CONFLICT')
+      }
+      const enabledPaths = new Set(sources.filter(source => source.enabled).map(source => {
+        const endpoint = new URL(source.endpointUrl)
+        return endpoint.hostname === 'pms.meituan.com' ? endpoint.pathname : ''
+      }))
+      if (!enabledPaths.has('/hotelpms/api/v1/report/jd01')
+        || !enabledPaths.has('/hotelpms/api/v1/report/lion/manager/workbench/room')
+        || !enabledPaths.has('/hotelpms/api/v1/report/home/workbench/businessOverview')) {
+        throw new Error('BIEYANGHONG_INITIAL_SOURCE_CONTRACT_INVALID')
+      }
+      initialExpectedHotelId = initialStoreBinding.independentExpectedPmsHotelId
+    }
+    const expectedHotelId = initialExpectedHotelId ?? expectedBieyanghongHotelScope(hotelId)
+    // This independent expected ID is supplied and confirmed by the platform
+    // administrator from official store details; never derive it from the
+    // new Cookie. Reject ambiguous duplicate context before provider access.
+    if (pmsCookieValue(normalizedCookieHeader, 'hotelpms_login_hotel_id') !== expectedHotelId) {
+      throw new Error('BIEYANGHONG_STORE_SCOPE_INVALID')
+    }
     const businessDayControl = businessDayControlFor(hotelId)
     const validation = await validateBieyanghongCookieAccess({
       hotel,
@@ -8541,16 +8630,21 @@ const validateAndReplaceBieyanghongReportCookies = async (
     if (reportSourcesByHotel.get(hotelId) !== sources) {
       throw new Error('REPORT_SOURCE_CHANGED_DURING_VALIDATION')
     }
-    if (secretsForHotel(hotelId) !== secretsBeforeValidation) {
+    if (cookieSecretsByHotel.get(hotelId) !== secretsBeforeValidation) {
       throw new Error('PMS_COOKIE_CHANGED_DURING_VALIDATION')
+    }
+    if (selectedHotel(hotelId) !== hotel || hotel.rowVersion !== binding.hotelRowVersion) {
+      throw new Error('BIEYANGHONG_INITIAL_BINDING_VERSION_CONFLICT')
     }
     const replacement = replaceBieyanghongReportCookies(
       hotelId,
       normalizedCookieHeader,
+      initialExpectedHotelId,
     )
     return {
       ...validation,
       replacedSourceCount: replacement.replaced,
+      ...(initialExpectedHotelId ? { initialStoreBindingAccepted: true } : {}),
     }
   })()
   pmsCookieValidationLocks.set(hotelId, operation)
@@ -12946,6 +13040,8 @@ const applyPmsSystemChangeState = (transaction) => {
   hotels[index] = { ...nextHotel }
   reportSourcesByHotel.set(hotelId, pmsSystemSourceTemplate(nextHotel.pmsSystemCode))
   cookieSecretsByHotel.delete(hotelId)
+  invalidCookieSecretHotelIds.delete(hotelId)
+  unreadableCookieSecretsByHotel.delete(hotelId)
   pmsLoginSecretsByHotel.delete(hotelId)
   luopanBrowserConfigsByHotel.delete(hotelId)
   luopanSessionStatesByHotel.delete(hotelId)
@@ -13063,6 +13159,7 @@ const changeHotelPmsSystem = (hotelId, body) => {
     const formerPmsState = {
       hotel, reportSources: reportSourcesByHotel.get(hotelId) ?? [],
       cookieSecrets: cookieSecretsByHotel.get(hotelId) ?? {},
+      unreadableCookieSecretDocument: unreadableCookieSecretsByHotel.get(hotelId) ?? null,
       pmsLoginSecret: pmsLoginSecretsByHotel.get(hotelId) ?? null,
       luopanBrowserConfig: luopanBrowserConfigsByHotel.get(hotelId) ?? null,
       luopanSession: luopanSessionStatesByHotel.get(hotelId) ?? null,
@@ -14601,6 +14698,17 @@ const server = createServer(async (request, response) => {
         return
       }
       if (
+        request.method === 'GET'
+        && suffix === '/pms-cookie-validation'
+      ) {
+        if (!canConfigureHotels(requestPrincipal)) {
+          rejectForbidden(response)
+          return
+        }
+        json(response, 200, { data: bieyanghongStoreBindingFor(hotelId) })
+        return
+      }
+      if (
         request.method === 'POST'
         && suffix === '/pms-cookie-validation'
       ) {
@@ -14615,7 +14723,13 @@ const server = createServer(async (request, response) => {
         const validation = await validateAndReplaceBieyanghongReportCookies(
           hotelId,
           body.cookieHeader,
+          body.initialStoreBinding,
         )
+        if (validation.initialStoreBindingAccepted) {
+          auditSecurityEvent({ action: 'BIEYANGHONG_INITIAL_STORE_SCOPE_CONFIRMED', outcome: 'SUCCEEDED',
+            request, principal: requestPrincipal, hotelId,
+            reasonCode: 'ADMIN_INDEPENDENT_STORE_SCOPE_CONFIRMATION' })
+        }
         json(response, 200, { data: validation })
         return
       }
@@ -15680,6 +15794,7 @@ const server = createServer(async (request, response) => {
                     error.message.startsWith('SIMULATION_')
                     || error.message === 'PMS_ADAPTER_NOT_READY'
                     || error.message.startsWith('PMS_SYSTEM_')
+                    || error.message === 'PMS_FUTURE_DATA_NOT_READY'
                     || error.message.startsWith('PMS_LOGIN_')
                     || error.message.startsWith('PMS_BUSINESS_DATE_')
                     || error.message.startsWith('PMS_COOKIE_')
@@ -15705,6 +15820,9 @@ const server = createServer(async (request, response) => {
         'PMS_SYSTEM_VERSION_CONFLICT',
         'PMS_SYSTEM_CHANGE_BUSY',
         'PMS_SYSTEM_SNAPSHOT_OBSOLETE',
+        'PMS_FUTURE_DATA_NOT_READY',
+        'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED',
+        'BIEYANGHONG_INITIAL_BINDING_VERSION_CONFLICT',
         'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
         'OTA_SOURCE_VERSION_CONFLICT',
         'OTA_SOURCE_CHANGED_DURING_REFRESH',
@@ -15723,6 +15841,7 @@ const server = createServer(async (request, response) => {
           'HOT_SELLING_ROOM_TYPES_PERSIST_FAILED',
           'WECOM_REPAIR_BOT_CONFIG_PERSIST_FAILED',
           'PMS_SYSTEM_CHANGE_PERSIST_FAILED',
+          'PMS_COOKIE_PERSIST_FAILED',
         ].includes(code)
           ? 500
           : 400,

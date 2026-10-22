@@ -209,6 +209,26 @@ export interface PmsCookieValidationView {
   outboundDeliveryAttempted: false
 }
 
+export interface PmsCookieBindingStatusView {
+  status: 'NOT_BOUND' | 'BOUND' | 'CONFLICT'
+  firstTimeSetupRequired: boolean
+  canInitialize: boolean
+  hotelRowVersion: number
+  hotelCode: string
+  hotelName: string
+  collectionEnabled: boolean
+  automaticHourlyCollectionEnabled: boolean
+  enabledSourceCount: number
+  roomForecastConfigured: boolean
+  expectedPmsHotelId?: string
+}
+
+export interface PmsInitialStoreBinding {
+  independentExpectedPmsHotelId: string
+  confirmStoreIdentity: true
+  expectedRowVersion: number
+}
+
 export interface LuopanBrowserConfigView {
   providerCode: 'LUOPAN_CLOUD'
   portalUrl: string
@@ -1526,11 +1546,17 @@ export function triggerYilianCloudRepair(
 export function validateAndUpdatePmsCookie(
   context: HotelContext,
   cookieHeader: string,
+  initialStoreBinding?: PmsInitialStoreBinding,
 ): Promise<PmsCookieValidationView> {
   return postCommand(scopedPath(context, '/pms-cookie-validation'), {
     cookieHeader,
+    ...(initialStoreBinding ? { initialStoreBinding } : {}),
     reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE',
   })
+}
+
+export function loadPmsCookieBindingStatus(context: HotelContext): Promise<PmsCookieBindingStatusView> {
+  return authenticatedRequest(scopedPath(context, '/pms-cookie-validation'))
 }
 
 export function loadLuopanBrowserConfig(

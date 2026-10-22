@@ -1140,6 +1140,16 @@ details.history-card { display: block; }
 }
 .pms-endpoint-card > header { background: #eaf4f0; }
 .pms-system-selection { scroll-margin-top: 5.5rem; }
+.report-source-form .initial-pms-identity-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+}
+.report-source-form .initial-pms-identity-confirm input {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: .15rem;
+}
 .pms-system-selection .cookie-clear-option {
   display: flex;
   align-items: flex-start;
