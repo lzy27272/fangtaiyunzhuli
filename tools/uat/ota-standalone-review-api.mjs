@@ -13055,6 +13055,8 @@ const changeHotelPmsSystem = (hotelId, body) => {
   if (!pmsSystemChangeJournalPath || !liveSnapshotPath) {
     throw new Error('PMS_SYSTEM_CHANGE_PERSIST_FAILED')
   }
+  let persistPhase = 'PREPARE_ARCHIVE'
+  let archivePlaintextBytes = null
   try {
     const archivePath = join(dirname(pmsSystemChangeJournalPath), 'pms-system-history',
       hotelId, `${transactionId}.json`)
@@ -13071,17 +13073,37 @@ const changeHotelPmsSystem = (hotelId, body) => {
       futureDemandRiskStates: Object.fromEntries(Object.entries(futureDemandRiskStates)
         .filter(([key]) => key.startsWith(`${hotelId}:`))),
     }
+    persistPhase = 'SERIALIZE_ARCHIVE'
+    const archivePlaintext = JSON.stringify(formerPmsState)
+    archivePlaintextBytes = Buffer.byteLength(archivePlaintext, 'utf8')
+    persistPhase = 'ENCRYPT_ARCHIVE'
+    const archiveRecord = encryptCookie(archivePlaintext, cookieSecretKey,
+      `pms-system-archive:${hotelId}:${transactionId}`)
+    persistPhase = 'WRITE_ARCHIVE'
     atomicWritePrivateJson(archivePath, {
       version: 1, transactionId, archivedAt: changedAt,
-      record: encryptCookie(JSON.stringify(formerPmsState), cookieSecretKey,
-        `pms-system-archive:${hotelId}:${transactionId}`),
+      record: archiveRecord,
     })
+    persistPhase = 'WRITE_JOURNAL'
     atomicWritePrivateJson(pmsSystemChangeJournalPath, transaction)
+    persistPhase = 'APPLY_ACTIVE_STATE'
     applyPmsSystemChangeState(transaction)
+    persistPhase = 'REMOVE_JOURNAL'
     unlinkSync(pmsSystemChangeJournalPath)
     pmsSystemChangeBlockedHotelIds.delete(hotelId)
     return hotels.find((candidate) => candidate.hotelId === hotelId)
-  } catch {
+  } catch (error) {
+    const allowedFailureCodes = new Set([
+      'COOKIE_VALUE_INVALID', 'COOKIE_SECRET_KEY_INVALID', 'COOKIE_SECRET_SCOPE_INVALID',
+      'EACCES', 'EPERM', 'EROFS', 'ENOSPC', 'EIO', 'ENOENT', 'EISDIR', 'ENOTDIR',
+      'EMFILE', 'ENFILE', 'ENAMETOOLONG', 'EEXIST',
+    ])
+    const rawFailureCode = error?.code ?? error?.message
+    process.stderr.write(`${JSON.stringify({
+      event: 'PMS_SYSTEM_CHANGE_PERSIST_FAILED', hotelId, phase: persistPhase,
+      reasonCode: allowedFailureCodes.has(rawFailureCode) ? rawFailureCode : 'PERSISTENCE_ERROR',
+      archivePlaintextBytes,
+    })}\n`)
     // If preparation failed no live state was changed. Once the journal was
     // committed, keep this hotel blocked until recovery completes on restart.
     if (existsSync(pmsSystemChangeJournalPath)) pmsSystemChangeBlockedHotelIds.add(hotelId)

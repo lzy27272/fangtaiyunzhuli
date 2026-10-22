@@ -7,6 +7,8 @@ import {
 const ALGORITHM = 'aes-256-gcm'
 const VERSION = 1
 const MAX_COOKIE_BYTES = 16 * 1024
+const MAX_PMS_ARCHIVE_BYTES = 64 * 1024 * 1024
+const PMS_ARCHIVE_SCOPE = /^pms-system-archive:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 
 const decodeKey = (encodedKey) => {
   if (typeof encodedKey !== 'string' || encodedKey.length < 40) {
@@ -40,9 +42,14 @@ const validateSecretValue = (cookieValue, maximumBytes) => {
 }
 
 export const validateCookieValue = (cookieValue) => validateSecretValue(cookieValue, MAX_COOKIE_BYTES)
-// This one scope stores a bounded administrator roster, not an HTTP cookie.
-// Keep the original limit unchanged for all collector/session credentials.
-const valueLimit = (scope) => scope === 'wecom-repair-bot:v1' ? 4 * 1024 * 1024 : MAX_COOKIE_BYTES
+// These exact scopes store bounded documents, not HTTP cookies. PMS archives
+// contain the retained per-hotel snapshot history and encrypted old settings.
+// Preserve the original limit for every collector/session credential scope.
+const valueLimit = (scope) => scope === 'wecom-repair-bot:v1'
+  ? 4 * 1024 * 1024
+  : typeof scope === 'string' && PMS_ARCHIVE_SCOPE.test(scope)
+    ? MAX_PMS_ARCHIVE_BYTES
+    : MAX_COOKIE_BYTES
 
 export const encryptCookie = (cookieValue, encodedKey, scope) => {
   validateSecretValue(cookieValue, valueLimit(scope))

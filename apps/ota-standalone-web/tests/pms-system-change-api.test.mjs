@@ -109,7 +109,8 @@ async function start(root, { expectFailure = false, collectorFixture = false } =
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'pms-test', password: 'example-Pms-Test-Password-42' }) })
         assert.equal(login.status, 200)
         const token = (await login.json()).accessToken
-        return { child, origin, token, scoped: `${origin}/api/v1/ota/tenants/${tenantId}/hotels/${hotelId}` }
+        return { child, origin, token, scoped: `${origin}/api/v1/ota/tenants/${tenantId}/hotels/${hotelId}`,
+          get errors() { return errors } }
       }
     } catch (error) {
       if (error instanceof assert.AssertionError) throw error
@@ -132,6 +133,59 @@ async function call(app, suffix, body, token = app.token) {
 }
 const change = (code, version = 4, extra = {}) => ({ expectedRowVersion: version,
   pmsSystemCode: code, confirmChange: true, reasonCode: 'CHANGE_HOTEL_PMS_SYSTEM', ...extra })
+
+test('PMS change archives the retained 50 snapshots from a realistic 100-snapshot input larger than an HTTP Cookie', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-change-realistic-history-'))
+  let app
+  try {
+    await seed(root)
+    const snapshotStore = await readJson(root, 'live-report-snapshots.json')
+    const original = snapshotStore[hotelId][0]
+    snapshotStore[hotelId] = Array.from({ length: 100 }, (_, index) => ({
+      ...original, collectionRunId: randomUUID(),
+      observedAt: new Date(Date.now() - (100 - index) * 60 * 60_000).toISOString(),
+      overview: { roomCount: 80, availableRooms: 30, soldRooms: 50, roomNights: 50, roomFee: 10000, adr: 200, revPar: 125 },
+      physicalInventory: Array.from({ length: 8 }, (_, roomIndex) => ({
+        physicalRoomTypeCode: `synthetic-room-${roomIndex}`,
+        displayName: `合成房型${roomIndex}，带中文名称`, roomCount: 10, primaryAvailableRooms: 4,
+      })),
+      sources: Array.from({ length: 4 }, (_, sourceIndex) => ({ sourceId: `synthetic-source-${sourceIndex}`,
+        completeness: 'COMPLETE', observedAt: original.observedAt, ingestedAt: original.observedAt })),
+      futureDaily: Array.from({ length: 30 }, (_, dayIndex) => ({ stayDate: `2026-11-${String(dayIndex + 1).padStart(2, '0')}`,
+        roomCount: 80, availableRooms: 30, soldRooms: 50, roomNights: 50, roomFee: 10000, adr: 200, revPar: 125 })),
+      orders: Array.from({ length: 60 }, (_, orderIndex) => ({ key: `synthetic-pseudonym-${orderIndex}`,
+        channel: 'MEITUAN', status: 'VALID', roomNights: 1, arrivalClass: 'TODAY', orderDate: '2026-10-21', arrivalDate: '2026-10-22' })),
+      syntheticText: '历史状态中的换行\n会由 JSON.stringify 转义\r\n不会成为 HTTP 头字段',
+    }))
+    // Existing live-store policy keeps the latest 50. The switch must archive
+    // every retained snapshot, without changing that unrelated retention rule.
+    const expectedHistory = snapshotStore[hotelId].slice(-50)
+    assert.equal(snapshotStore[hotelId].length, 100)
+    assert.ok(Buffer.byteLength(JSON.stringify(expectedHistory), 'utf8') > 512 * 1024)
+    assert.throws(() => encryptCookie(JSON.stringify(expectedHistory), secretKey, `${hotelId}:${sourceId}`), /COOKIE_VALUE_INVALID/)
+    await jsonFile(root, 'live-report-snapshots.json', snapshotStore)
+    app = await start(root)
+    const result = await call(app, '/pms-system', change('MEITUAN_BIEYANGHONG'))
+    assert.equal(result.status, 200, JSON.stringify(result.body))
+    assert.equal(result.body.data.pmsSystemCode, 'MEITUAN_BIEYANGHONG')
+    assert.deepEqual((await readJson(root, 'live-report-snapshots.json'))[hotelId], [])
+    const archiveDirectory = join(root, 'pms-system-history', hotelId)
+    const archiveNames = await readdir(archiveDirectory)
+    assert.equal(archiveNames.length, 1)
+    const serialized = await readFile(join(archiveDirectory, archiveNames[0]), 'utf8')
+    assert.doesNotMatch(serialized, /synthetic-pseudonym|合成房型|former-session-value/)
+    const archive = JSON.parse(serialized)
+    const archived = JSON.parse(decryptCookie(archive.record, secretKey,
+      `pms-system-archive:${hotelId}:${archive.transactionId}`))
+    assert.equal(archived.snapshots.length, 50)
+    assert.deepEqual(archived.snapshots, expectedHistory)
+    await stop(app)
+    app = await start(root)
+    assert.equal((await call(app, '/pms-system')).body.data.pmsSystemCode, 'MEITUAN_BIEYANGHONG')
+    assert.equal((await call(app, '/pms-login-config')).body.data.configured, false)
+    assert.deepEqual((await readJson(root, 'live-report-snapshots.json'))[hotelId], [])
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
 
 test('PMS change preserves former data in an encrypted archive and isolates current authorization across restart', { timeout: 20_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'pms-change-isolation-'))
@@ -256,6 +310,13 @@ test('partial PMS document writes remain blocked and recover from the journal be
     const failed = await call(app, '/pms-system', change('YILIAN_CLOUD'))
     assert.equal(failed.status, 500)
     assert.equal(failed.body.code, 'PMS_SYSTEM_CHANGE_PERSIST_FAILED')
+    const failureEvent = app.errors.split('\n').filter(Boolean).map(line => {
+      try { return JSON.parse(line) } catch { return null }
+    }).find(event => event?.event === 'PMS_SYSTEM_CHANGE_PERSIST_FAILED')
+    assert.equal(failureEvent.phase, 'APPLY_ACTIVE_STATE')
+    assert.ok(failureEvent.archivePlaintextBytes > 0)
+    assert.ok(['EACCES', 'EPERM', 'EISDIR'].includes(failureEvent.reasonCode))
+    assert.doesNotMatch(app.errors, /synthetic-user|Synthetic-Password|former-session-value/)
     assert.equal((await call(app, '/pms-login-config')).status, 503)
     assert.equal((await call(app, '/report-sources')).status, 503)
     const journal = await readJson(root, 'pms-system-change-transaction.json')
