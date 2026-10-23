@@ -182,10 +182,10 @@ export const createCombinedOperationsWeComPayloads = ({
   const sold = metricNumber(monitor?.metrics?.soldRooms)
   const available = metricNumber(monitor?.metrics?.availableRooms)
   const rate = metricNumber(monitor?.metrics?.sellProgress)
-  const totalHourly = rows.reduce(
-    (sum, row) => sum + (finiteNumber(row?.hourlyNetRoomNights) ?? 0),
-    0,
-  )
+  const hourlyValues = rows.map((row) => finiteNumber(row?.hourlyNetRoomNights))
+  const totalHourly = hourlyValues.every((value) => value !== null)
+    ? hourlyValues.reduce((sum, value) => sum + value, 0)
+    : null
   const cumulativeValues = rows
     .map((row) => finiteNumber(row?.cumulativeNetRoomNights))
     .filter((value) => value !== null)

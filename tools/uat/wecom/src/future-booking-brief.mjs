@@ -269,10 +269,10 @@ export const createFutureBookingWeComPayloads = (
       && day <= 90
       && finiteNumber(row.occupancyPercent) >= 20
   }).length
-  const totalHourlyNet = rows.reduce(
-    (sum, row) => sum + (finiteNumber(row.hourlyNetRoomNights) ?? 0),
-    0,
-  )
+  const hourlyValues = rows.map((row) => finiteNumber(row.hourlyNetRoomNights))
+  const totalHourlyNet = hourlyValues.every((value) => value !== null)
+    ? hourlyValues.reduce((sum, value) => sum + value, 0)
+    : null
   const cumulativeValues = rows
     .map((row) => finiteNumber(row.cumulativeNetRoomNights))
     .filter((value) => value !== null)

@@ -32,12 +32,22 @@ async function syntheticPmsCollection({ hotel, previousSnapshots = [], sources =
   if (state.completeness === 'FAILED') throw new Error('LIVE_TEST_UPSTREAM_REJECTED')
   const completeness = state.completeness
   const observedAt = new Date().toISOString()
+  const fixtureFutureDate = new Date(observedAt)
+  fixtureFutureDate.setUTCDate(fixtureFutureDate.getUTCDate() + 1)
   const snapshot = {
     tenantId: hotel.tenantId, hotelId: hotel.hotelId, sourceSystem: hotel.pmsSystemCode,
     collectionRunId: crypto.randomUUID(), observedAt,
     businessDate: observedAt.slice(0, 10), businessDateBasis: 'PMS_CONFIRMED',
     completeness, physicalInventory: [], roomForecast: [], orders: [], sources: [],
-    futureDaily: [], futureBookingChanges: { daily: state.todayOnlyFutureChange ? [{ stayDate: observedAt.slice(0, 10) }] : [] },
+    futureDaily: state.futureInventoryFixture ? [{ stayDate: fixtureFutureDate.toISOString().slice(0, 10),
+      roomCount: 10, soldRooms: 0, availableRooms: 0, ...state.futureInventoryFixture }]
+      : state.nullFuturePlaceholders ? Array.from({ length: 29 }, (_, index) => ({
+        stayDate: new Date(fixtureFutureDate.getTime() + index * 86_400_000).toISOString().slice(0, 10),
+        roomCount: null, soldRooms: null, availableRooms: null,
+      })) : [],
+    futureBookingChanges: { daily: state.futureChangeWithoutForecast
+      ? [{ stayDate: fixtureFutureDate.toISOString().slice(0, 10), bookedRoomNights: 4, availableRooms: 6, roomCount: 10 }]
+      : state.todayOnlyFutureChange ? [{ stayDate: observedAt.slice(0, 10) }] : [] },
     overview: { roomCount: 10, availableRooms: 6, soldRooms: 4, roomNights: 4, roomFee: 400, adr: 100, revPar: 40 },
     testBaselineSnapshotCount: previousSnapshots.length,
   }

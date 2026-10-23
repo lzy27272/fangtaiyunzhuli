@@ -94,3 +94,30 @@ test('combined operations preview does not invent hourly order changes', () => {
   assert.match(payload.text.content, /同PMS一小时前基线待建立/u)
   assert.doesNotMatch(payload.text.content, /^新增\d/mu)
 })
+
+test('combined operations hourly totals do not convert unknown or partial future baselines to zero', () => {
+  for (const hourlyValues of [Array(15).fill(null), [2, ...Array(14).fill(null)],
+    [...Array(14).fill(0), null]]) {
+    const current = { ...snapshot, futureBookingChanges: { ...snapshot.futureBookingChanges,
+      daily: snapshot.futureBookingChanges.daily.map((row, index) => ({ ...row,
+        hourlyNetRoomNights: hourlyValues[index],
+      })),
+    } }
+    const content = createCombinedOperationsWeComPayloads({ hotel, monitor, snapshot: current })[0].text.content
+    assert.match(content, /📊当日\+未来14天｜时净\?/u)
+    assert.doesNotMatch(content, /📊当日\+未来14天｜时净0/u)
+  }
+})
+
+test('combined operations hourly totals retain genuine known zero and nonzero changes', () => {
+  for (const [hourlyValues, total] of [[Array(15).fill(0), '0'],
+    [[2, -1, ...Array(13).fill(0)], '+1']]) {
+    const current = { ...snapshot, futureBookingChanges: { ...snapshot.futureBookingChanges,
+      daily: snapshot.futureBookingChanges.daily.map((row, index) => ({ ...row,
+        hourlyNetRoomNights: hourlyValues[index],
+      })),
+    } }
+    const content = createCombinedOperationsWeComPayloads({ hotel, monitor, snapshot: current })[0].text.content
+    assert.ok(content.includes(`📊当日+未来14天｜时净${total}｜`))
+  }
+})

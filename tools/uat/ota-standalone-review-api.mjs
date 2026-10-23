@@ -114,6 +114,10 @@ import {
   validateBieyanghongCookieAccess,
 } from './bieyanghong-cookie-validation.mjs'
 import {
+  bieyanghongForecastSetupCandidate, prepareBieyanghongForecastSources,
+  safeBieyanghongForecastSetupError, createBieyanghongForecastSetupScheduler, bieyanghongForecastRepairTickAllowed,
+} from './bieyanghong-forecast-autoconfig.mjs'
+import {
   collectYilianCloudReports,
 } from './yilian-cloud-collector.mjs'
 import {
@@ -6507,7 +6511,7 @@ const collectLuopanLiveFor = async (
 
 const collectLiveFor = async (
   hotelId,
-  { otaRefreshDueOnly = false, publishSnapshot = true } = {},
+  { otaRefreshDueOnly = false, publishSnapshot = true, forecastRepairOnly = false } = {},
 ) => {
   if (activeLuopanRepairsByHotel.has(hotelId)) {
     throw new Error('LUOPAN_REAUTH_IN_PROGRESS')
@@ -6605,8 +6609,10 @@ const collectLiveFor = async (
     if (!reportSourcesByHotel.has(hotelId)) {
       ensureReportSourcesForEveryHotel()
     }
-    const sources = reportSourcesByHotel.get(hotelId)
+    let sources = reportSourcesByHotel.get(hotelId)
     const encryptedSecrets = secretsForHotel(hotelId)
+    const rawSecretsBeforeForecast = cookieSecretsByHotel.get(hotelId)
+    const hotelVersionBeforeForecast = hotel.rowVersion
     const cookiesBySourceId = {}
     for (const source of sources) {
       const record = encryptedSecrets[source.sourceId]
@@ -6627,6 +6633,46 @@ const collectLiveFor = async (
     ) {
       throw new Error('REPORT_SOURCE_COOKIE_REQUIRED')
     }
+    let forecastSetup = null
+    if (publishSnapshot && bieyanghongForecastSetupCandidate(hotel, sources)) {
+      const assertUnchanged = () => {
+        if (reportSourcesByHotel.get(hotelId) !== sources || selectedHotel(hotelId) !== hotel
+          || hotel.rowVersion !== hotelVersionBeforeForecast || pmsSystemChangeBlockedHotelIds.has(hotelId)) {
+          throw new Error('REPORT_SOURCE_CHANGED_DURING_VALIDATION')
+        }
+        if (cookieSecretsByHotel.get(hotelId) !== rawSecretsBeforeForecast || pmsCookieValidationLocks.has(hotelId)
+          || activeBieyanghongRepairsByHotel.has(hotelId)) throw new Error('PMS_COOKIE_CHANGED_DURING_VALIDATION')
+      }
+      try {
+        assertUnchanged()
+        const binding = bieyanghongStoreBindingFor(hotelId)
+        if (binding.status !== 'BOUND' || sources.some(source => typeof cookiesBySourceId[source.sourceId] !== 'string')) {
+          throw new Error('PMS_FORECAST_SETUP_BINDING_NOT_READY')
+        }
+        const prepared = await prepareBieyanghongForecastSources({ hotel, sources, cookiesBySourceId,
+          expectedHotelId: binding.expectedPmsHotelId, reportDate: businessDayControl.businessDate,
+          secretKey: trustedDevicePseudonymKeyFor(hotel), legacySecretKey: cookieSecretKey })
+        assertUnchanged()
+        const previousSources = sources
+        reportSourcesByHotel.set(hotelId, prepared.sources)
+        try { persistReportSources() } catch {
+          reportSourcesByHotel.set(hotelId, previousSources)
+          throw new Error('PMS_FORECAST_SETUP_PERSIST_FAILED')
+        }
+        sources = prepared.sources
+        forecastSetup = { status: 'CONFIGURED', roomTypeCount: prepared.roomTypeCount,
+          physicalRoomCount: prepared.physicalRoomCount, verifiedFutureDays: prepared.verifiedFutureDays }
+      } catch (error) {
+        assertUnchanged()
+        forecastSetup = { status: 'NOT_READY', reasonCode: safeBieyanghongForecastSetupError(error) }
+      }
+      process.stdout.write(`${JSON.stringify({ event: 'PMS_ROOM_FORECAST_AUTOCONFIG', hotelId, ...forecastSetup })}\n`)
+    }
+    // The repair tick must never create a snapshot in the normal broadcast
+    // acquisition slot, including when discovery/shadow requests crossed it.
+    if (forecastRepairOnly && !bieyanghongForecastRepairTickAllowed(Date.now())) {
+      throw new Error('PMS_FORECAST_SETUP_REPAIR_WINDOW_CLOSED')
+    }
     const result = await collectLiveReports({
       hotel,
       sources,
@@ -6644,6 +6690,7 @@ const collectLiveFor = async (
       reportDate: businessDayControl.businessDate,
       onSourceResponse: analyticsRawArchiverFor(hotel),
     })
+    if (forecastSetup) result.run.forecastSetup = forecastSetup
     if (hotel.pmsSystemCode === 'MEITUAN_BIEYANGHONG') {
       if (publishSnapshot) {
         migrateTrustedPseudonymAliases(hotel, result.snapshot)
@@ -6888,9 +6935,21 @@ const deliverWeComSnapshot = async ({
   beforeNetwork = null,
 }) => {
   assertCurrentPmsSnapshot(hotelId, snapshot)
-  if (selectedHotel(hotelId).pmsChangedAt && deliveryType === 'FUTURE_14D'
-    && (!Array.isArray(snapshot?.futureDaily) || snapshot.futureDaily.length === 0)) {
-    throw new Error('PMS_FUTURE_DATA_NOT_READY')
+  if (selectedHotel(hotelId).pmsChangedAt
+    && ['FUTURE_14D', 'FUTURE_14D_TEST'].includes(deliveryType)) {
+    const businessDateMs = Date.parse(`${snapshot?.businessDate}T00:00:00Z`)
+    const hasFutureInventory = Array.isArray(snapshot?.futureDaily) && snapshot.futureDaily.some(row => {
+      const stayDate = row?.stayDate
+      if (typeof stayDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(stayDate)) return false
+      const stayDateMs = Date.parse(`${stayDate}T00:00:00Z`)
+      const dayOffset = (stayDateMs - businessDateMs) / 86_400_000
+      return Number.isInteger(dayOffset) && dayOffset >= 1 && dayOffset <= 14
+        && new Date(stayDateMs).toISOString().slice(0, 10) === stayDate
+        && Number.isFinite(row.roomCount) && row.roomCount > 0
+        && Number.isFinite(row.soldRooms) && row.soldRooms >= 0
+        && Number.isFinite(row.availableRooms)
+    })
+    if (!hasFutureInventory) throw new Error('PMS_FUTURE_DATA_NOT_READY')
   }
   assertWeComDeliveryLedgerReady()
   const existing = weComDeliveriesByKey.get(messageKey)
@@ -16090,6 +16149,26 @@ server.on('upgrade', (request, socket, head) => {
   })
 })
 
+const scheduledForecastSetupTick = createBieyanghongForecastSetupScheduler({
+  enabled: () => automaticHourlyCollectionEnabled,
+  hotels: () => hotels,
+  eligible: hotel => {
+    if (!bieyanghongForecastSetupCandidate(hotel, reportSourcesByHotel.get(hotel.hotelId))) return false
+    try { return bieyanghongStoreBindingFor(hotel.hotelId).status === 'BOUND'
+      && reportSourcesByHotel.get(hotel.hotelId).every(source => Boolean(secretsForHotel(hotel.hotelId)[source.sourceId])) } catch { return false }
+  },
+  fingerprint: hotel => createHash('sha256').update(JSON.stringify({ changedAt: hotel.pmsChangedAt,
+    rowVersion: hotel.rowVersion, sources: reportSourcesByHotel.get(hotel.hotelId),
+    cookieEpochs: Object.entries(secretsForHotel(hotel.hotelId)).map(([sourceId, record]) => [sourceId, record.updatedAt]),
+  })).digest('hex'),
+  busy: hotel => liveCollectionLocks.has(hotel.hotelId) || liveCollectionLocks.has(`${hotel.hotelId}:ISOLATED_NON_PUBLISHING`)
+    || pmsCookieValidationLocks.has(hotel.hotelId) || activeBieyanghongRepairsByHotel.has(hotel.hotelId)
+    || pmsSystemChangeBlockedHotelIds.has(hotel.hotelId),
+  collect: hotel => collectLiveFor(hotel.hotelId, { otaRefreshDueOnly: true, forecastRepairOnly: true }),
+  onFailure: (hotel, reasonCode) => process.stdout.write(`${JSON.stringify({ event: 'PMS_ROOM_FORECAST_AUTOCONFIG',
+    hotelId: hotel.hotelId, status: 'NOT_READY', reasonCode })}\n`),
+})
+
 server.listen(port, host, () => {
   // Binding approvals must work even when scheduled PMS collection is disabled.
   const approvalTimer = setInterval(flushRepairApprovals, 5_000)
@@ -16112,6 +16191,7 @@ server.listen(port, host, () => {
     scheduledYilianWeComCardOperationTick()
     void scheduledYilianWeComResultTick()
     void scheduledCollectionTick()
+    void scheduledForecastSetupTick()
     void scheduledOtaSourceTick()
     scheduledAnalyticsRetentionTick()
     void scheduledWeComDeliveryTick()

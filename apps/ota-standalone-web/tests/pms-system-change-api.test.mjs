@@ -922,6 +922,40 @@ test('three-source initial authorization enables collection but cannot send an e
     const sends = (await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)
     assert.ok(sends.length > 0, 'the current-day template is a positive control at the mocked network boundary')
     assert.ok(sends.every(send => send.futureTemplate === false))
+    const suiteCommand = { confirmRealWeComSend: true, expectedEndpointSha256: fingerprintWeComWebhook(webhook),
+      reasonCode: 'SEND_WECOM_UAT_TEST_SUITE' }
+    const safeSuite = await call(app, '/wecom-test-suite-deliveries', suiteCommand)
+    assert.equal(safeSuite.status, 200, JSON.stringify(safeSuite.body))
+    assert.ok(safeSuite.body.data.skippedTemplates.some(template => template.templateCode === 'FUTURE_14D'
+      && template.reasonCode === 'FUTURE_BOOKING_SNAPSHOT_REQUIRED'))
+    assert.ok(safeSuite.body.data.deliveries.some(delivery => delivery.deliveryType === 'TODAY_REVENUE_TEST'))
+    // Deliberately inconsistent upstream fixture: a valid change row alone
+    // must not bypass the central current-PMS missing-forecast guard.
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE', futureChangeWithoutForecast: true })
+    const guardedSuite = await call(app, '/wecom-test-suite-deliveries', suiteCommand)
+    assert.equal(guardedSuite.status, 200, JSON.stringify(guardedSuite.body))
+    assert.deepEqual(guardedSuite.body.data.failedTemplates, [{ templateCode: 'FUTURE_14D', reasonCode: 'PMS_FUTURE_DATA_NOT_READY' }])
+    const allSends = (await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)
+    assert.ok(allSends.length > sends.length, 'current-day suite templates still reach only the mocked network boundary')
+    assert.ok(allSends.every(send => send.futureTemplate === false), 'no regular or test future template may reach the network')
+    for (const state of [{ nullFuturePlaceholders: true },
+      ...[false, '', '0', null].map(value => ({ futureInventoryFixture: { soldRooms: value } }))]) {
+      await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE', futureChangeWithoutForecast: true, ...state })
+      const rejected = await call(app, '/wecom-test-suite-deliveries', suiteCommand)
+      assert.equal(rejected.status, 200, JSON.stringify(rejected.body))
+      assert.deepEqual(rejected.body.data.failedTemplates, [{ templateCode: 'FUTURE_14D', reasonCode: 'PMS_FUTURE_DATA_NOT_READY' }])
+    }
+    const blockedSends = (await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)
+    assert.ok(blockedSends.every(send => send.futureTemplate === false), 'all-null placeholders and pseudo-numbers are not future inventory')
+    for (const availableRooms of [0, -1]) {
+      await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE', futureChangeWithoutForecast: true,
+        futureInventoryFixture: { soldRooms: availableRooms < 0 ? 11 : 0, availableRooms } })
+      const accepted = await call(app, '/wecom-test-suite-deliveries', suiteCommand)
+      assert.equal(accepted.status, 200, JSON.stringify(accepted.body))
+      assert.deepEqual(accepted.body.data.failedTemplates, [])
+      assert.ok(accepted.body.data.deliveries.some(delivery => delivery.deliveryType === 'FUTURE_14D_TEST'
+        && delivery.deliveryStatus === 'DELIVERED'), 'genuine zero and overbooked negative availability remain valid inventory')
+    }
   } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
 })
 

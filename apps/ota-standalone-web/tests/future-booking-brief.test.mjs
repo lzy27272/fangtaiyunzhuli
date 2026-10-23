@@ -84,6 +84,34 @@ test('future booking brief omits decorations and keeps 14 stay dates under 1900 
   )
 })
 
+test('future booking hourly totals preserve unknown baselines and partial coverage instead of inventing zero', () => {
+  for (const hourlyValues of [Array(15).fill(null), [2, ...Array(14).fill(null)],
+    [...Array(14).fill(0), null]]) {
+    const current = {
+      ...snapshot,
+      futureBookingChanges: {
+        ...snapshot.futureBookingChanges,
+        basis: 'BASELINE_PENDING', hourlyBaselineAt: null,
+        daily: hourlyValues.map((value, index) => dailyRow(index, 20, value)),
+      },
+    }
+    const content = createFutureBookingWeComPayloads(hotel, current)[0].text.content
+    assert.match(content, /📊当日\+未来14天｜小时净\?/u)
+    assert.doesNotMatch(content, /📊当日\+未来14天｜小时净0/u)
+  }
+})
+
+test('future booking hourly totals retain genuine all-zero and known nonzero values', () => {
+  for (const [hourlyValues, total] of [[Array(15).fill(0), '0'],
+    [[2, -1, ...Array(13).fill(0)], '+1']]) {
+    const current = { ...snapshot, futureBookingChanges: { ...snapshot.futureBookingChanges,
+      daily: hourlyValues.map((value, index) => dailyRow(index, 20, value)),
+    } }
+    const content = createFutureBookingWeComPayloads(hotel, current)[0].text.content
+    assert.ok(content.includes(`📊当日+未来14天｜小时净${total}｜`))
+  }
+})
+
 test('high-demand advice gives owner, conditional action and review criteria', () => {
   const highDemand = {
     ...snapshot,

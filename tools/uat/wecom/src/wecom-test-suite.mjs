@@ -6,6 +6,29 @@ import {
 
 const messagePrefix = '手动安全模板测试'
 
+const finiteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+const hasUsableFutureRow = (snapshot) => {
+  const businessDateMs = Date.parse(`${snapshot.businessDate}T00:00:00Z`)
+  return (snapshot.futureBookingChanges?.daily ?? []).some((row) => {
+    const stayDate = row?.stayDate
+    if (typeof stayDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(stayDate)) return false
+    const stayDateMs = Date.parse(`${stayDate}T00:00:00Z`)
+    const dayOffset = (stayDateMs - businessDateMs) / 86_400_000
+    if (!Number.isInteger(dayOffset) || dayOffset < 1 || dayOffset > 14
+      || new Date(stayDateMs).toISOString().slice(0, 10) !== stayDate) return false
+    const booked = finiteNumber(row.bookedRoomNights)
+    const available = finiteNumber(row.availableRooms)
+    const roomCount = finiteNumber(row.roomCount)
+    return booked !== null && booked >= 0
+      && ((available !== null && available >= 0) || (roomCount !== null && roomCount > 0))
+  })
+}
+
 export const createWeComTestSuitePlan = ({ hotelId, snapshot }) => {
   if (
     typeof hotelId !== 'string'
@@ -23,9 +46,7 @@ export const createWeComTestSuitePlan = ({ hotelId, snapshot }) => {
     payloadFactory: null,
   }]
   const skippedTemplates = []
-  const futureRows = snapshot.futureBookingChanges?.daily
-
-  if (Array.isArray(futureRows) && futureRows.length > 0) {
+  if (Array.isArray(snapshot.futureBookingChanges?.daily) && hasUsableFutureRow(snapshot)) {
     templates.push({
       templateCode: 'FUTURE_14D',
       deliveryType: 'FUTURE_14D_TEST',

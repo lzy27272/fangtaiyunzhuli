@@ -626,7 +626,7 @@ const physicalInventoryState = (root, secretKey, legacySecretKey = null) => {
     ? root.data
     : root?.data?.dataList
   if (!Array.isArray(rows)) throw new Error('REPORT_DATA_INVALID')
-  return rows
+  const current = rows
     .filter((row) => row && typeof row === 'object' && !Array.isArray(row))
     .map((row) => {
       const displayName =
@@ -651,6 +651,43 @@ const physicalInventoryState = (root, secretKey, legacySecretKey = null) => {
         estimatedAdr: finiteNumber(row.estimatedAvgRoomPrice),
       }
     })
+  // Only the current physical report can supply this fallback. Do not add
+  // forecast/virtual pools, collapse duplicate room types, infer inventory
+  // from occupancy, or turn an incomplete upstream field into a zero total.
+  const physicalRows = rows.filter((row) => !(
+    row?.isAggregation === true
+    || row?.isVirtual === true
+    || row?.isPhysical === false
+  ))
+  const names = physicalRows.map((row) =>
+    typeof row?.roomName === 'string' ? row.roomName.trim().slice(0, 80) : '')
+  const hasCompleteIdentity = physicalRows.length > 0
+    && physicalRows.every((row) => row && typeof row === 'object' && !Array.isArray(row))
+    && names.every(Boolean)
+    && new Set(names).size === names.length
+  const sumCount = (key, allowNegative = false) => {
+    if (!hasCompleteIdentity) return null
+    let total = 0
+    for (const row of physicalRows) {
+      const raw = row[key]
+      if (
+        typeof raw !== 'number'
+        && !(typeof raw === 'string' && /^-?\d+$/u.test(raw.trim()))
+      ) return null
+      const value = Number(raw)
+      if (!Number.isSafeInteger(value) || (!allowNegative && value < 0)) return null
+      total += value
+      if (!Number.isSafeInteger(total)) return null
+    }
+    return total
+  }
+  return {
+    current,
+    totals: {
+      roomCount: sumCount('roomNum'),
+      availableRooms: sumCount('availableRoomNum', true),
+    },
+  }
 }
 
 const roomForecastState = (
@@ -658,22 +695,48 @@ const roomForecastState = (
   reportDate,
   secretKey,
   legacySecretKey = null,
+  configuredRoomTypes = [],
 ) => {
   const rows = root?.data
   if (!Array.isArray(rows)) throw new Error('REPORT_DATA_INVALID')
   const current = []
   const daily = new Map()
-  const addValue = (target, key, value) => {
-    const number = finiteNumber(value)
-    if (number === null) return
-    target[key] = (target[key] ?? 0) + number
+  const forecastNumber = (value) => {
+    if (typeof value !== 'number'
+      && !(typeof value === 'string' && /^-?\d+(?:\.\d+)?$/u.test(value.trim()))) return null
+    return finiteNumber(value)
   }
+  const forecastCount = (value, allowNegative = false) => {
+    const count = forecastNumber(value)
+    return Number.isSafeInteger(count) && (allowNegative || count >= 0) ? count : null
+  }
+  const physicalRows = rows.filter((row) => row?.isAggregation !== true
+    && row?.isVirtual !== true && row?.isPhysical !== false)
+  const physicalNames = physicalRows.map((row) =>
+    typeof row?.roomTypeName === 'string' ? row.roomTypeName.trim().slice(0, 80) : '')
+  const expectedNames = configuredRoomTypes.map((room) => typeof room?.roomTypeName === 'string'
+    ? room.roomTypeName.trim().slice(0, 80) : '')
+  const hasCompleteIdentity = expectedNames.length > 0 && expectedNames.every(Boolean)
+    && new Set(expectedNames).size === expectedNames.length
+    && physicalNames.length === expectedNames.length
+    && new Set(physicalNames).size === physicalNames.length
+    && physicalNames.every((name) => expectedNames.includes(name))
+    && physicalRows.every((row) => row && typeof row === 'object' && !Array.isArray(row)
+      && Array.isArray(row.details))
+  const physicalCounts = physicalRows.map((row) => forecastCount(row?.totalCount))
+  const countTotal = physicalCounts.reduce((sum, count) => sum + (count ?? 0), 0)
+  const physicalRoomCount = hasCompleteIdentity
+    && physicalCounts.every((count) => count !== null) && Number.isSafeInteger(countTotal)
+    ? countTotal : null
+  const physicalNamesByDate = new Map()
   for (const row of rows) {
     if (
       !row
       || typeof row !== 'object'
       || Array.isArray(row)
       || row.isAggregation === true
+      || row.isVirtual === true
+      || row.isPhysical === false
       || typeof row.roomTypeName !== 'string'
       || !Array.isArray(row.details)
     ) continue
@@ -694,6 +757,9 @@ const roomForecastState = (
           || stayDate < reportDate
           || stayDate > addDays(reportDate, 29)
         ) continue
+        const dateNames = physicalNamesByDate.get(stayDate) ?? new Map()
+        dateNames.set(displayName, (dateNames.get(displayName) ?? 0) + 1)
+        physicalNamesByDate.set(stayDate, dateNames)
         if (stayDate === reportDate) {
           current.push({
             inventoryPoolId: `PMS-${code}`,
@@ -702,58 +768,69 @@ const roomForecastState = (
               ? { legacyPhysicalRoomTypeCode: `PMS-${legacyCode}` }
               : {}),
             displayName,
-            physicalRoomCount: finiteNumber(row.totalCount),
-            primaryAvailableRooms: finiteNumber(detail.availableCount),
-            estimatedRoomNights: finiteNumber(detail.occupationCount),
-            estimatedRoomFee: finiteNumber(detail.roomRent),
-            estimatedAdr: finiteNumber(detail.adr),
-            forecastRevPar: finiteNumber(detail.revPar),
-            forecastOverbookingCount: finiteNumber(detail.overbookingCount),
-            forecastCheckinCount: finiteNumber(detail.checkinCount),
-            forecastOrderCount: finiteNumber(detail.orderCount),
-            forecastMaintainingCount: finiteNumber(detail.maintainingCount),
+            physicalRoomCount: forecastCount(row.totalCount),
+            primaryAvailableRooms: forecastCount(detail.availableCount, true),
+            estimatedRoomNights: forecastCount(detail.occupationCount),
+            estimatedRoomFee: forecastNumber(detail.roomRent),
+            estimatedAdr: forecastNumber(detail.adr),
+            forecastRevPar: forecastNumber(detail.revPar),
+            forecastOverbookingCount: forecastCount(detail.overbookingCount),
+            forecastCheckinCount: forecastCount(detail.checkinCount),
+            forecastOrderCount: forecastCount(detail.orderCount),
+            forecastMaintainingCount: forecastCount(detail.maintainingCount),
           })
         }
-        const aggregate = daily.get(stayDate) ?? {
-          stayDate,
-          availableRooms: null,
-          soldRooms: null,
-          orderRooms: null,
-          checkinRooms: null,
-          roomFee: null,
-          revenue: null,
-          roomNights: null,
-        }
-        addValue(aggregate, 'availableRooms', detail.availableCount)
-        addValue(aggregate, 'soldRooms', detail.occupationCount)
-        addValue(aggregate, 'orderRooms', detail.orderCount)
-        addValue(aggregate, 'checkinRooms', detail.checkinCount)
-        addValue(aggregate, 'roomFee', detail.roomRent)
-        addValue(aggregate, 'revenue', detail.roomRent)
-        addValue(aggregate, 'roomNights', detail.occupationCount)
+        const aggregate = daily.get(stayDate) ?? { stayDate, details: [] }
+        aggregate.details.push(detail)
         daily.set(stayDate, aggregate)
       }
   }
   const dailyRows = [...daily.values()]
     .sort((left, right) => left.stayDate.localeCompare(right.stayDate))
     .map((row) => {
-      const roomCount = row.soldRooms === null || row.availableRooms === null
-        ? null
-        : row.soldRooms + row.availableRooms
+      // Physical capacity is not sold + available: closed/maintenance rooms
+      // and overbooking can make those quantities differ. Every physical
+      // room type must be represented exactly once for this date.
+      const dateNames = physicalNamesByDate.get(row.stayDate)
+      const hasCompleteDate = hasCompleteIdentity
+        && expectedNames.every((name) => dateNames?.get(name) === 1)
+      const roomCount = hasCompleteDate ? physicalRoomCount : null
+      const sumField = (key, mode = 'COUNT') => {
+        if (!hasCompleteDate) return null
+        let total = 0
+        for (const detail of row.details) {
+          const value = mode === 'MONEY' ? forecastNumber(detail[key])
+            : forecastCount(detail[key], mode === 'SIGNED_COUNT')
+          if (value === null) return null
+          total += value
+          if (mode === 'MONEY' ? !Number.isFinite(total) : !Number.isSafeInteger(total)) return null
+        }
+        return total
+      }
+      const availableRooms = sumField('availableCount', 'SIGNED_COUNT')
+      const soldRooms = sumField('occupationCount')
+      const roomFee = sumField('roomRent', 'MONEY')
       return {
-        ...row,
+        stayDate: row.stayDate,
+        availableRooms,
+        soldRooms,
+        orderRooms: sumField('orderCount'),
+        checkinRooms: sumField('checkinCount'),
+        roomFee,
+        revenue: roomFee,
+        roomNights: soldRooms,
         roomCount,
         occupancyRate:
-          roomCount && row.soldRooms !== null
-            ? rounded(row.soldRooms / roomCount, 4)
+          roomCount && soldRooms !== null
+            ? rounded(soldRooms / roomCount, 4)
             : null,
         adr:
-          row.soldRooms && row.roomFee !== null
-            ? rounded(row.roomFee / row.soldRooms, 2)
+          soldRooms && roomFee !== null
+            ? rounded(roomFee / soldRooms, 2)
             : null,
         revPar:
-          roomCount && row.roomFee !== null
-            ? rounded(row.roomFee / roomCount, 2)
+          roomCount && roomFee !== null
+            ? rounded(roomFee / roomCount, 2)
             : null,
       }
     })
@@ -1397,6 +1474,7 @@ export const collectLiveReports = async ({
                     reportDate,
                     secretKey,
                     legacySecretKey,
+                    JSON.parse(source.requestPayloadJson).roomTypes,
                   )
         return {
           source,
@@ -1442,15 +1520,18 @@ export const collectLiveReports = async ({
     Boolean(orderReport) && Boolean(overviewReport) && Boolean(physicalReport)
   const forecastCurrent = forecastReport?.parsed?.current ?? []
   const forecastCurrentDaily = forecastReport?.parsed?.currentDaily ?? null
+  const physicalTotals = physicalReport?.parsed?.totals ?? null
   const overview = overviewReport?.parsed?.current
     ? {
         ...overviewReport.parsed.current,
         availableRooms:
           overviewReport.parsed.current.availableRooms
           ?? forecastCurrentDaily?.availableRooms
+          ?? physicalTotals?.availableRooms
           ?? null,
         roomCount:
           overviewReport.parsed.current.roomCount
+          ?? physicalTotals?.roomCount
           ?? forecastCurrentDaily?.roomCount
           ?? null,
       }
@@ -1494,7 +1575,7 @@ export const collectLiveReports = async ({
     overview,
     futureDaily,
     physicalInventory: mergePhysicalInventory(
-      physicalReport?.parsed ?? [],
+      physicalReport?.parsed?.current ?? [],
       forecastCurrent,
     ),
     roomForecast: forecastCurrent,

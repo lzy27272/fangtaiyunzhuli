@@ -124,6 +124,7 @@ $runtimeSourcePaths = @(
     'tools/uat/bieyanghong-repair-page.mjs',
     'tools/uat/bieyanghong-targeted-recovery.mjs',
     'tools/uat/bieyanghong-cookie-validation.mjs',
+    'tools/uat/bieyanghong-forecast-autoconfig.mjs',
     'tools/uat/bieyanghong_websockify_auth.py',
     'tools/uat/yilian-cloud-collector.mjs',
     'tools/uat/yilian-assisted-login.mjs',

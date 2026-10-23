@@ -356,7 +356,9 @@ test('current Meituan business overview replaces the rejected legacy revenue rep
   assert.equal(result.snapshot.overview.occupancyRate, 0.6)
   assert.equal(result.snapshot.overview.adr, 166.67)
   assert.equal(result.snapshot.overview.revPar, 100)
-  assert.equal(result.snapshot.overview.availableRooms, null)
+  assert.equal(result.snapshot.overview.roomCount, 10)
+  assert.equal(result.snapshot.overview.availableRooms, 4)
+  assert.equal(result.monitor.metrics.availableRooms.value, 4)
   assert.deepEqual(result.snapshot.futureDaily, [])
   const overviewRequest = requests.find((request) =>
     request.path.endsWith('/home/workbench/businessOverview'))
@@ -366,6 +368,159 @@ test('current Meituan business overview replaces the rejected legacy revenue rep
     'fe_com.sankuai.hotelpms.fe.web',
   )
   assert.equal(overviewRequest.headers.get('hotelpms-platform'), 'pc')
+})
+
+const collectWithPhysicalInventory = async (rows, {
+  previousSnapshots = [],
+  legacyOverview = false,
+  rejectInventory = false,
+} = {}) => collectLiveReports({
+  hotel,
+  sources: sources.map((source) => source.sourceId === 'overview-source' && !legacyOverview
+    ? {
+        ...source,
+        endpointUrl:
+          'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview',
+      }
+    : source),
+  cookiesBySourceId,
+  previousSnapshots,
+  secretKey: 'unit-test-hmac-key',
+  now: new Date('2026-07-26T10:00:00Z'),
+  fetchImpl: async (url, init) => new URL(url).pathname.endsWith('/workbench/room')
+    ? new Response(JSON.stringify(rejectInventory
+      ? { code: 10008, data: null }
+      : { code: 10000, data: rows }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    : fetchFor(1, [])(url, init),
+})
+
+test('physical inventory totals fill only missing current overview metrics from this collection', async () => {
+  const rows = [
+    { roomName: '实体一', roomNum: '29', availableRoomNum: '1' },
+    { roomName: '实体二', roomNum: 25, availableRoomNum: 2 },
+    { roomName: '实体三', roomNum: 9, availableRoomNum: 0 },
+    { roomName: '实体四', roomNum: 8, availableRoomNum: 1 },
+  ]
+  const first = await collectWithPhysicalInventory(rows)
+  assert.equal(first.run.status, 'SUCCEEDED')
+  assert.equal(first.snapshot.overview.roomCount, 71)
+  assert.equal(first.snapshot.overview.availableRooms, 4)
+  assert.equal(first.monitor.metrics.availableRooms.value, 4)
+  assert.equal(first.snapshot.overview.roomFee, 1000)
+  assert.equal(first.snapshot.overview.occupancyRate, 0.6)
+  assert.deepEqual(first.snapshot.futureDaily, [])
+
+  const second = await collectWithPhysicalInventory(
+    rows.map((row) => ({ ...row, availableRoomNum: null })),
+    { previousSnapshots: [first.snapshot] },
+  )
+  assert.equal(second.snapshot.overview.roomCount, 71)
+  assert.equal(second.snapshot.overview.availableRooms, null)
+  assert.equal(second.monitor.metrics.availableRooms.value, null)
+  assert.ok(second.snapshot.physicalInventory.every((room) => room.primaryAvailableRooms === null))
+  assert.deepEqual(second.snapshot.futureDaily, [])
+})
+
+test('physical fallback preserves authoritative overview values and does not use unavailable or historical data', async () => {
+  const rows = [{ roomName: '实体房型', roomNum: 71, availableRoomNum: 0 }]
+  const authoritative = await collectWithPhysicalInventory(rows, { legacyOverview: true })
+  assert.equal(authoritative.snapshot.overview.roomCount, 10)
+  assert.equal(authoritative.snapshot.overview.availableRooms, 4)
+
+  const first = await collectWithPhysicalInventory(rows)
+  assert.equal(first.snapshot.overview.availableRooms, 0)
+  const unavailable = await collectWithPhysicalInventory(rows, {
+    previousSnapshots: [first.snapshot],
+    rejectInventory: true,
+  })
+  assert.equal(unavailable.run.status, 'PARTIAL')
+  assert.equal(unavailable.snapshot.overview.roomCount, null)
+  assert.equal(unavailable.snapshot.overview.availableRooms, null)
+})
+
+test('physical totals exclude explicitly non-physical pools but never guess from room names', async () => {
+  const result = await collectWithPhysicalInventory([
+    { roomName: '汇总', roomNum: 7, availableRoomNum: 0 },
+    { roomName: '大床房', roomNum: 3, availableRoomNum: 2 },
+    { roomName: '明确合计', roomNum: 10, availableRoomNum: 2, isAggregation: true },
+    { roomName: '虚拟共享池', roomNum: 100, availableRoomNum: 99, isVirtual: true },
+    { roomName: '非实体池', roomNum: 100, availableRoomNum: 99, isPhysical: false },
+  ])
+  assert.equal(result.snapshot.overview.roomCount, 10)
+  assert.equal(result.snapshot.overview.availableRooms, 2)
+
+  const noPhysical = await collectWithPhysicalInventory([
+    { roomName: '虚拟共享池', roomNum: 100, availableRoomNum: 99, isVirtual: true },
+  ])
+  assert.equal(noPhysical.snapshot.overview.roomCount, null)
+  assert.equal(noPhysical.snapshot.overview.availableRooms, null)
+})
+
+test('physical totals fail closed on duplicate, unnamed, malformed, or incomplete room rows', async (t) => {
+  const good = { roomName: '实体房型', roomNum: 6, availableRoomNum: 2 }
+  const cases = [
+    ['empty report', []],
+    ['duplicate room type', [good, { ...good }]],
+    ['trimmed duplicate', [good, { ...good, roomName: ` ${good.roomName} ` }]],
+    ['truncated identity collision', [
+      { ...good, roomName: '同'.repeat(80) + '甲' },
+      { ...good, roomName: '同'.repeat(80) + '乙' },
+    ]],
+    ['missing name', [good, { roomNum: 4, availableRoomNum: 1 }]],
+    ['empty name', [good, { ...good, roomName: '  ' }]],
+    ['null row', [good, null]],
+    ['array row', [good, []]],
+    ['primitive row', [good, 'unknown']],
+  ]
+  for (const [label, rows] of cases) {
+    await t.test(label, async () => {
+      const result = await collectWithPhysicalInventory(rows)
+      assert.equal(result.snapshot.overview.roomCount, null)
+      assert.equal(result.snapshot.overview.availableRooms, null)
+    })
+  }
+})
+
+test('physical totals keep unknown metrics null and sum only exact integer counts', async (t) => {
+  const good = { roomName: '实体一', roomNum: 6, availableRoomNum: 2 }
+  for (const raw of [null, undefined, '', '  ', false, true, {}, [], 1.5, '1.5', 'invalid']) {
+    await t.test(`invalid available field ${String(raw)}`, async () => {
+      const result = await collectWithPhysicalInventory([
+        good,
+        { roomName: '实体二', roomNum: 4, availableRoomNum: raw },
+      ])
+      assert.equal(result.snapshot.overview.roomCount, 10)
+      assert.equal(result.snapshot.overview.availableRooms, null)
+    })
+  }
+  const invalidRoomCount = await collectWithPhysicalInventory([
+    good,
+    { roomName: '实体二', roomNum: null, availableRoomNum: 1 },
+  ])
+  assert.equal(invalidRoomCount.snapshot.overview.roomCount, null)
+  assert.equal(invalidRoomCount.snapshot.overview.availableRooms, 3)
+
+  const oversold = await collectWithPhysicalInventory([
+    { roomName: '实体房型', roomNum: '6', availableRoomNum: '-2' },
+  ])
+  assert.equal(oversold.snapshot.overview.roomCount, 6)
+  assert.equal(oversold.snapshot.overview.availableRooms, -2)
+
+  const negativeRoomCount = await collectWithPhysicalInventory([
+    { roomName: '实体房型', roomNum: -1, availableRoomNum: null },
+  ])
+  assert.equal(negativeRoomCount.snapshot.overview.roomCount, null)
+  assert.equal(negativeRoomCount.snapshot.overview.availableRooms, null)
+
+  const unsafeSum = await collectWithPhysicalInventory([
+    { roomName: '实体一', roomNum: Number.MAX_SAFE_INTEGER, availableRoomNum: Number.MAX_SAFE_INTEGER },
+    { roomName: '实体二', roomNum: 1, availableRoomNum: 1 },
+  ])
+  assert.equal(unsafeSum.snapshot.overview.roomCount, null)
+  assert.equal(unsafeSum.snapshot.overview.availableRooms, null)
 })
 
 test('night audit business date replaces the stale configured report date', async () => {
@@ -740,7 +895,7 @@ test('configured hot-selling rooms alert only on a reliable zero', () => {
   assert.equal(unavailable.shouldNotify, false)
 })
 
-test('room forecast fills current availability and future trend without replacing business overview revenue', async () => {
+test('room forecast supplies availability while physical totals retain current capacity and business overview revenue', async () => {
   const forecastSource = {
     sourceId: 'forecast-source',
     endpointUrl:
@@ -885,7 +1040,16 @@ test('room forecast fills current availability and future trend without replacin
               },
             ],
           }
-        : responseSet(1)[target.pathname]
+        : target.pathname.endsWith('/workbench/room')
+          ? {
+              code: 10000,
+              data: responseSet(1)[target.pathname].data.map((row) => ({
+                ...row,
+                roomNum: row.roomNum * 10,
+                availableRoomNum: row.availableRoomNum * 10,
+              })),
+            }
+          : responseSet(1)[target.pathname]
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -919,7 +1083,7 @@ test('room forecast fills current availability and future trend without replacin
   assert.equal(result.snapshot.overview.adr, 166.67)
   assert.equal(result.snapshot.overview.revPar, 100)
   assert.equal(result.snapshot.overview.availableRooms, 2)
-  assert.equal(result.snapshot.overview.roomCount, 10)
+  assert.equal(result.snapshot.overview.roomCount, 100)
   assert.equal(result.monitor.metrics.availableRooms.value, 2)
   assert.equal(result.snapshot.futureDaily.length, 2)
   assert.deepEqual(result.snapshot.futureDaily[0], {
@@ -956,6 +1120,177 @@ test('room forecast fills current availability and future trend without replacin
   assert.equal(monitor.hotSellingAlerts[0].shouldNotify, true)
   assert.equal(forecastRequest.body.beginDate, '2026-07-25 00:00:00')
   assert.equal(forecastRequest.body.endDate, '2026-08-23 00:00:00')
+})
+
+const forecastCapacityRows = () => [
+  { roomTypeName: '测试大床房', totalCount: 6, details: [
+    { date: '2026-07-26', occupationCount: 3, availableCount: 2, roomRent: 600, orderCount: 1, checkinCount: 2 },
+    { date: '2026-07-27', occupationCount: 4, availableCount: 1, roomRent: 800, orderCount: 2, checkinCount: 2 },
+  ] },
+  { roomTypeName: '测试双床房', totalCount: '4', details: [
+    { date: '2026-07-26', occupationCount: 2, availableCount: 1, roomRent: 400, orderCount: 1, checkinCount: 1 },
+    { date: '2026-07-27', occupationCount: 3, availableCount: 0, roomRent: 600, orderCount: 2, checkinCount: 1 },
+  ] },
+]
+
+const collectWithForecastCapacity = async (rows, physicalRows = null) => {
+  const forecastSource = {
+    sourceId: 'forecast-capacity-source', enabled: true, reportType: 'PHYSICAL_INVENTORY',
+    endpointUrl: 'https://pms.meituan.com/hotelpms/api/v2/report/roomState/batchSearchBaseRoomForcasting',
+    requestPayloadJson: JSON.stringify({ roomTypes: [
+      { id: 'KING', roomTypeName: '测试大床房' }, { id: 'TWIN', roomTypeName: '测试双床房' },
+    ] }),
+  }
+  return collectLiveReports({
+    hotel,
+    sources: [...sources.map((source) => source.sourceId === 'overview-source'
+      ? { ...source, endpointUrl: 'https://pms.meituan.com/hotelpms/api/v1/report/home/workbench/businessOverview' }
+      : source), forecastSource],
+    cookiesBySourceId: { ...cookiesBySourceId, [forecastSource.sourceId]: cookie },
+    previousSnapshots: [], secretKey: 'unit-test-hmac-key', now: new Date('2026-07-26T10:00:00Z'),
+    fetchImpl: async (url, init) => {
+      const path = new URL(url).pathname
+      if (!path.endsWith('/batchSearchBaseRoomForcasting')
+        && !(physicalRows && path.endsWith('/workbench/room'))) return fetchFor(1, [])(url, init)
+      return new Response(JSON.stringify({ code: 10000,
+        data: path.endsWith('/batchSearchBaseRoomForcasting') ? rows : physicalRows,
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    },
+  })
+}
+
+test('forecast capacity uses complete physical totalCount rather than sold plus available during room closure', async () => {
+  const rows = forecastCapacityRows()
+  const result = await collectWithForecastCapacity(rows)
+  const future = result.snapshot.futureDaily[0]
+  assert.equal(result.snapshot.overview.roomCount, 10)
+  assert.equal(result.snapshot.overview.availableRooms, 3)
+  assert.equal(future.soldRooms, 7)
+  assert.equal(future.availableRooms, 1)
+  assert.equal(future.roomCount, 10)
+  assert.equal(future.occupancyRate, 0.7)
+  assert.equal(future.revPar, 140)
+
+  // Missing physical report capacity can use a complete forecast capacity,
+  // but must never derive it from the eight occupied/available rooms.
+  const fallback = await collectWithForecastCapacity(rows, [
+    { roomName: '测试大床房', roomNum: null, availableRoomNum: null },
+    { roomName: '测试双床房', roomNum: null, availableRoomNum: null },
+  ])
+  assert.equal(fallback.snapshot.overview.roomCount, 10)
+
+  const physicalFirst = await collectWithForecastCapacity(rows, [
+    { roomName: '测试大床房', roomNum: 20, availableRoomNum: null },
+    { roomName: '测试双床房', roomNum: 30, availableRoomNum: null },
+  ])
+  assert.equal(physicalFirst.snapshot.overview.roomCount, 50)
+  assert.equal(physicalFirst.snapshot.overview.availableRooms, 3)
+  assert.equal(physicalFirst.snapshot.futureDaily[0].roomCount, 10)
+})
+
+test('forecast capacity remains unknown for missing, duplicate, or invalid physical room types', async (t) => {
+  const cases = [
+    ['missing date', rows => { rows[1].details.pop() }],
+    ['duplicate date', rows => { rows[1].details.push({ ...rows[1].details[1] }) }],
+    ['missing count', rows => { rows[1].totalCount = null }],
+    ['negative count', rows => { rows[1].totalCount = -1 }],
+    ['fractional count', rows => { rows[1].totalCount = 1.5 }],
+    ['boolean count', rows => { rows[1].totalCount = true }],
+    ['duplicate room type', rows => { rows.push({ ...rows[1] }) }],
+    ['unnamed room type', rows => { rows[1].roomTypeName = '' }],
+    ['malformed room type', rows => { rows.push(null) }],
+  ]
+  for (const [label, mutate] of cases) {
+    await t.test(label, async () => {
+      const rows = forecastCapacityRows()
+      mutate(rows)
+      const result = await collectWithForecastCapacity(rows)
+      assert.equal(result.snapshot.futureDaily[0].roomCount, null)
+      assert.equal(result.snapshot.futureDaily[0].occupancyRate, null)
+      assert.equal(result.snapshot.futureDaily[0].revPar, null)
+      assert.equal(result.snapshot.overview.roomCount, 10)
+    })
+  }
+})
+
+test('forecast capacity excludes explicit virtual pools and aggregation totals', async () => {
+  const rows = forecastCapacityRows()
+  rows.push({ ...rows[0], roomTypeName: '虚拟池', totalCount: 100, isVirtual: true })
+  rows.push({ ...rows[0], roomTypeName: '非实体池', totalCount: 100, isPhysical: false })
+  rows.push({ ...rows[0], roomTypeName: '合计', totalCount: 10, isAggregation: true })
+  const result = await collectWithForecastCapacity(rows)
+  assert.equal(result.snapshot.roomForecast.length, 2)
+  assert.equal(result.snapshot.futureDaily[0].roomCount, 10)
+  assert.equal(result.snapshot.futureDaily[0].availableRooms, 1)
+})
+
+test('ordinary forecast collections never publish partial sums when a configured room type or date disappears', async (t) => {
+  for (const [label, mutate] of [
+    ['entire configured room type missing', rows => { rows.pop() }],
+    ['one future date missing', rows => { rows[1].details.pop() }],
+    ['one future date duplicated', rows => { rows[1].details.push({ ...rows[1].details[1] }) }],
+  ]) {
+    await t.test(label, async () => {
+      const rows = forecastCapacityRows()
+      mutate(rows)
+      const result = await collectWithForecastCapacity(rows)
+      const future = result.snapshot.futureDaily[0]
+      for (const key of ['roomCount', 'availableRooms', 'soldRooms', 'orderRooms', 'checkinRooms',
+        'roomNights', 'roomFee', 'revenue', 'occupancyRate', 'adr', 'revPar']) assert.equal(future[key], null, key)
+    })
+  }
+})
+
+test('ordinary forecast collections preserve independent unknown fields rather than adding the remaining room types', async (t) => {
+  for (const [rawKey, outputKeys] of [
+    ['availableCount', ['availableRooms']],
+    ['occupationCount', ['soldRooms', 'roomNights', 'occupancyRate', 'adr']],
+    ['orderCount', ['orderRooms']],
+    ['checkinCount', ['checkinRooms']],
+    ['roomRent', ['roomFee', 'revenue', 'adr', 'revPar']],
+  ]) {
+    await t.test(rawKey, async () => {
+      const rows = forecastCapacityRows()
+      rows[1].details[1][rawKey] = null
+      const result = await collectWithForecastCapacity(rows)
+      const future = result.snapshot.futureDaily[0]
+      assert.equal(future.roomCount, 10)
+      for (const key of outputKeys) assert.equal(future[key], null, key)
+      if (rawKey !== 'availableCount') assert.equal(future.availableRooms, 1)
+      if (rawKey !== 'occupationCount') assert.equal(future.soldRooms, 7)
+      if (rawKey !== 'roomRent') assert.equal(future.roomFee, 1400)
+    })
+  }
+})
+
+test('ordinary forecast counts reject false-zero coercion but keep real zero and negative availability', async (t) => {
+  for (const raw of [undefined, '', '  ', false, true, {}, [], 'invalid', 1.5]) {
+    await t.test(`invalid available count ${String(raw)}`, async () => {
+      const rows = forecastCapacityRows()
+      rows[1].details[1].availableCount = raw
+      rows[1].details[0].availableCount = raw
+      const result = await collectWithForecastCapacity(rows)
+      assert.equal(result.snapshot.futureDaily[0].availableRooms, null)
+      assert.equal(result.snapshot.roomForecast[1].primaryAvailableRooms, null)
+      assert.equal(result.snapshot.futureDaily[0].soldRooms, 7)
+    })
+  }
+  const zeroRows = forecastCapacityRows()
+  for (const row of zeroRows) Object.assign(row.details[1], {
+    availableCount: 0, occupationCount: 0, orderCount: 0, checkinCount: 0, roomRent: 0,
+  })
+  const zero = (await collectWithForecastCapacity(zeroRows)).snapshot.futureDaily[0]
+  for (const key of ['availableRooms', 'soldRooms', 'orderRooms', 'checkinRooms', 'roomNights',
+    'roomFee', 'revenue', 'occupancyRate', 'revPar']) assert.equal(zero[key], 0, key)
+  assert.equal(zero.roomCount, 10)
+  assert.equal(zero.adr, null)
+
+  const oversoldRows = forecastCapacityRows()
+  oversoldRows[0].details[1].availableCount = -2
+  oversoldRows[1].details[1].availableCount = 1
+  const oversold = (await collectWithForecastCapacity(oversoldRows)).snapshot.futureDaily[0]
+  assert.equal(oversold.availableRooms, -1)
+  assert.equal(oversold.roomCount, 10)
 })
 
 test('collector fails closed when PMS cannot confirm a valid business date', async () => {

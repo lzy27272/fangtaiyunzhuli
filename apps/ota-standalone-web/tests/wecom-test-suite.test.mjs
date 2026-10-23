@@ -90,3 +90,35 @@ test('P1 test template is skipped instead of fabricating a future demand risk', 
   }])
 }
 )
+
+test('safe future test templates require actual future room data, not a current-day change row or placeholders', () => {
+  for (const daily of [
+    [],
+    [futureRow('2026-07-28')],
+    [futureRow('2026-07-27')],
+    [futureRow('2026-08-12')],
+    [{ stayDate: '2026-07-29' }],
+    [futureRow('2026-07-29', { bookedRoomNights: null })],
+    [futureRow('2026-07-29', { roomCount: null, availableRooms: null })],
+    [futureRow('2026-07-32')],
+  ]) {
+    const plan = createWeComTestSuitePlan({
+      hotelId: hotel.hotelId,
+      snapshot: { businessDate: '2026-07-28', futureDaily: [], futureBookingChanges: { daily } },
+    })
+    assert.equal(plan.templates.some(template => template.templateCode === 'FUTURE_14D'), false,
+      JSON.stringify(daily))
+    assert.ok(plan.skippedTemplates.some(template => template.templateCode === 'FUTURE_14D'
+      && template.reasonCode === 'FUTURE_BOOKING_SNAPSHOT_REQUIRED'))
+  }
+})
+
+test('safe future test templates preserve a real zero-booking future row', () => {
+  const plan = createWeComTestSuitePlan({
+    hotelId: hotel.hotelId,
+    snapshot: { businessDate: '2026-07-28', futureBookingChanges: {
+      daily: [futureRow('2026-07-29', { bookedRoomNights: 0, availableRooms: 20, occupancyPercent: 0 })],
+    } },
+  })
+  assert.ok(plan.templates.some(template => template.templateCode === 'FUTURE_14D'))
+})
