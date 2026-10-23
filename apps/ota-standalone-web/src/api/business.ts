@@ -207,6 +207,10 @@ export interface PmsCookieValidationView {
   successfulSourceCount: number
   replacedSourceCount: number
   outboundDeliveryAttempted: false
+  initialStoreBindingAccepted?: true
+  identityBasis?: 'ADMIN_OFFICIAL_NAME_CONFIRMATION' | 'ADMIN_INDEPENDENT_ID_CONFIRMATION'
+  declaredPmsHotelName?: string
+  vendorNameVerified?: false
 }
 
 export interface PmsCookieBindingStatusView {
@@ -223,11 +227,13 @@ export interface PmsCookieBindingStatusView {
   expectedPmsHotelId?: string
 }
 
-export interface PmsInitialStoreBinding {
-  independentExpectedPmsHotelId: string
+export type PmsInitialStoreBinding = {
   confirmStoreIdentity: true
   expectedRowVersion: number
-}
+} & (
+  | { independentExpectedPmsHotelName: string; independentExpectedPmsHotelId?: never }
+  | { independentExpectedPmsHotelId: string; independentExpectedPmsHotelName?: never }
+)
 
 export interface LuopanBrowserConfigView {
   providerCode: 'LUOPAN_CLOUD'

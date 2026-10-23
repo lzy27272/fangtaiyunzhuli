@@ -129,6 +129,7 @@ import {
 } from './pms-repair-alert.mjs'
 import {
   createTrustedDeviceIntakeStore,
+  readApprovedTrustedDevicePmsHotelId,
   stableJson,
   TRUSTED_DEVICE_PILOT_HOTEL_CODE,
   validateTrustedDeviceSnapshot,
@@ -987,6 +988,13 @@ const trustedDeviceStoreScopeSecretScope = (hotel) =>
   `trusted-device-store-scope:${hotel.tenantId}:${hotel.hotelId}`
 const trustedDeviceProofKeySecretScope = (hotel, deviceId) =>
   `trusted-device-proof-key:${hotel.tenantId}:${hotel.hotelId}:${deviceId}`
+const approvedTrustedDeviceIdentityFor = (hotel) => {
+  if (hotel?.pmsSystemCode !== 'MEITUAN_BIEYANGHONG') return null
+  return readApprovedTrustedDevicePmsHotelId({
+    path: trustedDeviceStatePathFor(hotel),
+    openStoreScope: record => decryptCookie(record, cookieSecretKey, trustedDeviceStoreScopeSecretScope(hotel)),
+  })
+}
 const trustedDeviceStoreFor = (hotel) => {
   if (!trustedDeviceEligible(hotel)) return null
   const existing = trustedDeviceIntakeStores.get(hotel.hotelId)
@@ -8445,6 +8453,42 @@ const pmsCookieValue = (cookieHeader, name) => {
   return values[0]
 }
 
+const validBieyanghongDeclaredPmsHotelName = (value) => typeof value === 'string'
+  && value.length >= 1 && value.length <= 80 && value === value.trim()
+  && !/^[0-9]+$/u.test(value)
+  && !/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u.test(value)
+
+const assertInitialBieyanghongStoreNotClaimed = (hotelId, expectedHotelId) => {
+  for (const otherHotel of hotels) {
+    if (otherHotel.hotelId === hotelId || otherHotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG') continue
+    let approvedTrustedHotelId
+    try { approvedTrustedHotelId = approvedTrustedDeviceIdentityFor(otherHotel) } catch {
+      // An unreadable other-store identity remains CONFLICT for that store,
+      // but must not block all unrelated setup. Still inspect its readable
+      // Cookie claims below; duplicate protection covers confirmed claims.
+      approvedTrustedHotelId = null
+    }
+    if (approvedTrustedHotelId === expectedHotelId) {
+      throw new Error('BIEYANGHONG_STORE_ALREADY_BOUND')
+    }
+    // Inspect every readable active record, not just stores whose complete
+    // set is BOUND. A mixed/orphan record can still claim this candidate ID.
+    const unreadableDocument = unreadableCookieSecretsByHotel.get(otherHotel.hotelId)
+    const activeRecords = Object.entries(secretsForHotel(otherHotel.hotelId))
+    if (unreadableDocument && typeof unreadableDocument === 'object' && !Array.isArray(unreadableDocument)) {
+      activeRecords.push(...Object.entries(unreadableDocument))
+    }
+    for (const [sourceId, record] of activeRecords) {
+      let claimedHotelId
+      try {
+        claimedHotelId = pmsCookieValue(decryptCookie(record, cookieSecretKey,
+          cookieScope(otherHotel.hotelId, sourceId)), 'hotelpms_login_hotel_id')
+      } catch { continue }
+      if (claimedHotelId === expectedHotelId) throw new Error('BIEYANGHONG_STORE_ALREADY_BOUND')
+    }
+  }
+}
+
 const bieyanghongStoreBindingFor = (hotelId) => {
   const hotel = selectedHotel(hotelId)
   if (hotel.pmsSystemCode !== 'MEITUAN_BIEYANGHONG') {
@@ -8456,7 +8500,7 @@ const bieyanghongStoreBindingFor = (hotelId) => {
   const positiveHotelId = /^[1-9][0-9]{0,63}$/u
   let invalidExistingScope = cookieSecretStoreInvalid || invalidCookieSecretHotelIds.has(hotelId)
   try {
-    const approvedTrustedScope = trustedDeviceStoreFor(hotel)?.approvedPmsLoginHotelId()
+    const approvedTrustedScope = approvedTrustedDeviceIdentityFor(hotel)
     if (approvedTrustedScope) {
       if (positiveHotelId.test(approvedTrustedScope)) expectedHotelIds.add(approvedTrustedScope)
       else invalidExistingScope = true
@@ -8579,13 +8623,19 @@ const validateAndReplaceBieyanghongReportCookies = async (
     const secretsBeforeValidation = cookieSecretsByHotel.get(hotelId)
     const binding = bieyanghongStoreBindingFor(hotelId)
     let initialExpectedHotelId = null
+    let initialIdentityBasis = null
+    let declaredPmsHotelName = null
     if (initialStoreBinding !== undefined) {
+      const bindingKeys = initialStoreBinding && typeof initialStoreBinding === 'object'
+        ? Object.keys(initialStoreBinding).sort().join(',') : ''
+      const nameConfirmation = bindingKeys === 'confirmStoreIdentity,expectedRowVersion,independentExpectedPmsHotelName'
+      const independentIdConfirmation = bindingKeys === 'confirmStoreIdentity,expectedRowVersion,independentExpectedPmsHotelId'
       if (!initialStoreBinding || typeof initialStoreBinding !== 'object' || Array.isArray(initialStoreBinding)
-        || Object.keys(initialStoreBinding).sort().join(',')
-          !== 'confirmStoreIdentity,expectedRowVersion,independentExpectedPmsHotelId'
+        || (!nameConfirmation && !independentIdConfirmation)
         || initialStoreBinding.confirmStoreIdentity !== true
-        || typeof initialStoreBinding.independentExpectedPmsHotelId !== 'string'
-        || !/^[1-9][0-9]{0,63}$/u.test(initialStoreBinding.independentExpectedPmsHotelId)
+        || (nameConfirmation && !validBieyanghongDeclaredPmsHotelName(initialStoreBinding.independentExpectedPmsHotelName))
+        || (independentIdConfirmation && (typeof initialStoreBinding.independentExpectedPmsHotelId !== 'string'
+          || !/^[1-9][0-9]{0,63}$/u.test(initialStoreBinding.independentExpectedPmsHotelId)))
         || !Number.isInteger(initialStoreBinding.expectedRowVersion) || initialStoreBinding.expectedRowVersion < 1) {
         throw new Error('BIEYANGHONG_INITIAL_BINDING_INVALID')
       }
@@ -8604,12 +8654,25 @@ const validateAndReplaceBieyanghongReportCookies = async (
         || !enabledPaths.has('/hotelpms/api/v1/report/home/workbench/businessOverview')) {
         throw new Error('BIEYANGHONG_INITIAL_SOURCE_CONTRACT_INVALID')
       }
-      initialExpectedHotelId = initialStoreBinding.independentExpectedPmsHotelId
+      if (nameConfirmation) {
+        // The administrator confirms the visible official name independently.
+        // The Cookie supplies only the scope to pin after the read checks;
+        // neither it nor our local hotel directory proves the vendor name.
+        declaredPmsHotelName = initialStoreBinding.independentExpectedPmsHotelName
+        initialIdentityBasis = 'ADMIN_OFFICIAL_NAME_CONFIRMATION'
+        initialExpectedHotelId = pmsCookieValue(normalizedCookieHeader, 'hotelpms_login_hotel_id')
+        if (!/^[1-9][0-9]{0,63}$/u.test(initialExpectedHotelId ?? '')) {
+          throw new Error('BIEYANGHONG_STORE_SCOPE_INVALID')
+        }
+      } else {
+        initialIdentityBasis = 'ADMIN_INDEPENDENT_ID_CONFIRMATION'
+        initialExpectedHotelId = initialStoreBinding.independentExpectedPmsHotelId
+      }
+      assertInitialBieyanghongStoreNotClaimed(hotelId, initialExpectedHotelId)
     }
     const expectedHotelId = initialExpectedHotelId ?? expectedBieyanghongHotelScope(hotelId)
-    // This independent expected ID is supplied and confirmed by the platform
-    // administrator from official store details; never derive it from the
-    // new Cookie. Reject ambiguous duplicate context before provider access.
+    // Existing bindings and the legacy independent-ID setup must match their
+    // pinned scope. Reject ambiguous duplicate context before provider access.
     if (pmsCookieValue(normalizedCookieHeader, 'hotelpms_login_hotel_id') !== expectedHotelId) {
       throw new Error('BIEYANGHONG_STORE_SCOPE_INVALID')
     }
@@ -8636,6 +8699,10 @@ const validateAndReplaceBieyanghongReportCookies = async (
     if (selectedHotel(hotelId) !== hotel || hotel.rowVersion !== binding.hotelRowVersion) {
       throw new Error('BIEYANGHONG_INITIAL_BINDING_VERSION_CONFLICT')
     }
+    // Per-hotel validation locks cannot prevent two different unbound hotels
+    // selecting the same PMS scope. Recheck after await; replacement and its
+    // atomic persistence below are synchronous, with no interleaving point.
+    if (initialExpectedHotelId) assertInitialBieyanghongStoreNotClaimed(hotelId, initialExpectedHotelId)
     const replacement = replaceBieyanghongReportCookies(
       hotelId,
       normalizedCookieHeader,
@@ -8644,7 +8711,11 @@ const validateAndReplaceBieyanghongReportCookies = async (
     return {
       ...validation,
       replacedSourceCount: replacement.replaced,
-      ...(initialExpectedHotelId ? { initialStoreBindingAccepted: true } : {}),
+      ...(initialExpectedHotelId ? {
+        initialStoreBindingAccepted: true, identityBasis: initialIdentityBasis,
+        vendorNameVerified: false,
+        ...(declaredPmsHotelName ? { declaredPmsHotelName } : {}),
+      } : {}),
     }
   })()
   pmsCookieValidationLocks.set(hotelId, operation)
@@ -12815,6 +12886,7 @@ const auditSecurityEvent = ({
   targetAccountId = null,
   reasonCode = null,
   username = null,
+  storeScopeConfirmation = null,
 }) => {
   mkdirSync(dirname(securityAuditPath), { recursive: true })
   const sourceFingerprint = createHash('sha256')
@@ -12839,6 +12911,17 @@ const auditSecurityEvent = ({
       reasonCode,
       usernameFingerprint,
       sourceFingerprint,
+      ...(storeScopeConfirmation
+        && ['ADMIN_OFFICIAL_NAME_CONFIRMATION', 'ADMIN_INDEPENDENT_ID_CONFIRMATION'].includes(storeScopeConfirmation.basis)
+        && /^[a-f0-9]{64}$/u.test(storeScopeConfirmation.pmsHotelIdFingerprint ?? '')
+        && (storeScopeConfirmation.basis !== 'ADMIN_OFFICIAL_NAME_CONFIRMATION'
+          || validBieyanghongDeclaredPmsHotelName(storeScopeConfirmation.declaredPmsHotelName))
+        ? { storeScopeConfirmation: {
+          basis: storeScopeConfirmation.basis,
+          pmsHotelIdFingerprint: storeScopeConfirmation.pmsHotelIdFingerprint,
+          ...(storeScopeConfirmation.basis === 'ADMIN_OFFICIAL_NAME_CONFIRMATION'
+            ? { declaredPmsHotelName: storeScopeConfirmation.declaredPmsHotelName } : {}),
+        } } : {}),
     })}\n`,
     { encoding: 'utf8', mode: 0o600 },
   )
@@ -14728,7 +14811,13 @@ const server = createServer(async (request, response) => {
         if (validation.initialStoreBindingAccepted) {
           auditSecurityEvent({ action: 'BIEYANGHONG_INITIAL_STORE_SCOPE_CONFIRMED', outcome: 'SUCCEEDED',
             request, principal: requestPrincipal, hotelId,
-            reasonCode: 'ADMIN_INDEPENDENT_STORE_SCOPE_CONFIRMATION' })
+            reasonCode: 'ADMIN_INDEPENDENT_STORE_SCOPE_CONFIRMATION',
+            storeScopeConfirmation: {
+              basis: validation.identityBasis,
+              declaredPmsHotelName: validation.declaredPmsHotelName,
+              pmsHotelIdFingerprint: createHash('sha256')
+                .update(pmsCookieValue(body.cookieHeader, 'hotelpms_login_hotel_id'), 'utf8').digest('hex'),
+            } })
         }
         json(response, 200, { data: validation })
         return
@@ -15823,6 +15912,7 @@ const server = createServer(async (request, response) => {
         'PMS_FUTURE_DATA_NOT_READY',
         'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED',
         'BIEYANGHONG_INITIAL_BINDING_VERSION_CONFLICT',
+        'BIEYANGHONG_STORE_ALREADY_BOUND',
         'ROOM_TYPE_CONFIGURATION_VERSION_CONFLICT',
         'OTA_SOURCE_VERSION_CONFLICT',
         'OTA_SOURCE_CHANGED_DURING_REFRESH',

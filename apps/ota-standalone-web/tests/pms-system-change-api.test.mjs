@@ -6,7 +6,7 @@ import { createServer, request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { decryptCookie, encryptCookie } from '../../../tools/uat/report-source-cookie-crypto.mjs'
 import { fingerprintWeComWebhook } from '../../../tools/uat/wecom/src/wecom-group-robot.mjs'
@@ -451,6 +451,11 @@ const initialCookieCommand = (version = 5, overrides = {}) => ({
   initialStoreBinding: { independentExpectedPmsHotelId: '9009', confirmStoreIdentity: true, expectedRowVersion: version },
   ...overrides,
 })
+const initialNameCookieCommand = (version = 5, name = 'SeeCity爱立斯', overrides = {}) => ({
+  reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE', cookieHeader: initialCookie(),
+  initialStoreBinding: { independentExpectedPmsHotelName: name, confirmStoreIdentity: true, expectedRowVersion: version },
+  ...overrides,
+})
 const fixtureReadCount = async root => {
   try { return (await readFile(join(root, 'collector-test-spy.jsonl'), 'utf8')).split('\n').filter(Boolean).length }
   catch (error) { if (error.code === 'ENOENT') return 0; throw error }
@@ -493,6 +498,7 @@ test('initial Cookie authorization requires an independent confirmed ID and comp
     const operator = (await login.json()).accessToken
     assert.equal((await call(app, '/pms-cookie-validation', undefined, operator)).status, 403)
     assert.equal((await call(app, '/pms-cookie-validation', initialCookieCommand(), operator)).status, 403)
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand(), operator)).status, 403)
     for (const id of ['0', '09009', ' 9009', '9009 ', '', 9009]) {
       const rejected = await call(app, '/pms-cookie-validation', initialCookieCommand(5, {
         initialStoreBinding: { independentExpectedPmsHotelId: id, confirmStoreIdentity: true, expectedRowVersion: 5 },
@@ -530,6 +536,9 @@ test('initial Cookie authorization requires an independent confirmed ID and comp
     const accepted = await call(app, '/pms-cookie-validation', initialCookieCommand())
     assert.equal(accepted.status, 200, JSON.stringify(accepted.body))
     assert.equal(accepted.body.data.initialStoreBindingAccepted, true)
+    assert.equal(accepted.body.data.identityBasis, 'ADMIN_INDEPENDENT_ID_CONFIRMATION')
+    assert.equal(accepted.body.data.vendorNameVerified, false)
+    assert.equal(Object.hasOwn(accepted.body.data, 'declaredPmsHotelName'), false)
     assert.equal(accepted.body.data.successfulSourceCount, 3)
     assert.equal(accepted.body.data.outboundDeliveryAttempted, false)
     const bound = (await call(app, '/pms-cookie-validation')).body.data
@@ -563,6 +572,249 @@ test('initial Cookie authorization requires an independent confirmed ID and comp
     assert.equal(restarted.status, 'BOUND')
     assert.equal(restarted.expectedPmsHotelId, '9009')
     assert.equal(restarted.collectionEnabled, true)
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('official-name confirmation requires an explicit administrator declaration, full reads and atomic Cookie persistence', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-name-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    const secretFile = join(root, 'report-source-cookie-secrets.json')
+    const before = await readFile(secretFile, 'utf8')
+    for (const name of ['', ' ', '  SeeCity爱立斯', 'SeeCity爱立斯 ', '9009', '酒'.repeat(81), 9009,
+      '酒店\n名', '酒店\u007f名', '酒店\u0085名', '酒店\u200b名', '酒店\u200e名', '酒店\u202e名', '酒店\u2066名', '酒店\ufeff名']) {
+      const rejected = await call(app, '/pms-cookie-validation', initialNameCookieCommand(5, name))
+      assert.equal(rejected.status, 400)
+      assert.equal(rejected.body.code, 'BIEYANGHONG_INITIAL_BINDING_INVALID')
+    }
+    for (const binding of [
+      { independentExpectedPmsHotelName: 'SeeCity爱立斯', independentExpectedPmsHotelId: '9009', confirmStoreIdentity: true, expectedRowVersion: 5 },
+      { independentExpectedPmsHotelName: 'SeeCity爱立斯', confirmStoreIdentity: true, expectedRowVersion: 5, vendorNameVerified: true },
+      { independentExpectedPmsHotelName: 'SeeCity爱立斯', confirmStoreIdentity: false, expectedRowVersion: 5 },
+      { independentExpectedPmsHotelName: 'SeeCity爱立斯', expectedRowVersion: 5 },
+    ]) {
+      assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand(5, 'SeeCity爱立斯', {
+        initialStoreBinding: binding,
+      }))).body.code, 'BIEYANGHONG_INITIAL_BINDING_INVALID')
+    }
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand(4))).body.code,
+      'BIEYANGHONG_INITIAL_BINDING_VERSION_CONFLICT')
+    for (const cookieHeader of [initialCookie('0'), initialCookie('09009'), 'synthetic_session=without-hotel-id',
+      `${initialCookie()}; hotelpms_login_hotel_id=9010`]) {
+      assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand(5, 'SeeCity爱立斯', { cookieHeader }))).body.code,
+        'BIEYANGHONG_STORE_SCOPE_INVALID')
+    }
+    assert.equal(await fixtureReadCount(root), 0)
+    assert.equal(await readFile(secretFile, 'utf8'), before)
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'PARTIAL' })
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand())).body.code, 'PMS_COOKIE_VALIDATION_INCOMPLETE')
+    assert.equal(await readFile(secretFile, 'utf8'), before)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE' })
+    await rename(secretFile, `${secretFile}.saved`)
+    await mkdir(secretFile)
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand())).body.code, 'PMS_COOKIE_PERSIST_FAILED')
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    await rm(secretFile, { recursive: true })
+    await rename(`${secretFile}.saved`, secretFile)
+    const accepted = await call(app, '/pms-cookie-validation', initialNameCookieCommand())
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body))
+    assert.equal(accepted.body.data.initialStoreBindingAccepted, true)
+    assert.equal(accepted.body.data.identityBasis, 'ADMIN_OFFICIAL_NAME_CONFIRMATION')
+    assert.equal(accepted.body.data.declaredPmsHotelName, 'SeeCity爱立斯')
+    assert.equal(accepted.body.data.vendorNameVerified, false)
+    assert.equal(accepted.body.data.successfulSourceCount, 3)
+    assert.equal(accepted.body.data.outboundDeliveryAttempted, false)
+    const bound = (await call(app, '/pms-cookie-validation')).body.data
+    assert.equal(bound.status, 'BOUND')
+    assert.equal(bound.expectedPmsHotelId, '9009')
+    assert.equal(bound.hotelName, 'Synthetic hotel 009', 'declared vendor name need not equal the local alias')
+    assert.equal(bound.collectionEnabled, false, 'saving credentials alone must not enable collection')
+    assert.equal(Object.hasOwn(bound, 'declaredPmsHotelName'), false, 'no non-atomic second identity store is introduced')
+    assert.doesNotMatch(await readFile(secretFile, 'utf8'), /hotelpms_login_hotel_id|example-test-only-pms-token/)
+    const auditEvents = (await readFile(join(root, 'security-audit.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)
+    const confirmations = auditEvents.filter(event => event.action === 'BIEYANGHONG_INITIAL_STORE_SCOPE_CONFIRMED')
+    assert.equal(confirmations.length, 1, 'failed or incomplete setup must not be audited as accepted')
+    assert.deepEqual(confirmations[0].storeScopeConfirmation, {
+      basis: 'ADMIN_OFFICIAL_NAME_CONFIRMATION', declaredPmsHotelName: 'SeeCity爱立斯',
+      pmsHotelIdFingerprint: createHash('sha256').update('9009', 'utf8').digest('hex'),
+    })
+    assert.equal(confirmations[0].hotelId, hotelId)
+    assert.ok(confirmations[0].actorAccountId)
+    assert.doesNotMatch(JSON.stringify(auditEvents) + app.errors, /hotelpms_login_hotel_id|example-test-only-pms-token/)
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand(5, 'Other hotel', {
+      cookieHeader: initialCookie('9010'),
+    }))).body.code, 'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED')
+    await stop(app)
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.expectedPmsHotelId, '9009')
+    assert.equal((await call(app, '/pms-cookie-validation', {
+      reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE', cookieHeader: initialCookie(),
+    })).status, 200, 'normal scoped repair remains compatible after restart')
+    assert.equal(await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8'), '')
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('initial setup rejects a PMS scope already claimed by another store without disabling legacy repairs', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-name-duplicate-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    await stop(app)
+    const secretStore = await readJson(root, 'report-source-cookie-secrets.json')
+    secretStore[otherHotelId] = { [sourceId]: encryptCookie(initialCookie(), secretKey, `${otherHotelId}:${sourceId}`) }
+    await jsonFile(root, 'report-source-cookie-secrets.json', secretStore)
+    const before = await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8')
+    app = await start(root, { collectorFixture: true })
+    for (const body of [initialCookieCommand(), initialNameCookieCommand()]) {
+      const rejected = await call(app, '/pms-cookie-validation', body)
+      assert.equal(rejected.status, 409)
+      assert.equal(rejected.body.code, 'BIEYANGHONG_STORE_ALREADY_BOUND')
+    }
+    assert.equal(await fixtureReadCount(root), 0)
+    assert.equal(await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8'), before)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    await stop(app)
+    const badSourceId = '34000000-0000-4000-8000-000000000099'
+    secretStore[otherHotelId][badSourceId] = encryptCookie(initialCookie('9010'), secretKey, `${otherHotelId}:${badSourceId}`)
+    secretStore[otherHotelId][badSourceId].authTag = Buffer.alloc(16).toString('base64url')
+    await jsonFile(root, 'report-source-cookie-secrets.json', secretStore)
+    const corruptOtherBefore = await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8')
+    app = await start(root, { collectorFixture: true })
+    const conflictedOtherApp = { ...app, scoped: app.scoped.replace(hotelId, otherHotelId) }
+    assert.equal((await call(conflictedOtherApp, '/pms-cookie-validation')).body.data.status, 'CONFLICT')
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand())).body.code,
+      'BIEYANGHONG_STORE_ALREADY_BOUND', 'a separately readable claim in a partly corrupt other-store document still occupies this ID')
+    assert.equal(await fixtureReadCount(root), 0)
+    assert.equal(await readFile(join(root, 'report-source-cookie-secrets.json'), 'utf8'), corruptOtherBefore)
+    await stop(app)
+    delete secretStore[otherHotelId][badSourceId]
+    const sourceStore = await readJson(root, 'report-sources.json')
+    secretStore[hotelId] = Object.fromEntries(sourceStore[hotelId].map(source => [source.sourceId,
+      encryptCookie(initialCookie(), secretKey, `${hotelId}:${source.sourceId}`)]))
+    await jsonFile(root, 'report-source-cookie-secrets.json', secretStore)
+    app = await start(root, { collectorFixture: true })
+    const legacyRepair = { reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE', cookieHeader: initialCookie() }
+    const otherApp = { ...app, scoped: app.scoped.replace(hotelId, otherHotelId) }
+    assert.equal((await call(app, '/pms-cookie-validation', legacyRepair)).status, 200)
+    assert.equal((await call(otherApp, '/pms-cookie-validation', legacyRepair)).status, 200,
+      'the new first-setup guard must not retroactively block historical duplicate-scope repair')
+    assert.equal(await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8'), '')
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('concurrent first-time setup of different stores cannot claim the same PMS scope', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-name-concurrent-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    const otherApp = { ...app, scoped: app.scoped.replace(hotelId, otherHotelId) }
+    assert.equal((await call(otherApp, '/pms-system', change('LUOPAN_CLOUD'))).status, 200)
+    assert.equal((await call(otherApp, '/pms-system', change('MEITUAN_BIEYANGHONG', 5))).status, 200)
+    assert.equal((await call(otherApp, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE', delayMs: 400 })
+    const first = call(app, '/pms-cookie-validation', initialNameCookieCommand())
+    await waitForFixtureReads(root, 1)
+    const second = call(otherApp, '/pms-cookie-validation', initialNameCookieCommand(6, 'Another visible hotel name'))
+    await waitForFixtureReads(root, 2)
+    const results = await Promise.all([first, second])
+    assert.deepEqual(results.map(result => result.status).sort(), [200, 409])
+    assert.equal(results.find(result => result.status === 409).body.code, 'BIEYANGHONG_STORE_ALREADY_BOUND')
+    const statuses = await Promise.all([app, otherApp].map(async item => (await call(item, '/pms-cookie-validation')).body.data.status))
+    assert.deepEqual(statuses.sort(), ['BOUND', 'NOT_BOUND'])
+    const stored = await readJson(root, 'report-source-cookie-secrets.json')
+    assert.equal([hotelId, otherHotelId].filter(id => Object.keys(stored[id] ?? {}).length > 0).length, 1)
+    assert.equal(await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8'), '')
+  } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
+})
+
+test('inactive trusted-device mode still protects approved current-generation identities but ignores retired registries', { timeout: 20_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pms-initial-name-device-anchor-'))
+  let app
+  try {
+    app = await prepareInitialCookieStore(root)
+    await stop(app)
+    const approvedRegistry = (id, pmsHotelId = '9009') => {
+      const deviceId = randomUUID()
+      return { schemaVersion: 1, enrollment: null,
+        // This decodes to the wrong proof-key length. The full intake-store
+        // constructor rejects it, but identity-only reads must ignore it.
+        devices: [{ deviceId, hotelId: id, sealedScopeProofKey: encryptCookie('example-invalid-proof-key', secretKey,
+          `trusted-device-proof-key:${tenantId}:${id}:${deviceId}`) }],
+        scopeAnchor: { epoch: randomUUID(), approvalStatus: 'APPROVED', approvedAt: '2026-10-23T00:00:00.000Z',
+          sealedExpectedPmsLoginHotelId: encryptCookie(pmsHotelId, secretKey, `trusted-device-store-scope:${tenantId}:${id}`) },
+      }
+    }
+    // 009 already has a fresh PMS generation. Its pre-switch registry must
+    // not establish identity in that generation, even when the ID matches.
+    await jsonFile(root, 'trusted-device-registry-009.json', approvedRegistry(hotelId))
+    await jsonFile(root, 'trusted-device-registry-010.json', approvedRegistry(otherHotelId))
+    const otherRegistryBefore = await readFile(join(root, 'trusted-device-registry-010.json'), 'utf8')
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    const duplicate = await call(app, '/pms-cookie-validation', initialNameCookieCommand())
+    assert.equal(duplicate.status, 409)
+    assert.equal(duplicate.body.code, 'BIEYANGHONG_STORE_ALREADY_BOUND')
+    assert.equal(await fixtureReadCount(root), 0)
+    assert.equal(await readFile(join(root, 'trusted-device-registry-010.json'), 'utf8'), otherRegistryBefore)
+    const otherApp = { ...app, scoped: app.scoped.replace(hotelId, otherHotelId) }
+    assert.equal((await call(otherApp, '/pms-system', change('LUOPAN_CLOUD'))).status, 200)
+    assert.equal((await call(otherApp, '/pms-system', change('MEITUAN_BIEYANGHONG', 5))).status, 200)
+    await stop(app)
+    const hotels = await readJson(root, 'simulation-hotels.json')
+    const targetHotel = hotels.find(hotel => hotel.hotelId === hotelId)
+    const otherHotel = hotels.find(hotel => hotel.hotelId === otherHotelId)
+    const currentRegistryName = `trusted-device-registry-009-${createHash('sha256').update(targetHotel.pmsChangedAt).digest('hex').slice(0, 12)}.json`
+    const otherCurrentRegistryName = `trusted-device-registry-010-${createHash('sha256').update(otherHotel.pmsChangedAt).digest('hex').slice(0, 12)}.json`
+    await jsonFile(root, otherCurrentRegistryName, approvedRegistry(otherHotelId, '9010'))
+    const otherCurrentBefore = await readFile(join(root, otherCurrentRegistryName), 'utf8')
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'PARTIAL' })
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand())).body.code,
+      'PMS_COOKIE_VALIDATION_INCOMPLETE', 'a different readable approved ID with bad device data must not block provider validation')
+    assert.equal(await fixtureReadCount(root), 1)
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    assert.equal(await readFile(join(root, otherCurrentRegistryName), 'utf8'), otherCurrentBefore)
+    await stop(app)
+    await jsonFile(root, 'collector-test-state.json', { completeness: 'COMPLETE' })
+    await jsonFile(root, currentRegistryName, approvedRegistry(hotelId))
+    const targetRegistryBefore = await readFile(join(root, currentRegistryName), 'utf8')
+    app = await start(root, { collectorFixture: true })
+    const current = (await call(app, '/pms-cookie-validation')).body.data
+    assert.equal(current.status, 'BOUND', 'current approved anchors must not be hidden by SERVER_COOKIE mode')
+    assert.equal(current.expectedPmsHotelId, '9009')
+    assert.equal(current.canInitialize, false)
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand())).body.code,
+      'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED')
+    assert.equal(await readFile(join(root, currentRegistryName), 'utf8'), targetRegistryBefore)
+    assert.equal(await fixtureReadCount(root), 1)
+    await stop(app)
+    await rm(join(root, currentRegistryName))
+    const otherCorruptAnchor = JSON.parse(otherCurrentBefore)
+    otherCorruptAnchor.scopeAnchor.sealedExpectedPmsLoginHotelId.authTag = Buffer.alloc(16).toString('base64url')
+    await jsonFile(root, otherCurrentRegistryName, otherCorruptAnchor)
+    app = await start(root, { collectorFixture: true })
+    const otherConflictApp = { ...app, scoped: app.scoped.replace(hotelId, otherHotelId) }
+    assert.equal((await call(otherConflictApp, '/pms-cookie-validation')).body.data.status, 'CONFLICT')
+    assert.equal((await call(app, '/pms-cookie-validation')).body.data.status, 'NOT_BOUND')
+    assert.equal((await call(otherConflictApp, '/pms-cookie-validation', initialNameCookieCommand(6))).body.code,
+      'BIEYANGHONG_INITIAL_BINDING_NOT_ALLOWED', 'a target store with unreadable identity cannot reinitialize')
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand())).status, 200,
+      'an unreadable identity in another store must not block unrelated initial setup')
+    assert.deepEqual(await readJson(root, otherCurrentRegistryName), otherCorruptAnchor)
+    await stop(app)
+    // Separately prove a readable different approved identity with the same
+    // unrelated device damage neither blocks nor mutates the normal repair.
+    await writeFile(join(root, otherCurrentRegistryName), otherCurrentBefore, 'utf8')
+    app = await start(root, { collectorFixture: true })
+    assert.equal((await call(app, '/pms-cookie-validation', { reasonCode: 'VALIDATE_AND_UPDATE_PMS_COOKIE',
+      cookieHeader: initialCookie() })).status, 200)
+    assert.deepEqual((await readdir(root)).filter(name => name.startsWith('trusted-device-registry-')).sort(),
+      ['trusted-device-registry-009.json', otherCurrentRegistryName, 'trusted-device-registry-010.json'].sort())
+    assert.equal(await readFile(join(root, 'trusted-device-registry-010.json'), 'utf8'), otherRegistryBefore)
+    assert.equal(await readFile(join(root, otherCurrentRegistryName), 'utf8'), otherCurrentBefore)
+    assert.equal(await readFile(join(root, 'wecom-network-test-spy.jsonl'), 'utf8'), '')
   } finally { await stop(app); await rm(root, { recursive: true, force: true }) }
 })
 
@@ -651,7 +903,7 @@ test('three-source initial authorization enables collection but cannot send an e
     await writeFile(join(root, 'wecom-network-test-spy.jsonl'), '', 'utf8')
     app = await start(root, { collectorFixture: true })
     assert.equal((await call(app, '/pms-system', change('MEITUAN_BIEYANGHONG'))).status, 200)
-    assert.equal((await call(app, '/pms-cookie-validation', initialCookieCommand())).status, 200)
+    assert.equal((await call(app, '/pms-cookie-validation', initialNameCookieCommand())).status, 200)
     assert.equal((await call(app, '/live-collection-runs', {})).status, 200)
     const status = (await call(app, '/pms-cookie-validation')).body.data
     assert.equal(status.status, 'BOUND')

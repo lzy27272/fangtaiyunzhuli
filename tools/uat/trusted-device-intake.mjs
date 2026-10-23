@@ -275,6 +275,26 @@ const scopeApprovalStatus = (anchor) =>
       ? 'PENDING'
       : 'UNBOUND'
 
+// Identity inspection must not instantiate a device store: an unrelated
+// damaged device proof key must neither hide a valid identity claim nor
+// prevent an otherwise unrelated hotel from completing first-time setup.
+// The caller supplies only its current-generation path and scoped opener.
+export const readApprovedTrustedDevicePmsHotelId = ({ path, openStoreScope }) => {
+  if (!path || !existsSync(path)) return null
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'))
+    if (!plainObject(parsed) || parsed.schemaVersion !== 1) throw new Error('INVALID')
+    if (parsed.scopeAnchor === undefined || parsed.scopeAnchor === null) return null
+    if (!validScopeAnchor(parsed.scopeAnchor)) throw new Error('INVALID')
+    if (scopeApprovalStatus(parsed.scopeAnchor) !== 'APPROVED') return null
+    return canonicalPmsLoginHotelId(openStoreScope(
+      parsed.scopeAnchor.sealedExpectedPmsLoginHotelId,
+    ))
+  } catch {
+    throw new Error('TRUSTED_DEVICE_STORE_SCOPE_IDENTITY_INVALID')
+  }
+}
+
 const assertOverviewRow = (row, code) => {
   assertExactKeys(row, OVERVIEW_KEYS, code)
   if (

@@ -32,7 +32,7 @@ export function BieyanghongCookieRepairPanel({
   const [notice, setNotice] = useState('')
   const [binding, setBinding] = useState<PmsCookieBindingStatusView | null>(null)
   const [bindingLoading, setBindingLoading] = useState(true)
-  const [expectedPmsHotelId, setExpectedPmsHotelId] = useState('')
+  const [expectedPmsHotelName, setExpectedPmsHotelName] = useState('')
   const [identityConfirmed, setIdentityConfirmed] = useState(false)
   const [progress, setProgress] = useState('')
   const scopeSequence = useRef(0)
@@ -45,7 +45,7 @@ export function BieyanghongCookieRepairPanel({
     setNotice('')
     setBinding(null)
     setBindingLoading(true)
-    setExpectedPmsHotelId('')
+    setExpectedPmsHotelName('')
     setIdentityConfirmed(false)
     setSubmitting(false)
     setProgress('')
@@ -61,7 +61,10 @@ export function BieyanghongCookieRepairPanel({
 
   const initialSetup = binding?.status === 'NOT_BOUND' && binding.firstTimeSetupRequired
   const hourlyCollectionEnabled = Boolean(binding?.collectionEnabled && binding.automaticHourlyCollectionEnabled)
-  const identityValid = /^[1-9][0-9]{0,63}$/u.test(expectedPmsHotelId.trim())
+  const confirmedName = expectedPmsHotelName.trim()
+  const identityValid = confirmedName.length > 0 && confirmedName.length <= 80
+    && !/^[0-9]+$/u.test(confirmedName)
+    && !/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u.test(expectedPmsHotelName)
   const blocked = binding?.status === 'CONFLICT' || (initialSetup && !binding.canInitialize)
   const ready = canSubmit && Boolean(binding) && !bindingLoading && !submitting && !blocked
     && Boolean(cookieDraft.trim()) && (!initialSetup || (identityValid && identityConfirmed))
@@ -103,7 +106,7 @@ export function BieyanghongCookieRepairPanel({
 
     setSubmitting(true)
     setCookieDraft('')
-    setProgress(initialSetup ? '正在核对本店身份并验证只读接口…' : '正在验证本店只读接口…')
+    setProgress(initialSetup ? '正在按你确认的门店归属验证只读接口…' : '正在验证本店只读接口…')
     let authorizationSaved = false
     let statusRefreshed = false
     try {
@@ -111,7 +114,7 @@ export function BieyanghongCookieRepairPanel({
         context,
         cookieHeader,
         initialSetup ? {
-          independentExpectedPmsHotelId: expectedPmsHotelId.trim(),
+          independentExpectedPmsHotelName: confirmedName,
           confirmStoreIdentity: true,
           expectedRowVersion: binding.hotelRowVersion,
         } : undefined,
@@ -175,25 +178,24 @@ export function BieyanghongCookieRepairPanel({
       </p>
       <div className="report-source-form">
         {bindingLoading ? <p className="wide-field" role="status">正在读取本店授权状态…</p> : null}
-        {binding?.status === 'BOUND' ? <p className="wide-field">已确认美团门店编号：{binding.expectedPmsHotelId}；{hourlyCollectionEnabled ? '每小时自动采集已启用'
+        {binding?.status === 'BOUND' ? <p className="wide-field">本店授权已绑定；{hourlyCollectionEnabled ? '每小时自动采集已启用'
           : binding.collectionEnabled ? '本店允许采集，但系统定时任务未启用'
             : '采集仍暂停，需完成本店试采'}。</p> : null}
         {blocked ? <p className="wide-field field-error" role="alert">{binding?.status === 'CONFLICT'
           ? '本店已有授权记录存在身份冲突，不能覆盖绑定。请联系平台管理员核对。'
           : '当前门店暂不能首次授权，可能有验证任务正在处理。请稍后刷新授权状态，或联系平台管理员核对。'}</p> : null}
         {initialSetup && binding.canInitialize ? <>
-          <p className="wide-field">首次接入：先在 <a href="https://pms.meituan.com/" target="_blank" rel="noreferrer">美团 PMS 官网</a> 登录并切到 {hotelCode} · {binding.hotelName}，核对官网门店名称和编号。请勿从 Cookie 猜测编号或使用其他门店授权。</p>
+          <p className="wide-field">首次接入：先在 <a href="https://pms.meituan.com/" target="_blank" rel="noreferrer">美团 PMS 官网</a> 登录并切到本店，填写美团界面显示的完整店名，再确认它对应后台的 {hotelCode} · {binding.hotelName}。无需查找或输入数字编号。</p>
           <label className="wide-field">
-            美团 PMS 官网门店编号（不是后台门店编号 {hotelCode}）
-            <input inputMode="numeric" autoComplete="off" maxLength={64} disabled={!canSubmit || submitting}
-              value={expectedPmsHotelId} placeholder="填写从官网独立核对的门店编号"
-              onChange={(event) => { setExpectedPmsHotelId(event.target.value); setIdentityConfirmed(false); setError('') }} />
+            美团界面显示的门店名称
+            <input name="pms-official-hotel-name" autoComplete="off" maxLength={80} disabled={!canSubmit || submitting}
+              value={expectedPmsHotelName} placeholder="填写美团顶部显示的完整店名，不是数字编号"
+              aria-label="美团界面显示的门店名称" aria-invalid={Boolean(expectedPmsHotelName) && !identityValid}
+              aria-describedby="pms-name-confirmation-help"
+              onChange={(event) => { setExpectedPmsHotelName(event.target.value); setIdentityConfirmed(false); setError('') }} />
+            {expectedPmsHotelName && !identityValid ? <small className="field-error">请填写真实门店名称（1–80字），不能只填数字或包含不可见字符。</small> : null}
           </label>
-          <label className="wide-field initial-pms-identity-confirm">
-            <input type="checkbox" disabled={!canSubmit || submitting} checked={identityConfirmed}
-              onChange={(event) => setIdentityConfirmed(event.target.checked)} />
-            我已独立核对官网门店名称和编号，确认对应 {hotelCode} · {binding.hotelName}，并授权接入本店数据
-          </label>
+          <p className="wide-field" id="pms-name-confirmation-help">店名由你从美团界面独立核对；系统只读取授权中的内部标识用于固定本店归属，不代表美团已自动认证该店名。后台简称与美团全称可以不同，但必须是同一家店。</p>
         </> : null}
         <label className="wide-field cookie-field">
           PMS Cookie 原文
@@ -206,13 +208,19 @@ export function BieyanghongCookieRepairPanel({
             value={cookieDraft}
             onChange={(event) => {
               setCookieDraft(event.target.value)
+              setIdentityConfirmed(false)
               setError('')
               setNotice('')
               setValidation(null)
             }}
           />
-          <small>内容只用于本次本店验证，提交后立即清空，后台不会回显原文。</small>
+          <small>内容只用于本次本店验证，提交后立即清空，后台不会回显原文。{initialSetup ? '修改店名或 Cookie 后，请重新勾选门店归属确认。' : ''}</small>
         </label>
+        {initialSetup && binding.canInitialize ? <label className="wide-field initial-pms-identity-confirm">
+          <input type="checkbox" disabled={!canSubmit || submitting} checked={identityConfirmed}
+            onChange={(event) => setIdentityConfirmed(event.target.checked)} />
+          我已核对美团店名“{confirmedName || '请先填写上方店名'}”，确认与 {hotelCode} · {binding.hotelName} 是同一家店，并授权将本次 Cookie 绑定到本店
+        </label> : null}
         <details className="wide-field">
           <summary>如何获取本店授权 Cookie？</summary>
           <p>在美团 PMS 官网确认当前门店后，打开开发者工具的“网络 / Network”，刷新页面，选择本店 PMS 报表请求，在“请求标头 / Request Headers”复制 Cookie 的值，仅粘贴到上方输入框。不要复制“Cookie:”前缀，不要发送到聊天或群里。</p>
@@ -224,8 +232,8 @@ export function BieyanghongCookieRepairPanel({
         <span>{progress || (!canSubmit ? '需要平台管理员配置本店授权。'
           : bindingLoading ? '正在读取本店授权状态，请稍候。'
             : !binding ? '请先刷新授权状态，读取成功后再提交。'
-              : initialSetup && !identityValid ? '请先填写从美团官网核对的门店编号。'
-          : initialSetup && !identityConfirmed ? '请勾选确认本店身份，再提交授权。'
+              : initialSetup && !identityValid ? '请先填写美团界面显示的完整门店名称，无需数字编号。'
+          : initialSetup && !identityConfirmed ? '请勾选确认：美团店名与当前后台门店是同一家店，再提交授权。'
             : hourlyCollectionEnabled ? '每小时自动采集已启用；仅在会话失效时更新本店 Cookie。'
               : binding.collectionEnabled ? '本店允许采集，但系统定时任务未启用，请联系平台管理员核对。'
               : !cookieDraft.trim() ? '请粘贴本店 Cookie，授权和试采通过后才能开启采集。'
@@ -246,6 +254,7 @@ export function BieyanghongCookieRepairPanel({
           {' '}{validation.businessDate}。
         </p>
       ) : null}
+      {validation?.identityBasis === 'ADMIN_OFFICIAL_NAME_CONFIRMATION' ? <p className="success-note" role="status">本次门店归属由管理员确认：{validation.declaredPmsHotelName} → {hotelCode}。系统已验证授权可读取报表，不代表自动认证官方店名。</p> : null}
       {notice ? <p className="success-note" role="status">{notice}</p> : null}
       {error ? <p className="field-error" role="alert">{error}</p> : null}
     </article>
