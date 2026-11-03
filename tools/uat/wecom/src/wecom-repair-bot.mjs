@@ -109,6 +109,26 @@ export const weComRepairBotRecipientsForHotel = (credentials, hotelId) => {
   return [...new Set([...allowedUserIds, ...scopedUserIds])]
 }
 
+export const selectWeComRepairBotCaptchaRecipients = ({
+  credentials,
+  hotelId,
+  allowGlobalRepairActions = false,
+}) => {
+  const scopedUserIds = normalizeWeComRepairBotHotelAllowedUserIds(
+    credentials,
+  )[String(hotelId ?? '')] ?? []
+  if (scopedUserIds.length > 0) {
+    return { userIds: scopedUserIds, scope: 'HOTEL' }
+  }
+  const globalUserIds = allowGlobalRepairActions === true
+    ? normalizeWeComRepairBotAllowedUserIds(credentials)
+    : []
+  return {
+    userIds: globalUserIds,
+    scope: globalUserIds.length > 0 ? 'GLOBAL' : 'NONE',
+  }
+}
+
 export const weComRepairBotCanRepairHotel = ({
   credentials,
   userId,

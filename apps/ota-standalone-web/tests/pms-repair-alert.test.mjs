@@ -192,8 +192,11 @@ test('Luopan stale-data notice explains when no captcha is needed', () => {
 test('Luopan reauthentication notice routes the manager to the captcha bot', () => {
   const guidance = luopanPmsRepairGuidance('LUOPAN_REAUTH_REQUIRED')
   assert.equal(guidance.captchaRequired, true)
-  assert.match(guidance.captchaText, /私聊本店管理员发送验证码图片/u)
+  assert.match(guidance.captchaText, /修复任务取得验证码图片后/u)
+  assert.match(guidance.captchaText, /本条预警不代表验证码已送达/u)
+  assert.match(guidance.action, /企业微信修复助手私聊/u)
   assert.match(guidance.action, /门店编号 验证码/u)
+  assert.match(guidance.action, /若未收到，请联系管理员在修复后台核对发送状态与绑定/u)
 
   const key = pmsRepairNoticeMessageKey({
     hotel: {

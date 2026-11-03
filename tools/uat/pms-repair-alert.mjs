@@ -47,9 +47,9 @@ export const luopanPmsRepairGuidance = (lastErrorCode) => {
       diagnosis: luopanFailureLabel(normalized),
       captchaRequired: true,
       captchaText:
-        '需要验证码；系统会由修复机器人私聊本店管理员发送验证码图片。',
+        '罗盘会话需重新核验；修复任务取得验证码图片后，系统会尝试私聊已授权修复人员。本条预警不代表验证码已送达。',
       action:
-        '收到后按“门店编号 验证码”回复；若未收到，请检查本店管理员绑定。',
+        '请本店管理员查看企业微信修复助手私聊，收到图片后直接回复“门店编号 验证码”；若未收到，请联系管理员在修复后台核对发送状态与绑定。',
     }
   }
   return {

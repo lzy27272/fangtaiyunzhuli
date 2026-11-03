@@ -86,3 +86,34 @@ test('a previously validated Luopan profile remains repairable after reauthentic
   assert.match(validation, /errorCode === 'LUOPAN_REAUTH_REQUIRED'/u)
   assert.match(validation, /scopeStatus: preserveConfirmedScope/u)
 })
+
+test('Luopan group notice cannot mask a failed private captcha delivery', async () => {
+  const api = await readSource('../../../tools/uat/ota-standalone-review-api.mjs')
+  const challenge = api.slice(
+    api.indexOf('const startLuopanRepairChallenge'),
+    api.indexOf('const scheduledLuopanRecoveryTick'),
+  )
+  const privateSend = challenge.indexOf(
+    'directDelivery = await deliverWeComRepairBotDirectMessage',
+  )
+  const privateGate = challenge.indexOf(
+    'if (!(directDelivery?.deliveredPartCount >= 1))',
+  )
+  const groupSend = challenge.indexOf(
+    'const groupDelivery = await deliverWeComAuditNotice',
+  )
+
+  assert.ok(privateSend > 0 && privateSend < privateGate && privateGate < groupSend)
+  assert.match(challenge.slice(privateSend, privateGate), /recipientSha256s: captchaRecipients\.userIds\.map/u)
+  assert.match(challenge.slice(privateSend, privateGate), /requireActionAuthorization: true/u)
+  assert.match(
+    challenge.slice(privateGate, groupSend),
+    /throw new Error\('LUOPAN_REPAIR_CAPTCHA_NOT_DELIVERED'\)/u,
+  )
+  assert.match(challenge, /privateDeliveryStatus: directDelivery\?\.deliveryStatus/u)
+  assert.match(challenge, /privateDeliveredPartCount: directDelivery\?\.deliveredPartCount/u)
+  assert.match(challenge, /privatePartCount: directDelivery\?\.partCount/u)
+  assert.match(challenge, /LUOPAN_REPAIR_CHALLENGE_SKIPPED/u)
+  assert.match(challenge, /LUOPAN_REPAIR_CHALLENGE_FAILED[\s\S]{0,300}privateDeliveryStatus: directDelivery\?\.deliveryStatus/u)
+  assert.doesNotMatch(challenge, /Promise\.allSettled\(deliveryTasks\)/u)
+})

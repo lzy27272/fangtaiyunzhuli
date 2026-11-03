@@ -12,6 +12,7 @@ import {
   parseWeComRepairBotText,
   planYilianRepairCardDelivery,
   planWeComRepairNoticeDeliveries,
+  selectWeComRepairBotCaptchaRecipients,
   selectWeComRepairNoticeChannels,
   shouldFanOutWeComRepairNotice,
   weComRepairBotCanRepairHotel,
@@ -182,6 +183,26 @@ test('store managers are scoped to their hotel while legacy users stay global', 
     hotelId: 'hotel-009',
     allowGlobalRepairActions: true,
   }), true)
+  assert.deepEqual(selectWeComRepairBotCaptchaRecipients({
+    credentials,
+    hotelId: 'hotel-009',
+    allowGlobalRepairActions: true,
+  }), { userIds: ['hotel.manager', 'global.first'], scope: 'HOTEL' })
+  assert.deepEqual(selectWeComRepairBotCaptchaRecipients({
+    credentials,
+    hotelId: 'hotel-014',
+    allowGlobalRepairActions: true,
+  }), { userIds: ['other.manager'], scope: 'HOTEL' })
+  assert.deepEqual(selectWeComRepairBotCaptchaRecipients({
+    credentials,
+    hotelId: 'hotel-001',
+    allowGlobalRepairActions: false,
+  }), { userIds: [], scope: 'NONE' })
+  assert.deepEqual(selectWeComRepairBotCaptchaRecipients({
+    credentials,
+    hotelId: 'hotel-001',
+    allowGlobalRepairActions: true,
+  }), { userIds: ['global.first', 'global.second'], scope: 'GLOBAL' })
 })
 
 test('repair notices can independently reach the scoped manager and broadcast group', () => {

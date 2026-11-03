@@ -229,6 +229,7 @@ import {
   parseWeComRepairBotText,
   planYilianRepairCardDelivery,
   planWeComRepairNoticeDeliveries,
+  selectWeComRepairBotCaptchaRecipients,
   selectWeComRepairNoticeChannels,
   shouldFanOutWeComRepairNotice,
   WECOM_REPAIR_BOT_MAX_ALLOWED_USERS,
@@ -7660,7 +7661,18 @@ const startLuopanRepairChallenge = async (
   hotelId,
   trigger = 'SCHEDULED_AUDIT',
 ) => {
-  if (!luopanAssistedRepairReady()) return null
+  const skip = (reasonCode) => {
+    process.stdout.write(`${JSON.stringify({
+      event: 'LUOPAN_REPAIR_CHALLENGE_SKIPPED',
+      hotelId,
+      trigger,
+      reasonCode,
+    })}\n`)
+    return null
+  }
+  if (!luopanAssistedRepairReady()) {
+    return skip(luopanRepairReasonCode() ?? 'LUOPAN_REPAIR_NOT_READY')
+  }
   const active = activeLuopanRepairsByHotel.get(hotelId)
   if (active) {
     const activeChallenge = luopanRepairChallengeStore.getInternalByHash(
@@ -7676,12 +7688,15 @@ const startLuopanRepairChallenge = async (
   const hotel = selectedHotel(hotelId)
   const config = luopanBrowserConfigRecordFor(hotelId)
   const weComConfig = weComConfigFor(hotelId)
+  const captchaRecipients = selectWeComRepairBotCaptchaRecipients({
+    credentials: weComRepairBotCredentials ?? {},
+    hotelId,
+    allowGlobalRepairActions:
+      weComRepairBotConfig.allowGlobalRepairActions === true,
+  })
   const managerRepairReady =
     weComRepairBotReady()
-    && weComRepairBotRecipientsForHotel(
-      weComRepairBotCredentials ?? {},
-      hotelId,
-    ).length > 0
+    && captchaRecipients.userIds.length > 0
   const repairChannel = managerRepairReady
     ? 'WECOM_LONG_CONNECTION'
     : luopanWebRepairReady
@@ -7697,7 +7712,11 @@ const startLuopanRepairChallenge = async (
     || !luopanRepairProfileReady(config)
     || (!managerRepairReady && !groupRepairLinkReady)
   ) {
-    return null
+    return skip(hotel.pmsSystemCode !== 'LUOPAN_CLOUD'
+      ? 'LUOPAN_PMS_SCOPE_INVALID'
+      : !luopanRepairProfileReady(config)
+        ? 'LUOPAN_REPAIR_PROFILE_REQUIRED'
+        : 'LUOPAN_REPAIR_NOTICE_CHANNEL_UNAVAILABLE')
   }
   const created = luopanRepairChallengeStore.create({
     hotelId,
@@ -7716,6 +7735,7 @@ const startLuopanRepairChallenge = async (
     login: null,
   }
   activeLuopanRepairsByHotel.set(hotelId, handle)
+  let directDelivery = null
   try {
     const credentials = pmsLoginCredentialsFor(hotelId)
     handle.login = await startLuopanAssistedLogin({
@@ -7736,13 +7756,17 @@ const startLuopanRepairChallenge = async (
     )
     const repairMessageKey =
       `${hotelId}:LUOPAN_REPAIR_REQUIRED:${created.record.challengeId}`
-    const deliveryTasks = []
+    let deliveredPartCount = 0
     if (repairChannel === 'WECOM_LONG_CONNECTION') {
-      deliveryTasks.push(deliverWeComRepairBotDirectMessage({
+      directDelivery = await deliverWeComRepairBotDirectMessage({
         hotelId,
         messageKey: repairMessageKey,
         deliveryType: 'LUOPAN_REPAIR_REQUIRED',
         captcha: handle.login.captcha,
+        recipientSha256s: captchaRecipients.userIds.map(
+          fingerprintWeComRepairBotValue,
+        ),
+        requireActionAuthorization: true,
         content: [
           '### 罗盘简报需要人工验证码',
           `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
@@ -7750,10 +7774,14 @@ const startLuopanRepairChallenge = async (
           `**${hotel.hotelCode} 验证码**`,
           '有效期10分钟，最多提交3次。',
         ].join('\n'),
-      }))
+      })
+      if (!(directDelivery?.deliveredPartCount >= 1)) {
+        throw new Error('LUOPAN_REPAIR_CAPTCHA_NOT_DELIVERED')
+      }
+      deliveredPartCount += directDelivery.deliveredPartCount
     }
     if (groupRepairLinkReady) {
-      deliveryTasks.push(deliverWeComAuditNotice({
+      const groupDelivery = await deliverWeComAuditNotice({
         hotelId,
         messageKey: repairChannel === 'WECOM_LONG_CONNECTION'
           ? `${repairMessageKey}:WECOM_GROUP_WEBHOOK`
@@ -7764,7 +7792,8 @@ const startLuopanRepairChallenge = async (
             '【罗盘简报需要人工验证】',
             `门店：${hotel.hotelCode} · ${hotel.hotelName}`,
             '原因：罗盘登录会话已失效，自动简报已暂停。',
-            '处理：验证码已私聊本店修复管理员；其他授权人员可登录后台按指引处理。',
+            `处理：修复机器人收到向${captchaRecipients.scope === 'HOTEL' ? '本店' : '全局'}授权修复人员发送验证码私聊的接口确认（${directDelivery.deliveredPartCount}/${directDelivery.partCount}）；请在机器人私聊查看并回复“${hotel.hotelCode} 验证码”。`,
+            '未收到私聊时，请联系管理员在修复后台核对机器人可见范围、门店绑定与发送记录。',
             `修复后台（需登录）：${storeRepairConsoleUrlFor(hotel)}`,
           ].join('\n')
           : [
@@ -7778,17 +7807,18 @@ const startLuopanRepairChallenge = async (
           ].join('\n'),
         bodyPreview:
           `罗盘简报需要人工验证码 · ${hotel.hotelCode} · 安全链接已隐藏`,
-      }))
+      }).catch((error) => {
+        if (repairChannel === 'WECOM_SECURE_LINK') throw error
+        process.stderr.write(`${JSON.stringify({
+          event: 'LUOPAN_REPAIR_GROUP_NOTICE_FAILED',
+          hotelId,
+          trigger,
+          reasonCode: safeLuopanRepairReason(error),
+        })}\n`)
+        return null
+      })
+      deliveredPartCount += groupDelivery?.deliveredPartCount ?? 0
     }
-    const deliveryOutcomes = await Promise.allSettled(deliveryTasks)
-    const deliveredPartCount = deliveryOutcomes.reduce(
-      (total, outcome) => total + (
-        outcome.status === 'fulfilled'
-          ? outcome.value.deliveredPartCount
-          : 0
-      ),
-      0,
-    )
     if (deliveredPartCount < 1) {
       throw new Error('LUOPAN_REPAIR_NOTICE_NOT_DELIVERED')
     }
@@ -7798,6 +7828,12 @@ const startLuopanRepairChallenge = async (
         hotelId,
         trigger,
         channel: repairChannel,
+        privateRecipientScope: repairChannel === 'WECOM_LONG_CONNECTION'
+          ? captchaRecipients.scope
+          : null,
+        privateDeliveryStatus: directDelivery?.deliveryStatus ?? null,
+        privateDeliveredPartCount: directDelivery?.deliveredPartCount ?? 0,
+        privatePartCount: directDelivery?.partCount ?? 0,
         expiresAt: created.record.expiresAt,
       })}\n`,
     )
@@ -7813,6 +7849,12 @@ const startLuopanRepairChallenge = async (
         hotelId,
         trigger,
         reasonCode,
+        privateRecipientScope: repairChannel === 'WECOM_LONG_CONNECTION'
+          ? captchaRecipients.scope
+          : null,
+        privateDeliveryStatus: directDelivery?.deliveryStatus ?? null,
+        privateDeliveredPartCount: directDelivery?.deliveredPartCount ?? 0,
+        privatePartCount: directDelivery?.partCount ?? 0,
       })}\n`,
     )
     return null
@@ -8418,10 +8460,12 @@ const processLuopanRepairSubmissionByHash = ({ tokenSha256, captcha }) =>
 const luopanQuickRepairFor = (hotelId) => {
   const hotel = selectedHotel(hotelId)
   const config = luopanBrowserConfigRecordFor(hotelId)
-  const managerRecipientCount = weComRepairBotRecipientsForHotel(
-    weComRepairBotCredentials ?? {},
+  const managerRecipientCount = selectWeComRepairBotCaptchaRecipients({
+    credentials: weComRepairBotCredentials ?? {},
     hotelId,
-  ).length
+    allowGlobalRepairActions:
+      weComRepairBotConfig.allowGlobalRepairActions === true,
+  }).userIds.length
   const managerNotificationReady =
     weComRepairBotReady() && managerRecipientCount > 0
   const weComConfig = weComConfigFor(hotelId)
