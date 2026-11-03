@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test, { after, before } from 'node:test'
@@ -261,6 +261,32 @@ test('fingerprint CLI validates locally without exposing the webhook', () => {
   assert.equal(result.stdout.includes(dummyWebhook), false)
   assert.equal(result.stdout.includes('00000000-'), false)
 })
+
+test(
+  'PowerShell wrapper accepts only the two trusted signer common names',
+  async () => {
+    const wrapper = await readFile(wrapperPath, 'utf8')
+    const signerPattern = wrapper.match(
+      /\$nodeSignature\.SignerCertificate\.Subject -notmatch\s*'([^']+)'/u,
+    )?.[1]
+    assert.ok(signerPattern)
+    const trustedSigner = new RegExp(signerPattern, 'i')
+    for (const subject of [
+      'CN=OpenJS Foundation, O=OpenJS Foundation',
+      'CN="OpenAI OpCo, LLC", O="OpenAI OpCo, LLC"',
+    ]) assert.equal(trustedSigner.test(subject), true, subject)
+    for (const subject of [
+      'CN=Unknown Publisher, O=OpenAI OpCo, LLC',
+      'CN=OpenAI OpCo, LLC',
+      'CN=OpenJS Foundation Impostor',
+      'OU=OpenJS Foundation, CN=Unknown Publisher',
+      'O="Publisher, CN=OpenJS Foundation", CN=Unknown Publisher',
+    ]) assert.equal(trustedSigner.test(subject), false, subject)
+    assert.match(wrapper, /\$nodeSignature\.Status -ne 'Valid'/u)
+    assert.match(wrapper, /TRUSTED_NODE_REPARSE_POINT_REJECTED/u)
+    assert.match(wrapper, /TRUSTED_NODE_REALPATH_INVALID/u)
+  },
+)
 
 test(
   'PowerShell wrapper resolves the signed bundled Node for dry-run',

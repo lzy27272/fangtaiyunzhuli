@@ -148,7 +148,7 @@ if (
     $nodeSignature.Status -ne 'Valid' -or
     $null -eq $nodeSignature.SignerCertificate -or
     $nodeSignature.SignerCertificate.Subject -notmatch
-        'CN=OpenJS Foundation(?:,|$)'
+        '^CN=(?:OpenJS Foundation|"OpenAI OpCo, LLC")(?:,|$)'
 ) {
     throw 'TRUSTED_NODE_SIGNATURE_INVALID'
 }
