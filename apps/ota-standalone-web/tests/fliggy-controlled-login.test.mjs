@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
-import test from 'node:test'
+import test, { beforeEach } from 'node:test'
 import {
   classifyFliggyLoginChallengeText,
   fliggyAuthenticationEligible,
@@ -12,6 +12,13 @@ import {
   startFliggyControlledLogin,
   withFliggyControlledLoginTimeout,
 } from '../../../tools/uat/fliggy-controlled-login.mjs'
+
+// Real browser sockets keep the process alive; these in-memory browser mocks
+// need an equivalent handle while testing intentionally unref'ed deadlines.
+beforeEach((context) => {
+  const browserHandle = setInterval(() => {}, 1000)
+  context.after(() => clearInterval(browserHandle))
+})
 
 const cookie = (name, value, domain, path = '/') => ({
   name,

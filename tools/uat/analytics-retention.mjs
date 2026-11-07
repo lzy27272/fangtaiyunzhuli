@@ -6,13 +6,9 @@ import {
 } from 'node:crypto'
 import {
   appendFileSync,
-  existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   renameSync,
-  rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -249,17 +245,6 @@ const atomicWrite = (path, value) => {
   const temporary = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
   writeFileSync(temporary, value, { encoding: 'utf8', mode: 0o600 })
   renameSync(temporary, path)
-}
-
-const walkEvidenceFiles = (directory) => {
-  if (!existsSync(directory)) return []
-  const result = []
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name)
-    if (entry.isDirectory()) result.push(...walkEvidenceFiles(path))
-    else if (entry.isFile() && entry.name.endsWith('.json.enc')) result.push(path)
-  }
-  return result
 }
 
 export const createAnalyticsRetentionStore = ({
