@@ -12,6 +12,10 @@ The root-owned `prune-validated-raw.py` defaults to a dry run. `--apply` validat
 the entire candidate set before deletion, holds the backup flock and database
 manifest/error table locks, then records `deleted_at`. A crash after unlink but
 before commit is retried safely. Never replace this with a filesystem-age sweep.
+First activation requires a verified dry run and a root-owned mode 0600 file
+`/etc/sifangguan-ota/raw-retention-cleanup.enabled` containing `7`. Without that
+file, imports continue but the worker does not remove files. Removing the marker
+pauses deletion during incident investigation without stopping data collection.
 
 To preserve important raw evidence, the database administrator sets `hold_reason`
 and `held_at` on its manifest, before expiration. These updates serialize against

@@ -48,6 +48,14 @@ def checked_path(root, row):
 def run(apply=False):
     if ROOT.is_symlink() or not ROOT.is_dir():
         raise ValueError('Unsafe analytics root')
+    if apply:
+        activation=Path('/etc/sifangguan-ota/raw-retention-cleanup.enabled')
+        if not activation.exists():
+            print(json.dumps({'status':'AWAITING_VERIFIED_ACTIVATION'}))
+            return
+        mode=activation.lstat()
+        if activation.is_symlink() or not stat.S_ISREG(mode.st_mode) or mode.st_uid!=0 or stat.S_IMODE(mode.st_mode)!=0o600 or activation.read_text().strip()!='7':
+            raise ValueError('Unsafe raw cleanup activation marker')
     with open('/run/lock/hotel-ai-os-backup.lock','a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -73,6 +81,12 @@ def run(apply=False):
             if apply:
                 for row,path,size in checked:
                     path.unlink(missing_ok=True)
+                for directory in {path.parent for _,path,size in checked if size}:
+                    descriptor=os.open(directory,os.O_RDONLY|os.O_DIRECTORY)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
                 # IDs were constrained by checked_path, never interpolate input paths.
                 if rows:
                     identifiers=','.join("'"+row['evidence_id']+"'" for row in rows)
