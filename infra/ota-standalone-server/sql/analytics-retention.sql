@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS ota_analytics.retention_policy (
   hourly_months smallint NOT NULL CHECK (hourly_months = 48),
   daily_years smallint NOT NULL CHECK (daily_years = 2),
   aggregate_years smallint NOT NULL CHECK (aggregate_years = 5),
-  raw_evidence_days smallint NOT NULL CHECK (raw_evidence_days BETWEEN 30 AND 90),
+  raw_evidence_days smallint NOT NULL CHECK (raw_evidence_days BETWEEN 7 AND 90),
   daily_backup_count smallint NOT NULL CHECK (daily_backup_count = 30),
   monthly_backup_count smallint NOT NULL CHECK (monthly_backup_count = 12),
   yearly_backup_count smallint NOT NULL CHECK (yearly_backup_count = 3),
@@ -31,7 +31,7 @@ INSERT INTO ota_analytics.retention_policy (
   singleton, hourly_months, daily_years, aggregate_years,
   raw_evidence_days, daily_backup_count, monthly_backup_count,
   yearly_backup_count, offsite_copy_required
-) VALUES (true, 48, 2, 5, 90, 30, 12, 3, true)
+) VALUES (true, 48, 2, 5, 7, 30, 12, 3, true)
 ON CONFLICT (singleton) DO UPDATE SET
   hourly_months = EXCLUDED.hourly_months,
   daily_years = EXCLUDED.daily_years,
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS ota_analytics.raw_evidence_manifest (
   evidence_content_hash text NOT NULL CHECK (evidence_content_hash ~ '^[a-f0-9]{64}$'),
   content_hash text NOT NULL CHECK (content_hash ~ '^[a-f0-9]{64}$'),
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (expires_at >= observed_at + interval '30 days'),
+  CHECK (expires_at >= observed_at + interval '7 days'),
   CHECK (expires_at <= observed_at + interval '90 days')
 );
 CREATE INDEX IF NOT EXISTS raw_evidence_manifest_expires_idx
@@ -416,10 +416,11 @@ BEGIN
   DELETE FROM ota_analytics.period_rollup
   WHERE period_end < (reference_time AT TIME ZONE 'Asia/Shanghai')::date - interval '5 years';
   GET DIAGNOSTICS aggregate_removed = ROW_COUNT;
-  DELETE FROM ota_analytics.raw_evidence_manifest WHERE expires_at < reference_time;
-  GET DIAGNOSTICS manifests_removed = ROW_COUNT;
-  DELETE FROM ota_analytics.ingest_error WHERE received_at < reference_time - interval '90 days';
-  GET DIAGNOSTICS errors_removed = ROW_COUNT;
+  -- Evidence lineage and unresolved errors must survive to authorize cleanup.
+  -- Their small metadata rows are retained; file removal is acknowledged by
+  -- the guarded worker only after matching complete, imported facts.
+  manifests_removed := 0;
+  errors_removed := 0;
   RETURN jsonb_build_object(
     'hourly', hourly_removed, 'ota', ota_removed, 'daily', daily_removed,
     'aggregate', aggregate_removed, 'rawManifests', manifests_removed,
@@ -674,3 +675,5 @@ GRANT SELECT ON ota_analytics.retention_policy,
   ota_analytics.occupancy_target_decision TO ota_analytics_reader;
 GRANT EXECUTE ON FUNCTION ota_analytics.ingest_event(jsonb) TO ota_analytics_ingester;
 GRANT EXECUTE ON FUNCTION ota_analytics.ingest_base64_event(text) TO ota_analytics_ingester;
+
+\ir raw-evidence-retention.sql

@@ -1,0 +1,63 @@
+name: Raw retention release
+on:
+  push:
+    branches: [codex/raw-retention-7d]
+permissions:
+  contents: read
+jobs:
+  verify-package:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: retention-ci-only
+          POSTGRES_DB: retention_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: retention-ci-only
+      PGDATABASE: retention_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Install test dependencies
+        run: |
+          pnpm --dir apps/ota-standalone-web install --frozen-lockfile
+          npm --prefix tools/uat install --ignore-scripts --no-package-lock
+      - name: Regression
+        run: |
+          node --test apps/ota-standalone-web/tests/*.test.mjs
+          python3 infra/ota-standalone-server/scripts/test-prune-validated-raw.py
+          bash -n infra/ota-standalone-server/scripts/import-analytics-retention.sh
+      - name: Upgrade, idempotence and restore rehearsal
+        run: |
+          git show b6ce9bb5c0a3850e0597957be520a03da89ce9bd:infra/ota-standalone-server/sql/analytics-retention.sql > /tmp/baseline.sql
+          psql -v ON_ERROR_STOP=1 -f /tmp/baseline.sql
+          pg_dump -Fc -f /tmp/before.dump
+          psql -v ON_ERROR_STOP=1 -f infra/ota-standalone-server/sql/analytics-retention.sql
+          psql -v ON_ERROR_STOP=1 -f infra/ota-standalone-server/sql/analytics-retention.sql
+          psql -v ON_ERROR_STOP=1 -f infra/ota-standalone-server/sql/test-raw-evidence-retention.sql
+          createdb retention_restore
+          pg_restore --exit-on-error -d retention_restore /tmp/before.dump
+          psql -d retention_restore -Atc 'select raw_evidence_days from ota_analytics.retention_policy' | grep -x 90
+      - name: Immutable release archive
+        run: |
+          mkdir artifact
+          git archive --format=tar.gz --output=artifact/raw-retention-${{ github.sha }}.tar.gz HEAD
+          sha256sum artifact/*.tar.gz > artifact/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raw-retention-${{ github.sha }}
+          path: artifact/
+          retention-days: 14

@@ -21,9 +21,9 @@ export const ANALYTICS_RETENTION_POLICY = Object.freeze({
   hourlyMonths: 48,
   dailyYears: 2,
   aggregateYears: 5,
-  rawEvidenceMinimumDays: 30,
+  rawEvidenceMinimumDays: 7,
   rawEvidenceMaximumDays: 90,
-  rawEvidenceDefaultDays: 90,
+  rawEvidenceDefaultDays: 7,
   dailyBackupCount: 30,
   monthlyBackupCount: 12,
   yearlyBackupCount: 3,
@@ -392,17 +392,10 @@ export const createAnalyticsRetentionStore = ({
   }
 
   const sweepRawEvidence = ({ now = new Date() } = {}) => {
-    const cutoff = now.getTime() - rawRetentionDays * 86_400_000
-    if (!Number.isFinite(cutoff)) throw new Error('ANALYTICS_RETENTION_TIME_INVALID')
-    const removed = []
-    for (const path of walkEvidenceFiles(rawRoot)) {
-      const modifiedAt = statSync(path).mtimeMs
-      if (modifiedAt >= cutoff) continue
-      safeRelativePath(root, path)
-      rmSync(path)
-      removed.push(path)
-    }
-    return removed
+    if (!Number.isFinite(now.getTime())) throw new Error('ANALYTICS_RETENTION_TIME_INVALID')
+    // Only the database-backed worker can prove import completion and inspect
+    // evidence holds. The API must never delete by filesystem age alone.
+    return []
   }
 
   return {

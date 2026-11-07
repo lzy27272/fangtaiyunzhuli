@@ -22,6 +22,9 @@ install -d -m 0755 -o root -g root /usr/local/lib/sifangguan-ota
 install -m 0750 -o root -g root \
   "${script_dir}/import-analytics-retention.sh" \
   /usr/local/lib/sifangguan-ota/import-analytics-retention.sh
+install -m 0750 -o root -g root \
+  "${script_dir}/prune-validated-raw.py" \
+  /usr/local/lib/sifangguan-ota/prune-validated-raw.py
 install -m 0644 -o root -g root \
   "${asset_root}/systemd/sifangguan-ota-analytics-import.service" \
   /etc/systemd/system/sifangguan-ota-analytics-import.service
@@ -53,7 +56,7 @@ if [[ -z ${raw_key} ]]; then
 fi
 set_env_value OTA_ANALYTICS_RETENTION_ENABLED true
 set_env_value OTA_ANALYTICS_RETENTION_ROOT "${analytics_root}"
-set_env_value OTA_ANALYTICS_RAW_RETENTION_DAYS 90
+set_env_value OTA_ANALYTICS_RAW_RETENTION_DAYS 7
 set_env_value OTA_ANALYTICS_RAW_EVIDENCE_KEY "${raw_key}"
 unset raw_key
 

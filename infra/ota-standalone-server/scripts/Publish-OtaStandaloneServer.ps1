@@ -74,6 +74,8 @@ $runtimeSourcePaths = @(
     'infra/ota-standalone-server/scripts/configure-analytics-retention.sh',
     'infra/ota-standalone-server/scripts/import-analytics-retention.sh',
     'infra/ota-standalone-server/sql/analytics-retention.sql',
+    'infra/ota-standalone-server/sql/raw-evidence-retention.sql',
+    'infra/ota-standalone-server/scripts/prune-validated-raw.py',
     'infra/ota-standalone-server/systemd/sifangguan-ota-analytics-import.service',
     'infra/ota-standalone-server/systemd/sifangguan-ota-analytics-import.timer',
     'infra/ota-standalone-server/scripts/status-native.sh',

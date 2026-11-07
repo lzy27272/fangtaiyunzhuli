@@ -65,9 +65,9 @@ test('retention policy matches the approved business windows', () => {
     hourlyMonths: 48,
     dailyYears: 2,
     aggregateYears: 5,
-    rawEvidenceMinimumDays: 30,
+    rawEvidenceMinimumDays: 7,
     rawEvidenceMaximumDays: 90,
-    rawEvidenceDefaultDays: 90,
+    rawEvidenceDefaultDays: 7,
     dailyBackupCount: 30,
     monthlyBackupCount: 12,
     yearlyBackupCount: 3,
@@ -184,13 +184,13 @@ test('OTA observations append history instead of replacing the previous success'
   }
 })
 
-test('raw evidence is redacted before encryption and expires inside 30-90 days', () => {
+test('raw evidence is encrypted with a seven day default and cannot be deleted by mtime', () => {
   const root = mkdtempSync(join(tmpdir(), 'sfg-analytics-'))
   try {
     const store = createAnalyticsRetentionStore({
       rootPath: root,
       encryptionKey: key,
-      rawRetentionDays: 30,
+      rawRetentionDays: 7,
     })
     const archived = store.archiveRawResponse({
       tenantId: '10000000-0000-4000-8000-000000000001',
@@ -219,12 +219,14 @@ test('raw evidence is redacted before encryption and expires inside 30-90 days',
     const removed = store.sweepRawEvidence({
       now: new Date('2026-09-15T00:00:00Z'),
     })
-    assert.deepEqual(removed, [archived.path])
+    assert.deepEqual(removed, [])
+    assert.equal(archived.envelope.expiresAt, '2026-09-22T00:00:00.000Z')
+    assert.equal(decryptRawEvidence({ path: archived.path, encryptionKey: key }).roomRevenue, 99)
 
     assert.throws(() => createAnalyticsRetentionStore({
       rootPath: root,
       encryptionKey: key,
-      rawRetentionDays: 29,
+      rawRetentionDays: 6,
     }), /ANALYTICS_RAW_RETENTION_OUT_OF_RANGE/u)
     assert.throws(() => createAnalyticsRetentionStore({
       rootPath: root,

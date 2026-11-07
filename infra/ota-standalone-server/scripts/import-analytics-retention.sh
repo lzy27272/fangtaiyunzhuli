@@ -104,20 +104,6 @@ chown sifangguan-ota:sifangguan-ota "${status_tmp}"
 chmod 0600 "${status_tmp}"
 mv -f -- "${status_tmp}" "${analytics_root}/import-status.json"
 
-raw_days=90
-if [[ -r ${runtime_env} ]]; then
-  configured_raw_days="$(sed -n 's/^OTA_ANALYTICS_RAW_RETENTION_DAYS=//p' "${runtime_env}" | tail -n 1)"
-  if [[ ${configured_raw_days} =~ ^[0-9]+$ ]] \
-      && (( configured_raw_days >= 30 && configured_raw_days <= 90 )); then
-    raw_days=${configured_raw_days}
-  fi
-fi
-raw_root=${analytics_root}/raw
-if [[ -d ${raw_root} ]]; then
-  test "$(readlink -m "${raw_root}")" = "${raw_root}"
-  find "${raw_root}" -xdev -type f -name '*.json.enc' \
-    -mtime "+${raw_days}" -delete
-  find "${raw_root}" -xdev -depth -type d -empty -delete
-fi
+/usr/local/lib/sifangguan-ota/prune-validated-raw.py --apply
 
 printf '%s\n' 'ANALYTICS_IMPORT_OK'
