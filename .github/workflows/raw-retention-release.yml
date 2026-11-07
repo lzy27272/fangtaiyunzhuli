@@ -42,17 +42,14 @@ jobs:
           bash -n infra/ota-standalone-server/scripts/import-analytics-retention.sh
       - name: Upgrade, idempotence and restore rehearsal
         run: |
-          export PATH=/usr/lib/postgresql/16/bin:$PATH
-          test -x /usr/lib/postgresql/16/bin/pg_dump
-          pg_dump --version
           git show b6ce9bb5c0a3850e0597957be520a03da89ce9bd:infra/ota-standalone-server/sql/analytics-retention.sql > /tmp/baseline.sql
           psql -v ON_ERROR_STOP=1 -f /tmp/baseline.sql
-          pg_dump -Fc -f /tmp/before.dump
+          docker exec ${{ job.services.postgres.id }} pg_dump -U postgres -d retention_test -Fc > /tmp/before.dump
           psql -v ON_ERROR_STOP=1 -f infra/ota-standalone-server/sql/analytics-retention.sql
           psql -v ON_ERROR_STOP=1 -f infra/ota-standalone-server/sql/analytics-retention.sql
           psql -v ON_ERROR_STOP=1 -f infra/ota-standalone-server/sql/test-raw-evidence-retention.sql
           createdb retention_restore
-          pg_restore --exit-on-error -d retention_restore /tmp/before.dump
+          docker exec -i ${{ job.services.postgres.id }} pg_restore -U postgres --exit-on-error -d retention_restore < /tmp/before.dump
           psql -d retention_restore -Atc 'select raw_evidence_days from ota_analytics.retention_policy' | grep -x 90
       - name: Immutable release archive
         run: |
