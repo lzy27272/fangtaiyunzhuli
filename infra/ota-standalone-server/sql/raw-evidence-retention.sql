@@ -27,6 +27,7 @@ WHERE r.deleted_at IS NULL AND r.hold_reason IS NULL AND r.held_at IS NULL
     SELECT 1 FROM ota_analytics.hourly_operating_fact f
     WHERE f.tenant_id=r.tenant_id AND f.hotel_id=r.hotel_id
       AND f.source_system=r.source_system AND f.observed_at=r.observed_at
+      AND f.created_at < now() - interval '7 days'
       AND f.completeness='COMPLETE' AND nullif(f.collection_run_id,'') IS NOT NULL
       AND f.room_revenue IS NOT NULL AND f.sold_room_nights >= 0
       AND f.effective_sellable_room_nights > 0 AND f.available_rooms >= 0

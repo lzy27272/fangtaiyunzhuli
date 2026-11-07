@@ -1,7 +1,8 @@
 # Validated raw evidence retention
 
 Ordinary encrypted/redacted collection responses are eligible only after both
-observation and durable manifest insertion are seven days old. Exact tenant,
+observation and durable manifest insertion are seven days old, and the matching
+validated fact has also been stored for seven days. Exact tenant,
 hotel, source system and collection timestamp must match a COMPLETE hourly fact
 with required measures and successful source coverage. Unknown source contracts,
 partial collections, unmatched evidence and unresolved ingest errors fail closed.
