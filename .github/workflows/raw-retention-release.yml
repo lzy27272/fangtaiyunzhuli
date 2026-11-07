@@ -55,7 +55,7 @@ jobs:
         run: |
           OTA_WEB_BASE_PATH=/ota-console/ VITE_OTA_API_BASE_URL=/api/v1/ota-console pnpm --dir apps/ota-standalone-web build
           mkdir artifact
-          tar --exclude=node_modules -czf artifact/raw-retention-${{ github.sha }}.tar.gz apps/ota-standalone-web/dist tools/uat tools/labs/ota-browser infra/ota-standalone-server
+          tar --exclude=node_modules -czf artifact/raw-retention-${{ github.sha }}.tar.gz apps/ota-standalone-web/dist tools/uat tools/trusted-device tools/labs/ota-browser infra/ota-standalone-server
           sha256sum artifact/*.tar.gz > artifact/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
