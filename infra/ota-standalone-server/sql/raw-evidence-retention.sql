@@ -1,9 +1,5 @@
 \set ON_ERROR_STOP on
 BEGIN;
-ALTER TABLE ota_analytics.retention_policy
-  DROP CONSTRAINT IF EXISTS retention_policy_raw_evidence_days_check;
-ALTER TABLE ota_analytics.retention_policy
-  ADD CONSTRAINT retention_policy_raw_evidence_days_check CHECK (raw_evidence_days BETWEEN 7 AND 90);
 UPDATE ota_analytics.retention_policy SET raw_evidence_days=7, updated_at=now();
 ALTER TABLE ota_analytics.raw_evidence_manifest
   DROP CONSTRAINT IF EXISTS raw_evidence_manifest_check;

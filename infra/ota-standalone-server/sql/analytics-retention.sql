@@ -27,6 +27,15 @@ CREATE TABLE IF NOT EXISTS ota_analytics.retention_policy (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- PostgreSQL checks the proposed INSERT before ON CONFLICT; upgrade the
+-- legacy minimum before proposing the new default on existing installations.
+BEGIN;
+ALTER TABLE ota_analytics.retention_policy
+  DROP CONSTRAINT IF EXISTS retention_policy_raw_evidence_days_check;
+ALTER TABLE ota_analytics.retention_policy
+  ADD CONSTRAINT retention_policy_raw_evidence_days_check CHECK (raw_evidence_days BETWEEN 7 AND 90);
+COMMIT;
+
 INSERT INTO ota_analytics.retention_policy (
   singleton, hourly_months, daily_years, aggregate_years,
   raw_evidence_days, daily_backup_count, monthly_backup_count,
